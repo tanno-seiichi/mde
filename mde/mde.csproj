@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <ApplicationIcon>images\mde.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="images\mde.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="images\mde.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="images\mde.png" />
+  </ItemGroup>
+
+</Project>

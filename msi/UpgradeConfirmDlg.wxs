@@ -1,0 +1,156 @@
+﻿<!--
+  WixUI_Minimal をそのまま使うのをやめ、その中身を複製・改造した自前の UI
+  "WixUI_MinimalUpgrade" を定義しています。
+
+  【設計方針（改訂版）】
+  独自のダイアログを新設するのではなく、新規インストール時と同じ "WelcomeDlg" を
+  アップグレード時にも共用します。WelcomeDlg の説明文（WelcomeDlgDescription）は
+  ライブラリ側で Overridable="yes" と指定されているため、プロジェクト側の .wxl で
+  上書きできます。ここでは説明文をプロパティ参照 "[WIX_WELCOME_MESSAGE]" に差し替え、
+  アップグレード時だけ SetProperty で文言を切り替えています。
+
+  WelcomeDlg の [次へ] ボタンの遷移先も、アップグレード時だけ
+  ライセンス確認画面（LicenseAgreementDlg）を経由せず、直接インストールを
+  実行するように配線を分けています。
+
+  これにより、新規インストール時とアップグレード時で見た目（赤いバナー画像を
+  含む）が完全に同じになり、以前の「パタパタ切り替わる」問題も解消されます。
+
+  MaintenanceWelcomeDlg・MaintenanceTypeDlg・VerifyReadyDlg・ProgressDlg・
+  ExitDialog まわりの配線は WixUI_Common 側の共通定義をそのまま引き継いでおり、
+  変更していません（同一バージョン再インストール時の「削除／修復」画面は
+  今まで通りです）。パッチ（MSP）関連の分岐は本プロジェクトでは使用しないため
+  含めていません。
+
+  なお、WelcomeDlg の [キャンセル] ボタンは標準の「本当にキャンセルしますか？」
+  という確認ダイアログを経由する標準動作になります（独自ダイアログを使っていた
+  従来版は確認なしで即終了していました）。
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Fragment>
+
+    <!--
+      ExitDialog の補足メッセージ用プロパティ。
+      正しいプロパティ名は "WIXUI_EXITDIALOGOPTIONALTEXT"（ExitDialog 側の
+      OptionalText コントロールが直接参照している）です。
+      既定値は設定しません（＝新規インストール時は今まで通り何も表示しない）。
+    -->
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Secure="yes" />
+
+    <!-- アップグレード完了時だけ、Exit 画面に出すメッセージをセットする -->
+    <SetProperty
+      Id="WIXUI_EXITDIALOGOPTIONALTEXT"
+      Value="!(loc.ExitMessageUpgradeComplete)"
+      After="ProgressDlg"
+      Sequence="ui"
+      Condition="WIX_UPGRADE_DETECTED" />
+
+    <!--
+      WelcomeDlg の説明文用プロパティ。既定はインストール向けの文言。
+      アップグレード時だけ、下の SetProperty でバージョンアップ向けの文言に
+      差し替えます。
+    -->
+    <Property Id="WIX_WELCOME_MESSAGE" Secure="yes" />
+
+    <!--
+      Property の Value による静的な値設定では、[ProductName] などの
+      プロパティ参照が実行時にフォーマット（解決）されないため、
+      WelcomeDlg 側で "[WIX_WELCOME_MESSAGE]" を展開した際に
+      "[ProductName]" が文字列のまま表示されてしまいます。
+      SetProperty（内部的には Id = 対象プロパティ名として扱われる）は
+      同じプロパティに対して複数条件で設定できないため、ここでは
+      CustomAction を直接使い、InstallUISequence 側で条件分岐しています。
+      これにより新規インストール時も [ProductName] が正しく解決されます。
+    -->
+    <CustomAction
+      Id="SetWelcomeMessageInstall"
+      Property="WIX_WELCOME_MESSAGE"
+      Value="!(loc.WelcomeDlgDescriptionInstall)" />
+
+    <CustomAction
+      Id="SetWelcomeMessageUpgrade"
+      Property="WIX_WELCOME_MESSAGE"
+      Value="!(loc.WelcomeDlgDescriptionUpgrade)" />
+    
+    <UI Id="WixUI_MinimalUpgrade_X64">
+
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+      <Property Id="WixUI_Mode" Value="Minimal" />
+
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+      <DialogRef Id="WelcomeDlg" />
+      <DialogRef Id="LicenseAgreementDlg" />
+
+      <!-- 同一バージョン再インストール時（変更なし、WixUI_Minimal.wxs と同じ内容） -->
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" Condition="1" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Condition="1" />
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" Condition="1" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" Condition="1" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" Condition="1" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" Condition="1" />
+
+      <!--
+        WelcomeDlg の [次へ]:
+        ・通常（新規インストール）: ライセンス確認画面へ
+        ・アップグレード時: ライセンス確認画面を経由せず、そのままインストール実行
+      -->
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg" Condition="NOT WIX_UPGRADE_DETECTED" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="EndDialog" Value="Return" Condition="WIX_UPGRADE_DETECTED" />
+
+      <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Condition="1" />
+      <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="EndDialog" Value="Return" Condition="LicenseAccepted = &quot;1&quot;" />
+      <Publish Dialog="LicenseAgreementDlg" Control="Print" Event="DoAction" Value="WixUIPrintEula_X64" Condition="1" />
+
+      <!-- ダウングレード確認ダイアログ（より新しいバージョンが既にインストールされている場合） -->
+      <Dialog Id="DowngradeErrorDlg" Width="370" Height="270" Title="!(loc.DowngradeErrorDlgTitle)">
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+
+        <Control Id="MessageText" Type="Text" X="25" Y="60" Width="320" Height="100" NoPrefix="yes" Text="!(loc.DowngradeError)" />
+
+        <Control Id="OK" Type="PushButton" X="304" Y="243" Width="56" Height="17" Default="yes" Cancel="yes" Text="!(loc.DowngradeErrorDlgOK)">
+          <Publish Event="EndDialog" Value="Exit" Condition="1" />
+        </Control>
+
+      </Dialog>
+
+      <!--
+        WelcomeDlg は新規インストール・アップグレードの両方で表示します
+        （表示される説明文だけプロパティで切り替わります）。
+        ダウングレード時（より新しいバージョンがインストール済み）は
+        LaunchCondition が既にブロックするため、表示しないようにしています。
+      -->
+      <InstallUISequence>
+        <Custom Action="SetWelcomeMessageInstall" After="LaunchConditions" Condition="NOT WIX_UPGRADE_DETECTED" />
+        <Custom Action="SetWelcomeMessageUpgrade" After="SetWelcomeMessageInstall" Condition="WIX_UPGRADE_DETECTED" />
+        <Show Dialog="WelcomeDlg" After="SetWelcomeMessageUpgrade" Condition="NOT Installed AND NOT WIX_DOWNGRADE_DETECTED" />
+        <!--
+          DowngradeErrorDlg は "LaunchConditions" より前に割り込ませます。
+          [OK] は EndDialog Value="Exit" で即座に UI シーケンス全体を終了するため、
+          この後の LaunchConditions（自動生成された DowngradeErrorMessage 用の
+          チェック）自体が実行されず、標準の FatalError（「エラーが発生した
+          ため...」）画面が表示されることもありません。
+        -->
+        <Show Dialog="DowngradeErrorDlg" Before="LaunchConditions" Condition="WIX_DOWNGRADE_DETECTED" />
+      </InstallUISequence>
+
+      <Property Id="ARPNOMODIFY" Value="1" />
+
+    </UI>
+
+    <UIRef Id="WixUI_Common" />
+
+  </Fragment>
+</Wix>

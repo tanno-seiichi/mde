@@ -1,0 +1,21 @@
+﻿<Project Sdk="WixToolset.Sdk/4.0.5">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <OutputName>mde</OutputName>
+    <!-- .wixpdb（デバッグ・パッチ生成用シンボルファイル）を出力せず、.msi単体になるようにする -->
+    <SuppressPdbOutput>true</SuppressPdbOutput>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <BindFiles>false</BindFiles>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="License.rtf" />
+    <Content Include="LICENSE.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\mde\mde.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="4.0.5" />
+  </ItemGroup>
+</Project>

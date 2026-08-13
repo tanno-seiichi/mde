@@ -1,0 +1,27 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <ComponentGroup Id="mde" Directory="INSTALLFOLDER">
+
+		<!-- Application -->
+		<Component Id="mde.exe.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="mde.exe" KeyPath="yes" /></Component>
+		<Component Id="mde.dll.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="mde.dll" KeyPath="yes" /></Component>
+		<Component Id="mde.dll.runtimeconfig.json.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="mde.runtimeconfig.json" KeyPath="yes" /></Component>
+		<Component Id="mde.dll.deps.json.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="mde.deps.json" KeyPath="yes" /></Component>
+
+		<!-- License -->
+		<Component Id="License"><File Source="LICENSE.txt" /></Component>
+
+		<!-- スタートメニューショートカット -->
+		<Component Id="StartMenuShortcutComponent" Directory="ProgramMenuDir" Guid="*">
+			<Shortcut Id="StartMenuShortcut" Name="mde" Target="[INSTALLFOLDER]mde.exe" WorkingDirectory="INSTALLFOLDER" >
+				<ShortcutProperty Key="System.AppUserModel.ID" Value="tanno-seiichi.mde"/>
+			</Shortcut>
+
+			<RemoveFolder Id="RemoveProgramMenuDir" Directory="ProgramMenuDir" On="uninstall" />
+        
+			<RegistryValue Root="HKCU" Key="Software\tanno-seiichi\mde" Name="StartMenu" Type="integer" Value="1" KeyPath="yes"/>
+		</Component>		
+
+	</ComponentGroup>
+  </Fragment>
+</Wix>
