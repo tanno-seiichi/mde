@@ -198,8 +198,11 @@ namespace mde
 
             var para = Editor.CaretPosition?.Paragraph;
             if (para == null) return;
-            if (!(para.Parent is FlowDocument)) return; // only top-level paragraphs auto-convert
             if (para.Tag is CodeBlockInfo) return; // no auto-formatting inside code blocks
+
+            if (CheckInlineFormatTrigger()) return;
+
+            if (!(para.Parent is FlowDocument)) return; // only top-level paragraphs auto-convert to list/heading
 
             string text = new TextRange(para.ContentStart, para.ContentEnd).Text;
             text = text.TrimEnd('\r', '\n');
@@ -207,7 +210,13 @@ namespace mde
             var bulletMatch = Regex.Match(text, "^([*-])[ \u00A0]$");
             if (bulletMatch.Success)
             {
-                ConvertParagraphToListItem(para, bulletMatch.Groups[1].Value);
+                ConvertParagraphToListItem(para, bulletMatch.Groups[1].Value, false);
+                return;
+            }
+            var orderedMatch = Regex.Match(text, "^\\d+\\.[ \u00A0]$");
+            if (orderedMatch.Success)
+            {
+                ConvertParagraphToListItem(para, null, true);
                 return;
             }
             var m = Regex.Match(text, "^(#{1,6})[ \u00A0]$");
@@ -260,7 +269,7 @@ namespace mde
             }
         }
 
-        private void ConvertParagraphToListItem(Paragraph p, string marker)
+        private void ConvertParagraphToListItem(Paragraph p, string marker, bool ordered)
         {
             isProgrammaticChange = true;
             try
@@ -269,14 +278,18 @@ namespace mde
                 var newLiPara = new Paragraph();
                 var newLi = new ListItem(newLiPara);
 
-                if (prev is List prevList)
+                if (prev is List prevList && (prevList.MarkerStyle == TextMarkerStyle.Decimal) == ordered)
                 {
                     prevList.ListItems.Add(newLi);
                     Editor.Document.Blocks.Remove(p);
                 }
                 else
                 {
-                    var list = new List { MarkerStyle = TextMarkerStyle.Disc, Tag = marker };
+                    var list = new List
+                    {
+                        MarkerStyle = ordered ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc,
+                        Tag = ordered ? null : marker
+                    };
                     list.ListItems.Add(newLi);
                     Editor.Document.Blocks.InsertBefore(p, list);
                     Editor.Document.Blocks.Remove(p);
@@ -678,7 +691,12 @@ namespace mde
                 List nestedList = prevLi.Blocks.Count > 1 ? prevLi.Blocks.LastBlock as List : null;
                 if (nestedList == null)
                 {
-                    nestedList = new List { MarkerStyle = TextMarkerStyle.Circle, Tag = (parentList.Tag as string) ?? "*" };
+                    bool parentOrdered = parentList.MarkerStyle == TextMarkerStyle.Decimal;
+                    nestedList = new List
+                    {
+                        MarkerStyle = parentOrdered ? TextMarkerStyle.Decimal : TextMarkerStyle.Circle,
+                        Tag = parentOrdered ? null : ((parentList.Tag as string) ?? "*")
+                    };
                     prevLi.Blocks.Add(nestedList);
                 }
                 parentList.ListItems.Remove(li);
@@ -712,7 +730,12 @@ namespace mde
 
                 if (after.Count > 0)
                 {
-                    List ownNested = new List { MarkerStyle = TextMarkerStyle.Circle, Tag = (parentList.Tag as string) ?? "*" };
+                    bool parentOrdered = parentList.MarkerStyle == TextMarkerStyle.Decimal;
+                    List ownNested = new List
+                    {
+                        MarkerStyle = parentOrdered ? TextMarkerStyle.Decimal : TextMarkerStyle.Circle,
+                        Tag = parentOrdered ? null : ((parentList.Tag as string) ?? "*")
+                    };
                     foreach (var a in after) ownNested.ListItems.Add(a);
                     li.Blocks.Add(ownNested);
                 }
@@ -2172,17 +2195,9 @@ namespace mde
 
         private void ScrollParagraphToTop(Paragraph p)
         {
-            var scrollViewer = FindVisualChild<ScrollViewer>(Editor);
-            if (scrollViewer == null)
-            {
-                p.BringIntoView();
-                return;
-            }
-
-            Editor.UpdateLayout();
-            Rect rect = p.ContentStart.GetCharacterRect(LogicalDirection.Forward);
-            double targetOffset = scrollViewer.VerticalOffset + rect.Top;
-            scrollViewer.ScrollToVerticalOffset(Math.Max(0, targetOffset));
+            // Temporarily using only WPF's built-in BringIntoView (no custom offset math) to
+            // diagnose whether the clipping is caused by our calculation or something else.
+            p.BringIntoView();
         }
 
         private static T FindVisualChild<T>(DependencyObject root) where T : DependencyObject
@@ -2500,20 +2515,25 @@ namespace mde
         private string ListToMarkdown(List list, int level)
         {
             string indent = new string(' ', level * 3);
-            string marker = (list.Tag as string) ?? "*";
+            bool ordered = list.MarkerStyle == TextMarkerStyle.Decimal;
+            string bulletMarker = (list.Tag as string) ?? "*";
             var lines = new List<string>();
+            int number = 1;
             foreach (ListItem li in list.ListItems)
             {
                 var ownPara = li.Blocks.FirstBlock as Paragraph;
                 string ownText = ownPara != null ? ParagraphInlineToMarkdown(ownPara) : "";
                 var parts = ownText.Split('\n');
-                lines.Add(indent + marker + " " + parts[0]);
-                for (int k = 1; k < parts.Length; k++) lines.Add(indent + "  " + parts[k]);
+                string prefix = ordered ? (number + ". ") : (bulletMarker + " ");
+                lines.Add(indent + prefix + parts[0]);
+                string contIndent = indent + new string(' ', prefix.Length);
+                for (int k = 1; k < parts.Length; k++) lines.Add(contIndent + parts[k]);
 
                 foreach (Block b in li.Blocks)
                 {
                     if (b is List nested) lines.Add(ListToMarkdown(nested, level + 1));
                 }
+                number++;
             }
             return string.Join("\n", lines);
         }
@@ -2656,11 +2676,11 @@ namespace mde
                         continue;
                     }
 
-                    if (Regex.IsMatch(line, "^\\s*[*-]\\s+"))
+                    if (Regex.IsMatch(line, "^\\s*([*-]|\\d+\\.)\\s+"))
                     {
                         var listLines = new List<string>();
                         while (i < lines.Length && (
-                            Regex.IsMatch(lines[i], "^\\s*[*-]\\s+") ||
+                            Regex.IsMatch(lines[i], "^\\s*([*-]|\\d+\\.)\\s+") ||
                             (listLines.Count > 0 && !string.IsNullOrWhiteSpace(lines[i]) &&
                              Regex.IsMatch(lines[i], "^\\s+\\S") &&
                              !lines[i].TrimStart().StartsWith("|") &&
@@ -2759,17 +2779,19 @@ namespace mde
 
             foreach (var line in listLines)
             {
-                var m = Regex.Match(line, "^(\\s*)([*-])\\s+(.*)$");
+                var m = Regex.Match(line, "^(\\s*)([*-]|\\d+\\.)\\s+(.*)$");
                 if (m.Success)
                 {
                     int indent = m.Groups[1].Value.Length;
                     string marker = m.Groups[2].Value;
+                    bool ordered = char.IsDigit(marker[0]);
                     int level = Math.Max(0, (int)Math.Round(indent / 3.0));
                     string text = m.Groups[3].Value;
 
                     if (!rootMarkerSet)
                     {
-                        rootList.Tag = marker;
+                        rootList.MarkerStyle = ordered ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc;
+                        rootList.Tag = ordered ? null : marker;
                         rootMarkerSet = true;
                     }
 
@@ -2783,7 +2805,11 @@ namespace mde
                         List nestedList = lastLi.Blocks.Count > 1 ? lastLi.Blocks.LastBlock as List : null;
                         if (nestedList == null)
                         {
-                            nestedList = new List { MarkerStyle = TextMarkerStyle.Circle, Tag = marker };
+                            nestedList = new List
+                            {
+                                MarkerStyle = ordered ? TextMarkerStyle.Decimal : TextMarkerStyle.Circle,
+                                Tag = ordered ? null : marker
+                            };
                             lastLi.Blocks.Add(nestedList);
                         }
                         stack.Add((nestedList, level));
@@ -2854,6 +2880,82 @@ namespace mde
         /// properties on whatever Run(s) the selection currently spans) avoids ever needing to
         /// clear a property like FontFamily to null, which WPF rejects.
         /// </summary>
+        /// <summary>
+        /// Checks whether the text just typed completes an inline `code`, **bold**, or ~~strikethrough~~
+        /// span ending right at the caret, and if so, replaces the raw markdown syntax with a styled
+        /// Run in place. Works from the current Run's own text only (not TextRange over the whole
+        /// paragraph), so it's safe to use inside list items too.
+        /// </summary>
+        private bool CheckInlineFormatTrigger()
+        {
+            var caret = Editor.CaretPosition;
+            var para = caret.Paragraph;
+            if (para == null || para.Tag is CodeBlockInfo) return false;
+
+            string textBefore = caret.GetTextInRun(LogicalDirection.Backward);
+            if (string.IsNullOrEmpty(textBefore)) return false;
+
+            string style;
+            Match match = Regex.Match(textBefore, "`([^`]+)`$");
+            if (match.Success)
+            {
+                style = "code";
+            }
+            else
+            {
+                match = Regex.Match(textBefore, "\\*\\*([^*]+)\\*\\*$");
+                if (match.Success)
+                {
+                    style = "bold";
+                }
+                else
+                {
+                    match = Regex.Match(textBefore, "~~([^~]+)~~$");
+                    if (match.Success) style = "strikethrough";
+                    else return false;
+                }
+            }
+
+            ReplaceTextBeforeCaretWithStyledRun(caret, match.Length, match.Groups[1].Value, style);
+            return true;
+        }
+
+        private void ReplaceTextBeforeCaretWithStyledRun(TextPointer caret, int matchLength, string content, string style)
+        {
+            var start = caret.GetPositionAtOffset(-matchLength);
+            if (start == null) return;
+
+            isProgrammaticChange = true;
+            try
+            {
+                new TextRange(start, caret).Text = "";
+
+                Run newRun;
+                if (style == "bold")
+                    newRun = new Run(content, start) { FontWeight = FontWeights.Bold, Tag = "bold" };
+                else if (style == "strikethrough")
+                    newRun = new Run(content, start) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
+                else
+                    newRun = new Run(content, start)
+                    {
+                        FontFamily = new FontFamily("Consolas"),
+                        FontSize = 13.5,
+                        Background = CodeBlockBackground,
+                        Tag = "inline-code"
+                    };
+
+                // A trailing zero-width-space Run with no special styling, so subsequent typing
+                // doesn't inherit the bold/strikethrough/code formatting we just applied. Stripped
+                // automatically on save (see AppendInlinesMarkdown).
+                var trailingRun = new Run("\u200B", newRun.ContentEnd);
+                Editor.CaretPosition = trailingRun.ContentEnd;
+            }
+            finally
+            {
+                isProgrammaticChange = false;
+            }
+        }
+
         private void ApplyInlineStyle(string style)
         {
             if (Editor.Selection == null || Editor.Selection.IsEmpty) return;
