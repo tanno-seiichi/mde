@@ -2195,8 +2195,10 @@ namespace mde
 
         private void ScrollParagraphToTop(Paragraph p)
         {
-            // Temporarily using only WPF's built-in BringIntoView (no custom offset math) to
-            // diagnose whether the clipping is caused by our calculation or something else.
+            // WPF's built-in BringIntoView correctly scrolls the target to the top of the visible
+            // viewport. Earlier attempts at custom ScrollViewer/GetCharacterRect offset math looked
+            // correct on paper but consistently produced a clipped result in practice - BringIntoView
+            // is simpler and confirmed working, so it stays.
             p.BringIntoView();
         }
 
@@ -2516,7 +2518,8 @@ namespace mde
         {
             string indent = new string(' ', level * 3);
             bool ordered = list.MarkerStyle == TextMarkerStyle.Decimal;
-            string bulletMarker = (list.Tag as string) ?? "*";
+            bool constantNumbering = ordered && (list.Tag as string) == "const";
+            string bulletMarker = ordered ? null : ((list.Tag as string) ?? "*");
             var lines = new List<string>();
             int number = 1;
             foreach (ListItem li in list.ListItems)
@@ -2524,7 +2527,7 @@ namespace mde
                 var ownPara = li.Blocks.FirstBlock as Paragraph;
                 string ownText = ownPara != null ? ParagraphInlineToMarkdown(ownPara) : "";
                 var parts = ownText.Split('\n');
-                string prefix = ordered ? (number + ". ") : (bulletMarker + " ");
+                string prefix = ordered ? ((constantNumbering ? 1 : number) + ". ") : (bulletMarker + " ");
                 lines.Add(indent + prefix + parts[0]);
                 string contIndent = indent + new string(' ', prefix.Length);
                 for (int k = 1; k < parts.Length; k++) lines.Add(contIndent + parts[k]);
@@ -2679,15 +2682,37 @@ namespace mde
                     if (Regex.IsMatch(line, "^\\s*([*-]|\\d+\\.)\\s+"))
                     {
                         var listLines = new List<string>();
-                        while (i < lines.Length && (
-                            Regex.IsMatch(lines[i], "^\\s*([*-]|\\d+\\.)\\s+") ||
-                            (listLines.Count > 0 && !string.IsNullOrWhiteSpace(lines[i]) &&
-                             Regex.IsMatch(lines[i], "^\\s+\\S") &&
-                             !lines[i].TrimStart().StartsWith("|") &&
-                             !Regex.IsMatch(lines[i], "^\\s*#{1,6}\\s"))))
+                        while (i < lines.Length)
                         {
-                            listLines.Add(lines[i]);
-                            i++;
+                            if (Regex.IsMatch(lines[i], "^\\s*([*-]|\\d+\\.)\\s+"))
+                            {
+                                listLines.Add(lines[i]);
+                                i++;
+                                continue;
+                            }
+                            if (listLines.Count > 0 && !string.IsNullOrWhiteSpace(lines[i]) &&
+                                Regex.IsMatch(lines[i], "^\\s+\\S") &&
+                                !lines[i].TrimStart().StartsWith("|") &&
+                                !Regex.IsMatch(lines[i], "^\\s*#{1,6}\\s"))
+                            {
+                                listLines.Add(lines[i]);
+                                i++;
+                                continue;
+                            }
+                            if (string.IsNullOrWhiteSpace(lines[i]))
+                            {
+                                // A blank line only ends the list if nothing but more blank lines
+                                // and then a non-list line follows; if a list item follows (a
+                                // "loose list" in standard MarkDown), keep it as the same list.
+                                int j = i;
+                                while (j < lines.Length && string.IsNullOrWhiteSpace(lines[j])) j++;
+                                if (j < lines.Length && Regex.IsMatch(lines[j], "^\\s*([*-]|\\d+\\.)\\s+"))
+                                {
+                                    while (i < j) { listLines.Add(lines[i]); i++; }
+                                    continue;
+                                }
+                            }
+                            break;
                         }
                         var list = BuildNestedList(listLines);
                         doc.Blocks.Add(list);
@@ -2776,22 +2801,25 @@ namespace mde
             var rootList = new List { MarkerStyle = TextMarkerStyle.Disc };
             var stack = new List<(List list, int level)> { (rootList, 0) };
             bool rootMarkerSet = false;
+            var numbersByList = new Dictionary<List, List<int>>();
 
             foreach (var line in listLines)
             {
-                var m = Regex.Match(line, "^(\\s*)([*-]|\\d+\\.)\\s+(.*)$");
+                if (string.IsNullOrWhiteSpace(line)) continue; // spacing between items in a "loose" list
+
+                var m = Regex.Match(line, "^(\\s*)(?:([*-])|(\\d+)\\.)\\s+(.*)$");
                 if (m.Success)
                 {
                     int indent = m.Groups[1].Value.Length;
-                    string marker = m.Groups[2].Value;
-                    bool ordered = char.IsDigit(marker[0]);
+                    bool ordered = m.Groups[3].Success;
+                    string bulletMarker = ordered ? null : m.Groups[2].Value;
                     int level = Math.Max(0, (int)Math.Round(indent / 3.0));
-                    string text = m.Groups[3].Value;
+                    string text = m.Groups[4].Value;
 
                     if (!rootMarkerSet)
                     {
                         rootList.MarkerStyle = ordered ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc;
-                        rootList.Tag = ordered ? null : marker;
+                        rootList.Tag = ordered ? null : bulletMarker;
                         rootMarkerSet = true;
                     }
 
@@ -2808,12 +2836,22 @@ namespace mde
                             nestedList = new List
                             {
                                 MarkerStyle = ordered ? TextMarkerStyle.Decimal : TextMarkerStyle.Circle,
-                                Tag = ordered ? null : marker
+                                Tag = ordered ? null : bulletMarker
                             };
                             lastLi.Blocks.Add(nestedList);
                         }
                         stack.Add((nestedList, level));
                         top = stack[stack.Count - 1];
+                    }
+
+                    if (ordered)
+                    {
+                        if (!numbersByList.TryGetValue(top.list, out var nums))
+                        {
+                            nums = new List<int>();
+                            numbersByList[top.list] = nums;
+                        }
+                        nums.Add(int.Parse(m.Groups[3].Value));
                     }
 
                     var para = new Paragraph();
@@ -2834,6 +2872,16 @@ namespace mde
                     }
                 }
             }
+
+            // A list whose source repeated the same number for every item (e.g. "1." / "1." / "1.",
+            // a common MarkDown convention that lets renderers auto-number) keeps that style: mark it
+            // so ListToMarkdown always writes "1." instead of switching to sequential numbering.
+            foreach (var kv in numbersByList)
+            {
+                if (kv.Value.Count > 1 && kv.Value.Distinct().Count() == 1)
+                    kv.Key.Tag = "const";
+            }
+
             return rootList;
         }
 
@@ -2892,8 +2940,47 @@ namespace mde
             var para = caret.Paragraph;
             if (para == null || para.Tag is CodeBlockInfo) return false;
 
-            string textBefore = caret.GetTextInRun(LogicalDirection.Backward);
-            if (string.IsNullOrEmpty(textBefore)) return false;
+            // Walk backward one Run-segment at a time, remembering each segment's own text and the
+            // TextPointer at ITS start. This avoids ever needing to compute a position offset that
+            // spans more than one segment's own characters, which keeps this reliable regardless of
+            // how many separate Run objects make up the paragraph so far.
+            var segments = new List<(string text, TextPointer segStart)>();
+            TextPointer walker = caret;
+            int totalLen = 0;
+            int guard = 0;
+            while (walker != null && walker.CompareTo(para.ContentStart) > 0 && totalLen < 300 && guard < 50)
+            {
+                guard++;
+                string chunk = walker.GetTextInRun(LogicalDirection.Backward);
+                if (!string.IsNullOrEmpty(chunk))
+                {
+                    var segStart = walker.GetPositionAtOffset(-chunk.Length);
+                    if (segStart == null) break;
+                    segments.Insert(0, (chunk, segStart));
+                    totalLen += chunk.Length;
+                    walker = segStart;
+                }
+                else
+                {
+                    var prevContext = walker.GetNextContextPosition(LogicalDirection.Backward);
+                    if (prevContext == null || prevContext.CompareTo(walker) == 0) break;
+                    walker = prevContext;
+                }
+            }
+            if (segments.Count == 0) return false;
+
+            string textBefore = string.Concat(segments.Select(s => s.text));
+
+            if (textBefore.Length > 0 && "`*~".IndexOf(textBefore[textBefore.Length - 1]) >= 0)
+            {
+                try
+                {
+                    File.AppendAllText(Path.Combine(Path.GetTempPath(), "mde_inlineformat_debug.log"),
+                        "[" + DateTime.Now + "] segments=" + segments.Count +
+                        " textBefore=[" + textBefore.Replace("\n", "\\n") + "]\n");
+                }
+                catch { }
+            }
 
             string style;
             Match match = Regex.Match(textBefore, "`([^`]+)`$");
@@ -2916,15 +3003,25 @@ namespace mde
                 }
             }
 
-            ReplaceTextBeforeCaretWithStyledRun(caret, match.Length, match.Groups[1].Value, style);
+            TextPointer start = null;
+            int remaining = match.Index;
+            foreach (var seg in segments)
+            {
+                if (remaining <= seg.text.Length)
+                {
+                    start = seg.segStart.GetPositionAtOffset(remaining);
+                    break;
+                }
+                remaining -= seg.text.Length;
+            }
+            if (start == null) return false;
+
+            ReplaceTextBeforeCaretWithStyledRun(caret, start, match.Groups[1].Value, style);
             return true;
         }
 
-        private void ReplaceTextBeforeCaretWithStyledRun(TextPointer caret, int matchLength, string content, string style)
+        private void ReplaceTextBeforeCaretWithStyledRun(TextPointer caret, TextPointer start, string content, string style)
         {
-            var start = caret.GetPositionAtOffset(-matchLength);
-            if (start == null) return;
-
             isProgrammaticChange = true;
             try
             {

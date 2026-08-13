@@ -150,7 +150,12 @@
                             </Style>
                             <Style TargetType="List">
                                 <Setter Property="Margin" Value="0,0,0,14"/>
-                                <Setter Property="Padding" Value="24,0,0,0"/>
+                                <Setter Property="Padding" Value="32,0,0,0"/>
+                                <Style.Triggers>
+                                    <Trigger Property="MarkerStyle" Value="Decimal">
+                                        <Setter Property="Padding" Value="34,0,0,0"/>
+                                    </Trigger>
+                                </Style.Triggers>
                             </Style>
                             <Style TargetType="Table">
                                 <Setter Property="Margin" Value="0,0,0,14"/>
