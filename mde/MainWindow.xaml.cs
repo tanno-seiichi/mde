@@ -70,7 +70,7 @@ namespace mde
         private static readonly Brush CodeBlockBackground = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
 
         private static readonly Regex InlineImageRegex = new Regex(
-            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\))",
+            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\))|(`([^`\\n]+)`)|(\\*\\*([^*\\n]+)\\*\\*)|(~~([^~\\n]+)~~)",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         // Unique per open document/window, so simultaneously edited files never collide with each
@@ -204,9 +204,10 @@ namespace mde
             string text = new TextRange(para.ContentStart, para.ContentEnd).Text;
             text = text.TrimEnd('\r', '\n');
 
-            if (Regex.IsMatch(text, "^\\*[ \u00A0]$"))
+            var bulletMatch = Regex.Match(text, "^([*-])[ \u00A0]$");
+            if (bulletMatch.Success)
             {
-                ConvertParagraphToListItem(para);
+                ConvertParagraphToListItem(para, bulletMatch.Groups[1].Value);
                 return;
             }
             var m = Regex.Match(text, "^(#{1,6})[ \u00A0]$");
@@ -259,7 +260,7 @@ namespace mde
             }
         }
 
-        private void ConvertParagraphToListItem(Paragraph p)
+        private void ConvertParagraphToListItem(Paragraph p, string marker)
         {
             isProgrammaticChange = true;
             try
@@ -275,7 +276,7 @@ namespace mde
                 }
                 else
                 {
-                    var list = new List { MarkerStyle = TextMarkerStyle.Disc };
+                    var list = new List { MarkerStyle = TextMarkerStyle.Disc, Tag = marker };
                     list.ListItems.Add(newLi);
                     Editor.Document.Blocks.InsertBefore(p, list);
                     Editor.Document.Blocks.Remove(p);
@@ -677,7 +678,7 @@ namespace mde
                 List nestedList = prevLi.Blocks.Count > 1 ? prevLi.Blocks.LastBlock as List : null;
                 if (nestedList == null)
                 {
-                    nestedList = new List { MarkerStyle = TextMarkerStyle.Circle };
+                    nestedList = new List { MarkerStyle = TextMarkerStyle.Circle, Tag = (parentList.Tag as string) ?? "*" };
                     prevLi.Blocks.Add(nestedList);
                 }
                 parentList.ListItems.Remove(li);
@@ -711,7 +712,7 @@ namespace mde
 
                 if (after.Count > 0)
                 {
-                    List ownNested = new List { MarkerStyle = TextMarkerStyle.Circle };
+                    List ownNested = new List { MarkerStyle = TextMarkerStyle.Circle, Tag = (parentList.Tag as string) ?? "*" };
                     foreach (var a in after) ownNested.ListItems.Add(a);
                     li.Blocks.Add(ownNested);
                 }
@@ -830,7 +831,14 @@ namespace mde
             DeleteColumnMenuItem.Visibility = inTable ? Visibility.Visible : Visibility.Collapsed;
             CopyCodeBlockMenuItem.Visibility = inCodeBlock ? Visibility.Visible : Visibility.Collapsed;
             SaveImageMenuItem.Visibility = ctxImage != null ? Visibility.Visible : Visibility.Collapsed;
+            TextStyleMenuItem.Visibility = (!Editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
             ToggleModeMenuItem.Header = isSourceMode ? "MarkDownモードに切り替え" : "ソースモードに切り替え";
+        }
+
+        private void TextStyleItem_Click(object sender, RoutedEventArgs e)
+        {
+            string style = (string)((MenuItem)sender).Tag;
+            ApplyInlineStyle(style);
         }
 
         /// <summary>
@@ -2492,13 +2500,14 @@ namespace mde
         private string ListToMarkdown(List list, int level)
         {
             string indent = new string(' ', level * 3);
+            string marker = (list.Tag as string) ?? "*";
             var lines = new List<string>();
             foreach (ListItem li in list.ListItems)
             {
                 var ownPara = li.Blocks.FirstBlock as Paragraph;
                 string ownText = ownPara != null ? ParagraphInlineToMarkdown(ownPara) : "";
                 var parts = ownText.Split('\n');
-                lines.Add(indent + "* " + parts[0]);
+                lines.Add(indent + marker + " " + parts[0]);
                 for (int k = 1; k < parts.Length; k++) lines.Add(indent + "  " + parts[k]);
 
                 foreach (Block b in li.Blocks)
@@ -2554,7 +2563,12 @@ namespace mde
                 }
                 else if (inline is Run run)
                 {
-                    sb.Append(run.Text.Replace("\u200B", ""));
+                    string t = run.Text.Replace("\u200B", "");
+                    string tag = run.Tag as string;
+                    if (tag == "inline-code") sb.Append('`').Append(t).Append('`');
+                    else if (tag == "bold") sb.Append("**").Append(t).Append("**");
+                    else if (tag == "strikethrough") sb.Append("~~").Append(t).Append("~~");
+                    else sb.Append(t);
                 }
                 else if (inline is InlineUIContainer iuc && iuc.Child is Image img)
                 {
@@ -2642,11 +2656,11 @@ namespace mde
                         continue;
                     }
 
-                    if (Regex.IsMatch(line, "^\\s*\\*\\s+"))
+                    if (Regex.IsMatch(line, "^\\s*[*-]\\s+"))
                     {
                         var listLines = new List<string>();
                         while (i < lines.Length && (
-                            Regex.IsMatch(lines[i], "^\\s*\\*\\s+") ||
+                            Regex.IsMatch(lines[i], "^\\s*[*-]\\s+") ||
                             (listLines.Count > 0 && !string.IsNullOrWhiteSpace(lines[i]) &&
                              Regex.IsMatch(lines[i], "^\\s+\\S") &&
                              !lines[i].TrimStart().StartsWith("|") &&
@@ -2741,15 +2755,23 @@ namespace mde
         {
             var rootList = new List { MarkerStyle = TextMarkerStyle.Disc };
             var stack = new List<(List list, int level)> { (rootList, 0) };
+            bool rootMarkerSet = false;
 
             foreach (var line in listLines)
             {
-                var m = Regex.Match(line, "^(\\s*)\\*\\s+(.*)$");
+                var m = Regex.Match(line, "^(\\s*)([*-])\\s+(.*)$");
                 if (m.Success)
                 {
                     int indent = m.Groups[1].Value.Length;
+                    string marker = m.Groups[2].Value;
                     int level = Math.Max(0, (int)Math.Round(indent / 3.0));
-                    string text = m.Groups[2].Value;
+                    string text = m.Groups[3].Value;
+
+                    if (!rootMarkerSet)
+                    {
+                        rootList.Tag = marker;
+                        rootMarkerSet = true;
+                    }
 
                     while (stack.Count > 1 && stack[stack.Count - 1].level > level)
                         stack.RemoveAt(stack.Count - 1);
@@ -2761,7 +2783,7 @@ namespace mde
                         List nestedList = lastLi.Blocks.Count > 1 ? lastLi.Blocks.LastBlock as List : null;
                         if (nestedList == null)
                         {
-                            nestedList = new List { MarkerStyle = TextMarkerStyle.Circle };
+                            nestedList = new List { MarkerStyle = TextMarkerStyle.Circle, Tag = marker };
                             lastLi.Blocks.Add(nestedList);
                         }
                         stack.Add((nestedList, level));
@@ -2799,12 +2821,82 @@ namespace mde
 
                 if (m.Groups[1].Success)
                     p.Inlines.Add(new InlineUIContainer(BuildImageFromHtmlTag(m.Groups[1].Value)));
-                else
+                else if (m.Groups[2].Success)
                     p.Inlines.Add(new InlineUIContainer(BuildImageFromMarkdown(m.Groups[3].Value, m.Groups[4].Value)));
+                else if (m.Groups[5].Success)
+                    p.Inlines.Add(BuildInlineCodeRun(m.Groups[6].Value));
+                else if (m.Groups[7].Success)
+                    p.Inlines.Add(new Run(m.Groups[8].Value) { FontWeight = FontWeights.Bold, Tag = "bold" });
+                else if (m.Groups[9].Success)
+                    p.Inlines.Add(new Run(m.Groups[10].Value) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" });
 
                 lastIndex = m.Index + m.Length;
             }
             if (lastIndex < text.Length) p.Inlines.Add(new Run(text.Substring(lastIndex)));
+        }
+
+        /// <summary>Builds a styled Run for `inline code` spans (monospace font, subtle background).
+        /// Tag="inline-code" marks it so serialization can wrap it back in backticks.</summary>
+        private Run BuildInlineCodeRun(string code)
+        {
+            return new Run(code)
+            {
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 13.5,
+                Background = CodeBlockBackground,
+                Tag = "inline-code"
+            };
+        }
+
+        /// <summary>
+        /// Replaces the current selection with a freshly-built Run styled as "normal", "code",
+        /// "bold", or "strikethrough". Building a brand-new Run (rather than trying to mutate/reset
+        /// properties on whatever Run(s) the selection currently spans) avoids ever needing to
+        /// clear a property like FontFamily to null, which WPF rejects.
+        /// </summary>
+        private void ApplyInlineStyle(string style)
+        {
+            if (Editor.Selection == null || Editor.Selection.IsEmpty) return;
+            string text = Editor.Selection.Text;
+            if (string.IsNullOrEmpty(text)) return;
+
+            isProgrammaticChange = true;
+            try
+            {
+                TextPointer start = Editor.Selection.Start;
+                Editor.Selection.Text = ""; // remove the old (possibly differently-styled) content
+
+                Run newRun;
+                switch (style)
+                {
+                    case "bold":
+                        newRun = new Run(text, start) { FontWeight = FontWeights.Bold, Tag = "bold" };
+                        break;
+                    case "strikethrough":
+                        newRun = new Run(text, start) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
+                        break;
+                    case "code":
+                        newRun = new Run(text, start)
+                        {
+                            FontFamily = new FontFamily("Consolas"),
+                            FontSize = 13.5,
+                            Background = CodeBlockBackground,
+                            Tag = "inline-code"
+                        };
+                        break;
+                    default: // "normal"
+                        newRun = new Run(text, start);
+                        break;
+                }
+
+                Editor.Selection.Select(newRun.ContentStart, newRun.ContentEnd);
+                Editor.CaretPosition = newRun.ContentEnd;
+            }
+            finally
+            {
+                isProgrammaticChange = false;
+            }
+            RefreshOutline();
         }
 
         private Image BuildImageFromHtmlTag(string tagStr)

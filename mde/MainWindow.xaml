@@ -159,6 +159,13 @@
                         </RichTextBox.Resources>
                         <RichTextBox.ContextMenu>
                             <ContextMenu x:Name="EditorContextMenu">
+                                <MenuItem x:Name="TextStyleMenuItem" Header="文字装飾" Style="{StaticResource CtxMenuItem}"
+                                          Visibility="Collapsed">
+                                    <MenuItem Header="通常表記に戻す" Tag="normal" Click="TextStyleItem_Click"/>
+                                    <MenuItem Header="インラインコードにする" Tag="code" Click="TextStyleItem_Click"/>
+                                    <MenuItem Header="太字にする" Tag="bold" Click="TextStyleItem_Click"/>
+                                    <MenuItem Header="取り消し線にする" Tag="strikethrough" Click="TextStyleItem_Click"/>
+                                </MenuItem>
                                 <MenuItem x:Name="HeadingMenuItem" Header="見出し" Style="{StaticResource CtxMenuItem}">
                                     <MenuItem Header="本文（見出しなし）" Tag="0" Click="HeadingItem_Click"/>
                                     <MenuItem Header="# 見出し1" Tag="1" Click="HeadingItem_Click"/>
