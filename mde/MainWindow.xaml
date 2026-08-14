@@ -137,6 +137,7 @@
                                  TextChanged="Editor_TextChanged"
                                  PreviewKeyDown="Editor_PreviewKeyDown"
                                  PreviewMouseWheel="Editor_PreviewMouseWheel"
+                                 PreviewMouseLeftButtonDown="Editor_PreviewMouseLeftButtonDown"
                                  SizeChanged="Editor_SizeChanged"
                                  AllowDrop="True"
                                  PreviewDragEnter="Editor_DragEnter"
@@ -170,6 +171,14 @@
                                     <MenuItem Header="インラインコードにする" Tag="code" Click="TextStyleItem_Click"/>
                                     <MenuItem Header="太字にする" Tag="bold" Click="TextStyleItem_Click"/>
                                     <MenuItem Header="取り消し線にする" Tag="strikethrough" Click="TextStyleItem_Click"/>
+                                    <MenuItem Header="リンクにする…" Tag="link" Click="TextStyleItem_Click"/>
+                                </MenuItem>
+                                <MenuItem x:Name="LinkMenuItem" Header="リンク" Style="{StaticResource CtxMenuItem}"
+                                          Visibility="Collapsed">
+                                    <MenuItem Header="リンクを開く" Click="LinkOpen_Click"/>
+                                    <MenuItem Header="URLをコピー" Click="LinkCopyUrl_Click"/>
+                                    <MenuItem Header="リンクを編集…" Click="LinkEdit_Click"/>
+                                    <MenuItem Header="リンクを解除" Click="LinkRemove_Click"/>
                                 </MenuItem>
                                 <MenuItem x:Name="HeadingMenuItem" Header="見出し" Style="{StaticResource CtxMenuItem}">
                                     <MenuItem Header="本文（見出しなし）" Tag="0" Click="HeadingItem_Click"/>

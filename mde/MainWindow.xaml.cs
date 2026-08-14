@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -59,6 +60,7 @@ namespace mde
         private Paragraph ctxParagraph;
         private TableCell ctxCell;
         private Image ctxImage;
+        private Run ctxLinkRun;
 
         private double zoomLevel = 1.0;
 
@@ -68,9 +70,10 @@ namespace mde
         private static readonly Brush HeaderBackground = new SolidColorBrush(Color.FromRgb(0xE5, 0xEF, 0xEC));
         private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xE3, 0xDD, 0xCC));
         private static readonly Brush CodeBlockBackground = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
+        private static readonly Brush LinkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
 
         private static readonly Regex InlineImageRegex = new Regex(
-            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\))|(`([^`\\n]+)`)|(\\*\\*([^*\\n]+)\\*\\*)|(~~([^~\\n]+)~~)",
+            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\))|(`([^`]+)`)|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|((?<!!)\\[([^\\]]*)\\]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\))|(<(https?://[^\\s<>]+)>)",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         // Unique per open document/window, so simultaneously edited files never collide with each
@@ -113,6 +116,12 @@ namespace mde
         public class CodeBlockInfo
         {
             public string Language = "";
+        }
+
+        public class LinkInfo
+        {
+            public string Url;
+            public bool IsAutoLink; // true if loaded from <url> style rather than [text](url)
         }
 
         public class OutlineEntry
@@ -841,6 +850,8 @@ namespace mde
 
             var hit = VisualTreeHelper.HitTest(Editor, pos);
             ctxImage = FindVisualAncestorOrSelf<Image>(hit?.VisualHit);
+            ctxLinkRun = tp?.Parent as Run;
+            if (!(ctxLinkRun?.Tag is LinkInfo)) ctxLinkRun = null;
 
             bool inTable = ctxCell != null;
             bool inCodeBlock = ctxParagraph?.Tag is CodeBlockInfo;
@@ -855,13 +866,100 @@ namespace mde
             CopyCodeBlockMenuItem.Visibility = inCodeBlock ? Visibility.Visible : Visibility.Collapsed;
             SaveImageMenuItem.Visibility = ctxImage != null ? Visibility.Visible : Visibility.Collapsed;
             TextStyleMenuItem.Visibility = (!Editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
+            LinkMenuItem.Visibility = ctxLinkRun != null ? Visibility.Visible : Visibility.Collapsed;
             ToggleModeMenuItem.Header = isSourceMode ? "MarkDownモードに切り替え" : "ソースモードに切り替え";
         }
 
         private void TextStyleItem_Click(object sender, RoutedEventArgs e)
         {
             string style = (string)((MenuItem)sender).Tag;
+            if (style == "link")
+            {
+                if (Editor.Selection.IsEmpty) return;
+                var dlg = new LinkInputDialog { Owner = this };
+                if (dlg.ShowDialog() == true && !string.IsNullOrWhiteSpace(dlg.Url))
+                {
+                    ApplyLinkStyle(dlg.Url);
+                }
+                return;
+            }
             ApplyInlineStyle(style);
+        }
+
+        private void ApplyLinkStyle(string url)
+        {
+            if (Editor.Selection == null || Editor.Selection.IsEmpty) return;
+            string text = Editor.Selection.Text;
+            if (string.IsNullOrEmpty(text)) return;
+
+            isProgrammaticChange = true;
+            try
+            {
+                TextPointer start = Editor.Selection.Start;
+                Editor.Selection.Text = "";
+                var newRun = new Run(text, start)
+                {
+                    Foreground = LinkBrush,
+                    TextDecorations = TextDecorations.Underline,
+                    Tag = new LinkInfo { Url = url, IsAutoLink = false },
+                    ToolTip = url
+                };
+                Editor.Selection.Select(newRun.ContentStart, newRun.ContentEnd);
+                Editor.CaretPosition = newRun.ContentEnd;
+            }
+            finally
+            {
+                isProgrammaticChange = false;
+            }
+            RefreshOutline();
+        }
+
+        private void LinkOpen_Click(object sender, RoutedEventArgs e)
+        {
+            if (ctxLinkRun?.Tag is LinkInfo li) OpenUrl(li.Url);
+        }
+
+        private void LinkCopyUrl_Click(object sender, RoutedEventArgs e)
+        {
+            if (ctxLinkRun?.Tag is LinkInfo li)
+            {
+                try { Clipboard.SetText(li.Url); } catch { /* best effort */ }
+            }
+        }
+
+        private void LinkEdit_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(ctxLinkRun?.Tag is LinkInfo li)) return;
+            var dlg = new LinkInputDialog(li.Url) { Owner = this };
+            if (dlg.ShowDialog() == true && !string.IsNullOrWhiteSpace(dlg.Url))
+            {
+                InvalidateOriginalText(ctxLinkRun.ContentStart);
+                li.Url = dlg.Url;
+                li.IsAutoLink = false;
+                ctxLinkRun.ToolTip = dlg.Url;
+                currentFileIsDirty = true;
+                RefreshFolderTreeDirtyMarkers();
+            }
+        }
+
+        private void LinkRemove_Click(object sender, RoutedEventArgs e)
+        {
+            if (ctxLinkRun == null) return;
+            InvalidateOriginalText(ctxLinkRun.ContentStart);
+            isProgrammaticChange = true;
+            try
+            {
+                ctxLinkRun.Tag = null;
+                ctxLinkRun.ClearValue(TextElement.ForegroundProperty);
+                ctxLinkRun.ClearValue(Inline.TextDecorationsProperty);
+                ctxLinkRun.ToolTip = null;
+            }
+            finally
+            {
+                isProgrammaticChange = false;
+            }
+            currentFileIsDirty = true;
+            RefreshFolderTreeDirtyMarkers();
         }
 
         /// <summary>
@@ -2462,6 +2560,33 @@ namespace mde
         private void ZoomOut_Click(object sender, RoutedEventArgs e) => SetZoom(zoomLevel - 0.1);
         private void ZoomReset_Click(object sender, RoutedEventArgs e) => SetZoom(1.0);
 
+        private void Editor_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (Keyboard.Modifiers != ModifierKeys.Control) return;
+
+            var pos = Editor.GetPositionFromPoint(e.GetPosition(Editor), true);
+            if (pos == null) return;
+
+            if (pos.Parent is Run run && run.Tag is LinkInfo linkInfo && !string.IsNullOrWhiteSpace(linkInfo.Url))
+            {
+                OpenUrl(linkInfo.Url);
+                e.Handled = true;
+            }
+        }
+
+        private void OpenUrl(string url)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("リンクを開けませんでした: " + ex.Message, "リンクを開く",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void Editor_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
             if (Keyboard.Modifiers == ModifierKeys.Control)
@@ -2578,20 +2703,51 @@ namespace mde
 
         private void AppendInlinesMarkdown(InlineCollection inlines, StringBuilder sb)
         {
-            foreach (Inline inline in inlines)
+            var inlineList = inlines.Cast<Inline>().ToList();
+            int i = 0;
+            while (i < inlineList.Count)
             {
+                Inline inline = inlineList[i];
+
+                if (inline is Run run && run.Tag is string tag &&
+                    (tag == "bold" || tag == "strikethrough" || tag == "inline-code"))
+                {
+                    var spanText = new StringBuilder();
+                    spanText.Append(run.Text.Replace("\u200B", ""));
+                    int j = i + 1;
+                    while (j + 1 < inlineList.Count &&
+                           inlineList[j] is LineBreak &&
+                           inlineList[j + 1] is Run nextRun &&
+                           (nextRun.Tag as string) == tag)
+                    {
+                        spanText.Append('\n').Append(nextRun.Text.Replace("\u200B", ""));
+                        j += 2;
+                    }
+
+                    string content = spanText.ToString();
+                    if (tag == "inline-code") sb.Append('`').Append(content).Append('`');
+                    else if (tag == "bold") sb.Append("**").Append(content).Append("**");
+                    else sb.Append("~~").Append(content).Append("~~");
+
+                    i = j;
+                    continue;
+                }
+
                 if (inline is LineBreak)
                 {
                     sb.Append('\n');
                 }
-                else if (inline is Run run)
+                else if (inline is Run linkRun && linkRun.Tag is LinkInfo linkInfo)
                 {
-                    string t = run.Text.Replace("\u200B", "");
-                    string tag = run.Tag as string;
-                    if (tag == "inline-code") sb.Append('`').Append(t).Append('`');
-                    else if (tag == "bold") sb.Append("**").Append(t).Append("**");
-                    else if (tag == "strikethrough") sb.Append("~~").Append(t).Append("~~");
-                    else sb.Append(t);
+                    string content = linkRun.Text.Replace("\u200B", "");
+                    if (linkInfo.IsAutoLink && content == linkInfo.Url)
+                        sb.Append('<').Append(linkInfo.Url).Append('>');
+                    else
+                        sb.Append('[').Append(content).Append("](").Append(linkInfo.Url).Append(')');
+                }
+                else if (inline is Run plainRun)
+                {
+                    sb.Append(plainRun.Text.Replace("\u200B", ""));
                 }
                 else if (inline is InlineUIContainer iuc && iuc.Child is Image img)
                 {
@@ -2601,6 +2757,7 @@ namespace mde
                 {
                     AppendInlinesMarkdown(span.Inlines, sb);
                 }
+                i++;
             }
         }
 
@@ -2803,6 +2960,9 @@ namespace mde
             bool rootMarkerSet = false;
             var numbersByList = new Dictionary<List, List<int>>();
 
+            Paragraph pendingPara = null;
+            var pendingTextLines = new List<string>();
+
             foreach (var line in listLines)
             {
                 if (string.IsNullOrWhiteSpace(line)) continue; // spacing between items in a "loose" list
@@ -2810,6 +2970,9 @@ namespace mde
                 var m = Regex.Match(line, "^(\\s*)(?:([*-])|(\\d+)\\.)\\s+(.*)$");
                 if (m.Success)
                 {
+                    if (pendingPara != null)
+                        AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
+
                     int indent = m.Groups[1].Value.Length;
                     bool ordered = m.Groups[3].Success;
                     string bulletMarker = ordered ? null : m.Groups[2].Value;
@@ -2855,23 +3018,20 @@ namespace mde
                     }
 
                     var para = new Paragraph();
-                    AppendInlineMarkdownToParagraph(para, text, false);
                     top.list.ListItems.Add(new ListItem(para));
+
+                    pendingPara = para;
+                    pendingTextLines = new List<string> { text };
                 }
                 else
                 {
-                    var top = stack[stack.Count - 1];
-                    if (top.list.ListItems.Count > 0)
-                    {
-                        var lastLi = top.list.ListItems.Cast<ListItem>().Last();
-                        if (lastLi.Blocks.FirstBlock is Paragraph lastPara)
-                        {
-                            lastPara.Inlines.Add(new LineBreak());
-                            AppendInlineMarkdownToParagraph(lastPara, line.Trim(), true);
-                        }
-                    }
+                    if (pendingPara != null)
+                        pendingTextLines.Add(line.Trim());
                 }
             }
+
+            if (pendingPara != null)
+                AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
 
             // A list whose source repeated the same number for every item (e.g. "1." / "1." / "1.",
             // a common MarkDown convention that lets renderers auto-number) keeps that style: mark it
@@ -2891,28 +3051,83 @@ namespace mde
             int lastIndex = 0;
             foreach (Match m in InlineImageRegex.Matches(text))
             {
-                if (m.Index > lastIndex) p.Inlines.Add(new Run(text.Substring(lastIndex, m.Index - lastIndex)));
+                if (m.Index > lastIndex) AppendPlainTextWithLineBreaks(p, text.Substring(lastIndex, m.Index - lastIndex));
 
                 if (m.Groups[1].Success)
                     p.Inlines.Add(new InlineUIContainer(BuildImageFromHtmlTag(m.Groups[1].Value)));
                 else if (m.Groups[2].Success)
                     p.Inlines.Add(new InlineUIContainer(BuildImageFromMarkdown(m.Groups[3].Value, m.Groups[4].Value)));
                 else if (m.Groups[5].Success)
-                    p.Inlines.Add(BuildInlineCodeRun(m.Groups[6].Value));
+                    AppendStyledRunsWithLineBreaks(p, m.Groups[6].Value, "code");
                 else if (m.Groups[7].Success)
-                    p.Inlines.Add(new Run(m.Groups[8].Value) { FontWeight = FontWeights.Bold, Tag = "bold" });
+                    AppendStyledRunsWithLineBreaks(p, m.Groups[8].Value, "bold");
                 else if (m.Groups[9].Success)
-                    p.Inlines.Add(new Run(m.Groups[10].Value) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" });
+                    AppendStyledRunsWithLineBreaks(p, m.Groups[10].Value, "strikethrough");
+                else if (m.Groups[11].Success)
+                    p.Inlines.Add(BuildLinkRun(m.Groups[12].Value, m.Groups[13].Value, false));
+                else if (m.Groups[14].Success)
+                    p.Inlines.Add(BuildLinkRun(m.Groups[15].Value, m.Groups[15].Value, true));
 
                 lastIndex = m.Index + m.Length;
             }
-            if (lastIndex < text.Length) p.Inlines.Add(new Run(text.Substring(lastIndex)));
+            if (lastIndex < text.Length) AppendPlainTextWithLineBreaks(p, text.Substring(lastIndex));
+        }
+
+        private Run BuildLinkRun(string linkText, string url, bool isAutoLink)
+        {
+            return new Run(linkText)
+            {
+                Foreground = LinkBrush,
+                TextDecorations = TextDecorations.Underline,
+                Tag = new LinkInfo { Url = url, IsAutoLink = isAutoLink },
+                ToolTip = url
+            };
+        }
+
+        /// <summary>Appends plain text to a paragraph, converting any embedded "\n" into an actual
+        /// LineBreak inline (a Run object can't itself render a literal newline as a line break).</summary>
+        private void AppendPlainTextWithLineBreaks(Paragraph p, string text)
+        {
+            var segments = text.Split('\n');
+            for (int i = 0; i < segments.Length; i++)
+            {
+                if (i > 0) p.Inlines.Add(new LineBreak());
+                if (segments[i].Length > 0) p.Inlines.Add(new Run(segments[i]));
+            }
+        }
+
+        /// <summary>Same idea as AppendPlainTextWithLineBreaks, but for a matched `code`/**bold**/
+        /// ~~strikethrough~~ span whose content itself spans multiple lines - each line gets its own
+        /// styled Run, joined by real LineBreak inlines.</summary>
+        private void AppendStyledRunsWithLineBreaks(Paragraph p, string content, string style)
+        {
+            var segments = content.Split('\n');
+            for (int i = 0; i < segments.Length; i++)
+            {
+                if (i > 0) p.Inlines.Add(new LineBreak());
+                Run run;
+                if (style == "bold")
+                    run = new Run(segments[i]) { FontWeight = FontWeights.Bold, Tag = "bold" };
+                else if (style == "strikethrough")
+                    run = new Run(segments[i]) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
+                else
+                    run = new Run(segments[i])
+                    {
+                        FontFamily = new FontFamily("Consolas"),
+                        FontSize = 13.5,
+                        Background = CodeBlockBackground,
+                        Tag = "inline-code"
+                    };
+                p.Inlines.Add(run);
+            }
         }
 
         /// <summary>Builds a styled Run for `inline code` spans (monospace font, subtle background).
         /// Tag="inline-code" marks it so serialization can wrap it back in backticks.</summary>
         private Run BuildInlineCodeRun(string code)
         {
+            // Kept for compatibility with any external reference; current code paths use
+            // AppendStyledRunsWithLineBreaks instead, which also handles multi-line spans.
             return new Run(code)
             {
                 FontFamily = new FontFamily("Consolas"),
@@ -2970,38 +3185,38 @@ namespace mde
             if (segments.Count == 0) return false;
 
             string textBefore = string.Concat(segments.Select(s => s.text));
+            if (textBefore.Length == 0) return false;
 
-            if (textBefore.Length > 0 && "`*~".IndexOf(textBefore[textBefore.Length - 1]) >= 0)
-            {
-                try
-                {
-                    File.AppendAllText(Path.Combine(Path.GetTempPath(), "mde_inlineformat_debug.log"),
-                        "[" + DateTime.Now + "] segments=" + segments.Count +
-                        " textBefore=[" + textBefore.Replace("\n", "\\n") + "]\n");
-                }
-                catch { }
-            }
+            char lastChar = textBefore[textBefore.Length - 1];
+            string style = null;
+            Match match = null;
+            string linkUrl = null;
 
-            string style;
-            Match match = Regex.Match(textBefore, "`([^`]+)`$");
-            if (match.Success)
+            if (lastChar == ')')
             {
-                style = "code";
-            }
-            else
-            {
-                match = Regex.Match(textBefore, "\\*\\*([^*]+)\\*\\*$");
+                match = Regex.Match(textBefore, "(?<!!)\\[([^\\]]*)\\]\\(([^)\\s]+)\\)$");
                 if (match.Success)
                 {
-                    style = "bold";
-                }
-                else
-                {
-                    match = Regex.Match(textBefore, "~~([^~]+)~~$");
-                    if (match.Success) style = "strikethrough";
-                    else return false;
+                    linkUrl = match.Groups[2].Value;
+                    style = "link";
                 }
             }
+            if (style == null && lastChar == '`')
+            {
+                match = Regex.Match(textBefore, "`([^`]+)`$");
+                if (match.Success) style = "code";
+            }
+            if (style == null && lastChar == '*')
+            {
+                match = Regex.Match(textBefore, "\\*\\*([^*]+)\\*\\*$");
+                if (match.Success) style = "bold";
+            }
+            if (style == null && lastChar == '~')
+            {
+                match = Regex.Match(textBefore, "~~([^~]+)~~$");
+                if (match.Success) style = "strikethrough";
+            }
+            if (style == null) return false;
 
             TextPointer start = null;
             int remaining = match.Index;
@@ -3016,8 +3231,33 @@ namespace mde
             }
             if (start == null) return false;
 
-            ReplaceTextBeforeCaretWithStyledRun(caret, start, match.Groups[1].Value, style);
+            if (style == "link")
+                ReplaceTextBeforeCaretWithLinkRun(caret, start, match.Groups[1].Value, linkUrl);
+            else
+                ReplaceTextBeforeCaretWithStyledRun(caret, start, match.Groups[1].Value, style);
             return true;
+        }
+
+        private void ReplaceTextBeforeCaretWithLinkRun(TextPointer caret, TextPointer start, string linkText, string url)
+        {
+            isProgrammaticChange = true;
+            try
+            {
+                new TextRange(start, caret).Text = "";
+                var newRun = new Run(linkText, start)
+                {
+                    Foreground = LinkBrush,
+                    TextDecorations = TextDecorations.Underline,
+                    Tag = new LinkInfo { Url = url, IsAutoLink = false },
+                    ToolTip = url
+                };
+                var trailingRun = new Run("\u200B", newRun.ContentEnd);
+                Editor.CaretPosition = trailingRun.ContentEnd;
+            }
+            finally
+            {
+                isProgrammaticChange = false;
+            }
         }
 
         private void ReplaceTextBeforeCaretWithStyledRun(TextPointer caret, TextPointer start, string content, string style)
