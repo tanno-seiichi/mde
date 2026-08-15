@@ -4,7 +4,8 @@
         Title="mde"
         Height="860" Width="1240"
         FontFamily="Segoe UI, Yu Gothic UI"
-        Background="{StaticResource PaperBrush}">
+        Background="{StaticResource PaperBrush}"
+        PreviewKeyDown="MainWindow_PreviewKeyDown">
 
     <Window.Resources>
         <Style TargetType="MenuItem" x:Key="CtxMenuItem">

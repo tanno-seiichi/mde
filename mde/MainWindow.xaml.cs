@@ -71,6 +71,10 @@ namespace mde
         /// <summary>起動時に読み込んだ、前回終了時のウィンドウ状態設定。</summary>
         private AppSettings savedSettings;
 
+        /// <summary>現在開いている検索と置換ウィンドウ（Ctrl+Fなどで、同時に2つ開かず既存の
+        /// ものを前面に出すために使う）。開いていなければ null。</summary>
+        private FindReplaceWindow openFindReplaceWindow;
+
         // フォルダ/アウトラインペインの表示・非表示状態
         private double lastFolderColumnWidth = 190;
         private double lastOutlineColumnWidth = 210;
@@ -146,7 +150,11 @@ namespace mde
             FolderTree.ItemsSource = folderTreeManager.Roots;
             DataObject.AddCopyingHandler(Editor, tableEditor.HandleCopying);
             DataObject.AddPastingHandler(Editor, tableEditor.HandlePasting);
-            LoadIntroContent();
+
+            if (!string.IsNullOrEmpty(savedSettings.LastFilePath) && File.Exists(savedSettings.LastFilePath))
+                LoadFile(savedSettings.LastFilePath);
+            else
+                LoadIntroContent();
 
             ApplyFolderPaneVisibility();
             ApplyOutlinePaneVisibility();
@@ -180,7 +188,8 @@ namespace mde
                 WindowTop = bounds.Y,
                 FolderPaneVisible = folderPaneVisible,
                 OutlinePaneVisible = outlinePaneVisible,
-                ZoomLevel = zoomLevel
+                ZoomLevel = zoomLevel,
+                LastFilePath = currentFilePath
             };
             settings.Save();
         }
@@ -1085,8 +1094,31 @@ namespace mde
 
         private void FindReplaceBtn_Click(object sender, RoutedEventArgs e)
         {
-            var win = new FindReplaceWindow(this) { Owner = this };
-            win.Show();
+            OpenFindReplaceWindow();
+        }
+
+        /// <summary>ウィンドウ全体でCtrl+Fを検索と置換ダイアログのショートカットとして扱う。</summary>
+        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                e.Handled = true;
+                OpenFindReplaceWindow();
+            }
+        }
+
+        /// <summary>検索と置換ウィンドウを開く（すでに開いていれば、そちらを前面に出す）。</summary>
+        private void OpenFindReplaceWindow()
+        {
+            if (openFindReplaceWindow != null)
+            {
+                openFindReplaceWindow.Activate();
+                openFindReplaceWindow.Focus();
+                return;
+            }
+            openFindReplaceWindow = new FindReplaceWindow(this) { Owner = this };
+            openFindReplaceWindow.Closed += (s, e) => openFindReplaceWindow = null;
+            openFindReplaceWindow.Show();
         }
 
         /// <summary>「バージョン情報」ボタン。アプリ名とバージョン番号を表示する。</summary>

@@ -621,5 +621,17 @@ namespace mde
                     ? "（" + sessionFilesChanged + " 個のファイル、保存するまでファイルには反映されません）。"
                     : "（現在のファイルに直接反映されました。保存するまでファイルには書き出されません）。");
         }
+
+        /// <summary>
+        /// 「置換後の文字列」エキスパンダーの開閉に合わせて、置換系のボタン（1件ずつ置換…・
+        /// すべて置換）の表示/非表示を切り替える。初期状態（閉じている）では検索系の
+        /// ボタンだけを表示し、開くと置換操作もできるようになる。
+        /// </summary>
+        private void ReplaceExpander_Toggled(object sender, RoutedEventArgs e)
+        {
+            var visibility = ReplaceExpander.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
+            StepReplaceButton.Visibility = visibility;
+            ReplaceAllButton.Visibility = visibility;
+        }
     }
 }
