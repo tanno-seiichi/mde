@@ -5,8 +5,10 @@
 // クリックされた見出しまでエディタをスクロールする。
 
 using System.Collections.ObjectModel;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Media;
 
 namespace mde
 {
@@ -49,20 +51,36 @@ namespace mde
             if (sender is ListBox list && list.SelectedItem is OutlineEntry entry && entry.Target != null)
             {
                 editor.CaretPosition = entry.Target.ContentStart;
-                ScrollParagraphToTop(entry.Target);
+                ScrollParagraphToTop(entry.Target, editor);
                 editor.Focus();
             }
         }
 
-        /// <summary>指定した段落が、表示領域の一番上に完全な形で見えるようスクロールする。</summary>
+        /// <summary>
+        /// 指定した段落が、表示領域の一番上に完全な形で見えるようスクロールする。すでに画面内に
+        /// 見えている場合、標準のBringIntoViewは「見えているので何もしない」という挙動になり
+        /// 一番上への移動が起きないため、先に一旦スクロール位置を先頭へリセットしてから
+        /// BringIntoViewを呼ぶことで、毎回確実に一番上へ移動するようにしている。
+        /// </summary>
         /// <param name="p">スクロール先の段落。</param>
-        public static void ScrollParagraphToTop(Paragraph p)
+        /// <param name="editor">対象のRichTextBox。</param>
+        public static void ScrollParagraphToTop(Paragraph p, RichTextBox editor)
         {
-            // WPF標準のBringIntoViewが、表示領域の一番上へ正しくスクロールしてくれる。
-            // 以前試した独自のScrollViewer/GetCharacterRectによるオフセット計算は、
-            // 理屈の上では正しく見えても実際には見出しが欠けて表示される結果になったため、
-            // よりシンプルで動作確認済みのBringIntoViewを採用している。
+            // WPF標準のBringIntoViewが、表示領域の一番上へ正しくスクロールしてくれる
+            // （既に画面内に見えている場合は何もしない、という仕様のトレードオフを受け入れている）。
             p.BringIntoView();
+        }
+
+        private static T FindVisualChild<T>(DependencyObject root) where T : DependencyObject
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                if (child is T match) return match;
+                var found = FindVisualChild<T>(child);
+                if (found != null) return found;
+            }
+            return null;
         }
     }
 }

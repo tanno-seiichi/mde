@@ -29,6 +29,16 @@ namespace mde
     }
 
     /// <summary>
+    /// カスタムジャンプ先（&lt;a id="mytag"&gt;&lt;/a&gt; で作られる、見出し以外の任意の場所への
+    /// ジャンプ先マーカー）の、目印用の空のRunのTagに設定するメタデータ。
+    /// </summary>
+    public class AnchorInfo
+    {
+        /// <summary>アンカーのid（[text](#id) からのジャンプ先として参照される）。</summary>
+        public string Id;
+    }
+
+    /// <summary>
     /// コードブロックの段落（Paragraph）のTagに設定するメタデータ。言語タグを覚えておく。
     /// </summary>
     public class CodeBlockInfo

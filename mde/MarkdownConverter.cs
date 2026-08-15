@@ -33,7 +33,7 @@ namespace mde
         /// &lt;自動リンク&gt; を検出する正規表現。
         /// </summary>
         private static readonly Regex InlineContentRegex = new Regex(
-            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\))|(`([^`]+)`)|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|((?<!!)\\[([^\\]]*)\\]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\))|(<(https?://[^\\s<>]+)>)",
+            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(`([^`]+)`)|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         private readonly OriginalTextTracker originalTextTracker;
@@ -212,6 +212,14 @@ namespace mde
                         sb.Append('<').Append(linkInfo.Url).Append('>');
                     else
                         sb.Append('[').Append(content).Append("](").Append(linkInfo.Url).Append(')');
+                }
+                else if (inline is Run anchorRun && anchorRun.Tag is AnchorInfo anchorInfo)
+                {
+                    sb.Append("<a id=\"").Append(anchorInfo.Id).Append("\"></a>");
+                }
+                else if (inline is Run escapedRun && (escapedRun.Tag as string) == "escaped")
+                {
+                    sb.Append('\\').Append(escapedRun.Text);
                 }
                 else if (inline is Run plainRun)
                 {
@@ -524,9 +532,108 @@ namespace mde
         /// <param name="text">解析対象のテキスト（項目の1行目＋継続行を結合した、
         /// 改行を含む複数行テキストの場合もある）。</param>
         /// <param name="append">falseなら、追加する前に段落の既存Inlinesをクリアする。</param>
+        // \ に続く1文字をエスケープする際、正規表現の特殊文字マッチングから守るために一時的に
+        // 使うプレースホルダ文字（Unicode私用領域）。マッチング後、実際の文字に戻す。
+        private static readonly Dictionary<char, char> EscapePlaceholders = new Dictionary<char, char>
+        {
+            ['*'] = '\uE001',
+            ['~'] = '\uE002',
+            ['`'] = '\uE003',
+            ['\\'] = '\uE004',
+            ['['] = '\uE005',
+            [']'] = '\uE006',
+            ['('] = '\uE007',
+            [')'] = '\uE008',
+            ['<'] = '\uE009',
+            ['>'] = '\uE00A',
+        };
+        private static readonly Dictionary<char, char> PlaceholderToChar =
+            EscapePlaceholders.ToDictionary(kv => kv.Value, kv => kv.Key);
+
+        /// <summary>
+        /// エスケープ記法（\ + 1文字）を解決する。\の直後の1文字を、以降の**/~~/`/[]などの
+        /// パターンマッチングに巻き込まれないよう一時的なプレースホルダ文字に置き換える
+        /// （実際の文字への復元はRun生成時に行う）。
+        /// ・\が2つ以上連続する場合（例: \\\\）は、1つ目の\だけが「エスケープする側」として
+        ///   消費され、2つ目以降の\はすべてそのまま表示される（さらなるエスケープ処理はしない）。
+        /// ・[リンク文字列](URL) のリンク文字列（[]の中）では、\はエスケープ文字として扱わず
+        ///   そのまま表示する。
+        /// </summary>
+        /// <param name="text">1行分の生テキスト。</param>
+        /// <returns>エスケープ処理を適用した後のテキスト（プレースホルダ文字を含む）。</returns>
+        private string PreprocessEscapes(string text)
+        {
+            if (text.IndexOf('\\') < 0) return text;
+
+            // リンク/ファイルリンクの [表示文字] 部分は、エスケープ処理の対象外とする範囲として
+            // 先に洗い出しておく。
+            var exemptRanges = new List<(int start, int end)>();
+            foreach (Match m in Regex.Matches(text, "(?<!!)\\[([^\\]]*)\\]\\((?:[^()]|\\([^()]*\\))+\\)"))
+            {
+                var g = m.Groups[1];
+                exemptRanges.Add((g.Index, g.Index + g.Length));
+            }
+            bool IsExempt(int idx)
+            {
+                foreach (var (s, e) in exemptRanges)
+                    if (idx >= s && idx < e) return true;
+                return false;
+            }
+
+            var sb = new StringBuilder();
+            int i = 0;
+            while (i < text.Length)
+            {
+                if (text[i] != '\\') { sb.Append(text[i]); i++; continue; }
+
+                int runStart = i;
+                int runLen = 0;
+                while (i < text.Length && text[i] == '\\') { runLen++; i++; }
+
+                if (IsExempt(runStart))
+                {
+                    for (int k = 0; k < runLen; k++) sb.Append('\\');
+                    continue;
+                }
+
+                if (runLen == 1)
+                {
+                    if (i < text.Length)
+                    {
+                        char next = text[i];
+                        sb.Append(EscapePlaceholders.TryGetValue(next, out char ph) ? ph : next);
+                        i++;
+                    }
+                    else
+                    {
+                        sb.Append('\\'); // 行末の孤立した\は、エスケープ対象がないのでそのまま表示
+                    }
+                }
+                else
+                {
+                    // 2つ以上連続する場合：1つ目が2つ目を「エスケープ」して消費し（結果として
+                    // \が1つ分表示される）、3つ目以降はさらなるエスケープ処理をせずそのまま表示する。
+                    sb.Append(EscapePlaceholders['\\']);
+                    for (int k = 0; k < runLen - 2; k++) sb.Append('\\');
+                }
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>エスケープ処理で使ったプレースホルダ文字を、実際の文字へ戻す。</summary>
+        private string RestorePlaceholders(string text)
+        {
+            if (text.Length == 0) return text;
+            var sb = new StringBuilder(text.Length);
+            foreach (char c in text)
+                sb.Append(PlaceholderToChar.TryGetValue(c, out char real) ? real : c);
+            return sb.ToString();
+        }
+
         public void AppendInlineMarkdownToParagraph(Paragraph p, string text, bool append)
         {
             if (!append) p.Inlines.Clear();
+            text = PreprocessEscapes(text);
             int lastIndex = 0;
             foreach (Match m in InlineContentRegex.Matches(text))
             {
@@ -543,9 +650,11 @@ namespace mde
                 else if (m.Groups[9].Success)
                     AppendStyledRunsWithLineBreaks(p, m.Groups[10].Value, "strikethrough");
                 else if (m.Groups[11].Success)
-                    p.Inlines.Add(BuildLinkRun(m.Groups[12].Value, m.Groups[13].Value, false));
+                    p.Inlines.Add(BuildLinkRun(RestorePlaceholders(m.Groups[12].Value), RestorePlaceholders(m.Groups[13].Value), false));
                 else if (m.Groups[14].Success)
-                    p.Inlines.Add(BuildLinkRun(m.Groups[15].Value, m.Groups[15].Value, true));
+                    p.Inlines.Add(BuildLinkRun(RestorePlaceholders(m.Groups[15].Value), RestorePlaceholders(m.Groups[15].Value), true));
+                else if (m.Groups[16].Success)
+                    p.Inlines.Add(new Run("") { Tag = new AnchorInfo { Id = m.Groups[17].Value } });
 
                 lastIndex = m.Index + m.Length;
             }
@@ -568,15 +677,38 @@ namespace mde
         }
 
         /// <summary>プレーンテキストを段落へ追加する。埋め込まれた "\n" は実際のLineBreakへ
-        /// 変換する（Run単体では改行文字を改行として描画できないため）。</summary>
+        /// 変換する（Run単体では改行文字を改行として描画できないため）。エスケープ処理で
+        /// 実際の文字に戻された部分は、保存時に再び \ を付けて書き戻せるよう
+        /// Tag="escaped" を付けた専用のRunに分けておく。</summary>
         public void AppendPlainTextWithLineBreaks(Paragraph p, string text)
         {
             var segments = text.Split('\n');
             for (int i = 0; i < segments.Length; i++)
             {
                 if (i > 0) p.Inlines.Add(new LineBreak());
-                if (segments[i].Length > 0) p.Inlines.Add(new Run(segments[i]));
+                AppendPlainSegmentWithEscapeTags(p, segments[i]);
             }
+        }
+
+        /// <summary>1行分（改行を含まない）のプレーンテキストを、エスケープされた文字ごとに
+        /// Runを分けながら段落へ追加する。</summary>
+        private void AppendPlainSegmentWithEscapeTags(Paragraph p, string segment)
+        {
+            if (segment.Length == 0) return;
+            var plain = new StringBuilder();
+            foreach (char c in segment)
+            {
+                if (PlaceholderToChar.TryGetValue(c, out char real))
+                {
+                    if (plain.Length > 0) { p.Inlines.Add(new Run(plain.ToString())); plain.Clear(); }
+                    p.Inlines.Add(new Run(real.ToString()) { Tag = "escaped" });
+                }
+                else
+                {
+                    plain.Append(c);
+                }
+            }
+            if (plain.Length > 0) p.Inlines.Add(new Run(plain.ToString()));
         }
 
         /// <summary>
@@ -589,13 +721,14 @@ namespace mde
             for (int i = 0; i < segments.Length; i++)
             {
                 if (i > 0) p.Inlines.Add(new LineBreak());
+                string segText = RestorePlaceholders(segments[i]);
                 Run run;
                 if (style == "bold")
-                    run = new Run(segments[i]) { FontWeight = FontWeights.Bold, Tag = "bold" };
+                    run = new Run(segText) { FontWeight = FontWeights.Bold, Tag = "bold" };
                 else if (style == "strikethrough")
-                    run = new Run(segments[i]) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
+                    run = new Run(segText) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
                 else
-                    run = new Run(segments[i])
+                    run = new Run(segText)
                     {
                         FontFamily = new FontFamily("Consolas"),
                         FontSize = 13.5,

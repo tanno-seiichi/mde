@@ -64,6 +64,9 @@ namespace mde
         /// ドラッグ挿入した画像のファイル名が衝突しないようにするため）。</summary>
         private readonly string instanceTempId = Guid.NewGuid().ToString("N");
 
+        /// <summary>起動時に読み込んだ、前回終了時のウィンドウ状態設定。</summary>
+        private AppSettings savedSettings;
+
         // フォルダ/アウトラインペインの表示・非表示状態
         private double lastFolderColumnWidth = 190;
         private double lastOutlineColumnWidth = 210;
@@ -96,6 +99,19 @@ namespace mde
         {
             InitializeComponent();
 
+            savedSettings = AppSettings.Load();
+            if (!double.IsNaN(savedSettings.WindowLeft) && !double.IsNaN(savedSettings.WindowTop))
+            {
+                this.WindowStartupLocation = WindowStartupLocation.Manual;
+                this.Left = savedSettings.WindowLeft;
+                this.Top = savedSettings.WindowTop;
+            }
+            this.Width = savedSettings.WindowWidth;
+            this.Height = savedSettings.WindowHeight;
+            zoomLevel = savedSettings.ZoomLevel;
+            folderPaneVisible = savedSettings.FolderPaneVisible;
+            outlinePaneVisible = savedSettings.OutlinePaneVisible;
+
             originalTextTracker = new OriginalTextTracker(Editor);
             lineEndingTracker = new LineEndingTracker(PathsReferToSameFile);
             outlineManager = new OutlineManager(Editor);
@@ -108,15 +124,16 @@ namespace mde
             tableEditor = new TableEditor(
                 Editor, originalTextTracker, MarkDirty, RunAsProgrammaticChange, () => isSourceMode,
                 outlineManager.Refresh, InsertPlainTextWithLineBreaksForCodeBlock);
-            inlineStyleEditor = new InlineStyleEditor(
-                Editor, originalTextTracker, RunAsProgrammaticChange, MarkDirty, outlineManager.Refresh,
-                markdownConverter.BlockToMarkdown);
             folderTreeManager = new FolderTreeManager(
                 LoadFile, () => currentFilePath, () => currentFileIsDirty,
                 () => pendingFileEdits.Keys, PathsReferToSameFile);
+            inlineStyleEditor = new InlineStyleEditor(
+                Editor, originalTextTracker, RunAsProgrammaticChange, MarkDirty, outlineManager.Refresh,
+                markdownConverter.BlockToMarkdown, () => currentFileDirectory, LoadFile,
+                folderTreeManager.IsWithinLoadedFolder, OpenFileInNewWindow);
             searchReplaceService = new SearchReplaceService(
                 Editor, SourceEditor, markdownConverter, originalTextTracker, lineEndingTracker,
-                () => isSourceMode, RunAsProgrammaticChange, outlineManager.Refresh, OutlineManager.ScrollParagraphToTop,
+                () => isSourceMode, RunAsProgrammaticChange, outlineManager.Refresh, p => OutlineManager.ScrollParagraphToTop(p, Editor),
                 () => folderTreeManager.LoadedFolderRootPath, GetCurrentContentForFile,
                 SetFileContentForReplaceImpl, LoadFile);
 
@@ -126,9 +143,15 @@ namespace mde
             DataObject.AddCopyingHandler(Editor, tableEditor.HandleCopying);
             DataObject.AddPastingHandler(Editor, tableEditor.HandlePasting);
             LoadIntroContent();
+
+            ApplyFolderPaneVisibility();
+            ApplyOutlinePaneVisibility();
+            SetZoom(zoomLevel);
+            if (savedSettings.IsMaximized) this.WindowState = WindowState.Maximized;
         }
 
-        /// <summary>ウィンドウを閉じる際、このウィンドウ専用の一時画像フォルダを削除する。</summary>
+        /// <summary>ウィンドウを閉じる際、このウィンドウ専用の一時画像フォルダを削除し、
+        /// 次回起動時に復元するウィンドウ状態を保存する。</summary>
         protected override void OnClosed(EventArgs e)
         {
             base.OnClosed(e);
@@ -141,6 +164,21 @@ namespace mde
             {
                 // 削除できなくても致命的ではない（ベストエフォート）
             }
+
+            bool maximized = this.WindowState == WindowState.Maximized;
+            Rect bounds = maximized ? this.RestoreBounds : new Rect(this.Left, this.Top, this.Width, this.Height);
+            var settings = new AppSettings
+            {
+                IsMaximized = maximized,
+                WindowWidth = bounds.Width > 0 ? bounds.Width : savedSettings.WindowWidth,
+                WindowHeight = bounds.Height > 0 ? bounds.Height : savedSettings.WindowHeight,
+                WindowLeft = bounds.X,
+                WindowTop = bounds.Y,
+                FolderPaneVisible = folderPaneVisible,
+                OutlinePaneVisible = outlinePaneVisible,
+                ZoomLevel = zoomLevel
+            };
+            settings.Save();
         }
 
         // ======================================================================
@@ -197,6 +235,23 @@ namespace mde
                     Editor.CaretPosition = Editor.Selection.End;
                 }
             });
+        }
+
+        /// <summary>
+        /// フォルダペインに表示されていない範囲のファイルへのリンクをクリックした際、現在の
+        /// ウィンドウの文書を置き換えるのではなく、新しいウィンドウでそのファイルを開く。
+        /// </summary>
+        /// <param name="path">開くファイルの絶対パス。</param>
+        /// <param name="anchor">開いたあとにジャンプする見出し/アンカーのテキスト（無ければnull）。</param>
+        private void OpenFileInNewWindow(string path, string anchor)
+        {
+            var newWindow = new MainWindow();
+            newWindow.Show();
+            newWindow.LoadFile(path);
+            if (!string.IsNullOrEmpty(anchor))
+            {
+                newWindow.inlineStyleEditor.JumpToAnchor(anchor);
+            }
         }
 
         /// <summary>
@@ -625,10 +680,13 @@ namespace mde
         /// <summary>現在の内容を破棄して（未保存なら確認のうえ）新規文書を開始する。</summary>
         private void NewBtn_Click(object sender, RoutedEventArgs e)
         {
-            var result = MessageBox.Show(
-                "現在の内容を破棄して新規作成します。保存されていない変更は失われますが、よろしいですか？",
-                "新規作成", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-            if (result != MessageBoxResult.OK) return;
+            if (currentFileIsDirty || pendingFileEdits.Count > 0)
+            {
+                var result = MessageBox.Show(
+                    "現在の内容を破棄して新規作成します。保存されていない変更は失われますが、よろしいですか？",
+                    "新規作成", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+                if (result != MessageBoxResult.OK) return;
+            }
 
             DiscardCurrentDocumentSilently();
             Editor.Focus();
@@ -824,6 +882,37 @@ namespace mde
             }
         }
 
+        /// <summary>
+        /// 現在の文書をPDFへ書き出す。追加のライブラリを使わず、Windows標準の「Microsoft Print to
+        /// PDF」仮想プリンタへ印刷する形で実現している（印刷ダイアログでこのプリンタを選ぶと、
+        /// 保存先を聞かれてPDFファイルが作成される）。
+        /// </summary>
+        private void ExportPdfBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (isSourceMode)
+            {
+                MessageBox.Show("PDFへの書き出しはMarkDownモードでのみ利用できます。", "PDFに書き出し",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var dlg = new System.Windows.Controls.PrintDialog();
+            if (dlg.ShowDialog() != true) return;
+
+            try
+            {
+                var paginator = ((IDocumentPaginatorSource)Editor.Document).DocumentPaginator;
+                paginator.PageSize = new Size(dlg.PrintableAreaWidth, dlg.PrintableAreaHeight);
+                string docName = "mde - " + (!string.IsNullOrEmpty(currentFilePath) ? Path.GetFileName(currentFilePath) : "無題");
+                dlg.PrintDocument(paginator, docName);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("書き出しに失敗しました: " + ex.Message, "PDFに書き出し",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         /// <summary>現在のファイルと、保留中の編集があるすべてのファイルを保存する。</summary>
         private void SaveAllBtn_Click(object sender, RoutedEventArgs e)
         {
@@ -923,7 +1012,7 @@ namespace mde
         {
             zoomLevel = Math.Max(0.5, Math.Min(2.5, Math.Round(value, 2)));
             Editor.LayoutTransform = new ScaleTransform(zoomLevel, zoomLevel);
-            SourceEditor.FontSize = 13.5 * zoomLevel;
+            SourceEditor.FontSize = 16 * zoomLevel;
             ZoomLabelBtn.Content = Math.Round(zoomLevel * 100) + "%";
         }
 
@@ -967,6 +1056,15 @@ namespace mde
             win.Show();
         }
 
+        /// <summary>「バージョン情報」ボタン。アプリ名とバージョン番号を表示する。</summary>
+        private void VersionInfoBtn_Click(object sender, RoutedEventArgs e)
+        {
+            //AboutWindowを表示する
+            var aboutWindow = new AboutWindow();
+            aboutWindow.Owner = this;
+            aboutWindow.ShowDialog();
+        }
+
         // ======================================================================
         //  フォルダ / アウトラインペインの表示・非表示切り替え
         // ======================================================================
@@ -975,7 +1073,15 @@ namespace mde
         /// 記憶しておく）。</summary>
         private void ToggleFolderPaneBtn_Click(object sender, RoutedEventArgs e)
         {
+            if (folderPaneVisible && FolderColumnDef.Width.Value > 0) lastFolderColumnWidth = FolderColumnDef.Width.Value;
             folderPaneVisible = !folderPaneVisible;
+            ApplyFolderPaneVisibility();
+        }
+
+        /// <summary>folderPaneVisibleの現在値に従って、フォルダペインの表示状態をXAML側の
+        /// コントロールへ反映する（ボタンクリック時、起動時の状態復元時の両方から呼ばれる）。</summary>
+        private void ApplyFolderPaneVisibility()
+        {
             if (folderPaneVisible)
             {
                 FolderColumnDef.Width = new GridLength(lastFolderColumnWidth);
@@ -986,7 +1092,6 @@ namespace mde
             }
             else
             {
-                if (FolderColumnDef.Width.Value > 0) lastFolderColumnWidth = FolderColumnDef.Width.Value;
                 FolderColumnDef.Width = new GridLength(0);
                 FolderSplitterColumnDef.Width = new GridLength(0);
                 FolderPaneBorder.Visibility = Visibility.Collapsed;
@@ -999,7 +1104,15 @@ namespace mde
         /// 記憶しておく）。</summary>
         private void ToggleOutlinePaneBtn_Click(object sender, RoutedEventArgs e)
         {
+            if (outlinePaneVisible && OutlineColumnDef.Width.Value > 0) lastOutlineColumnWidth = OutlineColumnDef.Width.Value;
             outlinePaneVisible = !outlinePaneVisible;
+            ApplyOutlinePaneVisibility();
+        }
+
+        /// <summary>outlinePaneVisibleの現在値に従って、アウトラインペインの表示状態をXAML側の
+        /// コントロールへ反映する（ボタンクリック時、起動時の状態復元時の両方から呼ばれる）。</summary>
+        private void ApplyOutlinePaneVisibility()
+        {
             if (outlinePaneVisible)
             {
                 OutlineColumnDef.Width = new GridLength(lastOutlineColumnWidth);
@@ -1010,7 +1123,6 @@ namespace mde
             }
             else
             {
-                if (OutlineColumnDef.Width.Value > 0) lastOutlineColumnWidth = OutlineColumnDef.Width.Value;
                 OutlineColumnDef.Width = new GridLength(0);
                 OutlineSplitterColumnDef.Width = new GridLength(0);
                 OutlinePaneBorder.Visibility = Visibility.Collapsed;
@@ -1057,12 +1169,5 @@ namespace mde
         private void OutlineList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
             outlineManager.HandleSelectionChanged(sender, e);
 
-        private void VersionInfo_Click( object sender, RoutedEventArgs e )
-        {
-            //AboutWindowを表示する
-            var aboutWindow = new AboutWindow();
-            aboutWindow.Owner = this;
-            aboutWindow.ShowDialog();
-        }
     }
 }

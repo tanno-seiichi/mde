@@ -36,6 +36,15 @@ namespace mde
         private readonly Action<string, string> setFileContentForReplaceImpl;
         private readonly Action<string> openFile;
 
+        private static readonly System.Windows.Media.Brush MatchHighlightBrush =
+            new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xE1, 0x66));
+
+        /// <summary>直前に強調表示した一致箇所（フォーカスの有無に関わらず見えるよう、選択
+        /// ハイライトではなくRunの背景色を直接変更する方式にしている）。次に検索する前、または
+        /// 見えなくなる前にこの背景色を消しておく必要がある。「すべて検索」では複数件を
+        /// 同時に強調表示するため、単一ではなく一覧として保持する。</summary>
+        private readonly List<TextRange> currentHighlights = new List<TextRange>();
+
         /// <summary>
         /// SearchReplaceServiceを構築する。
         /// </summary>
@@ -201,6 +210,74 @@ namespace mde
         /// 直接検索するため、画面上でハイライトされる（ただし、一致箇所が見出し・箇条書き項目・
         /// 埋め込み画像などのRunの境界をまたぐ場合は検出できないという制約がある）。
         /// </summary>
+        /// <summary>直前の一致箇所の背景ハイライトを取り除く。検索と置換ウィンドウが閉じられた
+        /// 時などに、外部から呼び出してハイライトを消すためにも公開している。</summary>
+        public void ClearHighlight()
+        {
+            foreach (var range in currentHighlights)
+            {
+                try { range.ApplyPropertyValue(TextElement.BackgroundProperty, null); }
+                catch { /* 対象がすでに存在しなくなっていても問題ない */ }
+            }
+            currentHighlights.Clear();
+        }
+
+        /// <summary>
+        /// 指定範囲に背景ハイライトを付ける（既存のハイライトはクリアしない。複数件を同時に
+        /// 強調表示する場合は、呼び出し側が先にClearHighlight()を呼んでおくこと）。
+        /// RichTextBoxの標準の選択ハイライトは、コントロールがキーボードフォーカスを持っていない
+        /// 間（検索と置換ウィンドウを操作している間など）は薄く表示されてしまうため、フォーカスの
+        /// 有無に関わらず確実に見えるよう、選択ではなくRunの背景色を直接変更する方式にしている。
+        /// </summary>
+        private void AddHighlight(TextRange range)
+        {
+            range.ApplyPropertyValue(TextElement.BackgroundProperty, MatchHighlightBrush);
+            currentHighlights.Add(range);
+        }
+
+        /// <summary>1件だけを強調表示する（既存のハイライトはクリアする）。</summary>
+        private void ApplyHighlight(TextRange range)
+        {
+            ClearHighlight();
+            AddHighlight(range);
+        }
+
+        /// <summary>
+        /// 現在のファイル内のすべての一致箇所を同時に強調表示する（「すべて検索」ボタン用）。
+        /// </summary>
+        /// <param name="term">検索語。</param>
+        /// <param name="caseSensitive">大文字・小文字を区別するか。</param>
+        /// <param name="useRegex">正規表現として扱うか。</param>
+        /// <returns>見つかったすべての一致箇所（ライブなTextRange。呼び出し側で一覧表示やジャンプに使える）。</returns>
+        public List<TextRange> HighlightAllMatchesInCurrentFile(string term, bool caseSensitive, bool useRegex)
+        {
+            ClearHighlight();
+            var results = new List<TextRange>();
+            if (isSourceMode() || string.IsNullOrEmpty(term)) return results;
+
+            TextPointer pos = editor.Document.ContentStart;
+            int guard = 0;
+            while (guard++ < 2000)
+            {
+                TextRange found = FindTextFrom(pos, term, caseSensitive, useRegex);
+                if (found == null) break;
+                AddHighlight(found);
+                results.Add(found);
+                pos = found.End;
+            }
+            return results;
+        }
+
+        /// <summary>指定範囲を選択・スクロール表示する（結果一覧の項目クリックでのジャンプに使う）。</summary>
+        /// <param name="range">対象の範囲。</param>
+        public void SelectAndScrollTo(TextRange range)
+        {
+            editor.Selection.Select(range.Start, range.End);
+            scrollParagraphToTop(range.Start.Paragraph ?? editor.Document.Blocks.FirstBlock as Paragraph);
+            editor.CaretPosition = range.End;
+            editor.Focus();
+        }
+
         public bool FindNextInCurrentFile(string term, bool caseSensitive, bool useRegex)
         {
             if (isSourceMode() || string.IsNullOrEmpty(term)) return false;
@@ -210,6 +287,7 @@ namespace mde
             if (found == null) return false;
 
             editor.Selection.Select(found.Start, found.End);
+            ApplyHighlight(found);
             scrollParagraphToTop(found.Start.Paragraph ?? editor.Document.Blocks.FirstBlock as Paragraph);
             editor.CaretPosition = found.End;
             editor.Focus();
@@ -274,6 +352,7 @@ namespace mde
             if (found == null) return false;
 
             editor.Selection.Select(found.Start, found.End);
+            ApplyHighlight(found);
             scrollParagraphToTop(found.Start.Paragraph ?? editor.Document.Blocks.FirstBlock as Paragraph);
             editor.Focus();
             return true;
@@ -282,6 +361,7 @@ namespace mde
         /// <summary>現在選択中の一致箇所を置換し、次の一致箇所を探す。</summary>
         public bool StepReplaceAndFindNext(string term, string replacement, bool caseSensitive, bool useRegex)
         {
+            currentHighlights.Clear(); // 置換対象の範囲は消えるため、古い参照は捨てておく
             if (!editor.Selection.IsEmpty)
             {
                 originalTextTracker.Invalidate(editor.Selection.Start);
@@ -300,6 +380,7 @@ namespace mde
         /// <summary>現在選択中の一致箇所と、残りすべての一致箇所を、確認なしで一気に置換する。</summary>
         public int StepReplaceAllRemaining(string term, string replacement, bool caseSensitive, bool useRegex)
         {
+            currentHighlights.Clear();
             int count = 0;
             runAsProgrammaticChange(() =>
             {
@@ -325,6 +406,7 @@ namespace mde
         public int ReplaceAllInCurrentFile(string term, string replacement, bool caseSensitive, bool useRegex)
         {
             if (string.IsNullOrEmpty(term)) return 0;
+            currentHighlights.Clear(); // 文書全体を再構築するため、既存のハイライト参照は無効になる
 
             if (isSourceMode())
             {
@@ -435,6 +517,7 @@ namespace mde
         /// <summary>現在のファイルの内容を置き換える（正規表現での一括置換結果を適用する際などに使う）。</summary>
         public void SetCurrentFileContent(string newContent)
         {
+            currentHighlights.Clear();
             if (isSourceMode())
             {
                 sourceEditor.Text = newContent;
