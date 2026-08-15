@@ -35,6 +35,7 @@
                     <Button Content="保存" Style="{StaticResource ToolbarButton}" Click="SaveBtn_Click"/>
                     <Button Content="名前を付けて保存…" Style="{StaticResource ToolbarButton}" Click="SaveAsBtn_Click"/>
                     <Button Content="すべて保存" Style="{StaticResource ToolbarButton}" Click="SaveAllBtn_Click"/>
+                    <Border Width="1" Background="{StaticResource LineBrush}" Margin="4,4,12,4"/>
                     <Button Content="PDFに書き出し…" Style="{StaticResource ToolbarButton}" Click="ExportPdfBtn_Click"/>
                     <Border Width="1" Background="{StaticResource LineBrush}" Margin="4,4,12,4"/>
                     <Button Content="検索と置換…" Style="{StaticResource ToolbarButton}" Click="FindReplaceBtn_Click"/>
@@ -46,22 +47,27 @@
 
         <!-- ===================== Status bar (panes / zoom / mode) ===================== -->
         <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0"
-                Padding="16,8,16,8">
+                Padding="4,4,2,4">
             <Grid>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                     <Button x:Name="ToggleFolderPaneBtn" Content="フォルダを隠す" Style="{StaticResource ToolbarButton}" Click="ToggleFolderPaneBtn_Click"/>
                     <Button x:Name="ToggleOutlinePaneBtn" Content="アウトラインを隠す" Style="{StaticResource ToolbarButton}" Click="ToggleOutlinePaneBtn_Click"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="－" Style="{StaticResource ZoomButton}" Click="ZoomOut_Click"/>
-                    <Button x:Name="ZoomLabelBtn" Content="100%" Width="52" Style="{StaticResource ToolbarButton}"
-                            Click="ZoomReset_Click"/>
-                    <Button Content="＋" Style="{StaticResource ZoomButton}" Click="ZoomIn_Click"/>
+                    
                     <Button Content="ソース ⇄ MarkDown" Style="{StaticResource ToolbarButton}" Click="ToggleModeBtn_Click"/>
                     <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="12" Padding="10,5" Margin="0,0,0,0">
                         <TextBlock x:Name="ModeIndicator" Text="MarkDownモード" FontSize="11" VerticalAlignment="Center"
                                        Foreground="{StaticResource AccentBrush}" FontFamily="Consolas"/>
                     </Border>
+
+                    <Grid Width="30" />
+
+                    <Button Content="－" Style="{StaticResource ZoomButton}" Click="ZoomOut_Click"/>
+                    <Button x:Name="ZoomLabelBtn" Content="100%" Width="52" Style="{StaticResource ToolbarButton}"
+                            Click="ZoomReset_Click"/>
+                    <Button Content="＋" Style="{StaticResource ZoomButton}" Click="ZoomIn_Click"/>
+                    
                 </StackPanel>
             </Grid>
         </Border>
