@@ -9,7 +9,7 @@
         WindowStartupLocation="CenterOwner"
         Title="AboutWindow" Height="245" Width="255">
     <StackPanel Orientation="Vertical" VerticalAlignment="Center" HorizontalAlignment="Center">
-        <Image x:Name="m_appIcon" Width="96" Height="96" Margin="0,0,0,8" Source="/images/mde.png"/>
+        <Image x:Name="m_appIcon" Width="75" Height="75" Margin="0,12,0,15" Source="/images/mde.png"/>
         <Label x:Name="m_appTitle" HorizontalAlignment="Center" Padding="0" FontSize="15" Content="AppTitle"/>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
             <Label FontSize="13" Padding="0" Content="Version"/>
