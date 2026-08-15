@@ -4,7 +4,9 @@
 // アウトラインペイン（見出し一覧）を担当するクラス。文書から見出しを収集して一覧を作り、
 // クリックされた見出しまでエディタをスクロールする。
 
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -42,6 +44,37 @@ namespace mde
                     Items.Add(new OutlineEntry { Level = level, Text = text, Target = p });
                 }
             }
+        }
+
+        /// <summary>
+        /// 検索で見つかった一致箇所の一覧を受け取り、それぞれが属する見出しの区間（その一致箇所
+        /// より手前にある、一番近い見出し）を強調表示する。呼び出し前の強調表示はクリアされる。
+        /// </summary>
+        /// <param name="matches">強調表示したい一致箇所（ライブなTextRange）。</param>
+        public void MarkSearchMatches(IEnumerable<TextRange> matches)
+        {
+            ClearSearchMatches();
+            foreach (var range in matches)
+            {
+                Paragraph nearestHeading = null;
+                foreach (Block block in editor.Document.Blocks)
+                {
+                    if (block is Paragraph p && p.Tag is int level && level > 0)
+                    {
+                        if (p.ContentStart.CompareTo(range.Start) <= 0) nearestHeading = p;
+                        else break; // ブロックは文書順に並んでいるので、超えた時点で打ち切ってよい
+                    }
+                }
+                if (nearestHeading == null) continue;
+                var entry = Items.FirstOrDefault(e => e.Target == nearestHeading);
+                if (entry != null) entry.IsSearchMatch = true;
+            }
+        }
+
+        /// <summary>検索結果の強調表示をすべて解除する。</summary>
+        public void ClearSearchMatches()
+        {
+            foreach (var entry in Items) entry.IsSearchMatch = false;
         }
 
         /// <summary>アウトラインペインで見出しがクリックされた時に、エディタをその見出しまで

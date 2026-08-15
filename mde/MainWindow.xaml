@@ -85,6 +85,7 @@
                                 Click="OpenFolderTreeBtn_Click"/>
                     </Grid>
                     <TreeView x:Name="FolderTree" BorderThickness="0" Background="Transparent"
+                              Loaded="FolderTree_Loaded"
                               SelectedItemChanged="FolderTree_SelectedItemChanged">
                         <TreeView.Resources>
                             <Style TargetType="TreeViewItem">
@@ -94,7 +95,14 @@
                         </TreeView.Resources>
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{StaticResource InkBrush}"/>
+                                <Border x:Name="MatchHighlightBorder" CornerRadius="3" Padding="3,1">
+                                    <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{StaticResource InkBrush}"/>
+                                </Border>
+                                <HierarchicalDataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
+                                        <Setter TargetName="MatchHighlightBorder" Property="Background" Value="#FFE166"/>
+                                    </DataTrigger>
+                                </HierarchicalDataTemplate.Triggers>
                             </HierarchicalDataTemplate>
                         </TreeView.ItemTemplate>
                     </TreeView>
@@ -113,8 +121,15 @@
                              SelectionChanged="OutlineList_SelectionChanged">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <TextBlock Text="{Binding Text}" Margin="{Binding Indent}" FontSize="{Binding FontSizeValue}"
-                                           TextTrimming="CharacterEllipsis" Foreground="{StaticResource InkBrush}"/>
+                                <Border x:Name="MatchHighlightBorder" Margin="{Binding Indent}" CornerRadius="3" Padding="3,1">
+                                    <TextBlock Text="{Binding Text}" FontSize="{Binding FontSizeValue}"
+                                               TextTrimming="CharacterEllipsis" Foreground="{StaticResource InkBrush}"/>
+                                </Border>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
+                                        <Setter TargetName="MatchHighlightBorder" Property="Background" Value="#FFE166"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>

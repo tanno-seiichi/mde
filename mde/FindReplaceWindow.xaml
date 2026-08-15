@@ -29,11 +29,11 @@
         </StackPanel>
 
         <StackPanel Orientation="Horizontal">
+            <Button Content="前を検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindPrevious_Click"/>
             <Button Content="次を検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindNext_Click"/>
             <Button Content="すべて検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindAll_Click"/>
-            <Button Content="すべて置換" Width="86" Style="{StaticResource ToolbarButton}" Click="ReplaceAll_Click"/>
             <Button Content="1件ずつ置換…" Width="100" Style="{StaticResource ToolbarButton}" Click="StepReplace_Click"/>
-            <Button Content="閉じる" Width="70" Style="{StaticResource ToolbarButton}" Click="Close_Click"/>
+            <Button Content="すべて置換" Width="86" Style="{StaticResource ToolbarButton}" Click="ReplaceAll_Click"/>
         </StackPanel>
 
         <TextBlock x:Name="StatusText" Margin="0,14,0,0" TextWrapping="Wrap" FontSize="12"

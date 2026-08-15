@@ -35,6 +35,10 @@ namespace mde
         /// フォルダ範囲の結果を表示している間はnull。</summary>
         private List<TextRange> currentFileMatchRanges;
 
+        /// <summary>直前に「すべて検索」を実行した際の検索語。次を検索/前を検索が同じ検索語で
+        /// 呼ばれた場合、結果一覧を消さずに残しておくために使う。</summary>
+        private string lastFindAllTerm;
+
         // ---- 1件ずつ確認するセッションの状態（フォルダ範囲の場合のみ使用。現在ファイル範囲は
         // エディタ自身の選択状態を直接使って進める。owner.SearchReplace.StepFindNext等を参照） ----
 
@@ -76,7 +80,12 @@ namespace mde
             InitializeComponent();
             this.owner = owner;
             SearchBox.Focus();
-            Closed += (s, e) => owner.SearchReplace.ClearHighlight();
+            Closed += (s, e) =>
+            {
+                owner.SearchReplace.ClearHighlight();
+                owner.OutlinePane.ClearSearchMatches();
+                owner.FolderTreePane.ClearSearchMatches();
+            };
         }
 
         private string Term => SearchBox.Text;
@@ -90,83 +99,212 @@ namespace mde
         /// フォルダ範囲なら一致箇所を含むすべてのファイルを一覧表示する。</summary>
         /// <param name="sender">ボタン。</param>
         /// <param name="e">クリックイベント。</param>
-        // ---- フォルダ全体スコープでの「次を検索」の状態（1件ずつファイルをまたいで進める） ----
-        private List<string> folderFindFiles;
-        private int folderFindFileIndex = -1;
-        private int folderFindShownInFile = 0;
-        private int folderFindTotalInFile = 0;
+        // ---- フォルダ全体スコープでの「次を検索」「前を検索」共通の位置情報。
+        // 「今どのファイルの何件目の一致箇所を見ているか」という1つの状態を、次を検索・前を検索の
+        // 両方で共有して使う（別々の状態にしていると、方向を切り替えた時に「今どこにいるか」が
+        // 引き継がれず、そのファイルの先頭または末尾からやり直してしまう不具合があったため）。 ----
+        private List<string> folderFindFileList;
+        private int folderFindCurrentFileIdx = -1;
+        private List<TextRange> folderFindCurrentFileMatches;
+        private int folderFindCurrentMatchIdx = -1;
 
         private void FindNext_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(Term)) return;
-            currentFileMatchRanges = null;
+            if (Term != lastFindAllTerm)
+            {
+                currentFileMatchRanges = null;
+                ResultsList.Visibility = Visibility.Collapsed;
+            }
 
             if (ScopeCurrentFile.IsChecked == true)
             {
-                ResultsList.Visibility = Visibility.Collapsed;
                 bool found = owner.SearchReplace.FindNextInCurrentFile(Term, CaseSensitive, UseRegex);
                 StatusText.Text = found ? "見つかりました（エディタ内で強調表示しています）。" : "見つかりませんでした。";
             }
             else
             {
-                ResultsList.Visibility = Visibility.Collapsed;
                 FindNextInFolder();
             }
         }
 
+        private bool PathsEqual(string a, string b) =>
+            !string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b) &&
+            string.Equals(System.IO.Path.GetFullPath(a), System.IO.Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+
         /// <summary>
-        /// フォルダ全体スコープでの「次を検索」。ファイルを1つずつ開きながら、そのファイル内の
-        /// 一致箇所を順番に強調表示していく。あるファイル内の一致箇所をすべて見終わったら、
-        /// 次のファイルへ進む。
+        /// フォルダ全体スコープでの位置情報を、まだ無ければ初期化する。現在開いているファイルが
+        /// このフォルダ内にあれば、そのファイルを先頭に来るよう並び順を回転させ、位置情報の
+        /// 「今のファイル」として扱う（ただし一致箇所の一覧はまだ設定しない。呼び出し側が
+        /// 必要に応じてSeedFolderWalkOrHighlightCurrentFileで補う）。
+        /// </summary>
+        private void EnsureFolderWalkInitialized()
+        {
+            if (folderFindFileList != null) return;
+
+            folderFindFileList = owner.SearchReplace.GetFolderFiles();
+            folderFindCurrentFileIdx = -1;
+            folderFindCurrentFileMatches = null;
+            folderFindCurrentMatchIdx = -1;
+
+            string currentPath = owner.CurrentFilePath;
+            if (!string.IsNullOrEmpty(currentPath))
+            {
+                int idx = folderFindFileList.FindIndex(f => PathsEqual(f, currentPath));
+                if (idx >= 0)
+                {
+                    if (idx > 0)
+                        folderFindFileList = folderFindFileList.Skip(idx).Concat(folderFindFileList.Take(idx)).ToList();
+                    folderFindCurrentFileIdx = 0;
+                }
+            }
+        }
+
+        /// <summary>
+        /// 「すべて検索」の結果一覧からファイルをダブルクリックで開いた直後など、すでに
+        /// ある特定のファイル・一致箇所を表示している状態から、次を検索/前を検索がそこから
+        /// 正しく続けられるよう位置情報を作り直す（合わせておかないと、直後の次を検索が
+        /// 「まだこのファイルの1件目を見ていない」と誤解して同じ箇所を再度表示してしまう）。
+        /// </summary>
+        /// <param name="path">今表示しているファイルの絶対パス。</param>
+        /// <param name="matches">そのファイル内のすべての一致箇所。</param>
+        /// <param name="shownMatchIndex">その中で、今まさに表示している一致箇所のインデックス。</param>
+        private void SeedFolderWalkFromCurrentFile(string path, List<TextRange> matches, int shownMatchIndex)
+        {
+            folderFindFileList = owner.SearchReplace.GetFolderFiles();
+            int idx = folderFindFileList.FindIndex(f => PathsEqual(f, path));
+            if (idx > 0)
+                folderFindFileList = folderFindFileList.Skip(idx).Concat(folderFindFileList.Take(idx)).ToList();
+            folderFindCurrentFileIdx = idx >= 0 ? 0 : -1;
+            folderFindCurrentFileMatches = matches;
+            folderFindCurrentMatchIdx = shownMatchIndex;
+        }
+
+        /// <summary>
+        /// フォルダ全体スコープでの「次を検索」。今のファイルの一致箇所一覧の中でまだ次に
+        /// 進めるならそちらへ、進めなければ次のファイルへ切り替えて、そのファイルのすべての
+        /// 一致箇所を改めて強調表示してから先頭の一致箇所へ移動する。
         /// </summary>
         private void FindNextInFolder()
         {
-            if (folderFindFiles == null)
+            EnsureFolderWalkInitialized();
+            if (folderFindFileList.Count == 0) { StatusText.Text = "見つかりませんでした。"; return; }
+
+            // 今のファイルの一致箇所一覧の中で、まだ次に進める一致箇所があるか。
+            if (folderFindCurrentFileMatches != null && folderFindCurrentMatchIdx + 1 < folderFindCurrentFileMatches.Count)
             {
-                folderFindFiles = owner.SearchReplace.GetFolderFiles();
-                folderFindFileIndex = -1;
-                folderFindShownInFile = 0;
-                folderFindTotalInFile = 0;
+                folderFindCurrentMatchIdx++;
+                owner.SearchReplace.SelectAndScrollTo(folderFindCurrentFileMatches[folderFindCurrentMatchIdx]);
+                StatusText.Text = "見つかりました：" + System.IO.Path.GetFileName(folderFindFileList[folderFindCurrentFileIdx]) +
+                    "（" + (folderFindCurrentMatchIdx + 1) + " / " + folderFindCurrentFileMatches.Count + "件目）";
+                return;
             }
 
-            while (true)
+            // 今のファイルでは尽きたので、次に一致箇所があるファイルへ進む（末尾まで来たら
+            // 先頭へ折り返し、フォルダ内を何周でも回り続ける）。
+            int filesChecked = 0;
+            while (filesChecked <= folderFindFileList.Count)
             {
-                if (folderFindShownInFile < folderFindTotalInFile)
-                {
-                    bool found = owner.SearchReplace.FindNextInCurrentFile(Term, CaseSensitive, UseRegex);
-                    if (found)
-                    {
-                        folderFindShownInFile++;
-                        string name = System.IO.Path.GetFileName(folderFindFiles[folderFindFileIndex]);
-                        StatusText.Text = "見つかりました：" + name +
-                            "（" + folderFindShownInFile + " / " + folderFindTotalInFile + "件目）";
-                        return;
-                    }
-                    // 見つかるはずの件数に達していないのに見つからない場合は、このファイルを
-                    // 諦めて次のファイルへ進む（安全のためのフォールバック）。
-                    folderFindTotalInFile = 0;
-                }
+                folderFindCurrentFileIdx++;
+                if (folderFindCurrentFileIdx >= folderFindFileList.Count) folderFindCurrentFileIdx = 0;
+                filesChecked++;
 
-                folderFindFileIndex++;
-                if (folderFindFileIndex >= folderFindFiles.Count)
+                string path = folderFindFileList[folderFindCurrentFileIdx];
+                if (!PathsEqual(path, owner.CurrentFilePath))
+                    owner.SearchReplace.OpenFileForFindReplace(path);
+                SyncResultsListSelection(path);
+
+                folderFindCurrentFileMatches = owner.SearchReplace.HighlightAllMatchesInCurrentFile(Term, CaseSensitive, UseRegex);
+                if (folderFindCurrentFileMatches.Count > 0)
                 {
-                    StatusText.Text = "フォルダ内のすべてのファイルを確認しました。";
-                    folderFindFiles = null;
-                    folderFindFileIndex = -1;
+                    folderFindCurrentMatchIdx = 0;
+                    owner.SearchReplace.SelectAndScrollTo(folderFindCurrentFileMatches[0]);
+                    StatusText.Text = "見つかりました：" + System.IO.Path.GetFileName(path) +
+                        "（1 / " + folderFindCurrentFileMatches.Count + "件目）";
                     return;
                 }
+            }
+            // フォルダを一周しても一致箇所が1つも見つからなかった場合のみ、ここに到達する。
+            StatusText.Text = "見つかりませんでした。";
+        }
 
-                string path = folderFindFiles[folderFindFileIndex];
-                string content = owner.SearchReplace.GetFileContentForReplace(path);
-                folderFindTotalInFile = owner.SearchReplace.CountOccurrences(content, Term, CaseSensitive, UseRegex);
-                folderFindShownInFile = 0;
-                if (folderFindTotalInFile > 0)
-                {
+        /// <summary>「すべて検索」（フォルダ全体）の結果一覧の選択項目を、今表示しているファイルに
+        /// 合わせて切り替える。一覧にそのファイルが無ければ何もしない。</summary>
+        /// <param name="path">今表示しているファイルの絶対パス。</param>
+        private void SyncResultsListSelection(string path)
+        {
+            if (resultsPaths == null || resultsPaths.Count == 0) return;
+            int idx = resultsPaths.FindIndex(p => PathsEqual(p, path));
+            if (idx >= 0 && idx < ResultsList.Items.Count)
+                ResultsList.SelectedIndex = idx;
+        }
+
+        /// <summary>「前を検索」ボタン。</summary>
+        /// <param name="sender">ボタン。</param>
+        /// <param name="e">クリックイベント。</param>
+        private void FindPrevious_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(Term)) return;
+            if (Term != lastFindAllTerm)
+            {
+                currentFileMatchRanges = null;
+                ResultsList.Visibility = Visibility.Collapsed;
+            }
+
+            if (ScopeCurrentFile.IsChecked == true)
+            {
+                bool found = owner.SearchReplace.FindPreviousInCurrentFile(Term, CaseSensitive, UseRegex);
+                StatusText.Text = found ? "見つかりました（エディタ内で強調表示しています）。" : "見つかりませんでした。";
+            }
+            else
+            {
+                FindPreviousInFolder();
+            }
+        }
+
+        /// <summary>
+        /// フォルダ全体スコープでの「前を検索」。FindNextInFolderと同じ位置情報を共有しており、
+        /// 今のファイルの一致箇所一覧の中でまだ前に戻れるならそちらへ、戻れなければ前のファイルへ
+        /// 切り替えて、そのファイルのすべての一致箇所を改めて強調表示してから末尾の一致箇所へ
+        /// 移動する。
+        /// </summary>
+        private void FindPreviousInFolder()
+        {
+            EnsureFolderWalkInitialized();
+            if (folderFindFileList.Count == 0) { StatusText.Text = "見つかりませんでした。"; return; }
+
+            if (folderFindCurrentFileMatches != null && folderFindCurrentMatchIdx - 1 >= 0)
+            {
+                folderFindCurrentMatchIdx--;
+                owner.SearchReplace.SelectAndScrollTo(folderFindCurrentFileMatches[folderFindCurrentMatchIdx]);
+                StatusText.Text = "見つかりました：" + System.IO.Path.GetFileName(folderFindFileList[folderFindCurrentFileIdx]) +
+                    "（" + (folderFindCurrentMatchIdx + 1) + " / " + folderFindCurrentFileMatches.Count + "件目）";
+                return;
+            }
+
+            int filesChecked = 0;
+            while (filesChecked <= folderFindFileList.Count)
+            {
+                folderFindCurrentFileIdx--;
+                if (folderFindCurrentFileIdx < 0) folderFindCurrentFileIdx = folderFindFileList.Count - 1;
+                filesChecked++;
+
+                string path = folderFindFileList[folderFindCurrentFileIdx];
+                if (!PathsEqual(path, owner.CurrentFilePath))
                     owner.SearchReplace.OpenFileForFindReplace(path);
-                    // ファイルを開いた直後はキャレットが文書の先頭にあるため、次の
-                    // FindNextInCurrentFile呼び出しでこのファイル内の最初の一致箇所が見つかる。
+                SyncResultsListSelection(path);
+
+                folderFindCurrentFileMatches = owner.SearchReplace.HighlightAllMatchesInCurrentFile(Term, CaseSensitive, UseRegex);
+                if (folderFindCurrentFileMatches.Count > 0)
+                {
+                    folderFindCurrentMatchIdx = folderFindCurrentFileMatches.Count - 1;
+                    owner.SearchReplace.SelectAndScrollTo(folderFindCurrentFileMatches[folderFindCurrentMatchIdx]);
+                    StatusText.Text = "見つかりました：" + System.IO.Path.GetFileName(path) +
+                        "（" + folderFindCurrentFileMatches.Count + " / " + folderFindCurrentFileMatches.Count + "件目）";
+                    return;
                 }
             }
+            StatusText.Text = "見つかりませんでした。";
         }
 
         /// <summary>「すべて検索」ボタン：選択されている範囲内の一致箇所をすべて一覧表示する
@@ -176,12 +314,14 @@ namespace mde
         private void FindAll_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(Term)) return;
-            folderFindFiles = null; // 次を検索の位置情報が古いまま残らないようリセット
+            folderFindFileList = null; // 次を検索/前を検索の位置情報が古いまま残らないようリセット
+            lastFindAllTerm = Term;
 
             if (ScopeCurrentFile.IsChecked == true)
             {
                 var matches = owner.SearchReplace.HighlightAllMatchesInCurrentFile(Term, CaseSensitive, UseRegex);
                 currentFileMatchRanges = matches;
+                owner.FolderTreePane.ClearSearchMatches();
 
                 var snippets = new List<string>();
                 foreach (var range in matches)
@@ -201,18 +341,20 @@ namespace mde
                 ResultsList.ItemsSource = snippets;
                 ResultsList.Visibility = snippets.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
                 StatusText.Text = snippets.Count > 0
-                    ? snippets.Count + " 件見つかりました（すべてエディタ内で強調表示しています。ダブルクリックでその箇所へ移動します）。"
+                    ? snippets.Count + " 件見つかりました（すべてエディタ内・アウトラインで強調表示しています。ダブルクリックでその箇所へ移動します）。"
                     : "見つかりませんでした。";
             }
             else
             {
                 currentFileMatchRanges = null;
+                owner.OutlinePane.ClearSearchMatches();
                 var results = owner.SearchReplace.FindAllInFolder(Term, CaseSensitive, UseRegex);
                 resultsPaths = results.Select(r => r.Item1).ToList();
+                owner.FolderTreePane.MarkSearchMatches(resultsPaths);
                 ResultsList.ItemsSource = results.Select(r => r.Item1 + "　（" + r.Item2 + "件）").ToList();
                 ResultsList.Visibility = results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
                 StatusText.Text = results.Count > 0
-                    ? results.Count + " 個のファイルで見つかりました。ダブルクリックで開きます。"
+                    ? results.Count + " 個のファイルで見つかりました（フォルダビューでも強調表示しています）。ダブルクリックで開きます。"
                     : "見つかりませんでした。";
             }
         }
@@ -235,7 +377,12 @@ namespace mde
 
             if (idx >= resultsPaths.Count) return;
             owner.SearchReplace.OpenFileForFindReplace(resultsPaths[idx]);
-            owner.SearchReplace.FindNextInCurrentFile(Term, CaseSensitive, UseRegex);
+            var matches = owner.SearchReplace.HighlightAllMatchesInCurrentFile(Term, CaseSensitive, UseRegex);
+            if (matches.Count > 0)
+            {
+                owner.SearchReplace.SelectAndScrollTo(matches[0]);
+                SeedFolderWalkFromCurrentFile(resultsPaths[idx], matches, 0);
+            }
         }
 
         /// <summary>「すべて置換」ボタン。選択されている範囲のすべての一致箇所を一度に置換する。</summary>
@@ -244,7 +391,7 @@ namespace mde
         private void ReplaceAll_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(Term)) return;
-            folderFindFiles = null;
+            folderFindFileList = null;
 
             if (ScopeCurrentFile.IsChecked == true)
             {
@@ -273,7 +420,7 @@ namespace mde
         private void StepReplace_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(Term)) return;
-            folderFindFiles = null;
+            folderFindFileList = null;
 
             sessionActive = true;
             sessionFolderScope = ScopeFolder.IsChecked == true;
@@ -473,14 +620,6 @@ namespace mde
                 (sessionFolderScope
                     ? "（" + sessionFilesChanged + " 個のファイル、保存するまでファイルには反映されません）。"
                     : "（現在のファイルに直接反映されました。保存するまでファイルには書き出されません）。");
-        }
-
-        /// <summary>「閉じる」ボタン。ウィンドウを閉じる。</summary>
-        /// <param name="sender">ボタン。</param>
-        /// <param name="e">クリックイベント。</param>
-        private void Close_Click(object sender, RoutedEventArgs e)
-        {
-            Close();
         }
     }
 }

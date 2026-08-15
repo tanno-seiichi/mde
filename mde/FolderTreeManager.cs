@@ -153,6 +153,62 @@ namespace mde
         }
 
         /// <summary>
+        /// 「すべて検索」（フォルダ全体）で一致箇所が見つかったファイルの一覧を受け取り、
+        /// そのファイル自身と、それを含むフォルダを強調表示する。呼び出し前の強調表示は
+        /// クリアされる。
+        /// </summary>
+        /// <param name="matchedFilePaths">一致箇所があったファイルの絶対パス一覧。</param>
+        public void MarkSearchMatches(IEnumerable<string> matchedFilePaths)
+        {
+            ClearSearchMatches();
+            var matchedSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in matchedFilePaths)
+            {
+                try { matchedSet.Add(Path.GetFullPath(p)); }
+                catch { /* 無効なパスは無視する */ }
+            }
+            foreach (var root in Roots)
+                MarkSearchMatchRecursive(root, matchedSet);
+        }
+
+        private bool MarkSearchMatchRecursive(FileSystemItem node, HashSet<string> matchedFullPaths)
+        {
+            bool anyMatchBelow = false;
+            if (!node.IsDirectory && node.FullPath != null)
+            {
+                try
+                {
+                    if (matchedFullPaths.Contains(Path.GetFullPath(node.FullPath)))
+                    {
+                        node.IsSearchMatch = true;
+                        anyMatchBelow = true;
+                    }
+                }
+                catch { /* 無効なパスは無視する */ }
+            }
+            foreach (var child in node.Children)
+            {
+                if (MarkSearchMatchRecursive(child, matchedFullPaths)) anyMatchBelow = true;
+            }
+            if (anyMatchBelow) node.IsSearchMatch = true; // フォルダ自身も、含むファイルに一致があれば強調する
+            return anyMatchBelow;
+        }
+
+        /// <summary>検索結果の強調表示をすべて解除する。</summary>
+        public void ClearSearchMatches()
+        {
+            foreach (var root in Roots)
+                ClearSearchMatchRecursive(root);
+        }
+
+        private void ClearSearchMatchRecursive(FileSystemItem node)
+        {
+            node.IsSearchMatch = false;
+            foreach (var child in node.Children)
+                ClearSearchMatchRecursive(child);
+        }
+
+        /// <summary>
         /// 'dir' が、現在フォルダペインに表示されているフォルダそのもの、またはそのサブフォルダで
         /// あれば true を返す。true の場合、同じ範囲のファイルを開いただけならツリーを
         /// 作り直す（ユーザーが展開していた状態を失わせる）必要はない。

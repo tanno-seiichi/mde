@@ -61,8 +61,10 @@ namespace mde
     }
 
     /// <summary>アウトラインペインの1行分（見出しのテキスト・レベル・対応する段落）。</summary>
-    public class OutlineEntry
+    public class OutlineEntry : INotifyPropertyChanged
     {
+        public event PropertyChangedEventHandler PropertyChanged;
+
         /// <summary>見出しのテキスト。</summary>
         public string Text { get; set; }
 
@@ -78,6 +80,21 @@ namespace mde
 
         /// <summary>アウトラインの表示上のフォントサイズ（レベル1〜2は少し大きめ）。</summary>
         public double FontSizeValue => Level <= 2 ? 13 : 12;
+
+        private bool isSearchMatch;
+
+        /// <summary>「すべて検索」の結果、この見出しの区間に一致箇所があるかどうか。
+        /// アウトラインペインでの強調表示に使う。</summary>
+        public bool IsSearchMatch
+        {
+            get => isSearchMatch;
+            set
+            {
+                if (isSearchMatch == value) return;
+                isSearchMatch = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSearchMatch)));
+            }
+        }
     }
 
     /// <summary>
@@ -119,6 +136,21 @@ namespace mde
                 isDirty = value;
                 OnPropertyChanged(nameof(IsDirty));
                 OnPropertyChanged(nameof(DisplayName));
+            }
+        }
+
+        private bool isSearchMatch;
+
+        /// <summary>「すべて検索」（フォルダ全体）の結果、このファイル（または、これを含む
+        /// フォルダ）に一致箇所があるかどうか。フォルダツリーペインでの強調表示に使う。</summary>
+        public bool IsSearchMatch
+        {
+            get => isSearchMatch;
+            set
+            {
+                if (isSearchMatch == value) return;
+                isSearchMatch = value;
+                OnPropertyChanged(nameof(IsSearchMatch));
             }
         }
 

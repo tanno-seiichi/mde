@@ -35,6 +35,8 @@ namespace mde
         private readonly Func<string, string> getCurrentContentForFile;
         private readonly Action<string, string> setFileContentForReplaceImpl;
         private readonly Action<string> openFile;
+        private readonly Action<Action> runWithoutDirtyMarking;
+        private readonly Action<List<TextRange>> markOutlineMatches;
 
         private static readonly System.Windows.Media.Brush MatchHighlightBrush =
             new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xE1, 0x66));
@@ -44,6 +46,17 @@ namespace mde
         /// 見えなくなる前にこの背景色を消しておく必要がある。「すべて検索」では複数件を
         /// 同時に強調表示するため、単一ではなく一覧として保持する。</summary>
         private readonly List<TextRange> currentHighlights = new List<TextRange>();
+
+        /// <summary>直前にFindNext/FindPreviousInCurrentFileで見つかった一致箇所。次を検索/前を
+        /// 検索の検索開始位置の基準にする（CaretPosition/Selectionだけに頼ると、検索方向を
+        /// 切り替えた直後に正しく動かないことがあったため）。</summary>
+        private TextRange lastFoundMatch;
+
+        /// <summary>直前に「すべて検索」で強調表示した際の検索条件。次を検索/前を検索が
+        /// 同じ条件で呼ばれた場合、既存の全件ハイライトをクリアせずに残すために使う。</summary>
+        private string lastHighlightAllTerm;
+        private bool lastHighlightAllCaseSensitive;
+        private bool lastHighlightAllUseRegex;
 
         /// <summary>
         /// SearchReplaceServiceを構築する。
@@ -74,7 +87,9 @@ namespace mde
             Func<string> getLoadedFolderRootPath,
             Func<string, string> getCurrentContentForFile,
             Action<string, string> setFileContentForReplaceImpl,
-            Action<string> openFile)
+            Action<string> openFile,
+            Action<Action> runWithoutDirtyMarking,
+            Action<List<TextRange>> markOutlineMatches)
         {
             this.editor = editor;
             this.sourceEditor = sourceEditor;
@@ -89,6 +104,8 @@ namespace mde
             this.getCurrentContentForFile = getCurrentContentForFile;
             this.setFileContentForReplaceImpl = setFileContentForReplaceImpl;
             this.openFile = openFile;
+            this.runWithoutDirtyMarking = runWithoutDirtyMarking;
+            this.markOutlineMatches = markOutlineMatches;
         }
 
         // ======================================================================
@@ -214,12 +231,45 @@ namespace mde
         /// 時などに、外部から呼び出してハイライトを消すためにも公開している。</summary>
         public void ClearHighlight()
         {
-            foreach (var range in currentHighlights)
+            if (currentHighlights.Count > 0)
             {
-                try { range.ApplyPropertyValue(TextElement.BackgroundProperty, null); }
-                catch { /* 対象がすでに存在しなくなっていても問題ない */ }
+                runWithoutDirtyMarking(() =>
+                {
+                    foreach (var range in currentHighlights)
+                    {
+                        try { range.ApplyPropertyValue(TextElement.BackgroundProperty, null); }
+                        catch { /* 対象がすでに存在しなくなっていても問題ない */ }
+                    }
+                });
             }
             currentHighlights.Clear();
+            lastHighlightAllTerm = null;
+        }
+
+        /// <summary>
+        /// 文書が別のファイルの内容へ丸ごと入れ替わったことを通知する。それまでのハイライト
+        /// 一覧は、破棄された古い文書を指したままの無効な参照になるため、（プロパティを
+        /// 触ろうとせず）追跡情報だけを単純にクリアする。これを呼ばずにいると、ファイル切り替え
+        /// 後も「直前のすべて検索と同じ条件だから」という誤判定で、新しいファイルでの
+        /// ハイライトがスキップされてしまう。
+        /// </summary>
+        public void OnDocumentReplaced()
+        {
+            currentHighlights.Clear();
+            lastHighlightAllTerm = null;
+            lastFoundMatch = null;
+        }
+
+        /// <summary>
+        /// 現在の検索条件が、直前の「すべて検索」の条件と同じかどうかを調べる。同じであれば、
+        /// 次を検索/前を検索の際に既存の全件ハイライトを残したままにする。
+        /// </summary>
+        private bool ShouldPreserveAllHighlights(string term, bool caseSensitive, bool useRegex)
+        {
+            return currentHighlights.Count > 0 &&
+                   lastHighlightAllTerm == term &&
+                   lastHighlightAllCaseSensitive == caseSensitive &&
+                   lastHighlightAllUseRegex == useRegex;
         }
 
         /// <summary>
@@ -231,7 +281,7 @@ namespace mde
         /// </summary>
         private void AddHighlight(TextRange range)
         {
-            range.ApplyPropertyValue(TextElement.BackgroundProperty, MatchHighlightBrush);
+            runWithoutDirtyMarking(() => range.ApplyPropertyValue(TextElement.BackgroundProperty, MatchHighlightBrush));
             currentHighlights.Add(range);
         }
 
@@ -257,14 +307,30 @@ namespace mde
 
             TextPointer pos = editor.Document.ContentStart;
             int guard = 0;
-            while (guard++ < 2000)
+            while (guard++ < 5000)
             {
                 TextRange found = FindTextFrom(pos, term, caseSensitive, useRegex);
                 if (found == null) break;
                 AddHighlight(found);
                 results.Add(found);
-                pos = found.End;
+
+                // found.Endが何らかの理由でposより前へ戻ってしまう（または進まない）場合、
+                // 同じ箇所を繰り返し見つけ続けてループが実質止まってしまい、それより後ろに
+                // ある一致箇所（別の見出しなど）に到達できなくなる。必ず前へ進むことを
+                // 保証する安全策として、進んでいなければ1文字分だけ強制的に前進させる。
+                TextPointer next = found.End;
+                if (next == null || next.CompareTo(pos) <= 0)
+                {
+                    next = pos.GetPositionAtOffset(1);
+                    if (next == null || next.CompareTo(pos) <= 0) break;
+                }
+                pos = next;
             }
+
+            lastHighlightAllTerm = term;
+            lastHighlightAllCaseSensitive = caseSensitive;
+            lastHighlightAllUseRegex = useRegex;
+            markOutlineMatches?.Invoke(results);
             return results;
         }
 
@@ -282,12 +348,37 @@ namespace mde
         {
             if (isSourceMode() || string.IsNullOrEmpty(term)) return false;
 
-            TextRange found = FindTextFrom(editor.CaretPosition, term, caseSensitive, useRegex)
+            // lastFoundMatchがあれば、その終端から続ける。CaretPosition/Selectionだけに頼らない
+            // のは、「前を検索」から「次を検索」へ切り替えた直後など、キャレット位置の設定が
+            // 検索方向の切り替えとかみ合わず、1回目だけ正しく進まないことがあったため。
+            TextPointer startFrom = lastFoundMatch?.End ?? editor.CaretPosition;
+            TextRange found = FindTextFrom(startFrom, term, caseSensitive, useRegex)
                             ?? FindTextFrom(editor.Document.ContentStart, term, caseSensitive, useRegex);
             if (found == null) return false;
 
             editor.Selection.Select(found.Start, found.End);
-            ApplyHighlight(found);
+            if (!ShouldPreserveAllHighlights(term, caseSensitive, useRegex)) ApplyHighlight(found);
+            scrollParagraphToTop(found.Start.Paragraph ?? editor.Document.Blocks.FirstBlock as Paragraph);
+            editor.CaretPosition = found.End;
+            lastFoundMatch = found;
+            editor.Focus();
+            return true;
+        }
+
+        /// <summary>
+        /// FindNextInCurrentFileと同様だが、見つからなければ文書の先頭へ折り返さない
+        /// （フォルダ全体での「次を検索」の1件ずつの歩みで使う。折り返してしまうと、
+        /// 「このファイルにはもう次の一致箇所がない」という判定ができなくなるため）。
+        /// </summary>
+        public bool FindNextInCurrentFileNoWrap(string term, bool caseSensitive, bool useRegex)
+        {
+            if (isSourceMode() || string.IsNullOrEmpty(term)) return false;
+
+            TextRange found = FindTextFrom(editor.CaretPosition, term, caseSensitive, useRegex);
+            if (found == null) return false;
+
+            editor.Selection.Select(found.Start, found.End);
+            if (!ShouldPreserveAllHighlights(term, caseSensitive, useRegex)) ApplyHighlight(found);
             scrollParagraphToTop(found.Start.Paragraph ?? editor.Document.Blocks.FirstBlock as Paragraph);
             editor.CaretPosition = found.End;
             editor.Focus();
@@ -337,6 +428,110 @@ namespace mde
                 navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
             }
             return null;
+        }
+
+        /// <summary>
+        /// startより手前で、一致箇所を後ろ向き（文書の先頭方向）に探す。FindTextFromの
+        /// 逆方向版で、「前を検索」の実装に使う。1つのRun区間内では、その区間の中で
+        /// startに最も近い（＝一番後ろにある）一致箇所を選ぶ。
+        /// </summary>
+        private TextRange FindTextBackwardFrom(TextPointer start, string term, bool caseSensitive, bool useRegex)
+        {
+            Regex regex = null;
+            if (useRegex)
+            {
+                try { regex = new Regex(term, caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase); }
+                catch (ArgumentException) { return null; }
+            }
+            var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+
+            TextPointer navigator = start;
+            while (navigator != null)
+            {
+                if (navigator.GetPointerContext(LogicalDirection.Backward) == TextPointerContext.Text)
+                {
+                    string runText = navigator.GetTextInRun(LogicalDirection.Backward);
+                    if (!string.IsNullOrEmpty(runText))
+                    {
+                        int idx, len;
+                        if (useRegex)
+                        {
+                            var matches = regex.Matches(runText);
+                            if (matches.Count > 0)
+                            {
+                                var m = matches[matches.Count - 1];
+                                idx = m.Index; len = m.Length;
+                            }
+                            else { idx = -1; len = 0; }
+                        }
+                        else
+                        {
+                            idx = runText.LastIndexOf(term, comparison);
+                            len = term.Length;
+                        }
+
+                        if (idx >= 0)
+                        {
+                            TextPointer runStart = navigator.GetPositionAtOffset(-runText.Length);
+                            TextPointer matchStart = runStart?.GetPositionAtOffset(idx);
+                            TextPointer matchEnd = matchStart?.GetPositionAtOffset(len);
+                            if (matchStart != null && matchEnd != null)
+                                return new TextRange(matchStart, matchEnd);
+                        }
+                    }
+                }
+                navigator = navigator.GetNextContextPosition(LogicalDirection.Backward);
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// キャレット（または選択範囲の先頭）より前で、次に一致する箇所を選択・スクロール
+        /// 表示する。見つからなければ文書の末尾から探し直す（折り返し検索）。
+        /// </summary>
+        public bool FindPreviousInCurrentFile(string term, bool caseSensitive, bool useRegex)
+        {
+            if (isSourceMode() || string.IsNullOrEmpty(term)) return false;
+
+            TextPointer startFrom = lastFoundMatch?.Start ?? editor.CaretPosition;
+            TextRange found = FindTextBackwardFrom(startFrom, term, caseSensitive, useRegex)
+                            ?? FindTextBackwardFrom(editor.Document.ContentEnd, term, caseSensitive, useRegex);
+            if (found == null) return false;
+
+            editor.Selection.Select(found.Start, found.End);
+            if (!ShouldPreserveAllHighlights(term, caseSensitive, useRegex)) ApplyHighlight(found);
+            scrollParagraphToTop(found.Start.Paragraph ?? editor.Document.Blocks.FirstBlock as Paragraph);
+            editor.CaretPosition = found.Start; // 次回の「前を検索」がこの一致箇所より前から続けられるようにする
+            lastFoundMatch = found;
+            editor.Focus();
+            return true;
+        }
+
+        /// <summary>FindPreviousInCurrentFileと同様だが、見つからなければ文書の末尾へ折り返さない
+        /// （フォルダ全体での「前を検索」で使う）。</summary>
+        public bool FindPreviousInCurrentFileNoWrap(string term, bool caseSensitive, bool useRegex)
+        {
+            if (isSourceMode() || string.IsNullOrEmpty(term)) return false;
+
+            TextPointer from = !editor.Selection.IsEmpty ? editor.Selection.Start : editor.CaretPosition;
+            TextRange found = FindTextBackwardFrom(from, term, caseSensitive, useRegex);
+            if (found == null) return false;
+
+            editor.Selection.Select(found.Start, found.End);
+            if (!ShouldPreserveAllHighlights(term, caseSensitive, useRegex)) ApplyHighlight(found);
+            scrollParagraphToTop(found.Start.Paragraph ?? editor.Document.Blocks.FirstBlock as Paragraph);
+            editor.CaretPosition = found.Start;
+            editor.Focus();
+            return true;
+        }
+
+        /// <summary>キャレットを文書の末尾へ移動する（フォルダ全体での「前を検索」で、新しく
+        /// 開いたファイルの末尾から後ろ向き検索を始めるために使う）。</summary>
+        public void MoveCaretToDocumentEnd()
+        {
+            if (isSourceMode()) return;
+            editor.CaretPosition = editor.Document.ContentEnd;
+            editor.Selection.Select(editor.Document.ContentEnd, editor.Document.ContentEnd);
         }
 
         // ---- 現在のファイルを対象にした、1件ずつ確認しながらの置換（ライブハイライト付き）

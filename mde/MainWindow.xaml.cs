@@ -41,6 +41,10 @@ namespace mde
         /// 反応してしまわないようにするためのもの。</summary>
         private bool isProgrammaticChange = false;
 
+        /// <summary>検索結果のハイライト（背景色）を適用/解除している間だけtrueにするガード
+        /// フラグ。TextChangedがこれを見て、ダーティ扱いにしないようにする。</summary>
+        private bool isApplyingHighlight = false;
+
         /// <summary>現在エディタに表示中のファイルの絶対パス。未保存なら null。</summary>
         private string currentFilePath = null;
 
@@ -135,7 +139,7 @@ namespace mde
                 Editor, SourceEditor, markdownConverter, originalTextTracker, lineEndingTracker,
                 () => isSourceMode, RunAsProgrammaticChange, outlineManager.Refresh, p => OutlineManager.ScrollParagraphToTop(p, Editor),
                 () => folderTreeManager.LoadedFolderRootPath, GetCurrentContentForFile,
-                SetFileContentForReplaceImpl, LoadFile);
+                SetFileContentForReplaceImpl, LoadFile, RunWithoutDirtyMarking, outlineManager.MarkSearchMatches);
 
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version;
             OutlineList.ItemsSource = outlineManager.Items;
@@ -193,6 +197,17 @@ namespace mde
             isProgrammaticChange = true;
             try { action(); }
             finally { isProgrammaticChange = false; }
+        }
+
+        /// <summary>渡された処理を「ハイライトの適用/解除のみ」として実行する。実行中は
+        /// Editor_TextChangedがダーティ扱い・アウトライン再構築・元テキスト保持の破棄を
+        /// 行わないようにする（検索結果の背景色変更は実際の編集ではないため）。</summary>
+        /// <param name="action">実行する処理。</param>
+        private void RunWithoutDirtyMarking(Action action)
+        {
+            isApplyingHighlight = true;
+            try { action(); }
+            finally { isApplyingHighlight = false; }
         }
 
         /// <summary>現在のファイルに未保存の変更があることを記録し、フォルダツリーの表示も
@@ -342,6 +357,12 @@ namespace mde
             if (outlineManager == null || folderTreeManager == null || originalTextTracker == null) return;
 
             if (isSourceMode) return;
+
+            // 検索結果のハイライト（背景色）の適用/解除も、WPFの仕様上TextChangedを発生させて
+            // しまうが、これは実際の編集ではないため、ダーティ扱いにしたり元テキスト保持の
+            // 記憶を破棄したりしてはいけない。
+            if (isApplyingHighlight) return;
+
             outlineManager.Refresh();
 
             currentFileIsDirty = true;
@@ -743,6 +764,7 @@ namespace mde
                     RunAsProgrammaticChange(() => markdownConverter.MarkdownToDocument(onDiskContent, Editor.Document));
                     outlineManager.Refresh();
                 }
+                searchReplaceService.OnDocumentReplaced();
 
                 currentFileIsDirty = false;
                 folderTreeManager.RefreshDirtyMarkers();
@@ -777,6 +799,7 @@ namespace mde
                 RunAsProgrammaticChange(() => markdownConverter.MarkdownToDocument(md, Editor.Document));
                 outlineManager.Refresh();
             }
+            searchReplaceService.OnDocumentReplaced();
 
             currentFileIsDirty = false;
 
@@ -1050,6 +1073,16 @@ namespace mde
         /// <summary>検索・置換の公開API。FindReplaceWindowから使う。</summary>
         public SearchReplaceService SearchReplace => searchReplaceService;
 
+        /// <summary>現在開いているファイルの絶対パス（未保存なら null）。FindReplaceWindowが
+        /// 「今開いているファイルから検索を始める」ために参照する。</summary>
+        public string CurrentFilePath => currentFilePath;
+
+        /// <summary>アウトラインペインの管理役。検索結果の反映などにFindReplaceWindowから使う。</summary>
+        public OutlineManager OutlinePane => outlineManager;
+
+        /// <summary>フォルダツリーペインの管理役。検索結果の反映などにFindReplaceWindowから使う。</summary>
+        public FolderTreeManager FolderTreePane => folderTreeManager;
+
         private void FindReplaceBtn_Click(object sender, RoutedEventArgs e)
         {
             var win = new FindReplaceWindow(this) { Owner = this };
@@ -1159,8 +1192,47 @@ namespace mde
 
         private void TreeViewItem_Expanded(object sender, RoutedEventArgs e) => folderTreeManager.HandleTreeViewItemExpanded(sender, e);
 
-        private void FolderTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e) =>
+        /// <summary>
+        /// フォルダツリーの選択項目が切り替わると、WPF標準の動作でその項目を横方向にも
+        /// 完全に見えるようスクロールしてしまい、ファイル名が長い場合に横スクロールバーが
+        /// 右へずれてしまう。これを防ぐため、内部のScrollViewerの横スクロール位置が0以外に
+        /// 変化するたびに、強制的に0へ戻す。
+        /// </summary>
+        /// <summary>フォルダツリー内部のScrollViewerへの参照（選択項目切り替え後の横スクロール
+        /// リセットに使う）。</summary>
+        private ScrollViewer folderTreeScrollViewer;
+
+        private void FolderTree_Loaded(object sender, RoutedEventArgs e)
+        {
+            folderTreeScrollViewer = FindVisualChild<ScrollViewer>(FolderTree);
+        }
+
+        private static T FindVisualChild<T>(DependencyObject root) where T : DependencyObject
+        {
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                if (child is T match) return match;
+                var found = FindVisualChild<T>(child);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        private void FolderTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        {
             folderTreeManager.HandleSelectedItemChanged(sender, e);
+
+            // 選択項目が切り替わると、WPF標準の動作でその項目を横方向にも完全に見えるよう
+            // スクロールしてしまい、ファイル名が長い場合に横スクロールバーが右へずれてしまう。
+            // このレイアウトパスが終わった直後（Loaded優先度）に横スクロールだけを0へ戻すことで、
+            // それ以外のタイミングでのユーザーによる手動スクロールには一切影響しないようにする。
+            if (folderTreeScrollViewer != null)
+            {
+                Dispatcher.BeginInvoke(new Action(() => folderTreeScrollViewer.ScrollToHorizontalOffset(0)),
+                    System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+        }
 
         // ======================================================================
         //  アウトラインペイン
@@ -1168,6 +1240,5 @@ namespace mde
 
         private void OutlineList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
             outlineManager.HandleSelectionChanged(sender, e);
-
     }
 }
