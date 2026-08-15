@@ -1,96 +1,134 @@
-﻿using System;
+﻿// MainWindow.xaml.cs
+//
+// mde (MarkDown インラインエディタ) の一部。
+// アプリのメインウィンドウ。ここでは各機能クラス（MarkdownConverter、TableEditor、
+// ListEditor、HeadingCodeBlockEditor、InlineStyleEditor、ImageManager、SearchReplaceService、
+// OutlineManager、FolderTreeManager）をすべて構築し、コンストラクタで必要なdelegateを配線する。
+// XAML側から呼ばれるイベントハンドラの多くは、実際の処理を各クラスへそのまま橋渡しする
+// 薄いラッパーになっている。ウィンドウ全体・現在のファイル・キーボード入力の振り分けといった
+// 「どのクラスにも属さない」調整の役割もここが担う。
+
+using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
-using System.Linq;
-using System.Net;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 
 namespace mde
 {
+    /// <summary>
+    /// mdeの唯一のメインウィンドウ。1つのRichTextBox（MarkDownモード）と1つのプレーンな
+    /// TextBox（ソースモード）を中心に、フォルダペイン・アウトラインペインを備えたWYSIWYG
+    /// MarkDownエディタ。実際の編集ロジックは役割ごとに独立したクラスへ委譲している。
+    /// </summary>
     public partial class MainWindow : Window
     {
+        // ======================================================================
+        //  状態（フィールド）
+        // ======================================================================
+
+        /// <summary>ソースモード（生テキスト表示）中はtrue。</summary>
         private bool isSourceMode = false;
+
+        /// <summary>ユーザーの入力ではなく、コードによる変更を行っている間だけtrueにするガード
+        /// フラグ。TextChangedハンドラの自動変換ロジックが、プログラムによる変更にまで
+        /// 反応してしまわないようにするためのもの。</summary>
         private bool isProgrammaticChange = false;
 
+        /// <summary>現在エディタに表示中のファイルの絶対パス。未保存なら null。</summary>
         private string currentFilePath = null;
-        private string currentFileDirectory = null;
-        private string loadedFolderRootPath = null;
 
-        // Files with changes (typically from a folder-wide replace, or switching away from an
-        // edited file) that have NOT been written to disk yet. Key = absolute file path.
+        /// <summary>currentFilePathの保存先フォルダ（画像の相対パス解決で毎回計算し直さずに
+        /// 済むようキャッシュしている）。</summary>
+        private string currentFileDirectory = null;
+
+        /// <summary>まだディスクに書き出されていない、メモリ上だけの編集内容（フォルダ全体の
+        /// 置換、または編集中のファイルから離れた際に発生する）。キー=絶対パス、値=そのファイルの
+        /// 現在のMarkDown内容。</summary>
         private readonly Dictionary<string, string> pendingFileEdits =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        // Whether the currently open file (currentFilePath) has unsaved changes.
+        /// <summary>現在のファイル（currentFilePath）に未保存の変更があるかどうか。</summary>
         private bool currentFileIsDirty = false;
 
-        // Each file's original line-ending style ("\r\n" or "\n"), detected when first read from
-        // disk, so saving doesn't silently convert CRLF files to LF (our internal markdown string
-        // building always uses bare "\n").
-        private readonly Dictionary<string, string> fileLineEndings =
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        // For each top-level Block still exactly as it was when the file was loaded, the original
-        // markdown source text that produced it. On save, blocks still present here are written
-        // back verbatim (preserving exact original formatting); any block that's been edited is
-        // removed from this table (see InvalidateOriginalText) so it gets freshly regenerated
-        // instead. Keyed by object identity, so the entry is automatically discarded once the
-        // Block itself is no longer reachable.
-        private readonly ConditionalWeakTable<Block, OriginalTextHolder> originalBlockText =
-            new ConditionalWeakTable<Block, OriginalTextHolder>();
-
-        private class OriginalTextHolder
-        {
-            public string Text;
-        }
-
-        private Paragraph ctxParagraph;
-        private TableCell ctxCell;
-        private Image ctxImage;
-        private Run ctxLinkRun;
-
+        /// <summary>エディタに適用中のズーム倍率（1.0が100%）。</summary>
         private double zoomLevel = 1.0;
 
-        private readonly ObservableCollection<OutlineEntry> outlineItems = new ObservableCollection<OutlineEntry>();
-        private readonly ObservableCollection<FileSystemItem> folderRoots = new ObservableCollection<FileSystemItem>();
-
-        private static readonly Brush HeaderBackground = new SolidColorBrush(Color.FromRgb(0xE5, 0xEF, 0xEC));
-        private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xE3, 0xDD, 0xCC));
-        private static readonly Brush CodeBlockBackground = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
-        private static readonly Brush LinkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
-
-        private static readonly Regex InlineImageRegex = new Regex(
-            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\))|(`([^`]+)`)|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|((?<!!)\\[([^\\]]*)\\]\\(([^)\\s]+)(?:\\s+\"[^\"]*\")?\\))|(<(https?://[^\\s<>]+)>)",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-        // Unique per open document/window, so simultaneously edited files never collide with each
-        // other's dropped-image filenames while staged in the OS temp folder.
+        /// <summary>このウィンドウ専用の一時フォルダ識別子（複数ウィンドウを同時に開いた際、
+        /// ドラッグ挿入した画像のファイル名が衝突しないようにするため）。</summary>
         private readonly string instanceTempId = Guid.NewGuid().ToString("N");
 
+        // フォルダ/アウトラインペインの表示・非表示状態
+        private double lastFolderColumnWidth = 190;
+        private double lastOutlineColumnWidth = 210;
+        private bool folderPaneVisible = true;
+        private bool outlinePaneVisible = true;
+
+        // 右クリック時の対象（表・コードブロックまわりはTableEditor/InlineStyleEditorに
+        // それぞれ専用のプロパティがあるので、ここではまだどのクラスにも属さないものだけを保持する）
+        private Paragraph ctxParagraph;
+
+        // ======================================================================
+        //  各機能クラス（協力オブジェクト）
+        // ======================================================================
+
+        private readonly OriginalTextTracker originalTextTracker;
+        private readonly LineEndingTracker lineEndingTracker;
+        private readonly ImageManager imageManager;
+        private readonly MarkdownConverter markdownConverter;
+        private readonly ListEditor listEditor;
+        private readonly HeadingCodeBlockEditor headingCodeBlockEditor;
+        private readonly TableEditor tableEditor;
+        private readonly InlineStyleEditor inlineStyleEditor;
+        private readonly SearchReplaceService searchReplaceService;
+        private readonly OutlineManager outlineManager;
+        private readonly FolderTreeManager folderTreeManager;
+
+        /// <summary>ウィンドウを初期化し、各機能クラスを構築・配線したうえで、初回起動時の
+        /// 案内文書を読み込む。</summary>
         public MainWindow()
         {
             InitializeComponent();
+
+            originalTextTracker = new OriginalTextTracker(Editor);
+            lineEndingTracker = new LineEndingTracker(PathsReferToSameFile);
+            outlineManager = new OutlineManager(Editor);
+            imageManager = new ImageManager(
+                Editor, originalTextTracker, () => isSourceMode, () => currentFileDirectory,
+                RunAsProgrammaticChange, outlineManager.Refresh, instanceTempId);
+            markdownConverter = new MarkdownConverter(originalTextTracker, imageManager);
+            listEditor = new ListEditor(Editor, originalTextTracker, RunAsProgrammaticChange);
+            headingCodeBlockEditor = new HeadingCodeBlockEditor(Editor, originalTextTracker, RunAsProgrammaticChange);
+            tableEditor = new TableEditor(
+                Editor, originalTextTracker, MarkDirty, RunAsProgrammaticChange, () => isSourceMode,
+                outlineManager.Refresh, InsertPlainTextWithLineBreaksForCodeBlock);
+            inlineStyleEditor = new InlineStyleEditor(
+                Editor, originalTextTracker, RunAsProgrammaticChange, MarkDirty, outlineManager.Refresh,
+                markdownConverter.BlockToMarkdown);
+            folderTreeManager = new FolderTreeManager(
+                LoadFile, () => currentFilePath, () => currentFileIsDirty,
+                () => pendingFileEdits.Keys, PathsReferToSameFile);
+            searchReplaceService = new SearchReplaceService(
+                Editor, SourceEditor, markdownConverter, originalTextTracker, lineEndingTracker,
+                () => isSourceMode, RunAsProgrammaticChange, outlineManager.Refresh, OutlineManager.ScrollParagraphToTop,
+                () => folderTreeManager.LoadedFolderRootPath, GetCurrentContentForFile,
+                SetFileContentForReplaceImpl, LoadFile);
+
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version;
-            OutlineList.ItemsSource = outlineItems;
-            FolderTree.ItemsSource = folderRoots;
-            DataObject.AddCopyingHandler(Editor, Editor_Copying);
-            DataObject.AddPastingHandler(Editor, Editor_Pasting);
+            OutlineList.ItemsSource = outlineManager.Items;
+            FolderTree.ItemsSource = folderTreeManager.Roots;
+            DataObject.AddCopyingHandler(Editor, tableEditor.HandleCopying);
+            DataObject.AddPastingHandler(Editor, tableEditor.HandlePasting);
             LoadIntroContent();
         }
 
+        /// <summary>ウィンドウを閉じる際、このウィンドウ専用の一時画像フォルダを削除する。</summary>
         protected override void OnClosed(EventArgs e)
         {
             base.OnClosed(e);
@@ -101,71 +139,112 @@ namespace mde
             }
             catch
             {
-                // best-effort cleanup only
+                // 削除できなくても致命的ではない（ベストエフォート）
             }
         }
 
-        public class ImageInfo
+        // ======================================================================
+        //  各クラスへ渡す共通delegateの実装
+        // ======================================================================
+
+        /// <summary>渡された処理を「プログラムによる変更」として実行する。実行中は
+        /// Editor_TextChangedの自動変換ロジック（*や#での自動変換など）が働かない。</summary>
+        /// <param name="action">実行する処理。</param>
+        private void RunAsProgrammaticChange(Action action)
         {
-            public string OriginalSrc;
-            public string Alt;
-            public string Style;
-            public string Format; // "html" or "md"
+            isProgrammaticChange = true;
+            try { action(); }
+            finally { isProgrammaticChange = false; }
         }
 
-        public class CodeBlockInfo
+        /// <summary>現在のファイルに未保存の変更があることを記録し、フォルダツリーの表示も
+        /// 更新する。</summary>
+        private void MarkDirty()
         {
-            public string Language = "";
+            currentFileIsDirty = true;
+            folderTreeManager.RefreshDirtyMarkers();
         }
 
-        public class LinkInfo
+        /// <summary>2つのパスが同一ファイルを指しているかどうかを調べる（大文字小文字を
+        /// 区別せず、完全パスで比較する）。</summary>
+        private bool PathsReferToSameFile(string a, string b)
         {
-            public string Url;
-            public bool IsAutoLink; // true if loaded from <url> style rather than [text](url)
-        }
-
-        public class OutlineEntry
-        {
-            public int Level { get; set; }
-            public string Text { get; set; }
-            public Paragraph TargetParagraph { get; set; }
-            public Thickness Indent => new Thickness((Level - 1) * 14, 0, 0, 0);
-            public double FontSizeValue => Level <= 2 ? 13 : 12;
-        }
-
-        public class FileSystemItem : INotifyPropertyChanged
-        {
-            public string Name { get; set; }
-            public string FullPath { get; set; }
-            public bool IsDirectory { get; set; }
-            public bool IsExpanded { get; set; }
-            public ObservableCollection<FileSystemItem> Children { get; } = new ObservableCollection<FileSystemItem>();
-
-            private bool isDirty;
-            public bool IsDirty
+            try
             {
-                get => isDirty;
-                set
+                return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>コードブロックへの貼り付け時に使う、改行を保ったプレーンテキスト挿入。
+        /// TableEditorの貼り付け処理から呼ばれる。</summary>
+        private void InsertPlainTextWithLineBreaksForCodeBlock(string text)
+        {
+            originalTextTracker.Invalidate(Editor.CaretPosition);
+            var lines = text.Replace("\r\n", "\n").Split('\n');
+            RunAsProgrammaticChange(() =>
+            {
+                Editor.Selection.Text = lines[0];
+                Editor.CaretPosition = Editor.Selection.End;
+                for (int i = 1; i < lines.Length; i++)
                 {
-                    if (isDirty == value) return;
-                    isDirty = value;
-                    OnPropertyChanged(nameof(IsDirty));
-                    OnPropertyChanged(nameof(DisplayName));
+                    Editor.CaretPosition = Editor.CaretPosition.InsertLineBreak();
+                    Editor.Selection.Select(Editor.CaretPosition, Editor.CaretPosition);
+                    Editor.Selection.Text = lines[i];
+                    Editor.CaretPosition = Editor.Selection.End;
+                }
+            });
+        }
+
+        /// <summary>
+        /// ファイルの「今の内容」を解決する：現在開いているファイルならライブなエディタ内容、
+        /// 保留中の編集があればそれ、どちらでもなければ null（呼び出し側がディスクから
+        /// 読み込む）。
+        /// </summary>
+        private string GetCurrentContentForFile(string path)
+        {
+            if (!string.IsNullOrEmpty(currentFilePath) && PathsReferToSameFile(path, currentFilePath))
+                return isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
+
+            foreach (var kv in pendingFileEdits)
+                if (PathsReferToSameFile(kv.Key, path)) return kv.Value;
+
+            return null;
+        }
+
+        /// <summary>検索・置換の結果をファイルへ反映する：現在開いているファイルならライブな
+        /// エディタへ直接、そうでなければ保留中の編集として記憶する。</summary>
+        private void SetFileContentForReplaceImpl(string path, string newContent)
+        {
+            if (!string.IsNullOrEmpty(currentFilePath) && PathsReferToSameFile(path, currentFilePath))
+            {
+                if (isSourceMode)
+                {
+                    SourceEditor.Text = newContent;
+                }
+                else
+                {
+                    RunAsProgrammaticChange(() => markdownConverter.MarkdownToDocument(newContent, Editor.Document));
+                    outlineManager.Refresh();
                 }
             }
-
-            public string DisplayName => IsDirty ? "* " + Name : Name;
-
-            public event PropertyChangedEventHandler PropertyChanged;
-            private void OnPropertyChanged(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+            else
+            {
+                pendingFileEdits[path] = newContent;
+                folderTreeManager.RefreshDirtyMarkers();
+            }
         }
 
         // ======================================================================
-        //  Initial content
+        //  初期表示コンテンツ
         // ======================================================================
+
+        /// <summary>初回起動時に表示する、組み込みの案内文書を読み込む。</summary>
         private void LoadIntroContent()
         {
-#if false
             string intro = string.Join("\n", new[]
             {
                 "# MarkDown インラインエディタ（デスクトップ版）",
@@ -185,33 +264,44 @@ namespace mde
                 "",
                 "「開く…」でMarkDownファイルを選ぶと、同じフォルダにある画像も自動的に表示されます。"
             });
-            MarkdownToDocument(intro, Editor.Document);
-#endif
-            RefreshOutline();
+            markdownConverter.MarkdownToDocument(intro, Editor.Document);
+            outlineManager.Refresh();
             currentFileIsDirty = false;
         }
 
         // ======================================================================
-        //  Auto-convert "* " / "# ".."###### " while typing
+        //  入力中の自動変換の起点（Editor_TextChanged）
         // ======================================================================
+
+        /// <summary>
+        /// MarkDownモードのメイン変更ハンドラ：ファイルをダーティにし、アウトラインを再構築し、
+        /// 触れたブロックの「元テキスト保持」の記憶を破棄する。実際のユーザー入力によるものだけ
+        /// （プログラムによる変更でなければ）、インライン装飾・箇条書き/見出しへの自動変換の
+        /// トリガーもチェックする。
+        /// </summary>
         private void Editor_TextChanged(object sender, TextChangedEventArgs e)
         {
+            // RichTextBoxはInitializeComponent中に、既定の空文書を設定する際にTextChangedを
+            // 発生させることがある。その時点ではコンストラクタでの各クラスの構築がまだ
+            // 完了していない可能性があるため、念のためガードしておく。
+            if (outlineManager == null || folderTreeManager == null || originalTextTracker == null) return;
+
             if (isSourceMode) return;
-            RefreshOutline();
+            outlineManager.Refresh();
 
             currentFileIsDirty = true;
-            RefreshFolderTreeDirtyMarkers();
-            InvalidateOriginalText(Editor.CaretPosition);
+            folderTreeManager.RefreshDirtyMarkers();
+            originalTextTracker.Invalidate(Editor.CaretPosition);
 
             if (isProgrammaticChange) return;
 
             var para = Editor.CaretPosition?.Paragraph;
             if (para == null) return;
-            if (para.Tag is CodeBlockInfo) return; // no auto-formatting inside code blocks
+            if (para.Tag is CodeBlockInfo) return; // コードブロック内は自動整形しない
 
-            if (CheckInlineFormatTrigger()) return;
+            if (inlineStyleEditor.CheckInlineFormatTrigger()) return;
 
-            if (!(para.Parent is FlowDocument)) return; // only top-level paragraphs auto-convert to list/heading
+            if (!(para.Parent is FlowDocument)) return; // 箇条書き/見出しへの自動変換はトップレベル段落のみ
 
             string text = new TextRange(para.ContentStart, para.ContentEnd).Text;
             text = text.TrimEnd('\r', '\n');
@@ -219,244 +309,62 @@ namespace mde
             var bulletMatch = Regex.Match(text, "^([*-])[ \u00A0]$");
             if (bulletMatch.Success)
             {
-                ConvertParagraphToListItem(para, bulletMatch.Groups[1].Value, false);
+                listEditor.ConvertParagraphToListItem(para, bulletMatch.Groups[1].Value, false);
                 return;
             }
             var orderedMatch = Regex.Match(text, "^\\d+\\.[ \u00A0]$");
             if (orderedMatch.Success)
             {
-                ConvertParagraphToListItem(para, null, true);
+                listEditor.ConvertParagraphToListItem(para, null, true);
                 return;
             }
             var m = Regex.Match(text, "^(#{1,6})[ \u00A0]$");
             if (m.Success)
             {
-                ConvertParagraphToHeading(para, m.Groups[1].Value.Length);
+                headingCodeBlockEditor.ConvertParagraphToHeading(para, m.Groups[1].Value.Length);
             }
         }
 
-        /// <summary>Walks up from a position to the top-level Block that's a direct child of the
-        /// FlowDocument (the Paragraph itself if it's already top-level, or the containing List/
-        /// Table if the position is inside a list item or table cell).</summary>
-        private Block GetTopLevelBlock(TextPointer position)
-        {
-            var para = position?.Paragraph;
-            if (para == null) return null;
-
-            DependencyObject node = para;
-            while (node != null)
-            {
-                if (node is Block block && ReferenceEquals(block.Parent, Editor.Document))
-                    return block;
-
-                node = (node as TextElement)?.Parent;
-            }
-            return null;
-        }
-
-        /// <summary>Marks the block at (or containing) a position as edited, so it will be freshly
-        /// regenerated on save instead of reusing its original source text verbatim.</summary>
-        private void InvalidateOriginalText(TextPointer position)
-        {
-            var block = GetTopLevelBlock(position);
-            if (block != null) originalBlockText.Remove(block);
-        }
-
-        /// <summary>Same as InvalidateOriginalText, but starting from a Block reference directly
-        /// rather than a TextPointer.</summary>
-        private void InvalidateOriginalTextForBlock(Block block)
-        {
-            DependencyObject node = block;
-            while (node != null)
-            {
-                if (node is Block b && ReferenceEquals(b.Parent, Editor.Document))
-                {
-                    originalBlockText.Remove(b);
-                    return;
-                }
-                node = (node as TextElement)?.Parent;
-            }
-        }
-
-        private void ConvertParagraphToListItem(Paragraph p, string marker, bool ordered)
-        {
-            isProgrammaticChange = true;
-            try
-            {
-                Block prev = p.PreviousBlock;
-                var newLiPara = new Paragraph();
-                var newLi = new ListItem(newLiPara);
-
-                if (prev is List prevList && (prevList.MarkerStyle == TextMarkerStyle.Decimal) == ordered)
-                {
-                    prevList.ListItems.Add(newLi);
-                    Editor.Document.Blocks.Remove(p);
-                }
-                else
-                {
-                    var list = new List
-                    {
-                        MarkerStyle = ordered ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc,
-                        Tag = ordered ? null : marker
-                    };
-                    list.ListItems.Add(newLi);
-                    Editor.Document.Blocks.InsertBefore(p, list);
-                    Editor.Document.Blocks.Remove(p);
-                }
-                Editor.CaretPosition = newLiPara.ContentStart;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-            Editor.Focus();
-        }
-
-        private void ConvertParagraphToHeading(Paragraph p, int level)
-        {
-            isProgrammaticChange = true;
-            try
-            {
-                p.Inlines.Clear();
-                ApplyHeadingStyle(p, level);
-                Editor.CaretPosition = p.ContentStart;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-        }
-
-        private void ClearParagraphSpecialStyling(Paragraph p)
-        {
-            p.Background = null;
-            p.Padding = new Thickness(0);
-            p.BorderThickness = new Thickness(0);
-            p.BorderBrush = null;
-            p.ClearValue(TextElement.FontFamilyProperty);
-        }
-
-        private void ApplyHeadingStyle(Paragraph p, int level)
-        {
-            ClearParagraphSpecialStyling(p);
-            p.Tag = level == 0 ? null : (object)level;
-            if (level == 0)
-            {
-                p.FontSize = 16;
-                p.FontWeight = FontWeights.Normal;
-                p.Margin = new Thickness(0, 0, 0, 14);
-            }
-            else
-            {
-                double[] sizes = { 0, 30, 24, 20, 18, 16.5, 15.5 };
-                p.FontSize = sizes[level];
-                p.FontWeight = FontWeights.Bold;
-                p.Margin = new Thickness(0, level <= 2 ? 20 : 14, 0, 10);
-                if (level <= 2)
-                {
-                    p.BorderBrush = CellBorder;
-                    p.BorderThickness = new Thickness(0, 0, 0, level == 1 ? 2 : 1);
-                    p.Padding = new Thickness(0, 0, 0, 4);
-                }
-                else
-                {
-                    p.BorderThickness = new Thickness(0);
-                }
-            }
-        }
-
-        // ---------------- code block ("```language") ----------------
-        private void ConvertParagraphToCodeBlock(Paragraph p, string language = "")
-        {
-            isProgrammaticChange = true;
-            try
-            {
-                p.Inlines.Clear();
-                ApplyCodeBlockStyle(p, language);
-
-                var trailingPara = new Paragraph();
-                Editor.Document.Blocks.InsertAfter(p, trailingPara);
-
-                Editor.CaretPosition = p.ContentStart;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-            Editor.Focus();
-        }
-
-        private void ApplyCodeBlockStyle(Paragraph p, string language = "")
-        {
-            ClearParagraphSpecialStyling(p);
-            p.Tag = new CodeBlockInfo { Language = language ?? "" };
-            p.FontFamily = new FontFamily("Consolas");
-            p.FontSize = 13.5;
-            p.FontWeight = FontWeights.Normal;
-            p.Background = CodeBlockBackground;
-            p.Padding = new Thickness(14, 10, 14, 10);
-            p.Margin = new Thickness(0, 4, 0, 14);
-            p.BorderBrush = CellBorder;
-            p.BorderThickness = new Thickness(1);
-            ToolTipService.SetToolTip(p, string.IsNullOrEmpty(language) ? "コードブロック" : "コードブロック (" + language + ")");
-        }
+        // ======================================================================
+        //  キー入力の振り分け（Tab / Enter / 表内の矢印キー）
+        // ======================================================================
 
         /// <summary>
-        /// Removes up to one indent level (a leading tab, or up to 4 leading spaces) from the start
-        /// of the current line within a code block paragraph. Bounded so it never reads or deletes
-        /// past the current line or past the paragraph's own content.
+        /// キー入力の中心的な振り分け役。箇条書き項目・見出し・コードブロック・表セルの
+        /// いずれにキャレットがあるかに応じて、Tab/Shift+Tab/Enter/矢印キーの処理を
+        /// 対応するクラスへ委譲する。
         /// </summary>
-        private void OutdentCodeLine(Paragraph p)
+        /// <summary>
+        /// 箇条書き/順序付きリストへの変換の入口（スペースキー）。印字可能な文字（スペースを含む）は
+        /// WPFではPreviewKeyDownではなくPreviewTextInputを通じて挿入されるため、PreviewKeyDownで
+        /// e.Handled=trueを設定するだけでは確実に文字の挿入を防げない。このイベントで直接
+        /// 判定・処理することで、変換後に元のスペース文字が余分に残ってしまう不具合を防ぐ。
+        /// </summary>
+        private void Editor_PreviewTextInput(object sender, TextCompositionEventArgs e)
         {
-            InvalidateOriginalTextForBlock(p);
-            var caret = Editor.CaretPosition;
-            var lineStart = caret.GetLineStartPosition(0) ?? p.ContentStart;
+            if (isSourceMode || e.Text != " ") return;
 
-            TextPointer upperBound = p.ContentEnd;
-            var nextLineStart = caret.GetLineStartPosition(1);
-            if (nextLineStart != null && nextLineStart.CompareTo(upperBound) < 0)
-                upperBound = nextLineStart;
+            var para = Editor.CaretPosition?.Paragraph;
+            if (para == null || !(para.Parent is FlowDocument) || para.Tag is CodeBlockInfo) return;
+            if (Editor.CaretPosition.CompareTo(para.ContentEnd) != 0) return;
 
-            var probe = lineStart.GetPositionAtOffset(4);
-            if (probe == null || probe.CompareTo(upperBound) > 0) probe = upperBound;
-            if (probe.CompareTo(lineStart) < 0) probe = lineStart;
+            string beforeSpace = new TextRange(para.ContentStart, para.ContentEnd).Text.TrimEnd('\r', '\n');
 
-            string prefix = new TextRange(lineStart, probe).Text;
-
-            int removeCount = 0;
-            if (prefix.StartsWith("\t"))
+            var bulletKeyMatch = Regex.Match(beforeSpace, "^([*-])$");
+            if (bulletKeyMatch.Success)
             {
-                removeCount = 1;
+                e.Handled = true;
+                listEditor.ConvertParagraphToListItem(para, bulletKeyMatch.Groups[1].Value, false);
+                return;
             }
-            else
+            var orderedKeyMatch = Regex.Match(beforeSpace, "^\\d+\\.$");
+            if (orderedKeyMatch.Success)
             {
-                while (removeCount < prefix.Length && removeCount < 4 && prefix[removeCount] == ' ')
-                    removeCount++;
+                e.Handled = true;
+                listEditor.ConvertParagraphToListItem(para, null, true);
             }
-            if (removeCount == 0) return;
-
-            var removeEnd = lineStart.GetPositionAtOffset(removeCount);
-            if (removeEnd == null) return;
-
-            isProgrammaticChange = true;
-            try
-            {
-                // caret is a live TextPointer: it automatically re-anchors as content before it is
-                // removed, so no manual offset math is needed after the deletion below.
-                new TextRange(lineStart, removeEnd).Text = "";
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-
-            Editor.CaretPosition = caret;
-            Editor.Focus();
         }
 
-        // ======================================================================
-        //  Key handling: Enter / Shift+Enter / Tab / arrow keys
-        // ======================================================================
         private void Editor_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (isSourceMode) return;
@@ -465,31 +373,31 @@ namespace mde
 
             if (e.Key == Key.Enter)
             {
-                if (IsInListItem(para, out ListItem li, out List parentList))
+                if (listEditor.IsInListItem(para, out ListItem li, out List parentList))
                 {
                     e.Handled = true;
                     if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
-                        InsertLineBreakAtCaret();
+                        headingCodeBlockEditor.InsertLineBreakAtCaret();
                     else
-                        HandleListEnter(li, parentList);
+                        listEditor.HandleListEnter(li, parentList);
                     return;
                 }
                 if (para.Tag is int level && level > 0)
                 {
                     e.Handled = true;
-                    HandleHeadingEnter(para);
+                    headingCodeBlockEditor.HandleHeadingEnter(para);
                     return;
                 }
                 if (para.Tag is CodeBlockInfo)
                 {
                     e.Handled = true;
-                    InsertLineBreakAtCaret();
+                    headingCodeBlockEditor.InsertLineBreakAtCaret();
                     return;
                 }
                 if (para.Parent is TableCell)
                 {
                     e.Handled = true;
-                    InsertLineBreakAtCaret();
+                    headingCodeBlockEditor.InsertLineBreakAtCaret();
                     return;
                 }
                 if (para.Parent is FlowDocument)
@@ -499,20 +407,20 @@ namespace mde
                     if (fenceMatch.Success)
                     {
                         e.Handled = true;
-                        ConvertParagraphToCodeBlock(para, fenceMatch.Groups[1].Value);
+                        headingCodeBlockEditor.ConvertParagraphToCodeBlock(para, fenceMatch.Groups[1].Value);
                         return;
                     }
                 }
-                return; // plain paragraph: default WPF behaviour creates a new Paragraph
+                return; // 通常の段落: WPF標準の動作（新しい段落の作成）に任せる
             }
 
-            if (e.Key == Key.Tab && IsInListItem(para, out ListItem tabLi, out List tabList))
+            if (e.Key == Key.Tab && listEditor.IsInListItem(para, out ListItem tabLi, out List tabList))
             {
                 e.Handled = true;
                 if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
-                    OutdentListItem(tabLi, tabList);
+                    listEditor.OutdentListItem(tabLi, tabList);
                 else
-                    IndentListItem(tabLi, tabList);
+                    listEditor.IndentListItem(tabLi, tabList);
                 return;
             }
 
@@ -521,7 +429,7 @@ namespace mde
                 e.Handled = true;
                 if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
                 {
-                    OutdentCodeLine(para);
+                    headingCodeBlockEditor.OutdentCodeLine(para);
                 }
                 else
                 {
@@ -537,308 +445,31 @@ namespace mde
                 if (e.Key == Key.Up || e.Key == Key.Down)
                 {
                     e.Handled = true;
-                    MoveVertical(cell, e.Key == Key.Up ? -1 : 1);
+                    tableEditor.MoveVertical(cell, e.Key == Key.Up ? -1 : 1);
                 }
-                else if (e.Key == Key.Left && IsCaretAtStart(cell))
+                else if (e.Key == Key.Left && tableEditor.IsCaretAtStart(cell))
                 {
                     e.Handled = true;
-                    MoveHorizontal(cell, -1);
+                    tableEditor.MoveHorizontal(cell, -1);
                 }
-                else if (e.Key == Key.Right && IsCaretAtEnd(cell))
+                else if (e.Key == Key.Right && tableEditor.IsCaretAtEnd(cell))
                 {
                     e.Handled = true;
-                    MoveHorizontal(cell, 1);
-                }
-            }
-        }
-
-        private bool IsInListItem(Paragraph para, out ListItem li, out List parentList)
-        {
-            li = para.Parent as ListItem;
-            if (li != null)
-            {
-                parentList = li.Parent as List;
-                return parentList != null;
-            }
-            parentList = null;
-            return false;
-        }
-
-        private void InsertLineBreakAtCaret()
-        {
-            Editor.CaretPosition = Editor.CaretPosition.InsertLineBreak();
-        }
-
-        private void HandleHeadingEnter(Paragraph headingPara)
-        {
-            isProgrammaticChange = true;
-            try
-            {
-                var newPara = new Paragraph();
-                Editor.Document.Blocks.InsertAfter(headingPara, newPara);
-                Editor.CaretPosition = newPara.ContentStart;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-        }
-
-        // ---------------- list Enter / indent / outdent ----------------
-        private string GetOwnListItemText(ListItem li)
-        {
-            var ownPara = li.Blocks.FirstBlock as Paragraph;
-            if (ownPara == null) return "";
-            var sb = new StringBuilder();
-            AppendPlainInlineText(ownPara.Inlines, sb);
-            string t = sb.ToString().Trim();
-            if (t.Length == 0 && HasDescendantImage(ownPara)) return "\u200B";
-            return t;
-        }
-
-        /// <summary>Concatenates only the literal Run text within an Inlines collection (recursing
-        /// into Spans, treating LineBreak as a newline). Unlike TextRange.Text, this never picks up
-        /// a list item's marker glyph as if it were part of the text content.</summary>
-        private void AppendPlainInlineText(InlineCollection inlines, StringBuilder sb)
-        {
-            foreach (Inline inline in inlines)
-            {
-                if (inline is Run run) sb.Append(run.Text);
-                else if (inline is Span span) AppendPlainInlineText(span.Inlines, sb);
-                else if (inline is LineBreak) sb.Append('\n');
-            }
-        }
-
-        private bool HasDescendantImage(Paragraph p)
-        {
-            foreach (Inline inline in p.Inlines)
-                if (InlineContainsImage(inline)) return true;
-            return false;
-        }
-
-        private bool InlineContainsImage(Inline inline)
-        {
-            if (inline is InlineUIContainer iuc && iuc.Child is Image) return true;
-            if (inline is Span span)
-                foreach (Inline child in span.Inlines)
-                    if (InlineContainsImage(child)) return true;
-            return false;
-        }
-
-        private void HandleListEnter(ListItem li, List parentList)
-        {
-            InvalidateOriginalTextForBlock(parentList);
-            isProgrammaticChange = true;
-            try
-            {
-                bool hasNestedList = li.Blocks.Count > 1;
-                bool isEmpty = !hasNestedList && GetOwnListItemText(li).Length == 0;
-
-                if (isEmpty)
-                {
-                    List topList = parentList;
-                    DependencyObject cursor = parentList.Parent;
-                    while (cursor is ListItem ownerLi)
-                    {
-                        topList = ownerLi.Parent as List;
-                        cursor = topList?.Parent;
-                    }
-
-                    var newPara = new Paragraph();
-                    Editor.Document.Blocks.InsertAfter(topList, newPara);
-
-                    parentList.ListItems.Remove(li);
-                    if (parentList.ListItems.Count == 0)
-                    {
-                        RemoveEmptyList(parentList);
-                    }
-                    Editor.CaretPosition = newPara.ContentStart;
-                }
-                else
-                {
-                    var newLi = new ListItem(new Paragraph());
-                    var items = parentList.ListItems.Cast<ListItem>().ToList();
-                    int idx = items.IndexOf(li);
-                    parentList.ListItems.Clear();
-                    for (int k = 0; k < items.Count; k++)
-                    {
-                        parentList.ListItems.Add(items[k]);
-                        if (k == idx) parentList.ListItems.Add(newLi);
-                    }
-                    Editor.CaretPosition = ((Paragraph)newLi.Blocks.FirstBlock).ContentStart;
-                }
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-            Editor.Focus();
-        }
-
-        private void RemoveEmptyList(List list)
-        {
-            if (list.Parent is ListItem ownerLi)
-                ownerLi.Blocks.Remove(list);
-            else if (list.Parent is FlowDocument doc)
-                doc.Blocks.Remove(list);
-        }
-
-        private void IndentListItem(ListItem li, List parentList)
-        {
-            InvalidateOriginalTextForBlock(parentList);
-            ListItem prevLi = null;
-            foreach (ListItem item in parentList.ListItems)
-            {
-                if (item == li) break;
-                prevLi = item;
-            }
-            if (prevLi == null) return; // first item cannot be indented
-
-            isProgrammaticChange = true;
-            try
-            {
-                List nestedList = prevLi.Blocks.Count > 1 ? prevLi.Blocks.LastBlock as List : null;
-                if (nestedList == null)
-                {
-                    bool parentOrdered = parentList.MarkerStyle == TextMarkerStyle.Decimal;
-                    nestedList = new List
-                    {
-                        MarkerStyle = parentOrdered ? TextMarkerStyle.Decimal : TextMarkerStyle.Circle,
-                        Tag = parentOrdered ? null : ((parentList.Tag as string) ?? "*")
-                    };
-                    prevLi.Blocks.Add(nestedList);
-                }
-                parentList.ListItems.Remove(li);
-                nestedList.ListItems.Add(li);
-
-                if (li.Blocks.FirstBlock is Paragraph fp) Editor.CaretPosition = fp.ContentEnd;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-            Editor.Focus();
-        }
-
-        private void OutdentListItem(ListItem li, List parentList)
-        {
-            InvalidateOriginalTextForBlock(parentList);
-            if (!(parentList.Parent is ListItem parentLi)) return; // already top level
-            if (!(parentLi.Parent is List grandList)) return;
-
-            isProgrammaticChange = true;
-            try
-            {
-                var siblings = parentList.ListItems.Cast<ListItem>().ToList();
-                int idx = siblings.IndexOf(li);
-                var before = siblings.Take(idx).ToList();
-                var after = siblings.Skip(idx + 1).ToList();
-
-                parentList.ListItems.Clear();
-                foreach (var b in before) parentList.ListItems.Add(b);
-
-                if (after.Count > 0)
-                {
-                    bool parentOrdered = parentList.MarkerStyle == TextMarkerStyle.Decimal;
-                    List ownNested = new List
-                    {
-                        MarkerStyle = parentOrdered ? TextMarkerStyle.Decimal : TextMarkerStyle.Circle,
-                        Tag = parentOrdered ? null : ((parentList.Tag as string) ?? "*")
-                    };
-                    foreach (var a in after) ownNested.ListItems.Add(a);
-                    li.Blocks.Add(ownNested);
-                }
-
-                var grandItems = grandList.ListItems.Cast<ListItem>().ToList();
-                int gIdx = grandItems.IndexOf(parentLi);
-                grandList.ListItems.Clear();
-                for (int k = 0; k < grandItems.Count; k++)
-                {
-                    grandList.ListItems.Add(grandItems[k]);
-                    if (k == gIdx) grandList.ListItems.Add(li);
-                }
-
-                if (parentList.ListItems.Count == 0)
-                {
-                    parentLi.Blocks.Remove(parentList);
-                }
-
-                if (li.Blocks.FirstBlock is Paragraph fp) Editor.CaretPosition = fp.ContentEnd;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-            Editor.Focus();
-        }
-
-        // ---------------- table cell navigation ----------------
-        private bool IsCaretAtStart(TableCell cell)
-        {
-            var firstPara = cell.Blocks.FirstBlock as Paragraph;
-            if (firstPara == null) return true;
-            return Editor.CaretPosition.CompareTo(firstPara.ContentStart) <= 0;
-        }
-
-        private bool IsCaretAtEnd(TableCell cell)
-        {
-            var lastPara = cell.Blocks.LastBlock as Paragraph;
-            if (lastPara == null) return true;
-            return Editor.CaretPosition.CompareTo(lastPara.ContentEnd) >= 0;
-        }
-
-        private void MoveVertical(TableCell cell, int dir)
-        {
-            if (!(cell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
-            int rIdx = rg.Rows.IndexOf(row);
-            int cIdx = row.Cells.IndexOf(cell);
-            int targetIdx = rIdx + dir;
-            if (targetIdx < 0 || targetIdx >= rg.Rows.Count) return;
-            var targetRow = rg.Rows[targetIdx];
-            if (cIdx < targetRow.Cells.Count && targetRow.Cells[cIdx].Blocks.LastBlock is Paragraph tp)
-                Editor.CaretPosition = tp.ContentEnd;
-        }
-
-        private void MoveHorizontal(TableCell cell, int dir)
-        {
-            if (!(cell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
-            int rIdx = rg.Rows.IndexOf(row);
-            int cIdx = row.Cells.IndexOf(cell);
-
-            if (dir == 1)
-            {
-                if (cIdx + 1 < row.Cells.Count)
-                {
-                    if (row.Cells[cIdx + 1].Blocks.FirstBlock is Paragraph np) Editor.CaretPosition = np.ContentStart;
-                    return;
-                }
-                if (rIdx + 1 < rg.Rows.Count)
-                {
-                    var nr = rg.Rows[rIdx + 1];
-                    if (nr.Cells.Count > 0 && nr.Cells[0].Blocks.FirstBlock is Paragraph np2) Editor.CaretPosition = np2.ContentStart;
-                }
-            }
-            else
-            {
-                if (cIdx - 1 >= 0)
-                {
-                    if (row.Cells[cIdx - 1].Blocks.LastBlock is Paragraph pp) Editor.CaretPosition = pp.ContentEnd;
-                    return;
-                }
-                if (rIdx - 1 >= 0)
-                {
-                    var pr = rg.Rows[rIdx - 1];
-                    if (pr.Cells.Count > 0 && pr.Cells[pr.Cells.Count - 1].Blocks.LastBlock is Paragraph pp2)
-                        Editor.CaretPosition = pp2.ContentEnd;
+                    tableEditor.MoveHorizontal(cell, 1);
                 }
             }
         }
 
         // ======================================================================
-        //  Context menu
+        //  右クリックメニュー
         // ======================================================================
+
+        /// <summary>
+        /// 右クリック位置の下に何があるか（段落・表セル・画像・リンク）を判定し、対応する
+        /// メニュー項目の表示/非表示を切り替える。判定結果は各クラスの専用プロパティ
+        /// （TableEditor.ContextCellなど）へ格納し、以後のメニュー項目クリックから
+        /// 参照できるようにする。
+        /// </summary>
         private void Editor_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
             if (isSourceMode) { e.Handled = true; return; }
@@ -846,14 +477,17 @@ namespace mde
             Point pos = Mouse.GetPosition(Editor);
             TextPointer tp = Editor.GetPositionFromPoint(pos, true);
             ctxParagraph = tp?.Paragraph;
-            ctxCell = ctxParagraph?.Parent as TableCell;
+            tableEditor.ContextCell = ctxParagraph?.Parent as TableCell;
+            tableEditor.ContextParagraph = ctxParagraph;
+            inlineStyleEditor.ContextParagraph = ctxParagraph;
 
             var hit = VisualTreeHelper.HitTest(Editor, pos);
-            ctxImage = FindVisualAncestorOrSelf<Image>(hit?.VisualHit);
-            ctxLinkRun = tp?.Parent as Run;
-            if (!(ctxLinkRun?.Tag is LinkInfo)) ctxLinkRun = null;
+            imageManager.ContextImage = FindVisualAncestorOrSelf<Image>(hit?.VisualHit);
 
-            bool inTable = ctxCell != null;
+            var linkRun = tp?.Parent as Run;
+            inlineStyleEditor.ContextLinkRun = linkRun?.Tag is LinkInfo ? linkRun : null;
+
+            bool inTable = tableEditor.ContextCell != null;
             bool inCodeBlock = ctxParagraph?.Tag is CodeBlockInfo;
             HeadingMenuItem.Visibility = inTable ? Visibility.Collapsed : Visibility.Visible;
             InsertTableMenuItem.Visibility = inTable ? Visibility.Collapsed : Visibility.Visible;
@@ -864,681 +498,103 @@ namespace mde
             DeleteRowMenuItem.Visibility = inTable ? Visibility.Visible : Visibility.Collapsed;
             DeleteColumnMenuItem.Visibility = inTable ? Visibility.Visible : Visibility.Collapsed;
             CopyCodeBlockMenuItem.Visibility = inCodeBlock ? Visibility.Visible : Visibility.Collapsed;
-            SaveImageMenuItem.Visibility = ctxImage != null ? Visibility.Visible : Visibility.Collapsed;
+            SaveImageMenuItem.Visibility = imageManager.ContextImage != null ? Visibility.Visible : Visibility.Collapsed;
             TextStyleMenuItem.Visibility = (!Editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
-            LinkMenuItem.Visibility = ctxLinkRun != null ? Visibility.Visible : Visibility.Collapsed;
+            LinkMenuItem.Visibility = inlineStyleEditor.ContextLinkRun != null ? Visibility.Visible : Visibility.Collapsed;
             ToggleModeMenuItem.Header = isSourceMode ? "MarkDownモードに切り替え" : "ソースモードに切り替え";
         }
 
-        private void TextStyleItem_Click(object sender, RoutedEventArgs e)
-        {
-            string style = (string)((MenuItem)sender).Tag;
-            if (style == "link")
-            {
-                if (Editor.Selection.IsEmpty) return;
-                var dlg = new LinkInputDialog { Owner = this };
-                if (dlg.ShowDialog() == true && !string.IsNullOrWhiteSpace(dlg.Url))
-                {
-                    ApplyLinkStyle(dlg.Url);
-                }
-                return;
-            }
-            ApplyInlineStyle(style);
-        }
-
-        private void ApplyLinkStyle(string url)
-        {
-            if (Editor.Selection == null || Editor.Selection.IsEmpty) return;
-            string text = Editor.Selection.Text;
-            if (string.IsNullOrEmpty(text)) return;
-
-            isProgrammaticChange = true;
-            try
-            {
-                TextPointer start = Editor.Selection.Start;
-                Editor.Selection.Text = "";
-                var newRun = new Run(text, start)
-                {
-                    Foreground = LinkBrush,
-                    TextDecorations = TextDecorations.Underline,
-                    Tag = new LinkInfo { Url = url, IsAutoLink = false },
-                    ToolTip = url
-                };
-                Editor.Selection.Select(newRun.ContentStart, newRun.ContentEnd);
-                Editor.CaretPosition = newRun.ContentEnd;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-            RefreshOutline();
-        }
-
-        private void LinkOpen_Click(object sender, RoutedEventArgs e)
-        {
-            if (ctxLinkRun?.Tag is LinkInfo li) OpenUrl(li.Url);
-        }
-
-        private void LinkCopyUrl_Click(object sender, RoutedEventArgs e)
-        {
-            if (ctxLinkRun?.Tag is LinkInfo li)
-            {
-                try { Clipboard.SetText(li.Url); } catch { /* best effort */ }
-            }
-        }
-
-        private void LinkEdit_Click(object sender, RoutedEventArgs e)
-        {
-            if (!(ctxLinkRun?.Tag is LinkInfo li)) return;
-            var dlg = new LinkInputDialog(li.Url) { Owner = this };
-            if (dlg.ShowDialog() == true && !string.IsNullOrWhiteSpace(dlg.Url))
-            {
-                InvalidateOriginalText(ctxLinkRun.ContentStart);
-                li.Url = dlg.Url;
-                li.IsAutoLink = false;
-                ctxLinkRun.ToolTip = dlg.Url;
-                currentFileIsDirty = true;
-                RefreshFolderTreeDirtyMarkers();
-            }
-        }
-
-        private void LinkRemove_Click(object sender, RoutedEventArgs e)
-        {
-            if (ctxLinkRun == null) return;
-            InvalidateOriginalText(ctxLinkRun.ContentStart);
-            isProgrammaticChange = true;
-            try
-            {
-                ctxLinkRun.Tag = null;
-                ctxLinkRun.ClearValue(TextElement.ForegroundProperty);
-                ctxLinkRun.ClearValue(Inline.TextDecorationsProperty);
-                ctxLinkRun.ToolTip = null;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-            currentFileIsDirty = true;
-            RefreshFolderTreeDirtyMarkers();
-        }
-
-        /// <summary>
-        /// Copies the entire code block as ready-to-use MarkDown, including the ``` fences and
-        /// language tag - distinct from a normal Ctrl+C of selected text, which copies just the
-        /// raw code content.
-        /// </summary>
-        private void CopyCodeBlockItem_Click(object sender, RoutedEventArgs e)
-        {
-            if (ctxParagraph == null || !(ctxParagraph.Tag is CodeBlockInfo)) return;
-            string md = BlockToMarkdown(ctxParagraph);
-            if (!string.IsNullOrEmpty(md)) Clipboard.SetText(md);
-        }
-
+        /// <summary>ソースモードの右クリックメニュー。カット/コピー/貼り付けのみで、独自の
+        /// 項目は追加しない。</summary>
         private void SourceEditor_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
-            // The TextBox uses its own static ContextMenu (defined in XAML); nothing extra to prepare here.
         }
 
+        // ---- 見出し ----
+
+        /// <summary>右クリックメニューから見出しレベルを変更する。</summary>
         private void HeadingItem_Click(object sender, RoutedEventArgs e)
         {
             if (ctxParagraph == null) return;
             int level = int.Parse((string)((MenuItem)sender).Tag);
-            InvalidateOriginalTextForBlock(ctxParagraph);
-            isProgrammaticChange = true;
-            try { ApplyHeadingStyle(ctxParagraph, level); }
-            finally { isProgrammaticChange = false; }
-            RefreshOutline();
+            headingCodeBlockEditor.ChangeHeadingLevel(ctxParagraph, level);
+            outlineManager.Refresh();
+            MarkDirty();
         }
+
+        // ---- 表 ----
 
         private void InsertTableItem_Click(object sender, RoutedEventArgs e)
         {
+            tableEditor.ContextParagraph = ctxParagraph;
             var dlg = new TableSizeDialog { Owner = this };
             if (dlg.ShowDialog() == true)
             {
-                InsertTable(dlg.Rows, dlg.Columns);
+                tableEditor.InsertTable(dlg.Rows, dlg.Columns);
             }
         }
 
-        private void InsertTable(int rows, int cols)
+        private void InsertRowAboveItem_Click(object sender, RoutedEventArgs e) => tableEditor.InsertRow(above: true);
+        private void InsertRowBelowItem_Click(object sender, RoutedEventArgs e) => tableEditor.InsertRow(above: false);
+        private void InsertColumnLeftItem_Click(object sender, RoutedEventArgs e) => tableEditor.InsertColumn(left: true);
+        private void InsertColumnRightItem_Click(object sender, RoutedEventArgs e) => tableEditor.InsertColumn(left: false);
+        private void DeleteRowItem_Click(object sender, RoutedEventArgs e) => tableEditor.DeleteRow();
+        private void DeleteColumnItem_Click(object sender, RoutedEventArgs e) => tableEditor.DeleteColumn();
+
+        // ---- 画像 ----
+
+        private void SaveImageItem_Click(object sender, RoutedEventArgs e) => imageManager.SaveImageAs(this);
+
+        // ---- コードブロック ----
+
+        private void CopyCodeBlockItem_Click(object sender, RoutedEventArgs e) => inlineStyleEditor.CopyCodeBlockAsMarkdown();
+
+        // ---- 文字装飾・リンク ----
+
+        private void TextStyleItem_Click(object sender, RoutedEventArgs e)
         {
-            var table = new Table();
-            for (int c = 0; c < cols; c++) table.Columns.Add(new TableColumn());
-            var rg = new TableRowGroup();
-            table.RowGroups.Add(rg);
-
-            var headerRow = new TableRow();
-            for (int c = 0; c < cols; c++)
-            {
-                var cell = new TableCell(new Paragraph())
-                {
-                    FontWeight = FontWeights.Bold,
-                    Background = HeaderBackground,
-                    BorderBrush = CellBorder,
-                    BorderThickness = new Thickness(1),
-                    Padding = new Thickness(8, 6, 8, 6)
-                };
-                headerRow.Cells.Add(cell);
-            }
-            rg.Rows.Add(headerRow);
-
-            for (int r = 0; r < rows - 1; r++)
-            {
-                var row = new TableRow();
-                for (int c = 0; c < cols; c++)
-                {
-                    var cell = new TableCell(new Paragraph())
-                    {
-                        BorderBrush = CellBorder,
-                        BorderThickness = new Thickness(1),
-                        Padding = new Thickness(8, 6, 8, 6)
-                    };
-                    row.Cells.Add(cell);
-                }
-                rg.Rows.Add(row);
-            }
-
-            var trailingPara = new Paragraph();
-
-            isProgrammaticChange = true;
-            try
-            {
-                if (ctxParagraph != null && ctxParagraph.Parent is FlowDocument)
-                {
-                    Editor.Document.Blocks.InsertAfter(ctxParagraph, table);
-                    Editor.Document.Blocks.InsertAfter(table, trailingPara);
-                }
-                else
-                {
-                    Editor.Document.Blocks.Add(table);
-                    Editor.Document.Blocks.Add(trailingPara);
-                }
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-
-            if (headerRow.Cells[0].Blocks.FirstBlock is Paragraph hp) Editor.CaretPosition = hp.ContentStart;
-            Editor.Focus();
+            string style = (string)((MenuItem)sender).Tag;
+            inlineStyleEditor.ApplyTextStyleFromMenu(style, this);
         }
 
-        private void InsertRowAboveItem_Click(object sender, RoutedEventArgs e) => InsertRow(true);
-        private void InsertRowBelowItem_Click(object sender, RoutedEventArgs e) => InsertRow(false);
-        private void InsertColumnLeftItem_Click(object sender, RoutedEventArgs e) => InsertColumn(true);
-        private void InsertColumnRightItem_Click(object sender, RoutedEventArgs e) => InsertColumn(false);
+        private void LinkOpen_Click(object sender, RoutedEventArgs e) => inlineStyleEditor.OpenContextLink();
+        private void LinkCopyUrl_Click(object sender, RoutedEventArgs e) => inlineStyleEditor.CopyContextLinkUrl();
+        private void LinkEdit_Click(object sender, RoutedEventArgs e) => inlineStyleEditor.EditContextLink(this);
+        private void LinkRemove_Click(object sender, RoutedEventArgs e) => inlineStyleEditor.RemoveContextLink();
 
-        private void InsertRow(bool above)
+        private void Editor_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
+            inlineStyleEditor.HandlePreviewMouseLeftButtonDown(sender, e);
+
+        // ======================================================================
+        //  視覚ツリーのヘルパー（Editor_ContextMenuOpeningでのみ使用）
+        // ======================================================================
+
+        /// <summary>指定した型の、最も近い視覚ツリーの祖先（またはその要素自身）を見つける。</summary>
+        /// <param name="start">探索を始める要素。</param>
+        /// <returns>見つかった要素。なければ null。</returns>
+        private static T FindVisualAncestorOrSelf<T>(DependencyObject start) where T : DependencyObject
         {
-            if (ctxCell == null) return;
-            InvalidateOriginalText(ctxCell.ContentStart);
-            if (!(ctxCell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
-
-            int colCount = row.Cells.Count;
-            var newRow = new TableRow();
-            for (int c = 0; c < colCount; c++)
+            var current = start;
+            while (current != null)
             {
-                var cell = new TableCell(new Paragraph())
-                {
-                    BorderBrush = CellBorder,
-                    BorderThickness = new Thickness(1),
-                    Padding = new Thickness(8, 6, 8, 6)
-                };
-                newRow.Cells.Add(cell);
+                if (current is T match) return match;
+                current = VisualTreeHelper.GetParent(current);
             }
-
-            int idx = rg.Rows.IndexOf(row);
-            int insertIdx = above ? idx : idx + 1;
-            rg.Rows.Insert(insertIdx, newRow);
-
-            if (newRow.Cells.Count > 0 && newRow.Cells[0].Blocks.FirstBlock is Paragraph np)
-                Editor.CaretPosition = np.ContentStart;
-            Editor.Focus();
-        }
-
-        private void InsertColumn(bool left)
-        {
-            if (ctxCell == null) return;
-            InvalidateOriginalText(ctxCell.ContentStart);
-            if (!(ctxCell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
-            if (!(rg.Parent is Table table)) return;
-
-            int colIdx = row.Cells.IndexOf(ctxCell);
-            int insertIdx = left ? colIdx : colIdx + 1;
-            var rows = rg.Rows.Cast<TableRow>().ToList();
-
-            TableCell firstNewCell = null;
-            for (int r = 0; r < rows.Count; r++)
-            {
-                var targetRow = rows[r];
-                var cell = new TableCell(new Paragraph())
-                {
-                    BorderBrush = CellBorder,
-                    BorderThickness = new Thickness(1),
-                    Padding = new Thickness(8, 6, 8, 6)
-                };
-                if (r == 0)
-                {
-                    cell.FontWeight = FontWeights.Bold;
-                    cell.Background = HeaderBackground;
-                }
-
-                int idxInRow = Math.Min(insertIdx, targetRow.Cells.Count);
-                targetRow.Cells.Insert(idxInRow, cell);
-                if (targetRow == row) firstNewCell = cell;
-            }
-
-            var newColumn = new TableColumn();
-            int colInsertIdx = Math.Min(insertIdx, table.Columns.Count);
-            table.Columns.Insert(colInsertIdx, newColumn);
-
-            if (firstNewCell?.Blocks.FirstBlock is Paragraph np) Editor.CaretPosition = np.ContentStart;
-            Editor.Focus();
-        }
-
-        private void DeleteRowItem_Click(object sender, RoutedEventArgs e)
-        {
-            if (ctxCell == null) return;
-            InvalidateOriginalText(ctxCell.ContentStart);
-            if (!(ctxCell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
-
-            if (rg.Rows.Count <= 1)
-            {
-                if (rg.Parent is Table table) Editor.Document.Blocks.Remove(table);
-                return;
-            }
-            rg.Rows.Remove(row);
-        }
-
-        private void DeleteColumnItem_Click(object sender, RoutedEventArgs e)
-        {
-            if (ctxCell == null) return;
-            InvalidateOriginalText(ctxCell.ContentStart);
-            if (!(ctxCell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
-            if (!(rg.Parent is Table table)) return;
-
-            int colIndex = row.Cells.IndexOf(ctxCell);
-
-            if (row.Cells.Count <= 1)
-            {
-                Editor.Document.Blocks.Remove(table);
-                return;
-            }
-
-            foreach (TableRow r in rg.Rows)
-            {
-                if (colIndex < r.Cells.Count) r.Cells.RemoveAt(colIndex);
-            }
-            if (table.Columns.Count > colIndex) table.Columns.RemoveAt(colIndex);
+            return null;
         }
 
         // ======================================================================
-        //  Copy / paste: tables round-trip with Excel and other MarkDown apps,
-        //  code blocks copy either as raw content or as a full fenced block.
+        //  モード切り替え（MarkDown ⇔ ソース）
         // ======================================================================
-        private List<TableRow> GetTableRows(Table table)
-        {
-            var rows = new List<TableRow>();
-            foreach (TableRowGroup rg in table.RowGroups)
-                foreach (TableRow r in rg.Rows) rows.Add(r);
-            return rows;
-        }
 
-        private Table FindEnclosingTable(TableCell cell)
-        {
-            if (!(cell.Parent is TableRow row)) return null;
-            if (!(row.Parent is TableRowGroup rg)) return null;
-            return rg.Parent as Table;
-        }
-
-        private class CellRange
-        {
-            public int MinRow, MaxRow, MinCol, MaxCol;
-        }
-
-        /// <summary>
-        /// Locates startCell and endCell within the table's row/cell grid and returns the smallest
-        /// rectangular range spanning both. Returns null if either cell can't be located.
-        /// </summary>
-        private CellRange GetSelectedCellRange(List<TableRow> rows, TableCell startCell, TableCell endCell)
-        {
-            int startRow = -1, startCol = -1, endRow = -1, endCol = -1;
-            for (int r = 0; r < rows.Count; r++)
-            {
-                int c = rows[r].Cells.IndexOf(startCell);
-                if (c >= 0) { startRow = r; startCol = c; }
-                c = rows[r].Cells.IndexOf(endCell);
-                if (c >= 0) { endRow = r; endCol = c; }
-            }
-            if (startRow < 0 || endRow < 0) return null;
-
-            return new CellRange
-            {
-                MinRow = Math.Min(startRow, endRow),
-                MaxRow = Math.Max(startRow, endRow),
-                MinCol = Math.Min(startCol, endCol),
-                MaxCol = Math.Max(startCol, endCol)
-            };
-        }
-
-        private string RangeToTsv(List<TableRow> rows, CellRange range)
-        {
-            var lines = new List<string>();
-            for (int r = range.MinRow; r <= range.MaxRow; r++)
-            {
-                var cells = rows[r].Cells.Cast<TableCell>().ToList();
-                var rowTexts = new List<string>();
-                for (int c = range.MinCol; c <= range.MaxCol && c < cells.Count; c++)
-                {
-                    rowTexts.Add(CellPlainText(cells[c]).Replace('\t', ' ').Replace("\r", " ").Replace("\n", " "));
-                }
-                lines.Add(string.Join("\t", rowTexts));
-            }
-            return string.Join("\r\n", lines);
-        }
-
-        private string RangeToHtmlFragment(List<TableRow> rows, CellRange range)
-        {
-            var sb = new StringBuilder();
-            sb.Append("<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse:collapse;\">");
-            for (int r = range.MinRow; r <= range.MaxRow; r++)
-            {
-                sb.Append("<tr>");
-                var cells = rows[r].Cells.Cast<TableCell>().ToList();
-                for (int c = range.MinCol; c <= range.MaxCol && c < cells.Count; c++)
-                {
-                    // Only style as a header if the selection's first row IS the table's own header row.
-                    string tag = r == 0 ? "th" : "td";
-                    string text = WebUtility.HtmlEncode(CellPlainText(cells[c])).Replace("\n", "<br>");
-                    sb.Append('<').Append(tag).Append(" style=\"border:1px solid #999999;padding:4px 8px;\">")
-                      .Append(text).Append("</").Append(tag).Append('>');
-                }
-                sb.Append("</tr>");
-            }
-            sb.Append("</table>");
-            return sb.ToString();
-        }
-
-        private string CellPlainText(TableCell cell)
-        {
-            var sb = new StringBuilder();
-            foreach (Block b in cell.Blocks)
-                if (b is Paragraph p) sb.Append(new TextRange(p.ContentStart, p.ContentEnd).Text);
-            return sb.ToString().Trim();
-        }
-
-        private string TableToTsv(Table table)
-        {
-            var lines = new List<string>();
-            foreach (var row in GetTableRows(table))
-            {
-                var cellTexts = row.Cells.Cast<TableCell>()
-                    .Select(c => CellPlainText(c).Replace('\t', ' ').Replace("\r", " ").Replace("\n", " "));
-                lines.Add(string.Join("\t", cellTexts));
-            }
-            return string.Join("\r\n", lines);
-        }
-
-        private string TableToHtmlFragment(Table table)
-        {
-            var sb = new StringBuilder();
-            sb.Append("<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse:collapse;\">");
-            var rows = GetTableRows(table);
-            for (int r = 0; r < rows.Count; r++)
-            {
-                sb.Append("<tr>");
-                foreach (TableCell cell in rows[r].Cells)
-                {
-                    string tag = r == 0 ? "th" : "td";
-                    string text = WebUtility.HtmlEncode(CellPlainText(cell)).Replace("\n", "<br>");
-                    sb.Append('<').Append(tag).Append(" style=\"border:1px solid #999999;padding:4px 8px;\">")
-                      .Append(text).Append("</").Append(tag).Append('>');
-                }
-                sb.Append("</tr>");
-            }
-            sb.Append("</table>");
-            return sb.ToString();
-        }
-
-        /// <summary>
-        /// Wraps an HTML fragment in the CF_HTML clipboard envelope Windows expects (Version/
-        /// StartHTML/EndHTML/StartFragment/EndFragment byte offsets), so pasting into Excel, Word,
-        /// browsers, etc. is recognized as real HTML rather than plain text. Offsets are computed
-        /// in UTF-8 bytes so this is correct for Japanese/other non-ASCII cell content too.
-        /// </summary>
-        private string BuildHtmlClipboardFragment(string htmlBodyFragment)
-        {
-            const string htmlPrefix = "<html><body><!--StartFragment-->";
-            const string htmlSuffix = "<!--EndFragment--></body></html>";
-            const string headerTemplate =
-                "Version:0.9\r\n" +
-                "StartHTML:{0:0000000000}\r\n" +
-                "EndHTML:{1:0000000000}\r\n" +
-                "StartFragment:{2:0000000000}\r\n" +
-                "EndFragment:{3:0000000000}\r\n";
-
-            int headerByteLength = Encoding.UTF8.GetByteCount(string.Format(headerTemplate, 0, 0, 0, 0));
-            int startHtml = headerByteLength;
-            int startFragment = startHtml + Encoding.UTF8.GetByteCount(htmlPrefix);
-            int endFragment = startFragment + Encoding.UTF8.GetByteCount(htmlBodyFragment);
-            int endHtml = endFragment + Encoding.UTF8.GetByteCount(htmlSuffix);
-
-            string header = string.Format(headerTemplate, startHtml, endHtml, startFragment, endFragment);
-            return header + htmlPrefix + htmlBodyFragment + htmlSuffix;
-        }
-
-        private void Editor_Copying(object sender, DataObjectCopyingEventArgs e)
-        {
-            if (isSourceMode || e.IsDragDrop) return;
-
-            var selection = Editor.Selection;
-            if (selection == null || selection.IsEmpty) return;
-
-            var startCell = selection.Start?.Paragraph?.Parent as TableCell;
-            var endCell = selection.End?.Paragraph?.Parent as TableCell;
-            var anyCell = startCell ?? endCell;
-            if (anyCell == null) return;
-
-            var table = FindEnclosingTable(anyCell);
-            if (table == null) return;
-
-            var rows = GetTableRows(table);
-            CellRange range = null;
-            if (startCell != null && endCell != null &&
-                FindEnclosingTable(startCell) == table && FindEnclosingTable(endCell) == table)
-            {
-                range = GetSelectedCellRange(rows, startCell, endCell);
-            }
-
-            // If a precise cell range could be determined, copy only that range; otherwise (e.g.
-            // the selection extends outside the table) fall back to exporting the whole table.
-            string tsv = range != null ? RangeToTsv(rows, range) : TableToTsv(table);
-            string htmlFragment = range != null ? RangeToHtmlFragment(rows, range) : TableToHtmlFragment(table);
-            e.DataObject.SetData(DataFormats.Text, tsv);
-            e.DataObject.SetData(DataFormats.Html, BuildHtmlClipboardFragment(htmlFragment));
-        }
-
-        private List<List<string>> TryParseHtmlTable(string html)
-        {
-            var tableMatch = Regex.Match(html, "<table[^>]*>(.*?)</table>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-            if (!tableMatch.Success) return null;
-
-            var rows = new List<List<string>>();
-            foreach (Match rowMatch in Regex.Matches(tableMatch.Groups[1].Value, "<tr[^>]*>(.*?)</tr>", RegexOptions.Singleline | RegexOptions.IgnoreCase))
-            {
-                var cells = new List<string>();
-                foreach (Match cellMatch in Regex.Matches(rowMatch.Groups[1].Value, "<t[dh][^>]*>(.*?)</t[dh]>", RegexOptions.Singleline | RegexOptions.IgnoreCase))
-                {
-                    cells.Add(StripHtmlToText(cellMatch.Groups[1].Value));
-                }
-                if (cells.Count > 0) rows.Add(cells);
-            }
-            return rows.Count > 0 ? rows : null;
-        }
-
-        private string StripHtmlToText(string html)
-        {
-            string text = Regex.Replace(html, "<br\\s*/?>", "\n", RegexOptions.IgnoreCase);
-            text = Regex.Replace(text, "<[^>]+>", "");
-            text = WebUtility.HtmlDecode(text);
-            return text.Trim();
-        }
-
-        private bool LooksLikeTsv(string text)
-        {
-            return !string.IsNullOrEmpty(text) && text.Contains('\t');
-        }
-
-        private List<List<string>> ParseTsv(string text)
-        {
-            var lines = text.Replace("\r\n", "\n").TrimEnd('\n').Split('\n');
-            return lines.Select(line => line.Split('\t').ToList()).ToList();
-        }
-
-        private void InsertParsedTable(List<List<string>> rows)
-        {
-            if (rows == null || rows.Count == 0) return;
-            int colCount = rows.Max(r => r.Count);
-            if (colCount == 0) return;
-
-            var table = new Table();
-            for (int c = 0; c < colCount; c++) table.Columns.Add(new TableColumn());
-            var rg = new TableRowGroup();
-            table.RowGroups.Add(rg);
-
-            for (int r = 0; r < rows.Count; r++)
-            {
-                var row = new TableRow();
-                for (int c = 0; c < colCount; c++)
-                {
-                    string text = c < rows[r].Count ? rows[r][c] : "";
-                    var cell = new TableCell(new Paragraph(new Run(text)))
-                    {
-                        BorderBrush = CellBorder,
-                        BorderThickness = new Thickness(1),
-                        Padding = new Thickness(8, 6, 8, 6)
-                    };
-                    if (r == 0)
-                    {
-                        cell.FontWeight = FontWeights.Bold;
-                        cell.Background = HeaderBackground;
-                    }
-                    row.Cells.Add(cell);
-                }
-                rg.Rows.Add(row);
-            }
-
-            isProgrammaticChange = true;
-            try
-            {
-                var para = Editor.CaretPosition?.Paragraph;
-                var trailingPara = new Paragraph();
-                if (para != null && para.Parent is FlowDocument)
-                {
-                    Editor.Document.Blocks.InsertAfter(para, table);
-                    Editor.Document.Blocks.InsertAfter(table, trailingPara);
-                    if (string.IsNullOrWhiteSpace(new TextRange(para.ContentStart, para.ContentEnd).Text))
-                        Editor.Document.Blocks.Remove(para);
-                }
-                else
-                {
-                    Editor.Document.Blocks.Add(table);
-                    Editor.Document.Blocks.Add(trailingPara);
-                }
-
-                if (rg.Rows.Count > 0 && rg.Rows[0].Cells.Count > 0 && rg.Rows[0].Cells[0].Blocks.FirstBlock is Paragraph fp)
-                    Editor.CaretPosition = fp.ContentStart;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-
-            RefreshOutline();
-            Editor.Focus();
-        }
-
-        private void InsertPlainTextWithLineBreaks(string text)
-        {
-            InvalidateOriginalText(Editor.CaretPosition);
-            var lines = text.Replace("\r\n", "\n").Split('\n');
-            isProgrammaticChange = true;
-            try
-            {
-                Editor.Selection.Text = lines[0];
-                Editor.CaretPosition = Editor.Selection.End;
-                for (int i = 1; i < lines.Length; i++)
-                {
-                    Editor.CaretPosition = Editor.CaretPosition.InsertLineBreak();
-                    Editor.Selection.Select(Editor.CaretPosition, Editor.CaretPosition);
-                    Editor.Selection.Text = lines[i];
-                    Editor.CaretPosition = Editor.Selection.End;
-                }
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-        }
-
-        private void Editor_Pasting(object sender, DataObjectPastingEventArgs e)
-        {
-            if (isSourceMode) return;
-
-            // Pasting into a code block: always insert as literal text, keeping everything inside
-            // the same fenced block (default paste would otherwise split it into new paragraphs).
-            var currentPara = Editor.CaretPosition?.Paragraph;
-            if (currentPara != null && currentPara.Tag is CodeBlockInfo && e.SourceDataObject.GetDataPresent(DataFormats.Text))
-            {
-                string codeText = (string)e.SourceDataObject.GetData(DataFormats.Text);
-                e.CancelCommand();
-                InsertPlainTextWithLineBreaks(codeText);
-                return;
-            }
-
-            // Excel (and most rich sources) put an HTML table on the clipboard - this is the most
-            // reliable way to detect "the user copied a table".
-            if (e.SourceDataObject.GetDataPresent(DataFormats.Html))
-            {
-                string html = (string)e.SourceDataObject.GetData(DataFormats.Html);
-                var tableData = TryParseHtmlTable(html);
-                if (tableData != null)
-                {
-                    e.CancelCommand();
-                    InsertParsedTable(tableData);
-                    return;
-                }
-            }
-
-            // Fallback: plain tab-separated text (e.g. from apps that don't emit HTML on copy).
-            if (e.SourceDataObject.GetDataPresent(DataFormats.Text))
-            {
-                string text = (string)e.SourceDataObject.GetData(DataFormats.Text);
-                if (LooksLikeTsv(text))
-                {
-                    var tableData = ParseTsv(text);
-                    if (tableData != null && tableData.Any(r => r.Count > 1))
-                    {
-                        e.CancelCommand();
-                        InsertParsedTable(tableData);
-                    }
-                }
-            }
-        }
-
-        // ======================================================================
-        //  Mode toggle
-        // ======================================================================
+        /// <summary>MarkDownモード（WYSIWYG）とソースモード（生テキスト）を切り替える。</summary>
         private void ToggleModeBtn_Click(object sender, RoutedEventArgs e)
         {
             bool wasDirty = currentFileIsDirty;
 
             if (!isSourceMode)
             {
-                SourceEditor.Text = DocumentToMarkdown(Editor.Document);
+                SourceEditor.Text = markdownConverter.DocumentToMarkdown(Editor.Document);
                 Editor.Visibility = Visibility.Collapsed;
                 SourceEditor.Visibility = Visibility.Visible;
                 isSourceMode = true;
@@ -1547,24 +603,26 @@ namespace mde
             }
             else
             {
-                MarkdownToDocument(SourceEditor.Text, Editor.Document);
+                RunAsProgrammaticChange(() => markdownConverter.MarkdownToDocument(SourceEditor.Text, Editor.Document));
                 SourceEditor.Visibility = Visibility.Collapsed;
                 Editor.Visibility = Visibility.Visible;
                 isSourceMode = false;
                 ModeIndicator.Text = "MarkDownモード";
-                RefreshOutline();
+                outlineManager.Refresh();
                 Editor.Focus();
             }
 
-            // Switching view mode just re-displays the same content; it must not by itself change
-            // whether the file is considered dirty.
+            // 表示モードの切り替えは、同じ内容を表示し直しているだけなので、それ自体で
+            // ファイルが「未保存」扱いになってしまってはいけない。
             currentFileIsDirty = wasDirty;
-            RefreshFolderTreeDirtyMarkers();
+            folderTreeManager.RefreshDirtyMarkers();
         }
 
         // ======================================================================
-        //  New / Open / Save / Save As
+        //  新規作成 / 開く / 保存 / 名前を付けて保存
         // ======================================================================
+
+        /// <summary>現在の内容を破棄して（未保存なら確認のうえ）新規文書を開始する。</summary>
         private void NewBtn_Click(object sender, RoutedEventArgs e)
         {
             var result = MessageBox.Show(
@@ -1576,6 +634,7 @@ namespace mde
             Editor.Focus();
         }
 
+        /// <summary>ファイルを開くダイアログを表示し、選択されたファイルを読み込む。</summary>
         private void OpenBtn_Click(object sender, RoutedEventArgs e)
         {
             var dlg = new Microsoft.Win32.OpenFileDialog
@@ -1588,21 +647,27 @@ namespace mde
             }
         }
 
+        /// <summary>
+        /// ファイルをエディタへ読み込む。すでに開いている同じファイルを再度開こうとした場合
+        /// （未保存の変更を破棄してディスクの内容に戻すかどうかの確認）と、別のファイルへ
+        /// 切り替える場合（まず今のファイルの未保存内容を退避する）の両方に対応する。
+        /// </summary>
+        /// <param name="path">開くファイルの絶対パス。</param>
         private void LoadFile(string path)
         {
-            // Special case: re-opening the file that's already the active one. Without this check,
-            // GetCurrentContentForFile() below would just return the live (possibly edited) content
-            // right back, making the "open" appear to do nothing.
+            // 特殊ケース：すでにアクティブなファイルを再度開こうとした場合。この判定がないと、
+            // 下のGetCurrentContentForFileがライブな（編集中の）内容をそのまま返してしまい、
+            // 「開く」操作が何もしていないように見えてしまう。
             if (!string.IsNullOrEmpty(currentFilePath) && PathsReferToSameFile(path, currentFilePath))
             {
-                if (!currentFileIsDirty) return; // no edits since load/save; nothing to do
+                if (!currentFileIsDirty) return; // 読み込み・保存後に編集がなければ何もしない
 
                 var result = MessageBox.Show(
                     "このファイルには保存されていない変更があります。破棄して、保存済みの内容で開き直しますか？",
                     "ファイルを開き直す", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
                 if (result != MessageBoxResult.OK) return;
 
-                pendingFileEdits.Remove(path); // discard any pending in-memory edits for this file too
+                pendingFileEdits.Remove(path); // このファイルの保留中の編集も破棄する
 
                 string onDiskContent = SafeReadFile(path);
                 if (onDiskContent == null)
@@ -1611,11 +676,18 @@ namespace mde
                     return;
                 }
 
-                if (isSourceMode) SourceEditor.Text = onDiskContent;
-                else { MarkdownToDocument(onDiskContent, Editor.Document); RefreshOutline(); }
+                if (isSourceMode)
+                {
+                    SourceEditor.Text = onDiskContent;
+                }
+                else
+                {
+                    RunAsProgrammaticChange(() => markdownConverter.MarkdownToDocument(onDiskContent, Editor.Document));
+                    outlineManager.Refresh();
+                }
 
                 currentFileIsDirty = false;
-                RefreshFolderTreeDirtyMarkers();
+                folderTreeManager.RefreshDirtyMarkers();
                 return;
             }
 
@@ -1635,8 +707,8 @@ namespace mde
 
             currentFilePath = path;
             currentFileDirectory = Path.GetDirectoryName(path);
-            this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName( path );
-            pendingFileEdits.Remove(path); // this file's content now lives in the editor itself
+            this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(path);
+            pendingFileEdits.Remove(path); // このファイルの内容は、以後エディタ自体が真実の情報源になる
 
             if (isSourceMode)
             {
@@ -1644,22 +716,22 @@ namespace mde
             }
             else
             {
-                MarkdownToDocument(md, Editor.Document);
-                RefreshOutline();
+                RunAsProgrammaticChange(() => markdownConverter.MarkdownToDocument(md, Editor.Document));
+                outlineManager.Refresh();
             }
 
             currentFileIsDirty = false;
 
-            if (!string.IsNullOrEmpty(currentFileDirectory) && !IsWithinLoadedFolder(currentFileDirectory))
-                LoadFolderTree(currentFileDirectory);
+            if (!string.IsNullOrEmpty(currentFileDirectory) && !folderTreeManager.IsWithinLoadedFolder(currentFileDirectory))
+                folderTreeManager.LoadFolderTree(currentFileDirectory);
             else
-                RefreshFolderTreeDirtyMarkers();
+                folderTreeManager.RefreshDirtyMarkers();
         }
 
         /// <summary>
-        /// If a file is currently open and its live content differs from what's on disk, stash a
-        /// copy in pendingFileEdits so it isn't lost when a different file is loaded into the
-        /// (single, shared) editor. Skipped in source mode to keep the model simple.
+        /// 現在開いているファイルに未保存の変更があれば、別のファイルへ切り替える前に
+        /// pendingFileEditsへ退避する（1つしかないエディタを共有しているため、切り替え時に
+        /// 内容が失われないようにするため）。ソースモードでは単純化のためスキップする。
         /// </summary>
         private void SnapshotCurrentFileIfDirty()
         {
@@ -1673,30 +745,30 @@ namespace mde
 
             try
             {
-                pendingFileEdits[currentFilePath] = DocumentToMarkdown(Editor.Document);
+                pendingFileEdits[currentFilePath] = markdownConverter.DocumentToMarkdown(Editor.Document);
             }
             catch
             {
-                // best effort only; never block navigation because of this
+                // ベストエフォートのみ。これが原因でファイル切り替えをブロックすることはない
             }
         }
 
-        /// <summary>
-        /// Returns the "current truth" for a file's content: the live editor content if it's the
-        /// active file, an in-memory pending edit if one exists (from a folder-wide replace or a
-        /// previous unsaved edit), or null if neither applies (caller should read from disk).
-        /// </summary>
-        private string GetCurrentContentForFile(string path)
+        /// <summary>ファイルの内容を読み込み、改行コードを検出・記憶する。</summary>
+        private string SafeReadFile(string path)
         {
-            if (!string.IsNullOrEmpty(currentFilePath) && PathsReferToSameFile(path, currentFilePath))
-                return isSourceMode ? SourceEditor.Text : DocumentToMarkdown(Editor.Document);
-
-            foreach (var kv in pendingFileEdits)
-                if (PathsReferToSameFile(kv.Key, path)) return kv.Value;
-
-            return null;
+            try
+            {
+                string content = File.ReadAllText(path, Encoding.UTF8);
+                lineEndingTracker.DetectAndRemember(path, content);
+                return content;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
+        /// <summary>現在のファイルを保存する（未保存の新規ファイルなら名前を付けて保存へ）。</summary>
         private void SaveBtn_Click(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(currentFilePath))
@@ -1704,18 +776,21 @@ namespace mde
                 SaveAs();
                 return;
             }
-            if (!isSourceMode) RelocatePendingTempImages();
-            string md = isSourceMode ? SourceEditor.Text : DocumentToMarkdown(Editor.Document);
-            File.WriteAllText(currentFilePath, ApplyLineEnding(md, GetLineEndingForFile(currentFilePath)), new UTF8Encoding(false));
+            if (!isSourceMode) imageManager.RelocatePendingTempImages(Editor.Document);
+            string md = isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
+            File.WriteAllText(currentFilePath, lineEndingTracker.Apply(md, lineEndingTracker.GetFor(currentFilePath)), new UTF8Encoding(false));
             currentFileIsDirty = false;
-            RefreshFolderTreeDirtyMarkers();
+            folderTreeManager.RefreshDirtyMarkers();
         }
 
+        /// <summary>「名前を付けて保存」ダイアログを開く。</summary>
         private void SaveAsBtn_Click(object sender, RoutedEventArgs e)
         {
             SaveAs();
         }
 
+        /// <summary>新しいファイル名/保存先を尋ね、そこへ保存する（元ファイルの改行コード
+        /// スタイルは引き継ぐ）。</summary>
         private void SaveAs()
         {
             var dlg = new Microsoft.Win32.SaveFileDialog
@@ -1727,28 +802,29 @@ namespace mde
 
             if (dlg.ShowDialog() == true)
             {
-                // Save As carries over the line-ending style of the file being saved from (if any),
-                // rather than losing that preference just because the name/location changed.
-                string lineEnding = !string.IsNullOrEmpty(currentFilePath) ? GetLineEndingForFile(currentFilePath) : "\r\n";
-                fileLineEndings[dlg.FileName] = lineEnding;
+                // 「名前を付けて保存」は、保存元ファイルの改行コードスタイルを引き継ぐ
+                // （名前や場所が変わっただけで、その設定を失わせないため）。
+                string lineEnding = !string.IsNullOrEmpty(currentFilePath) ? lineEndingTracker.GetFor(currentFilePath) : "\r\n";
+                lineEndingTracker.SetFor(dlg.FileName, lineEnding);
 
                 currentFilePath = dlg.FileName;
                 currentFileDirectory = Path.GetDirectoryName(dlg.FileName);
                 this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(dlg.FileName);
 
-                if (!isSourceMode) RelocatePendingTempImages();
+                if (!isSourceMode) imageManager.RelocatePendingTempImages(Editor.Document);
 
-                string md = isSourceMode ? SourceEditor.Text : DocumentToMarkdown(Editor.Document);
-                File.WriteAllText(dlg.FileName, ApplyLineEnding(md, lineEnding), new UTF8Encoding(false));
+                string md = isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
+                File.WriteAllText(dlg.FileName, lineEndingTracker.Apply(md, lineEnding), new UTF8Encoding(false));
                 currentFileIsDirty = false;
 
-                if (!string.IsNullOrEmpty(currentFileDirectory) && !IsWithinLoadedFolder(currentFileDirectory))
-                    LoadFolderTree(currentFileDirectory);
+                if (!string.IsNullOrEmpty(currentFileDirectory) && !folderTreeManager.IsWithinLoadedFolder(currentFileDirectory))
+                    folderTreeManager.LoadFolderTree(currentFileDirectory);
                 else
-                    RefreshFolderTreeDirtyMarkers();
+                    folderTreeManager.RefreshDirtyMarkers();
             }
         }
 
+        /// <summary>現在のファイルと、保留中の編集があるすべてのファイルを保存する。</summary>
         private void SaveAllBtn_Click(object sender, RoutedEventArgs e)
         {
             int savedCount = 0;
@@ -1758,9 +834,9 @@ namespace mde
             {
                 try
                 {
-                    if (!isSourceMode) RelocatePendingTempImages();
-                    string md = isSourceMode ? SourceEditor.Text : DocumentToMarkdown(Editor.Document);
-                    File.WriteAllText(currentFilePath, ApplyLineEnding(md, GetLineEndingForFile(currentFilePath)), new UTF8Encoding(false));
+                    if (!isSourceMode) imageManager.RelocatePendingTempImages(Editor.Document);
+                    string md = isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
+                    File.WriteAllText(currentFilePath, lineEndingTracker.Apply(md, lineEndingTracker.GetFor(currentFilePath)), new UTF8Encoding(false));
                     pendingFileEdits.Remove(currentFilePath);
                     currentFileIsDirty = false;
                     savedCount++;
@@ -1771,11 +847,11 @@ namespace mde
                 }
             }
 
-            foreach (var kv in pendingFileEdits.ToList())
+            foreach (var kv in new List<KeyValuePair<string, string>>(pendingFileEdits))
             {
                 try
                 {
-                    File.WriteAllText(kv.Key, ApplyLineEnding(kv.Value, GetLineEndingForFile(kv.Key)), new UTF8Encoding(false));
+                    File.WriteAllText(kv.Key, lineEndingTracker.Apply(kv.Value, lineEndingTracker.GetFor(kv.Key)), new UTF8Encoding(false));
                     pendingFileEdits.Remove(kv.Key);
                     savedCount++;
                 }
@@ -1785,7 +861,7 @@ namespace mde
                 }
             }
 
-            RefreshFolderTreeDirtyMarkers();
+            folderTreeManager.RefreshDirtyMarkers();
 
             string message = savedCount + " 個のファイルを保存しました。";
             if (failures.Count > 0)
@@ -1795,17 +871,108 @@ namespace mde
                 failures.Count > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
 
-        // ======================================================================
-        //  Find & Replace
-        // ======================================================================
-        // ======================================================================
-        //  Show/hide the folder and outline side panes
-        // ======================================================================
-        private double lastFolderColumnWidth = 190;
-        private double lastOutlineColumnWidth = 210;
-        private bool folderPaneVisible = true;
-        private bool outlinePaneVisible = true;
+        /// <summary>エディタを空の無題文書にリセットし、未保存変更の追跡もすべてクリアする
+        /// （確認は行わない。呼び出し側が必要に応じて事前にユーザーへ確認済みであることを
+        /// 前提とする）。</summary>
+        private void DiscardCurrentDocumentSilently()
+        {
+            currentFilePath = null;
+            currentFileDirectory = null;
+            this.Title = Assembly.GetExecutingAssembly().GetName().Name;
 
+            pendingFileEdits.Clear();
+            currentFileIsDirty = false;
+
+            RunAsProgrammaticChange(() =>
+            {
+                if (isSourceMode)
+                {
+                    SourceEditor.Text = "";
+                }
+                else
+                {
+                    Editor.Document.Blocks.Clear();
+                    Editor.Document.Blocks.Add(new Paragraph());
+                }
+            });
+            outlineManager.Refresh();
+            folderTreeManager.RefreshDirtyMarkers();
+        }
+
+        // ======================================================================
+        //  ズーム
+        // ======================================================================
+
+        private void ZoomIn_Click(object sender, RoutedEventArgs e) => SetZoom(zoomLevel + 0.1);
+        private void ZoomOut_Click(object sender, RoutedEventArgs e) => SetZoom(zoomLevel - 0.1);
+        private void ZoomReset_Click(object sender, RoutedEventArgs e) => SetZoom(1.0);
+
+        /// <summary>Ctrl+ホイールでエディタをズームする（スクロールの代わり）。</summary>
+        private void Editor_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                e.Handled = true;
+                SetZoom(zoomLevel + (e.Delta > 0 ? 0.1 : -0.1));
+            }
+        }
+
+        /// <summary>新しいズーム倍率を適用し、ツールバーのパーセント表示を更新する。</summary>
+        /// <param name="value">新しいズーム倍率（1.0が100%）。妥当な範囲に丸められる。</param>
+        private void SetZoom(double value)
+        {
+            zoomLevel = Math.Max(0.5, Math.Min(2.5, Math.Round(value, 2)));
+            Editor.LayoutTransform = new ScaleTransform(zoomLevel, zoomLevel);
+            SourceEditor.FontSize = 13.5 * zoomLevel;
+            ZoomLabelBtn.Content = Math.Round(zoomLevel * 100) + "%";
+        }
+
+        /// <summary>ソースモード編集中、ファイルをダーティにする。</summary>
+        private void SourceEditor_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (folderTreeManager == null) return; // InitializeComponent中の発火に対するガード
+            currentFileIsDirty = true;
+            folderTreeManager.RefreshDirtyMarkers();
+        }
+
+        /// <summary>エディタの幅が変わったら、画像のサイズ調整をやり直す。</summary>
+        private void Editor_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            if (imageManager == null) return; // InitializeComponent中の発火に対するガード
+            if (isSourceMode) return;
+            foreach (var img in imageManager.FindAllImages(Editor.Document))
+            {
+                imageManager.ApplyImageSizing(img);
+            }
+        }
+
+        // ======================================================================
+        //  ドラッグ&ドロップでの画像挿入（ImageManagerへそのまま橋渡し）
+        // ======================================================================
+
+        private void Editor_DragEnter(object sender, DragEventArgs e) => imageManager.HandleDragEnter(sender, e);
+        private void Editor_DragOver(object sender, DragEventArgs e) => imageManager.HandleDragOver(sender, e);
+        private void Editor_Drop(object sender, DragEventArgs e) => imageManager.HandleDrop(sender, e);
+
+        // ======================================================================
+        //  検索と置換（FindReplaceWindowを開く）
+        // ======================================================================
+
+        /// <summary>検索・置換の公開API。FindReplaceWindowから使う。</summary>
+        public SearchReplaceService SearchReplace => searchReplaceService;
+
+        private void FindReplaceBtn_Click(object sender, RoutedEventArgs e)
+        {
+            var win = new FindReplaceWindow(this) { Owner = this };
+            win.Show();
+        }
+
+        // ======================================================================
+        //  フォルダ / アウトラインペインの表示・非表示切り替え
+        // ======================================================================
+
+        /// <summary>フォルダツリーペインの表示/非表示を切り替える（幅は次に表示する時のために
+        /// 記憶しておく）。</summary>
         private void ToggleFolderPaneBtn_Click(object sender, RoutedEventArgs e)
         {
             folderPaneVisible = !folderPaneVisible;
@@ -1828,6 +995,8 @@ namespace mde
             }
         }
 
+        /// <summary>アウトラインペインの表示/非表示を切り替える（幅は次に表示する時のために
+        /// 記憶しておく）。</summary>
         private void ToggleOutlinePaneBtn_Click(object sender, RoutedEventArgs e)
         {
             outlinePaneVisible = !outlinePaneVisible;
@@ -1850,483 +1019,12 @@ namespace mde
             }
         }
 
-        private void FindReplaceBtn_Click(object sender, RoutedEventArgs e)
-        {
-            var win = new FindReplaceWindow(this) { Owner = this };
-            win.Show();
-        }
-
-        private int CountOccurrences(string text, string term, bool caseSensitive, bool useRegex)
-        {
-            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(term)) return 0;
-            if (useRegex)
-            {
-                try
-                {
-                    var options = caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
-                    return Regex.Matches(text, term, options).Count;
-                }
-                catch (ArgumentException)
-                {
-                    return 0;
-                }
-            }
-            var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-            int count = 0, idx = 0;
-            while ((idx = text.IndexOf(term, idx, comparison)) >= 0)
-            {
-                count++;
-                idx += term.Length;
-            }
-            return count;
-        }
-
-        private string ReplaceAllText(string text, string term, string replacement, bool caseSensitive, bool useRegex)
-        {
-            if (string.IsNullOrEmpty(term)) return text;
-            replacement = replacement ?? "";
-            if (useRegex)
-            {
-                try
-                {
-                    var options = caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
-                    return Regex.Replace(text, term, replacement, options);
-                }
-                catch (ArgumentException)
-                {
-                    return text;
-                }
-            }
-            if (caseSensitive) return text.Replace(term, replacement);
-
-            var sb = new StringBuilder();
-            int idx = 0;
-            while (true)
-            {
-                int found = text.IndexOf(term, idx, StringComparison.OrdinalIgnoreCase);
-                if (found < 0) { sb.Append(text, idx, text.Length - idx); break; }
-                sb.Append(text, idx, found - idx);
-                sb.Append(replacement);
-                idx = found + term.Length;
-            }
-            return sb.ToString();
-        }
-
-        /// <summary>
-        /// Finds the next match at or after fromIndex within text. Used by the step-by-step
-        /// replace session (both current-file and folder scope) since it works uniformly whether
-        /// or not regex is enabled.
-        /// </summary>
-        public (int index, int length)? FindNextMatchInText(string text, string term, bool caseSensitive, bool useRegex, int fromIndex)
-        {
-            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(term) || fromIndex > text.Length) return null;
-            if (useRegex)
-            {
-                try
-                {
-                    var options = caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
-                    var regex = new Regex(term, options);
-                    var m = regex.Match(text, fromIndex);
-                    if (!m.Success) return null;
-                    return (m.Index, m.Length);
-                }
-                catch (ArgumentException)
-                {
-                    return null;
-                }
-            }
-            var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-            int idx = text.IndexOf(term, fromIndex, comparison);
-            return idx < 0 ? ((int, int)?)null : (idx, term.Length);
-        }
-
-        /// <summary>Applies exactly one replacement at the given match position and returns the new text.</summary>
-        public string ReplaceOneMatch(string text, string term, string replacement, bool caseSensitive, bool useRegex, int index, int length)
-        {
-            replacement = replacement ?? "";
-            if (useRegex)
-            {
-                try
-                {
-                    var options = caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase;
-                    var regex = new Regex(term, options);
-                    return regex.Replace(text, replacement, 1, index);
-                }
-                catch (ArgumentException)
-                {
-                    return text;
-                }
-            }
-            return text.Substring(0, index) + replacement + text.Substring(index + length);
-        }
-
-        /// <summary>
-        /// Selects and scrolls to the next occurrence of term after the caret, wrapping around to
-        /// the start of the document if nothing is found after the caret. Operates directly on the
-        /// live document via TextPointers, so the match is actually highlighted on screen (works
-        /// for both plain text and regex, as long as a match doesn't span a Run boundary such as
-        /// crossing into a heading, list item, or embedded image - an accepted edge-case limit).
-        /// </summary>
-        public bool FindNextInCurrentFile(string term, bool caseSensitive, bool useRegex)
-        {
-            if (isSourceMode || string.IsNullOrEmpty(term)) return false;
-
-            TextRange found = FindTextFrom(Editor.CaretPosition, term, caseSensitive, useRegex)
-                            ?? FindTextFrom(Editor.Document.ContentStart, term, caseSensitive, useRegex);
-            if (found == null) return false;
-
-            Editor.Selection.Select(found.Start, found.End);
-            ScrollParagraphToTop(found.Start.Paragraph ?? Editor.Document.Blocks.FirstBlock as Paragraph);
-            Editor.CaretPosition = found.End;
-            Editor.Focus();
-            return true;
-        }
-
-        private TextRange FindTextFrom(TextPointer start, string term, bool caseSensitive, bool useRegex)
-        {
-            Regex regex = null;
-            if (useRegex)
-            {
-                try { regex = new Regex(term, caseSensitive ? RegexOptions.None : RegexOptions.IgnoreCase); }
-                catch (ArgumentException) { return null; }
-            }
-            var comparison = caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-
-            TextPointer navigator = start;
-            while (navigator != null)
-            {
-                if (navigator.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
-                {
-                    string runText = navigator.GetTextInRun(LogicalDirection.Forward);
-                    if (!string.IsNullOrEmpty(runText))
-                    {
-                        int idx, len;
-                        if (useRegex)
-                        {
-                            var m = regex.Match(runText);
-                            if (m.Success) { idx = m.Index; len = m.Length; }
-                            else { idx = -1; len = 0; }
-                        }
-                        else
-                        {
-                            idx = runText.IndexOf(term, comparison);
-                            len = term.Length;
-                        }
-
-                        if (idx >= 0)
-                        {
-                            TextPointer matchStart = navigator.GetPositionAtOffset(idx);
-                            TextPointer matchEnd = matchStart?.GetPositionAtOffset(len);
-                            if (matchStart != null && matchEnd != null)
-                                return new TextRange(matchStart, matchEnd);
-                        }
-                    }
-                }
-                navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
-            }
-            return null;
-        }
-
-        // ---- step-by-step (one match at a time) replace for the CURRENT FILE, with live
-        // highlighting - the currently selected text in the editor IS the "pending match". ----
-
-        /// <summary>Finds and highlights the next match. If fromSelectionEnd, resumes searching
-        /// right after whatever is currently selected (used mid-session); otherwise starts from
-        /// the caret (used when starting a fresh session).</summary>
-        public bool StepFindNext(string term, bool caseSensitive, bool useRegex, bool fromSelectionEnd)
-        {
-            TextPointer from = (fromSelectionEnd && !Editor.Selection.IsEmpty) ? Editor.Selection.End : Editor.CaretPosition;
-            TextRange found = FindTextFrom(from, term, caseSensitive, useRegex);
-            if (found == null) return false;
-
-            Editor.Selection.Select(found.Start, found.End);
-            ScrollParagraphToTop(found.Start.Paragraph ?? Editor.Document.Blocks.FirstBlock as Paragraph);
-            Editor.Focus();
-            return true;
-        }
-
-        /// <summary>Replaces the currently highlighted match, then finds and highlights the next one.</summary>
-        public bool StepReplaceAndFindNext(string term, string replacement, bool caseSensitive, bool useRegex)
-        {
-            if (!Editor.Selection.IsEmpty)
-            {
-                InvalidateOriginalText(Editor.Selection.Start);
-                isProgrammaticChange = true;
-                try { Editor.Selection.Text = replacement ?? ""; }
-                finally { isProgrammaticChange = false; }
-                RefreshOutline();
-            }
-            return StepFindNext(term, caseSensitive, useRegex, fromSelectionEnd: true);
-        }
-
-        /// <summary>Skips the currently highlighted match (no replace), finds and highlights the next one.</summary>
-        public bool StepSkipAndFindNext(string term, bool caseSensitive, bool useRegex)
-        {
-            return StepFindNext(term, caseSensitive, useRegex, fromSelectionEnd: true);
-        }
-
-        /// <summary>Replaces the currently highlighted match plus every remaining match, with no further prompting.</summary>
-        public int StepReplaceAllRemaining(string term, string replacement, bool caseSensitive, bool useRegex)
-        {
-            int count = 0;
-            isProgrammaticChange = true;
-            try
-            {
-                if (!Editor.Selection.IsEmpty)
-                {
-                    InvalidateOriginalText(Editor.Selection.Start);
-                    Editor.Selection.Text = replacement ?? "";
-                    count++;
-                }
-                while (StepFindNext(term, caseSensitive, useRegex, fromSelectionEnd: true))
-                {
-                    InvalidateOriginalText(Editor.Selection.Start);
-                    Editor.Selection.Text = replacement ?? "";
-                    count++;
-                }
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-            RefreshOutline();
-            return count;
-        }
-
-        public int ReplaceAllInCurrentFile(string term, string replacement, bool caseSensitive, bool useRegex)
-        {
-            if (string.IsNullOrEmpty(term)) return 0;
-
-            if (isSourceMode)
-            {
-                int srcCount = CountOccurrences(SourceEditor.Text, term, caseSensitive, useRegex);
-                if (srcCount > 0) SourceEditor.Text = ReplaceAllText(SourceEditor.Text, term, replacement, caseSensitive, useRegex);
-                return srcCount;
-            }
-
-            string md = DocumentToMarkdown(Editor.Document);
-            int count = CountOccurrences(md, term, caseSensitive, useRegex);
-            if (count == 0) return 0;
-
-            MarkdownToDocument(ReplaceAllText(md, term, replacement, caseSensitive, useRegex), Editor.Document);
-            RefreshOutline();
-            return count;
-        }
-
-        private List<string> GetAllMarkdownFilesInRoot()
-        {
-            var result = new List<string>();
-            if (string.IsNullOrEmpty(loadedFolderRootPath) || !Directory.Exists(loadedFolderRootPath)) return result;
-            try
-            {
-                result.AddRange(Directory.GetFiles(loadedFolderRootPath, "*.md", SearchOption.AllDirectories));
-                result.AddRange(Directory.GetFiles(loadedFolderRootPath, "*.markdown", SearchOption.AllDirectories));
-            }
-            catch
-            {
-                // ignore folders we can't enumerate (permissions, etc.)
-            }
-            return result;
-        }
-
-        public List<(string, int)> FindAllInFolder(string term, bool caseSensitive, bool useRegex)
-        {
-            var results = new List<(string, int)>();
-            if (string.IsNullOrEmpty(term)) return results;
-
-            foreach (var file in GetAllMarkdownFilesInRoot())
-            {
-                string content = GetCurrentContentForFile(file) ?? SafeReadFile(file);
-                if (content == null) continue;
-                int count = CountOccurrences(content, term, caseSensitive, useRegex);
-                if (count > 0) results.Add((file, count));
-            }
-            return results;
-        }
-
-        public List<(string, int)> ReplaceAllInFolder(string term, string replacement, bool caseSensitive, bool useRegex)
-        {
-            var results = new List<(string, int)>();
-            if (string.IsNullOrEmpty(term)) return results;
-
-            foreach (var file in GetAllMarkdownFilesInRoot())
-            {
-                string content = GetCurrentContentForFile(file) ?? SafeReadFile(file);
-                if (content == null) continue;
-
-                int count = CountOccurrences(content, term, caseSensitive, useRegex);
-                if (count == 0) continue;
-
-                string replaced = ReplaceAllText(content, term, replacement, caseSensitive, useRegex);
-                SetFileContentForReplace(file, replaced);
-                results.Add((file, count));
-            }
-            return results;
-        }
-
-        private string SafeReadFile(string path)
-        {
-            try
-            {
-                string content = File.ReadAllText(path, Encoding.UTF8);
-                fileLineEndings[path] = DetectLineEnding(content);
-                return content;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        /// <summary>Guesses whether a file predominantly uses CRLF or LF line endings by counting
-        /// both kinds. Defaults to CRLF (the common Windows convention) for empty/ambiguous content.</summary>
-        private string DetectLineEnding(string content)
-        {
-            if (string.IsNullOrEmpty(content)) return "\r\n";
-            int crlfCount = 0, lfOnlyCount = 0;
-            for (int i = 0; i < content.Length; i++)
-            {
-                if (content[i] != '\n') continue;
-                if (i > 0 && content[i - 1] == '\r') crlfCount++;
-                else lfOnlyCount++;
-            }
-            if (crlfCount == 0 && lfOnlyCount == 0) return "\r\n";
-            return crlfCount >= lfOnlyCount ? "\r\n" : "\n";
-        }
-
-        /// <summary>The line-ending style previously detected for this file, or "\r\n" if unknown
-        /// (e.g. a brand-new, never-loaded-from-disk file).</summary>
-        private string GetLineEndingForFile(string path)
-        {
-            if (!string.IsNullOrEmpty(path))
-            {
-                foreach (var kv in fileLineEndings)
-                    if (PathsReferToSameFile(kv.Key, path)) return kv.Value;
-            }
-            return "\r\n";
-        }
-
-        /// <summary>Converts a markdown string (which always uses bare "\n" internally) to use the
-        /// given line-ending style before writing it to disk.</summary>
-        private string ApplyLineEnding(string text, string lineEnding)
-        {
-            string normalized = text.Replace("\r\n", "\n");
-            return lineEnding == "\n" ? normalized : normalized.Replace("\n", lineEnding);
-        }
-
-        /// <summary>Opens a file (from a folder-wide find/replace result), preferring any pending
-        /// in-memory edit over the on-disk version.</summary>
-        public void OpenFileForFindReplace(string path)
-        {
-            LoadFile(path);
-        }
-
-        // ---- primitives used by the step-by-step (one match at a time) replace session ----
-
-        public string GetCurrentFileContent()
-        {
-            return isSourceMode ? SourceEditor.Text : DocumentToMarkdown(Editor.Document);
-        }
-
-        public void SetCurrentFileContent(string newContent)
-        {
-            if (isSourceMode)
-            {
-                SourceEditor.Text = newContent;
-            }
-            else
-            {
-                MarkdownToDocument(newContent, Editor.Document);
-                RefreshOutline();
-            }
-        }
-
-        public List<string> GetFolderFiles()
-        {
-            return GetAllMarkdownFilesInRoot();
-        }
-
-        public string GetFileContentForReplace(string path)
-        {
-            return GetCurrentContentForFile(path) ?? SafeReadFile(path);
-        }
-
-        /// <summary>Applies new content for a file: directly to the live editor if it's the
-        /// currently open file, otherwise staged in pendingFileEdits (not written to disk).</summary>
-        public void SetFileContentForReplace(string path, string newContent)
-        {
-            if (!string.IsNullOrEmpty(currentFilePath) && PathsReferToSameFile(path, currentFilePath))
-            {
-                SetCurrentFileContent(newContent);
-            }
-            else
-            {
-                pendingFileEdits[path] = newContent;
-                RefreshFolderTreeDirtyMarkers();
-            }
-        }
-
         // ======================================================================
-        private void RefreshOutline()
-        {
-            outlineItems.Clear();
-            foreach (Block block in Editor.Document.Blocks)
-            {
-                if (block is Paragraph p && p.Tag is int level && level > 0)
-                {
-                    string text = new TextRange(p.ContentStart, p.ContentEnd).Text.Trim();
-                    if (text.Length == 0) text = "(無題)";
-                    outlineItems.Add(new OutlineEntry { Level = level, Text = text, TargetParagraph = p });
-                }
-            }
-        }
-
-        private void OutlineList_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (OutlineList.SelectedItem is OutlineEntry entry && entry.TargetParagraph != null)
-            {
-                Editor.CaretPosition = entry.TargetParagraph.ContentStart;
-                ScrollParagraphToTop(entry.TargetParagraph);
-                Editor.Focus();
-            }
-        }
-
-        private void ScrollParagraphToTop(Paragraph p)
-        {
-            // WPF's built-in BringIntoView correctly scrolls the target to the top of the visible
-            // viewport. Earlier attempts at custom ScrollViewer/GetCharacterRect offset math looked
-            // correct on paper but consistently produced a clipped result in practice - BringIntoView
-            // is simpler and confirmed working, so it stays.
-            p.BringIntoView();
-        }
-
-        private static T FindVisualChild<T>(DependencyObject root) where T : DependencyObject
-        {
-            int count = VisualTreeHelper.GetChildrenCount(root);
-            for (int i = 0; i < count; i++)
-            {
-                var child = VisualTreeHelper.GetChild(root, i);
-                if (child is T match) return match;
-                var found = FindVisualChild<T>(child);
-                if (found != null) return found;
-            }
-            return null;
-        }
-
-        private static T FindVisualAncestorOrSelf<T>(DependencyObject start) where T : DependencyObject
-        {
-            var current = start;
-            while (current != null)
-            {
-                if (current is T match) return match;
-                current = VisualTreeHelper.GetParent(current);
-            }
-            return null;
-        }
-
+        //  フォルダペイン
         // ======================================================================
-        //  Folder pane
-        // ======================================================================
+
+        /// <summary>フォルダピッカーを表示し、選択されたフォルダをフォルダツリーペインへ
+        /// 読み込む（可能であれば同じ相対パスのファイルを開いたままにする）。</summary>
         private void OpenFolderTreeBtn_Click(object sender, RoutedEventArgs e)
         {
             if (currentFileIsDirty || pendingFileEdits.Count > 0)
@@ -2337,1473 +1035,27 @@ namespace mde
                 if (confirmResult != MessageBoxResult.OK) return;
             }
 
-            string previousRelativePath = GetCurrentFileRelativePathInLoadedFolder();
+            string previousRelativePath = folderTreeManager.GetCurrentFileRelativePath();
 
             var dlg = new Microsoft.Win32.OpenFolderDialog();
             if (dlg.ShowDialog() != true) return;
 
             DiscardCurrentDocumentSilently();
-            LoadFolderTree(dlg.FolderName);
-            OpenMatchingOrFirstFile(dlg.FolderName, previousRelativePath);
+            folderTreeManager.LoadFolderTree(dlg.FolderName);
+            folderTreeManager.OpenMatchingOrFirstFile(dlg.FolderName, previousRelativePath);
         }
 
-        /// <summary>The currently open file's path relative to the currently loaded folder root
-        /// (e.g. "sub\file.md"), or null if there's no open file or it isn't inside that folder.</summary>
-        private string GetCurrentFileRelativePathInLoadedFolder()
-        {
-            if (string.IsNullOrEmpty(currentFilePath) || string.IsNullOrEmpty(loadedFolderRootPath)) return null;
-            try
-            {
-                string root = Path.GetFullPath(loadedFolderRootPath).TrimEnd(Path.DirectorySeparatorChar);
-                string file = Path.GetFullPath(currentFilePath);
-                if (!file.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return null;
-                return file.Substring(root.Length + 1);
-            }
-            catch
-            {
-                return null;
-            }
-        }
+        private void TreeViewItem_Expanded(object sender, RoutedEventArgs e) => folderTreeManager.HandleTreeViewItemExpanded(sender, e);
 
-        /// <summary>Opens the file at the same relative path in the newly loaded folder, if one
-        /// exists there; otherwise falls back to opening the folder's first file.</summary>
-        private void OpenMatchingOrFirstFile(string newFolderPath, string relativePath)
-        {
-            if (!string.IsNullOrEmpty(relativePath))
-            {
-                try
-                {
-                    string candidate = Path.Combine(newFolderPath, relativePath);
-                    if (File.Exists(candidate))
-                    {
-                        LoadFile(candidate);
-                        return;
-                    }
-                }
-                catch
-                {
-                    // fall through to opening the first file instead
-                }
-            }
-            OpenFirstFileInLoadedFolder();
-        }
-
-        /// <summary>Resets the editor to a blank, untitled document and clears all unsaved-change
-        /// tracking, without any confirmation prompt (the caller is expected to have already
-        /// confirmed with the user, if needed).</summary>
-        private void DiscardCurrentDocumentSilently()
-        {
-            currentFilePath = null;
-            currentFileDirectory = null;
-            this.Title = Assembly.GetExecutingAssembly().GetName().Name;
-
-            pendingFileEdits.Clear();
-            currentFileIsDirty = false;
-
-            isProgrammaticChange = true;
-            try
-            {
-                if (isSourceMode)
-                {
-                    SourceEditor.Text = "";
-                }
-                else
-                {
-                    Editor.Document.Blocks.Clear();
-                    Editor.Document.Blocks.Add(new Paragraph());
-                }
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-            RefreshOutline();
-            RefreshFolderTreeDirtyMarkers();
-        }
-
-        /// <summary>Opens the first file (skipping subfolders) found at the root of the currently
-        /// loaded folder tree, if any.</summary>
-        private void OpenFirstFileInLoadedFolder()
-        {
-            if (folderRoots.Count == 0) return;
-            var firstFile = folderRoots[0].Children.FirstOrDefault(c => !c.IsDirectory);
-            if (firstFile != null) LoadFile(firstFile.FullPath);
-        }
-
-        private void LoadFolderTree(string folderPath)
-        {
-            loadedFolderRootPath = folderPath;
-            folderRoots.Clear();
-            try
-            {
-                var root = BuildFileSystemNode(folderPath, true);
-                root.Children.Clear();
-                PopulateChildren(root);
-                root.IsExpanded = true;
-                folderRoots.Add(root);
-                RefreshFolderTreeDirtyMarkers();
-            }
-            catch
-            {
-                // folder not accessible; leave the tree empty
-            }
-        }
-
-        /// <summary>
-        /// Walks the folder tree and marks each file item dirty if it's the currently open file
-        /// with unsaved changes, or if it has a pending (unsaved) in-memory edit from find/replace.
-        /// </summary>
-        private void RefreshFolderTreeDirtyMarkers()
-        {
-            foreach (var root in folderRoots)
-                RefreshDirtyMarkerRecursive(root);
-        }
-
-        private void RefreshDirtyMarkerRecursive(FileSystemItem node)
-        {
-            if (!node.IsDirectory && node.FullPath != null)
-            {
-                bool isCurrent = !string.IsNullOrEmpty(currentFilePath) && PathsReferToSameFile(node.FullPath, currentFilePath);
-                node.IsDirty = isCurrent
-                    ? currentFileIsDirty
-                    : pendingFileEdits.Keys.Any(k => PathsReferToSameFile(k, node.FullPath));
-            }
-            foreach (var child in node.Children)
-                RefreshDirtyMarkerRecursive(child);
-        }
-
-        /// <summary>
-        /// True if 'dir' is the folder currently shown in the folder pane, or a subfolder of it -
-        /// in which case there is no need to rebuild the tree (and collapse whatever the user had
-        /// expanded) just because a file in that same area was opened.
-        /// </summary>
-        private bool IsWithinLoadedFolder(string dir)
-        {
-            if (string.IsNullOrEmpty(loadedFolderRootPath) || string.IsNullOrEmpty(dir)) return false;
-            try
-            {
-                string root = Path.GetFullPath(loadedFolderRootPath).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant();
-                string target = Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant();
-                return target == root || target.StartsWith(root + Path.DirectorySeparatorChar);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private FileSystemItem BuildFileSystemNode(string path, bool isDirectory)
-        {
-            var item = new FileSystemItem
-            {
-                Name = string.IsNullOrEmpty(Path.GetFileName(path)) ? path : Path.GetFileName(path),
-                FullPath = path,
-                IsDirectory = isDirectory
-            };
-            if (isDirectory)
-            {
-                // placeholder child so the expand arrow shows before we lazily populate it
-                item.Children.Add(new FileSystemItem { Name = "読み込み中…", IsDirectory = false, FullPath = null });
-            }
-            return item;
-        }
-
-        private void PopulateChildren(FileSystemItem node)
-        {
-            try
-            {
-                foreach (var dir in Directory.GetDirectories(node.FullPath).OrderBy(d => d))
-                {
-                    var name = Path.GetFileName(dir);
-                    if (name.StartsWith(".")) continue;
-                    node.Children.Add(BuildFileSystemNode(dir, true));
-                }
-                foreach (var file in Directory.GetFiles(node.FullPath)
-                             .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
-                                         f.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase))
-                             .OrderBy(f => f))
-                {
-                    node.Children.Add(BuildFileSystemNode(file, false));
-                }
-            }
-            catch
-            {
-                // access denied etc.; leave whatever was already added
-            }
-        }
-
-        private void TreeViewItem_Expanded(object sender, RoutedEventArgs e)
-        {
-            if (sender is TreeViewItem tvi && tvi.DataContext is FileSystemItem node && node.IsDirectory)
-            {
-                if (node.Children.Count == 1 && node.Children[0].FullPath == null)
-                {
-                    node.Children.Clear();
-                    PopulateChildren(node);
-                    RefreshFolderTreeDirtyMarkers();
-                }
-            }
-        }
-
-        private void FolderTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
-        {
-            if (e.NewValue is FileSystemItem item && !item.IsDirectory && item.FullPath != null)
-            {
-                LoadFile(item.FullPath);
-            }
-        }
+        private void FolderTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e) =>
+            folderTreeManager.HandleSelectedItemChanged(sender, e);
 
         // ======================================================================
-        //  Zoom
+        //  アウトラインペイン
         // ======================================================================
-        private void ZoomIn_Click(object sender, RoutedEventArgs e) => SetZoom(zoomLevel + 0.1);
-        private void ZoomOut_Click(object sender, RoutedEventArgs e) => SetZoom(zoomLevel - 0.1);
-        private void ZoomReset_Click(object sender, RoutedEventArgs e) => SetZoom(1.0);
 
-        private void Editor_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            if (Keyboard.Modifiers != ModifierKeys.Control) return;
-
-            var pos = Editor.GetPositionFromPoint(e.GetPosition(Editor), true);
-            if (pos == null) return;
-
-            if (pos.Parent is Run run && run.Tag is LinkInfo linkInfo && !string.IsNullOrWhiteSpace(linkInfo.Url))
-            {
-                OpenUrl(linkInfo.Url);
-                e.Handled = true;
-            }
-        }
-
-        private void OpenUrl(string url)
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("リンクを開けませんでした: " + ex.Message, "リンクを開く",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void Editor_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            if (Keyboard.Modifiers == ModifierKeys.Control)
-            {
-                e.Handled = true;
-                SetZoom(zoomLevel + (e.Delta > 0 ? 0.1 : -0.1));
-            }
-        }
-
-        private void SetZoom(double value)
-        {
-            zoomLevel = Math.Max(0.5, Math.Min(2.5, Math.Round(value, 2)));
-            Editor.LayoutTransform = new ScaleTransform(zoomLevel, zoomLevel);
-            SourceEditor.FontSize = 13.5 * zoomLevel;
-            ZoomLabelBtn.Content = Math.Round(zoomLevel * 100) + "%";
-        }
-
-
-        // ======================================================================
-        //  DOM(FlowDocument) -> Markdown
-        // ======================================================================
-        private string DocumentToMarkdown(FlowDocument doc)
-        {
-            var lines = new List<string>();
-            foreach (Block block in doc.Blocks)
-            {
-                string s = originalBlockText.TryGetValue(block, out var holder) ? holder.Text : BlockToMarkdown(block);
-                if (!string.IsNullOrWhiteSpace(s)) lines.Add(s);
-            }
-            return string.Join("\n\n", lines);
-        }
-
-        private string BlockToMarkdown(Block block)
-        {
-            if (block is Paragraph p)
-            {
-                if (p.Tag is CodeBlockInfo codeInfo)
-                {
-                    var sb = new StringBuilder();
-                    AppendInlinesMarkdown(p.Inlines, sb);
-                    string codeText = sb.ToString().Trim('\r', '\n');
-                    return "```" + codeInfo.Language + "\n" + codeText + "\n```";
-                }
-                int level = p.Tag is int lv ? lv : 0;
-                string text = ParagraphInlineToMarkdown(p);
-                return level > 0 ? new string('#', level) + " " + text : text;
-            }
-            if (block is List list) return ListToMarkdown(list, 0);
-            if (block is Table table) return TableToMarkdown(table);
-            return "";
-        }
-
-        private string ListToMarkdown(List list, int level)
-        {
-            string indent = new string(' ', level * 3);
-            bool ordered = list.MarkerStyle == TextMarkerStyle.Decimal;
-            bool constantNumbering = ordered && (list.Tag as string) == "const";
-            string bulletMarker = ordered ? null : ((list.Tag as string) ?? "*");
-            var lines = new List<string>();
-            int number = 1;
-            foreach (ListItem li in list.ListItems)
-            {
-                var ownPara = li.Blocks.FirstBlock as Paragraph;
-                string ownText = ownPara != null ? ParagraphInlineToMarkdown(ownPara) : "";
-                var parts = ownText.Split('\n');
-                string prefix = ordered ? ((constantNumbering ? 1 : number) + ". ") : (bulletMarker + " ");
-                lines.Add(indent + prefix + parts[0]);
-                string contIndent = indent + new string(' ', prefix.Length);
-                for (int k = 1; k < parts.Length; k++) lines.Add(contIndent + parts[k]);
-
-                foreach (Block b in li.Blocks)
-                {
-                    if (b is List nested) lines.Add(ListToMarkdown(nested, level + 1));
-                }
-                number++;
-            }
-            return string.Join("\n", lines);
-        }
-
-        private string TableToMarkdown(Table table)
-        {
-            var rows = new List<TableRow>();
-            foreach (TableRowGroup rg in table.RowGroups)
-                foreach (TableRow r in rg.Rows) rows.Add(r);
-            if (rows.Count == 0) return "";
-
-            var mdRows = new List<string>();
-            foreach (var row in rows)
-            {
-                var cells = new List<string>();
-                foreach (TableCell cell in row.Cells)
-                {
-                    var sb = new StringBuilder();
-                    foreach (Block b in cell.Blocks)
-                        if (b is Paragraph cp) sb.Append(ParagraphInlineToMarkdown(cp));
-                    cells.Add(sb.ToString().Replace("|", "\\|"));
-                }
-                mdRows.Add("| " + string.Join(" | ", cells) + " |");
-            }
-            int colCount = rows[0].Cells.Count;
-            string sep = "| " + string.Join(" | ", Enumerable.Repeat("---", colCount)) + " |";
-
-            var result = new List<string> { mdRows[0], sep };
-            result.AddRange(mdRows.Skip(1));
-            return string.Join("\n", result);
-        }
-
-        private string ParagraphInlineToMarkdown(Paragraph p)
-        {
-            var sb = new StringBuilder();
-            AppendInlinesMarkdown(p.Inlines, sb);
-            return sb.ToString().Trim();
-        }
-
-        private void AppendInlinesMarkdown(InlineCollection inlines, StringBuilder sb)
-        {
-            var inlineList = inlines.Cast<Inline>().ToList();
-            int i = 0;
-            while (i < inlineList.Count)
-            {
-                Inline inline = inlineList[i];
-
-                if (inline is Run run && run.Tag is string tag &&
-                    (tag == "bold" || tag == "strikethrough" || tag == "inline-code"))
-                {
-                    var spanText = new StringBuilder();
-                    spanText.Append(run.Text.Replace("\u200B", ""));
-                    int j = i + 1;
-                    while (j + 1 < inlineList.Count &&
-                           inlineList[j] is LineBreak &&
-                           inlineList[j + 1] is Run nextRun &&
-                           (nextRun.Tag as string) == tag)
-                    {
-                        spanText.Append('\n').Append(nextRun.Text.Replace("\u200B", ""));
-                        j += 2;
-                    }
-
-                    string content = spanText.ToString();
-                    if (tag == "inline-code") sb.Append('`').Append(content).Append('`');
-                    else if (tag == "bold") sb.Append("**").Append(content).Append("**");
-                    else sb.Append("~~").Append(content).Append("~~");
-
-                    i = j;
-                    continue;
-                }
-
-                if (inline is LineBreak)
-                {
-                    sb.Append('\n');
-                }
-                else if (inline is Run linkRun && linkRun.Tag is LinkInfo linkInfo)
-                {
-                    string content = linkRun.Text.Replace("\u200B", "");
-                    if (linkInfo.IsAutoLink && content == linkInfo.Url)
-                        sb.Append('<').Append(linkInfo.Url).Append('>');
-                    else
-                        sb.Append('[').Append(content).Append("](").Append(linkInfo.Url).Append(')');
-                }
-                else if (inline is Run plainRun)
-                {
-                    sb.Append(plainRun.Text.Replace("\u200B", ""));
-                }
-                else if (inline is InlineUIContainer iuc && iuc.Child is Image img)
-                {
-                    sb.Append(ImageToMarkdownString(img));
-                }
-                else if (inline is Span span)
-                {
-                    AppendInlinesMarkdown(span.Inlines, sb);
-                }
-                i++;
-            }
-        }
-
-        private string ImageToMarkdownString(Image img)
-        {
-            var info = img.Tag as ImageInfo;
-            string src = info?.OriginalSrc ?? "";
-            string alt = info?.Alt ?? "";
-            if (info?.Format == "md") return "![" + alt + "](" + src + ")";
-
-            string tag = "<img src=\"" + src + "\" alt=\"" + alt + "\"";
-            if (!string.IsNullOrEmpty(info?.Style)) tag += " style=\"" + info.Style + "\"";
-            tag += " />";
-            return tag;
-        }
-
-        // ======================================================================
-        //  Markdown -> DOM(FlowDocument)
-        // ======================================================================
-        /// <summary>Stores the exact original source lines that produced a freshly-parsed block, so
-        /// it can be written back verbatim later if it's never edited.</summary>
-        private void RecordOriginalText(Block block, string[] lines, int start, int end)
-        {
-            originalBlockText.AddOrUpdate(block, new OriginalTextHolder { Text = string.Join("\n", lines, start, end - start) });
-        }
-
-        private void MarkdownToDocument(string md, FlowDocument doc)
-        {
-            isProgrammaticChange = true;
-            try
-            {
-                doc.Blocks.Clear();
-                originalBlockText.Clear();
-                var lines = md.Replace("\r\n", "\n").Split('\n');
-                int i = 0;
-                while (i < lines.Length)
-                {
-                    string line = lines[i];
-                    if (string.IsNullOrWhiteSpace(line)) { i++; continue; }
-
-                    int blockStart = i;
-
-                    if (line.TrimStart().StartsWith("```"))
-                    {
-                        string language = Regex.Match(line.TrimStart(), "^```(\\S*)").Groups[1].Value;
-                        i++;
-                        var codeLines = new List<string>();
-                        while (i < lines.Length && lines[i].Trim() != "```")
-                        {
-                            codeLines.Add(lines[i]);
-                            i++;
-                        }
-                        if (i < lines.Length) i++; // skip closing fence
-
-                        var codePara = new Paragraph();
-                        ApplyCodeBlockStyle(codePara, language);
-                        for (int k = 0; k < codeLines.Count; k++)
-                        {
-                            if (k > 0) codePara.Inlines.Add(new LineBreak());
-                            codePara.Inlines.Add(new Run(codeLines[k]));
-                        }
-                        doc.Blocks.Add(codePara);
-                        RecordOriginalText(codePara, lines, blockStart, i);
-                        continue;
-                    }
-
-                    var hMatch = Regex.Match(line, "^(#{1,6})\\s+(.*)$");
-                    if (hMatch.Success)
-                    {
-                        var p = new Paragraph();
-                        ApplyHeadingStyle(p, hMatch.Groups[1].Value.Length);
-                        AppendInlineMarkdownToParagraph(p, hMatch.Groups[2].Value, false);
-                        doc.Blocks.Add(p);
-                        i++;
-                        RecordOriginalText(p, lines, blockStart, i);
-                        continue;
-                    }
-
-                    if (Regex.IsMatch(line, "^\\s*([*-]|\\d+\\.)\\s+"))
-                    {
-                        var listLines = new List<string>();
-                        while (i < lines.Length)
-                        {
-                            if (Regex.IsMatch(lines[i], "^\\s*([*-]|\\d+\\.)\\s+"))
-                            {
-                                listLines.Add(lines[i]);
-                                i++;
-                                continue;
-                            }
-                            if (listLines.Count > 0 && !string.IsNullOrWhiteSpace(lines[i]) &&
-                                Regex.IsMatch(lines[i], "^\\s+\\S") &&
-                                !lines[i].TrimStart().StartsWith("|") &&
-                                !Regex.IsMatch(lines[i], "^\\s*#{1,6}\\s"))
-                            {
-                                listLines.Add(lines[i]);
-                                i++;
-                                continue;
-                            }
-                            if (string.IsNullOrWhiteSpace(lines[i]))
-                            {
-                                // A blank line only ends the list if nothing but more blank lines
-                                // and then a non-list line follows; if a list item follows (a
-                                // "loose list" in standard MarkDown), keep it as the same list.
-                                int j = i;
-                                while (j < lines.Length && string.IsNullOrWhiteSpace(lines[j])) j++;
-                                if (j < lines.Length && Regex.IsMatch(lines[j], "^\\s*([*-]|\\d+\\.)\\s+"))
-                                {
-                                    while (i < j) { listLines.Add(lines[i]); i++; }
-                                    continue;
-                                }
-                            }
-                            break;
-                        }
-                        var list = BuildNestedList(listLines);
-                        doc.Blocks.Add(list);
-                        RecordOriginalText(list, lines, blockStart, i);
-                        continue;
-                    }
-
-                    if (line.TrimStart().StartsWith("|") && i + 1 < lines.Length &&
-                        Regex.IsMatch(lines[i + 1], "^[\\s|:-]+$") && lines[i + 1].Contains("-"))
-                    {
-                        var headerCells = ParseTableRow(line);
-                        i += 2;
-                        var table = new Table();
-                        foreach (var _ in headerCells) table.Columns.Add(new TableColumn());
-                        var rg = new TableRowGroup();
-                        table.RowGroups.Add(rg);
-
-                        var headerRow = new TableRow();
-                        foreach (var txt in headerCells)
-                        {
-                            var hp = new Paragraph();
-                            AppendInlineMarkdownToParagraph(hp, txt, false);
-                            var cell = new TableCell(hp)
-                            {
-                                FontWeight = FontWeights.Bold,
-                                Background = HeaderBackground,
-                                BorderBrush = CellBorder,
-                                BorderThickness = new Thickness(1),
-                                Padding = new Thickness(8, 6, 8, 6)
-                            };
-                            headerRow.Cells.Add(cell);
-                        }
-                        rg.Rows.Add(headerRow);
-
-                        while (i < lines.Length && lines[i].TrimStart().StartsWith("|"))
-                        {
-                            var cellTexts = ParseTableRow(lines[i]);
-                            var row = new TableRow();
-                            foreach (var txt in cellTexts)
-                            {
-                                var cp = new Paragraph();
-                                AppendInlineMarkdownToParagraph(cp, txt, false);
-                                var cell = new TableCell(cp)
-                                {
-                                    BorderBrush = CellBorder,
-                                    BorderThickness = new Thickness(1),
-                                    Padding = new Thickness(8, 6, 8, 6)
-                                };
-                                row.Cells.Add(cell);
-                            }
-                            rg.Rows.Add(row);
-                            i++;
-                        }
-                        doc.Blocks.Add(table);
-                        RecordOriginalText(table, lines, blockStart, i);
-                        continue;
-                    }
-
-                    var para = new Paragraph();
-                    AppendInlineMarkdownToParagraph(para, line, false);
-                    doc.Blocks.Add(para);
-                    i++;
-                    RecordOriginalText(para, lines, blockStart, i);
-                }
-
-                if (doc.Blocks.Count == 0) doc.Blocks.Add(new Paragraph());
-
-                ResolveImages(doc);
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-        }
-
-        private List<string> ParseTableRow(string line)
-        {
-            string t = line.Trim();
-            if (t.StartsWith("|")) t = t.Substring(1);
-            if (t.EndsWith("|")) t = t.Substring(0, t.Length - 1);
-            return t.Split('|').Select(s => s.Trim()).ToList();
-        }
-
-        private List BuildNestedList(List<string> listLines)
-        {
-            var rootList = new List { MarkerStyle = TextMarkerStyle.Disc };
-            var stack = new List<(List list, int level)> { (rootList, 0) };
-            bool rootMarkerSet = false;
-            var numbersByList = new Dictionary<List, List<int>>();
-
-            Paragraph pendingPara = null;
-            var pendingTextLines = new List<string>();
-
-            foreach (var line in listLines)
-            {
-                if (string.IsNullOrWhiteSpace(line)) continue; // spacing between items in a "loose" list
-
-                var m = Regex.Match(line, "^(\\s*)(?:([*-])|(\\d+)\\.)\\s+(.*)$");
-                if (m.Success)
-                {
-                    if (pendingPara != null)
-                        AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
-
-                    int indent = m.Groups[1].Value.Length;
-                    bool ordered = m.Groups[3].Success;
-                    string bulletMarker = ordered ? null : m.Groups[2].Value;
-                    int level = Math.Max(0, (int)Math.Round(indent / 3.0));
-                    string text = m.Groups[4].Value;
-
-                    if (!rootMarkerSet)
-                    {
-                        rootList.MarkerStyle = ordered ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc;
-                        rootList.Tag = ordered ? null : bulletMarker;
-                        rootMarkerSet = true;
-                    }
-
-                    while (stack.Count > 1 && stack[stack.Count - 1].level > level)
-                        stack.RemoveAt(stack.Count - 1);
-
-                    var top = stack[stack.Count - 1];
-                    if (top.level < level && top.list.ListItems.Count > 0)
-                    {
-                        var lastLi = top.list.ListItems.Cast<ListItem>().Last();
-                        List nestedList = lastLi.Blocks.Count > 1 ? lastLi.Blocks.LastBlock as List : null;
-                        if (nestedList == null)
-                        {
-                            nestedList = new List
-                            {
-                                MarkerStyle = ordered ? TextMarkerStyle.Decimal : TextMarkerStyle.Circle,
-                                Tag = ordered ? null : bulletMarker
-                            };
-                            lastLi.Blocks.Add(nestedList);
-                        }
-                        stack.Add((nestedList, level));
-                        top = stack[stack.Count - 1];
-                    }
-
-                    if (ordered)
-                    {
-                        if (!numbersByList.TryGetValue(top.list, out var nums))
-                        {
-                            nums = new List<int>();
-                            numbersByList[top.list] = nums;
-                        }
-                        nums.Add(int.Parse(m.Groups[3].Value));
-                    }
-
-                    var para = new Paragraph();
-                    top.list.ListItems.Add(new ListItem(para));
-
-                    pendingPara = para;
-                    pendingTextLines = new List<string> { text };
-                }
-                else
-                {
-                    if (pendingPara != null)
-                        pendingTextLines.Add(line.Trim());
-                }
-            }
-
-            if (pendingPara != null)
-                AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
-
-            // A list whose source repeated the same number for every item (e.g. "1." / "1." / "1.",
-            // a common MarkDown convention that lets renderers auto-number) keeps that style: mark it
-            // so ListToMarkdown always writes "1." instead of switching to sequential numbering.
-            foreach (var kv in numbersByList)
-            {
-                if (kv.Value.Count > 1 && kv.Value.Distinct().Count() == 1)
-                    kv.Key.Tag = "const";
-            }
-
-            return rootList;
-        }
-
-        private void AppendInlineMarkdownToParagraph(Paragraph p, string text, bool append)
-        {
-            if (!append) p.Inlines.Clear();
-            int lastIndex = 0;
-            foreach (Match m in InlineImageRegex.Matches(text))
-            {
-                if (m.Index > lastIndex) AppendPlainTextWithLineBreaks(p, text.Substring(lastIndex, m.Index - lastIndex));
-
-                if (m.Groups[1].Success)
-                    p.Inlines.Add(new InlineUIContainer(BuildImageFromHtmlTag(m.Groups[1].Value)));
-                else if (m.Groups[2].Success)
-                    p.Inlines.Add(new InlineUIContainer(BuildImageFromMarkdown(m.Groups[3].Value, m.Groups[4].Value)));
-                else if (m.Groups[5].Success)
-                    AppendStyledRunsWithLineBreaks(p, m.Groups[6].Value, "code");
-                else if (m.Groups[7].Success)
-                    AppendStyledRunsWithLineBreaks(p, m.Groups[8].Value, "bold");
-                else if (m.Groups[9].Success)
-                    AppendStyledRunsWithLineBreaks(p, m.Groups[10].Value, "strikethrough");
-                else if (m.Groups[11].Success)
-                    p.Inlines.Add(BuildLinkRun(m.Groups[12].Value, m.Groups[13].Value, false));
-                else if (m.Groups[14].Success)
-                    p.Inlines.Add(BuildLinkRun(m.Groups[15].Value, m.Groups[15].Value, true));
-
-                lastIndex = m.Index + m.Length;
-            }
-            if (lastIndex < text.Length) AppendPlainTextWithLineBreaks(p, text.Substring(lastIndex));
-        }
-
-        private Run BuildLinkRun(string linkText, string url, bool isAutoLink)
-        {
-            return new Run(linkText)
-            {
-                Foreground = LinkBrush,
-                TextDecorations = TextDecorations.Underline,
-                Tag = new LinkInfo { Url = url, IsAutoLink = isAutoLink },
-                ToolTip = url
-            };
-        }
-
-        /// <summary>Appends plain text to a paragraph, converting any embedded "\n" into an actual
-        /// LineBreak inline (a Run object can't itself render a literal newline as a line break).</summary>
-        private void AppendPlainTextWithLineBreaks(Paragraph p, string text)
-        {
-            var segments = text.Split('\n');
-            for (int i = 0; i < segments.Length; i++)
-            {
-                if (i > 0) p.Inlines.Add(new LineBreak());
-                if (segments[i].Length > 0) p.Inlines.Add(new Run(segments[i]));
-            }
-        }
-
-        /// <summary>Same idea as AppendPlainTextWithLineBreaks, but for a matched `code`/**bold**/
-        /// ~~strikethrough~~ span whose content itself spans multiple lines - each line gets its own
-        /// styled Run, joined by real LineBreak inlines.</summary>
-        private void AppendStyledRunsWithLineBreaks(Paragraph p, string content, string style)
-        {
-            var segments = content.Split('\n');
-            for (int i = 0; i < segments.Length; i++)
-            {
-                if (i > 0) p.Inlines.Add(new LineBreak());
-                Run run;
-                if (style == "bold")
-                    run = new Run(segments[i]) { FontWeight = FontWeights.Bold, Tag = "bold" };
-                else if (style == "strikethrough")
-                    run = new Run(segments[i]) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
-                else
-                    run = new Run(segments[i])
-                    {
-                        FontFamily = new FontFamily("Consolas"),
-                        FontSize = 13.5,
-                        Background = CodeBlockBackground,
-                        Tag = "inline-code"
-                    };
-                p.Inlines.Add(run);
-            }
-        }
-
-        /// <summary>Builds a styled Run for `inline code` spans (monospace font, subtle background).
-        /// Tag="inline-code" marks it so serialization can wrap it back in backticks.</summary>
-        private Run BuildInlineCodeRun(string code)
-        {
-            // Kept for compatibility with any external reference; current code paths use
-            // AppendStyledRunsWithLineBreaks instead, which also handles multi-line spans.
-            return new Run(code)
-            {
-                FontFamily = new FontFamily("Consolas"),
-                FontSize = 13.5,
-                Background = CodeBlockBackground,
-                Tag = "inline-code"
-            };
-        }
-
-        /// <summary>
-        /// Replaces the current selection with a freshly-built Run styled as "normal", "code",
-        /// "bold", or "strikethrough". Building a brand-new Run (rather than trying to mutate/reset
-        /// properties on whatever Run(s) the selection currently spans) avoids ever needing to
-        /// clear a property like FontFamily to null, which WPF rejects.
-        /// </summary>
-        /// <summary>
-        /// Checks whether the text just typed completes an inline `code`, **bold**, or ~~strikethrough~~
-        /// span ending right at the caret, and if so, replaces the raw markdown syntax with a styled
-        /// Run in place. Works from the current Run's own text only (not TextRange over the whole
-        /// paragraph), so it's safe to use inside list items too.
-        /// </summary>
-        private bool CheckInlineFormatTrigger()
-        {
-            var caret = Editor.CaretPosition;
-            var para = caret.Paragraph;
-            if (para == null || para.Tag is CodeBlockInfo) return false;
-
-            // Walk backward one Run-segment at a time, remembering each segment's own text and the
-            // TextPointer at ITS start. This avoids ever needing to compute a position offset that
-            // spans more than one segment's own characters, which keeps this reliable regardless of
-            // how many separate Run objects make up the paragraph so far.
-            var segments = new List<(string text, TextPointer segStart)>();
-            TextPointer walker = caret;
-            int totalLen = 0;
-            int guard = 0;
-            while (walker != null && walker.CompareTo(para.ContentStart) > 0 && totalLen < 300 && guard < 50)
-            {
-                guard++;
-                string chunk = walker.GetTextInRun(LogicalDirection.Backward);
-                if (!string.IsNullOrEmpty(chunk))
-                {
-                    var segStart = walker.GetPositionAtOffset(-chunk.Length);
-                    if (segStart == null) break;
-                    segments.Insert(0, (chunk, segStart));
-                    totalLen += chunk.Length;
-                    walker = segStart;
-                }
-                else
-                {
-                    var prevContext = walker.GetNextContextPosition(LogicalDirection.Backward);
-                    if (prevContext == null || prevContext.CompareTo(walker) == 0) break;
-                    walker = prevContext;
-                }
-            }
-            if (segments.Count == 0) return false;
-
-            string textBefore = string.Concat(segments.Select(s => s.text));
-            if (textBefore.Length == 0) return false;
-
-            char lastChar = textBefore[textBefore.Length - 1];
-            string style = null;
-            Match match = null;
-            string linkUrl = null;
-
-            if (lastChar == ')')
-            {
-                match = Regex.Match(textBefore, "(?<!!)\\[([^\\]]*)\\]\\(([^)\\s]+)\\)$");
-                if (match.Success)
-                {
-                    linkUrl = match.Groups[2].Value;
-                    style = "link";
-                }
-            }
-            if (style == null && lastChar == '`')
-            {
-                match = Regex.Match(textBefore, "`([^`]+)`$");
-                if (match.Success) style = "code";
-            }
-            if (style == null && lastChar == '*')
-            {
-                match = Regex.Match(textBefore, "\\*\\*([^*]+)\\*\\*$");
-                if (match.Success) style = "bold";
-            }
-            if (style == null && lastChar == '~')
-            {
-                match = Regex.Match(textBefore, "~~([^~]+)~~$");
-                if (match.Success) style = "strikethrough";
-            }
-            if (style == null) return false;
-
-            TextPointer start = null;
-            int remaining = match.Index;
-            foreach (var seg in segments)
-            {
-                if (remaining <= seg.text.Length)
-                {
-                    start = seg.segStart.GetPositionAtOffset(remaining);
-                    break;
-                }
-                remaining -= seg.text.Length;
-            }
-            if (start == null) return false;
-
-            if (style == "link")
-                ReplaceTextBeforeCaretWithLinkRun(caret, start, match.Groups[1].Value, linkUrl);
-            else
-                ReplaceTextBeforeCaretWithStyledRun(caret, start, match.Groups[1].Value, style);
-            return true;
-        }
-
-        private void ReplaceTextBeforeCaretWithLinkRun(TextPointer caret, TextPointer start, string linkText, string url)
-        {
-            isProgrammaticChange = true;
-            try
-            {
-                new TextRange(start, caret).Text = "";
-                var newRun = new Run(linkText, start)
-                {
-                    Foreground = LinkBrush,
-                    TextDecorations = TextDecorations.Underline,
-                    Tag = new LinkInfo { Url = url, IsAutoLink = false },
-                    ToolTip = url
-                };
-                var trailingRun = new Run("\u200B", newRun.ContentEnd);
-                Editor.CaretPosition = trailingRun.ContentEnd;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-        }
-
-        private void ReplaceTextBeforeCaretWithStyledRun(TextPointer caret, TextPointer start, string content, string style)
-        {
-            isProgrammaticChange = true;
-            try
-            {
-                new TextRange(start, caret).Text = "";
-
-                Run newRun;
-                if (style == "bold")
-                    newRun = new Run(content, start) { FontWeight = FontWeights.Bold, Tag = "bold" };
-                else if (style == "strikethrough")
-                    newRun = new Run(content, start) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
-                else
-                    newRun = new Run(content, start)
-                    {
-                        FontFamily = new FontFamily("Consolas"),
-                        FontSize = 13.5,
-                        Background = CodeBlockBackground,
-                        Tag = "inline-code"
-                    };
-
-                // A trailing zero-width-space Run with no special styling, so subsequent typing
-                // doesn't inherit the bold/strikethrough/code formatting we just applied. Stripped
-                // automatically on save (see AppendInlinesMarkdown).
-                var trailingRun = new Run("\u200B", newRun.ContentEnd);
-                Editor.CaretPosition = trailingRun.ContentEnd;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-        }
-
-        private void ApplyInlineStyle(string style)
-        {
-            if (Editor.Selection == null || Editor.Selection.IsEmpty) return;
-            string text = Editor.Selection.Text;
-            if (string.IsNullOrEmpty(text)) return;
-
-            isProgrammaticChange = true;
-            try
-            {
-                TextPointer start = Editor.Selection.Start;
-                Editor.Selection.Text = ""; // remove the old (possibly differently-styled) content
-
-                Run newRun;
-                switch (style)
-                {
-                    case "bold":
-                        newRun = new Run(text, start) { FontWeight = FontWeights.Bold, Tag = "bold" };
-                        break;
-                    case "strikethrough":
-                        newRun = new Run(text, start) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
-                        break;
-                    case "code":
-                        newRun = new Run(text, start)
-                        {
-                            FontFamily = new FontFamily("Consolas"),
-                            FontSize = 13.5,
-                            Background = CodeBlockBackground,
-                            Tag = "inline-code"
-                        };
-                        break;
-                    default: // "normal"
-                        newRun = new Run(text, start);
-                        break;
-                }
-
-                Editor.Selection.Select(newRun.ContentStart, newRun.ContentEnd);
-                Editor.CaretPosition = newRun.ContentEnd;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-            RefreshOutline();
-        }
-
-        private Image BuildImageFromHtmlTag(string tagStr)
-        {
-            string src = FirstGroupOrEmpty(Regex.Match(tagStr, "src\\s*=\\s*\"([^\"]*)\""), Regex.Match(tagStr, "src\\s*=\\s*'([^']*)'"));
-            string alt = FirstGroupOrEmpty(Regex.Match(tagStr, "alt\\s*=\\s*\"([^\"]*)\""), Regex.Match(tagStr, "alt\\s*=\\s*'([^']*)'"));
-            string style = FirstGroupOrEmpty(Regex.Match(tagStr, "style\\s*=\\s*\"([^\"]*)\""), Regex.Match(tagStr, "style\\s*=\\s*'([^']*)'"));
-
-            var img = new Image
-            {
-                Tag = new ImageInfo { OriginalSrc = src, Alt = alt, Style = style, Format = "html" },
-                Stretch = Stretch.Uniform,
-                Margin = new Thickness(0, 4, 0, 4)
-            };
-            AutomationProperties.SetName(img, alt ?? "");
-            img.ToolTip = src;
-            SetImageSource(img, src);
-            AttachImageDragHandlers(img);
-            return img;
-        }
-
-        private Image BuildImageFromMarkdown(string alt, string src)
-        {
-            var img = new Image
-            {
-                Tag = new ImageInfo { OriginalSrc = src, Alt = alt, Format = "md" },
-                Stretch = Stretch.Uniform,
-                Margin = new Thickness(0, 4, 0, 4)
-            };
-            AutomationProperties.SetName(img, alt ?? "");
-            img.ToolTip = src;
-            SetImageSource(img, src);
-            AttachImageDragHandlers(img);
-            return img;
-        }
-
-        // ======================================================================
-        //  Drag an embedded image OUT to Explorer / Desktop / other apps
-        // ======================================================================
-        private Point? imageDragStartPoint = null;
-
-        private void AttachImageDragHandlers(Image img)
-        {
-            img.Cursor = Cursors.Hand;
-            img.PreviewMouseLeftButtonDown += Image_PreviewMouseLeftButtonDown;
-            img.PreviewMouseMove += Image_PreviewMouseMove;
-        }
-
-        private void Image_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            imageDragStartPoint = e.GetPosition(null);
-        }
-
-        private void Image_PreviewMouseMove(object sender, MouseEventArgs e)
-        {
-            if (e.LeftButton != MouseButtonState.Pressed || imageDragStartPoint == null) return;
-            if (!(sender is Image img)) return;
-
-            Point current = e.GetPosition(null);
-            Vector diff = imageDragStartPoint.Value - current;
-            if (Math.Abs(diff.X) < SystemParameters.MinimumHorizontalDragDistance &&
-                Math.Abs(diff.Y) < SystemParameters.MinimumVerticalDragDistance)
-                return;
-
-            imageDragStartPoint = null;
-
-            string filePath = GetExportableFilePath(img);
-            if (filePath == null) return;
-
-            var data = new DataObject(DataFormats.FileDrop, new[] { filePath });
-            DragDrop.DoDragDrop(img, data, DragDropEffects.Copy);
-        }
-
-        /// <summary>
-        /// Resolves an embedded image's current, real on-disk path (in the "images" folder if the
-        /// document has been saved, or the temp staging folder otherwise). Returns null for remote
-        /// (http/https/data) images or if the underlying file can't be found.
-        /// </summary>
-        private string GetExportableFilePath(Image img)
-        {
-            if (!(img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.OriginalSrc)) return null;
-            string src = info.OriginalSrc;
-
-            if (Uri.TryCreate(src, UriKind.Absolute, out Uri u) &&
-                (u.Scheme == "http" || u.Scheme == "https" || u.Scheme == "data"))
-                return null;
-
-            string full;
-            if (Path.IsPathRooted(src))
-            {
-                full = src;
-            }
-            else if (!string.IsNullOrEmpty(currentFileDirectory))
-            {
-                full = Path.GetFullPath(Path.Combine(currentFileDirectory, src.Replace('/', Path.DirectorySeparatorChar)));
-            }
-            else
-            {
-                return null;
-            }
-
-            return File.Exists(full) ? full : null;
-        }
-
-        /// <summary>
-        /// Right-click "画像を保存…" - unlike a native drag to Explorer (where any same-name
-        /// conflict at the destination is resolved by Explorer's own prompt), this fully controls
-        /// the file write itself, so a same-named existing file is never overwritten or prompted
-        /// about - a numeric suffix is appended automatically instead.
-        /// </summary>
-        private void SaveImageItem_Click(object sender, RoutedEventArgs e)
-        {
-            if (ctxImage == null) return;
-            string sourcePath = GetExportableFilePath(ctxImage);
-            if (sourcePath == null)
-            {
-                MessageBox.Show("この画像は保存できません（リモート画像か、元ファイルが見つかりません）。",
-                    "画像を保存", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            var dlg = new Microsoft.Win32.SaveFileDialog
-            {
-                FileName = Path.GetFileName(sourcePath),
-                Filter = "画像ファイル|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|すべてのファイル|*.*",
-                OverwritePrompt = false
-            };
-            if (dlg.ShowDialog() != true) return;
-
-            try
-            {
-                string destPath = dlg.FileName;
-                if (File.Exists(destPath) && !PathsReferToSameFile(sourcePath, destPath))
-                {
-                    string dir = Path.GetDirectoryName(destPath);
-                    string baseName = Path.GetFileNameWithoutExtension(destPath);
-                    string ext = Path.GetExtension(destPath);
-                    int counter = 1;
-                    do
-                    {
-                        destPath = Path.Combine(dir, baseName + "_" + counter + ext);
-                        counter++;
-                    } while (File.Exists(destPath));
-                }
-                File.Copy(sourcePath, destPath, PathsReferToSameFile(sourcePath, destPath));
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("保存に失敗しました: " + ex.Message, "画像を保存",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private string FirstGroupOrEmpty(Match a, Match b)
-        {
-            if (a.Success) return a.Groups[1].Value;
-            if (b.Success) return b.Groups[1].Value;
-            return "";
-        }
-
-        private void SetImageSource(Image img, string src)
-        {
-            if (string.IsNullOrWhiteSpace(src)) return;
-            try
-            {
-                Uri uri;
-                if (Uri.TryCreate(src, UriKind.Absolute, out Uri absoluteUri) &&
-                    (absoluteUri.Scheme == "http" || absoluteUri.Scheme == "https" || absoluteUri.Scheme == "data"))
-                {
-                    uri = absoluteUri;
-                }
-                else if (Path.IsPathRooted(src) && File.Exists(src))
-                {
-                    uri = new Uri(src, UriKind.Absolute);
-                }
-                else if (!string.IsNullOrEmpty(currentFileDirectory))
-                {
-                    string combined = Path.GetFullPath(Path.Combine(currentFileDirectory, src.Replace('/', Path.DirectorySeparatorChar)));
-                    if (!File.Exists(combined)) return;
-                    uri = new Uri(combined, UriKind.Absolute);
-                }
-                else
-                {
-                    return;
-                }
-
-                var bmp = new BitmapImage();
-                bmp.BeginInit();
-                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                bmp.UriSource = uri;
-                bmp.EndInit();
-
-                if (bmp.IsDownloading)
-                {
-                    bmp.DownloadCompleted += (s, e) => ApplyImageSizing(img);
-                }
-
-                img.Source = bmp;
-                ApplyImageSizing(img);
-            }
-            catch
-            {
-                // Leave unresolved; the image area will simply appear blank.
-            }
-        }
-
-        /// <summary>
-        /// Sizes an image at up to 100% of its original pixel dimensions, shrinking it only if its
-        /// natural width would overflow the available editor width (tall images are never shrunk just
-        /// for height). The result scales automatically with the editor's zoom level, since zoom is
-        /// applied as a uniform LayoutTransform over the whole editor - an image capped at 100% of the
-        /// available width at 100% zoom remains fully visible (not cut off) at any zoom level, because
-        /// the proportion of the viewport it occupies never changes.
-        /// </summary>
-        private void ApplyImageSizing(Image img)
-        {
-            if (!(img.Source is BitmapSource bmp)) return;
-            double naturalWidth = bmp.PixelWidth;
-            double naturalHeight = bmp.PixelHeight;
-            if (naturalWidth <= 0 || naturalHeight <= 0) return;
-
-            double availableWidth = GetAvailableImageWidth();
-            double targetWidth = naturalWidth;
-            if (availableWidth > 0 && naturalWidth > availableWidth)
-            {
-                targetWidth = availableWidth;
-            }
-
-            double scale = targetWidth / naturalWidth;
-            img.Width = targetWidth;
-            img.Height = naturalHeight * scale;
-        }
-
-        private double GetAvailableImageWidth()
-        {
-            double w = Editor.ActualWidth;
-            if (w <= 0) return 560; // reasonable fallback before the first layout pass
-            w -= Editor.Padding.Left + Editor.Padding.Right;
-            w -= 24; // scrollbar + small safety margin so the right edge is never flush
-            return Math.Max(100, w);
-        }
-
-        private void SourceEditor_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            currentFileIsDirty = true;
-            RefreshFolderTreeDirtyMarkers();
-        }
-
-        private void Editor_SizeChanged(object sender, SizeChangedEventArgs e)
-        {
-            if (isSourceMode) return;
-            foreach (var img in FindAllImages(Editor.Document))
-            {
-                ApplyImageSizing(img);
-            }
-        }
-
-        // ======================================================================
-        //  Drag & drop image files into the editor
-        // ======================================================================
-        private static readonly string[] ImageDropExtensions = { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" };
-
-        private bool IsImageFile(string path)
-        {
-            string ext = Path.GetExtension(path);
-            return !string.IsNullOrEmpty(ext) && ImageDropExtensions.Contains(ext.ToLowerInvariant());
-        }
-
-        private void Editor_DragEnter(object sender, DragEventArgs e)
-        {
-            Editor_DragOver(sender, e);
-        }
-
-        private void Editor_DragOver(object sender, DragEventArgs e)
-        {
-            bool accept = !isSourceMode &&
-                          e.Data.GetDataPresent(DataFormats.FileDrop) &&
-                          e.Data.GetData(DataFormats.FileDrop) is string[] dragFiles &&
-                          dragFiles.Any(IsImageFile);
-            e.Effects = accept ? DragDropEffects.Copy : DragDropEffects.None;
-            e.Handled = true;
-        }
-
-        private void Editor_Drop(object sender, DragEventArgs e)
-        {
-            if (isSourceMode || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
-            if (!(e.Data.GetData(DataFormats.FileDrop) is string[] files)) return;
-
-            var imageFiles = files.Where(IsImageFile).ToList();
-            if (imageFiles.Count == 0) return;
-
-            e.Handled = true;
-
-            Point dropPoint = e.GetPosition(Editor);
-            TextPointer insertAt = Editor.GetPositionFromPoint(dropPoint, true);
-            if (insertAt == null) return;
-
-            InvalidateOriginalText(insertAt);
-
-            isProgrammaticChange = true;
-            try
-            {
-                foreach (var file in imageFiles)
-                {
-                    // Always stage in the OS temp folder first, even for an already-saved document.
-                    // This way, images added since the last save don't touch the real "images"
-                    // folder until the user explicitly saves - so discarding unsaved changes truly
-                    // leaves the on-disk file and folder untouched. Relocation into the real
-                    // "images" folder happens in RelocatePendingTempImages on every Save/Save As.
-                    string tempPath = CopyFileWithDedup(file, GetOrCreateTempImageFolder());
-                    if (tempPath == null) continue;
-
-                    var img = BuildImageFromMarkdown(Path.GetFileNameWithoutExtension(file), tempPath);
-                    var container = new InlineUIContainer(img, insertAt);
-                    insertAt = container.ElementEnd;
-                }
-                Editor.CaretPosition = insertAt;
-            }
-            finally
-            {
-                isProgrammaticChange = false;
-            }
-
-            RefreshOutline();
-            Editor.Focus();
-        }
-
-        private string GetOrCreateTempImageFolder()
-        {
-            string dir = Path.Combine(Path.GetTempPath(), "mde", instanceTempId);
-            Directory.CreateDirectory(dir);
-            return dir;
-        }
-
-        /// <summary>
-        /// Copies sourcePath into destDir, appending a numeric suffix ("_1", "_2", ...) if a file
-        /// with the same name already exists there. Returns the full destination path, or null on
-        /// failure. If sourcePath already IS the same file as the (would-be) destination, no copy
-        /// is made and the existing path is reused as-is.
-        /// </summary>
-        private string CopyFileWithDedup(string sourcePath, string destDir)
-        {
-            try
-            {
-                Directory.CreateDirectory(destDir);
-
-                string fileName = Path.GetFileName(sourcePath);
-                string destPath = Path.Combine(destDir, fileName);
-
-                if (File.Exists(destPath) && !PathsReferToSameFile(sourcePath, destPath))
-                {
-                    string baseName = Path.GetFileNameWithoutExtension(fileName);
-                    string ext = Path.GetExtension(fileName);
-                    int counter = 1;
-                    do
-                    {
-                        fileName = baseName + "_" + counter + ext;
-                        destPath = Path.Combine(destDir, fileName);
-                        counter++;
-                    } while (File.Exists(destPath));
-                }
-
-                if (!PathsReferToSameFile(sourcePath, destPath))
-                {
-                    File.Copy(sourcePath, destPath, false);
-                }
-
-                return destPath;
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("画像のコピーに失敗しました: " + ex.Message, "画像の追加",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Called right after the document's folder becomes known (first Save/Save As). Moves any
-        /// images that were staged in the OS temp folder into the real "images" folder next to the
-        /// saved file, and updates each image's stored path so MarkDown serialization uses the
-        /// final relative path.
-        /// </summary>
-        private void RelocatePendingTempImages()
-        {
-            if (string.IsNullOrEmpty(currentFileDirectory)) return;
-
-            string tempDir;
-            try { tempDir = Path.GetFullPath(GetOrCreateTempImageFolder()); }
-            catch { return; }
-
-            foreach (var img in FindAllImages(Editor.Document))
-            {
-                if (!(img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.OriginalSrc)) continue;
-                if (!Path.IsPathRooted(info.OriginalSrc)) continue; // already a relative path; nothing to do
-
-                string fullSrc;
-                try { fullSrc = Path.GetFullPath(info.OriginalSrc); } catch { continue; }
-                if (!fullSrc.StartsWith(tempDir, StringComparison.OrdinalIgnoreCase)) continue; // not ours
-
-                string destPath = CopyFileWithDedup(fullSrc, Path.Combine(currentFileDirectory, "images"));
-                if (destPath == null) continue;
-
-                info.OriginalSrc = "images/" + Path.GetFileName(destPath);
-                SetImageSource(img, info.OriginalSrc);
-
-                try { File.Delete(fullSrc); } catch { /* best-effort cleanup */ }
-            }
-        }
-
-        private bool PathsReferToSameFile(string a, string b)
-        {
-            try
-            {
-                return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private void ResolveImages(FlowDocument doc)
-        {
-            foreach (var img in FindAllImages(doc))
-            {
-                if (img.Tag is ImageInfo info) SetImageSource(img, info.OriginalSrc);
-            }
-        }
-
-        private IEnumerable<Image> FindAllImages(FlowDocument doc)
-        {
-            foreach (Block block in doc.Blocks)
-                foreach (var img in FindImagesInBlock(block))
-                    yield return img;
-        }
-
-        private IEnumerable<Image> FindImagesInBlock(Block block)
-        {
-            if (block is Paragraph p)
-            {
-                foreach (var img in FindImagesInInlines(p.Inlines)) yield return img;
-            }
-            else if (block is List list)
-            {
-                foreach (ListItem li in list.ListItems)
-                    foreach (Block b in li.Blocks)
-                        foreach (var img in FindImagesInBlock(b)) yield return img;
-            }
-            else if (block is Table table)
-            {
-                foreach (TableRowGroup rg in table.RowGroups)
-                    foreach (TableRow row in rg.Rows)
-                        foreach (TableCell cell in row.Cells)
-                            foreach (Block b in cell.Blocks)
-                                foreach (var img in FindImagesInBlock(b)) yield return img;
-            }
-        }
-
-        private IEnumerable<Image> FindImagesInInlines(InlineCollection inlines)
-        {
-            foreach (Inline inline in inlines)
-            {
-                if (inline is InlineUIContainer iuc && iuc.Child is Image im) yield return im;
-                else if (inline is Span span)
-                    foreach (var img in FindImagesInInlines(span.Inlines)) yield return img;
-            }
-        }
+        private void OutlineList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
+            outlineManager.HandleSelectionChanged(sender, e);
 
         private void VersionInfo_Click( object sender, RoutedEventArgs e )
         {

@@ -136,6 +136,7 @@
                                  SpellCheck.IsEnabled="False"
                                  TextChanged="Editor_TextChanged"
                                  PreviewKeyDown="Editor_PreviewKeyDown"
+                                 PreviewTextInput="Editor_PreviewTextInput"
                                  PreviewMouseWheel="Editor_PreviewMouseWheel"
                                  PreviewMouseLeftButtonDown="Editor_PreviewMouseLeftButtonDown"
                                  SizeChanged="Editor_SizeChanged"
