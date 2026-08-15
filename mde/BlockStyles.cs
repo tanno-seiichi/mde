@@ -15,7 +15,7 @@ namespace mde
     /// <summary>見出し・コードブロックの段落スタイルを適用する静的ヘルパー群。</summary>
     public static class BlockStyles
     {
-        private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xE3, 0xDD, 0xCC));
+        private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33));
         private static readonly Brush CodeBlockBackground = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
 
         /// <summary>コードブロックの背景色（他クラスからも参照できるよう公開）。</summary>
@@ -54,7 +54,7 @@ namespace mde
                 if (level <= 2)
                 {
                     p.BorderBrush = CellBorder;
-                    p.BorderThickness = new Thickness(0, 0, 0, level == 1 ? 2 : 1);
+                    p.BorderThickness = new Thickness(0, 0, 0, level == 1 ? 0.75 : 0.5);
                     p.Padding = new Thickness(0, 0, 0, 4);
                 }
                 else

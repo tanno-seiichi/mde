@@ -4,8 +4,8 @@
              StartupUri="MainWindow.xaml">
     <Application.Resources>
 
-        <SolidColorBrush x:Key="PaperBrush" Color="#F5F2EA"/>
-        <SolidColorBrush x:Key="CardBrush" Color="#FFFDF8"/>
+        <SolidColorBrush x:Key="PaperBrush" Color="#FAF9F5"/>
+        <SolidColorBrush x:Key="CardBrush" Color="#FFFFFF"/>
         <SolidColorBrush x:Key="InkBrush" Color="#252220"/>
         <SolidColorBrush x:Key="InkSoftBrush" Color="#6F6A5F"/>
         <SolidColorBrush x:Key="LineBrush" Color="#E3DDCC"/>

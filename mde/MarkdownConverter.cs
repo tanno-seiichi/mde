@@ -24,8 +24,8 @@ namespace mde
     /// </summary>
     public class MarkdownConverter
     {
-        private static readonly Brush HeaderBackground = new SolidColorBrush(Color.FromRgb(0xE5, 0xEF, 0xEC));
-        private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xE3, 0xDD, 0xCC));
+        private static readonly Brush HeaderBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
+        private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
         private static readonly Brush LinkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
 
         /// <summary>
