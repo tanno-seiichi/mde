@@ -157,19 +157,13 @@ namespace mde
             DataObject.AddCopyingHandler(Editor, tableEditor.HandleCopying);
             DataObject.AddPastingHandler(Editor, tableEditor.HandlePasting);
 
-            // 起動時引数でMarkDownファイルのパスを受け取っていれば、そちらを最優先で開く
-            // （ファイルの関連付けからのダブルクリック起動などに対応するため）。無ければ、
-            // 前回終了時に開いていたファイルを復元する。
+            // 起動時引数でMarkDownファイルのパスを受け取っていれば、そちらを開く
+            // （ファイルの関連付けからのダブルクリック起動などに対応するため）。
             string startupFilePath = ResolveStartupFilePath();
             if (!string.IsNullOrEmpty(startupFilePath) && File.Exists(startupFilePath))
             {
                 LoadFile(startupFilePath);
                 folderTreeManager.SelectFileNode(startupFilePath);
-            }
-            else if (!string.IsNullOrEmpty(savedSettings.LastFilePath) && File.Exists(savedSettings.LastFilePath))
-            {
-                LoadFile(savedSettings.LastFilePath);
-                folderTreeManager.SelectFileNode(savedSettings.LastFilePath);
             }
 
             ApplyFolderPaneVisibility();
@@ -255,8 +249,7 @@ namespace mde
                 OutlinePaneVisible = outlinePaneVisible,
                 FolderPaneWidth = folderWidthToSave,
                 OutlinePaneWidth = outlineWidthToSave,
-                ZoomLevel = zoomLevel,
-                LastFilePath = currentFilePath
+                ZoomLevel = zoomLevel
             };
             settings.Save();
         }
