@@ -6,7 +6,7 @@
         SnapsToDevicePixels="True"
         Height="860" Width="1240"
         FontFamily="Segoe UI, Yu Gothic UI"
-        Background="{StaticResource PaperBrush}"
+        Background="{StaticResource CardBrush}"
         PreviewKeyDown="MainWindow_PreviewKeyDown"
         Closing="Window_Closing">
 
@@ -27,8 +27,8 @@
     <DockPanel>
 
         <!-- ===================== Menu bar ===================== -->
-        <Menu DockPanel.Dock="Top" Background="{StaticResource PaperBrush}" Foreground="{StaticResource InkBrush}"
-              BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="6,3" FontSize="13">
+        <Menu DockPanel.Dock="Top" Background="{StaticResource CardBrush}" Foreground="{StaticResource InkBrush}"
+              BorderBrush="{StaticResource ThinBorderBrush}" BorderThickness="0,0,0,1" Padding="6,3" FontSize="13">
             <MenuItem Header="ファイル(_F)">
                 <MenuItem Header="新規作成(_N)" Click="NewBtn_Click" InputGestureText="Ctrl+N"/>
                 <MenuItem Header="新しいウインドウ" Click="NewWindow_Click" InputGestureText="Shift+Ctrl+N"/>
@@ -46,7 +46,7 @@
         </Menu>
 
         <!-- ===================== Status bar (panes / zoom / mode) ===================== -->
-        <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0"
+        <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource ThinBorderBrush}" BorderThickness="0,1,0,0"
                 Padding="4,4,2,4">
             <Grid>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
@@ -81,7 +81,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- ==== Folder pane ==== -->
-            <Border x:Name="FolderPaneBorder" Grid.Column="0" Background="{StaticResource CardBrush}"
+            <Border x:Name="FolderPaneBorder" Grid.Column="0" Background="{StaticResource ListPaneBrush}"
                     BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,0" CornerRadius="0">
                 <DockPanel Margin="0,0,0,0">
                     <Grid DockPanel.Dock="Top" Margin="8,8,4,6">
@@ -124,10 +124,10 @@
                 </DockPanel>
             </Border>
 
-            <GridSplitter x:Name="FolderSplitter" Grid.Column="1" HorizontalAlignment="Stretch" Background="Transparent"/>
+            <GridSplitter x:Name="FolderSplitter" Grid.Column="1" HorizontalAlignment="Stretch" Width="1" Background="{StaticResource ThinBorderBrush}"/>
 
             <!-- ==== Outline pane ==== -->
-            <Border x:Name="OutlinePaneBorder" Grid.Column="2" Background="{StaticResource CardBrush}"
+            <Border x:Name="OutlinePaneBorder" Grid.Column="2" Background="{StaticResource ListPaneBrush}"
                     BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,0" CornerRadius="0">
                 <DockPanel Margin="0,0,0,0">
                     <TextBlock DockPanel.Dock="Top" Text="アウトライン" FontWeight="Bold" FontSize="12"
@@ -151,7 +151,7 @@
                 </DockPanel>
             </Border>
 
-            <GridSplitter x:Name="OutlineSplitter" Grid.Column="3" HorizontalAlignment="Stretch" Background="Transparent"/>
+            <GridSplitter x:Name="OutlineSplitter" Grid.Column="3" HorizontalAlignment="Stretch" Width="1" Background="{StaticResource ThinBorderBrush}"/>
 
             <!-- ==== Editor pane ==== -->
             <Border Grid.Column="4" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}"
