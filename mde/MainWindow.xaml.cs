@@ -405,7 +405,7 @@ namespace mde
             // RichTextBoxはInitializeComponent中に、既定の空文書を設定する際にTextChangedを
             // 発生させることがある。その時点ではコンストラクタでの各クラスの構築がまだ
             // 完了していない可能性があるため、念のためガードしておく。
-            if (m_outlineManager == null || m_folderTreeManager == null || m_originalTextTracker == null) return;
+            if (null == m_outlineManager || null == m_folderTreeManager || null == m_originalTextTracker) return;
 
             if (m_isSourceModeFlg) return;
 
@@ -423,7 +423,7 @@ namespace mde
             if (m_isProgrammaticChangeFlg) return;
 
             var para = m_editor.CaretPosition?.Paragraph;
-            if (para == null) return;
+            if (null == para) return;
             if (para.Tag is CodeBlockInfo) return; // コードブロック内は自動整形しない
 
             if (m_inlineStyleEditor.CheckInlineFormatTrigger()) return;
@@ -471,10 +471,10 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorPreviewTextInput(object a_sender, TextCompositionEventArgs a_args)
         {
-            if (m_isSourceModeFlg || a_args.Text != " ") return;
+            if (m_isSourceModeFlg || " " != a_args.Text) return;
 
             var para = m_editor.CaretPosition?.Paragraph;
-            if (para == null || !(para.Parent is FlowDocument) || para.Tag is CodeBlockInfo) return;
+            if (null == para || !(para.Parent is FlowDocument) || para.Tag is CodeBlockInfo) return;
             if (m_editor.CaretPosition.CompareTo(para.ContentEnd) != 0) return;
 
             string beforeSpace = new TextRange(para.ContentStart, para.ContentEnd).Text.TrimEnd('\r', '\n');
@@ -498,7 +498,7 @@ namespace mde
         {
             if (m_isSourceModeFlg) return;
             var para = m_editor.CaretPosition?.Paragraph;
-            if (para == null) return;
+            if (null == para) return;
 
             if (a_args.Key == Key.Enter)
             {
@@ -618,7 +618,7 @@ namespace mde
             var linkRun = tp?.Parent as Run;
             m_inlineStyleEditor.ContextLinkRun = linkRun?.Tag is LinkInfo ? linkRun : null;
 
-            bool inTableFlg = m_tableEditor.ContextCell != null;
+            bool inTableFlg = null != m_tableEditor.ContextCell;
             bool inCodeBlockFlg = m_ctxParagraph?.Tag is CodeBlockInfo;
             m_headingMenuItem.Visibility = inTableFlg ? Visibility.Collapsed : Visibility.Visible;
             m_insertTableMenuItem.Visibility = inTableFlg ? Visibility.Collapsed : Visibility.Visible;
@@ -629,9 +629,9 @@ namespace mde
             m_deleteRowMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_deleteColumnMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_copyCodeBlockMenuItem.Visibility = inCodeBlockFlg ? Visibility.Visible : Visibility.Collapsed;
-            m_saveImageMenuItem.Visibility = m_imageManager.ContextImage != null ? Visibility.Visible : Visibility.Collapsed;
+            m_saveImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_textStyleMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
-            m_linkMenuItem.Visibility = m_inlineStyleEditor.ContextLinkRun != null ? Visibility.Visible : Visibility.Collapsed;
+            m_linkMenuItem.Visibility = null != m_inlineStyleEditor.ContextLinkRun ? Visibility.Visible : Visibility.Collapsed;
             m_toggleModeMenuItem.Header = m_isSourceModeFlg ? "MarkDownモードに切り替え" : "ソースモードに切り替え";
         }
 
@@ -650,7 +650,7 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void HeadingItemClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (m_ctxParagraph == null) return;
+            if (null == m_ctxParagraph) return;
             int level = int.Parse((string)((MenuItem)a_sender).Tag);
             m_headingCodeBlockEditor.ChangeHeadingLevel(m_ctxParagraph, level);
             m_outlineManager.Refresh();
@@ -663,7 +663,7 @@ namespace mde
         {
             m_tableEditor.ContextParagraph = m_ctxParagraph;
             var dlg = new TableSizeDialog { Owner = this };
-            if (dlg.ShowDialog() == true)
+            if (true == dlg.ShowDialog())
             {
                 m_tableEditor.InsertTable(dlg.Rows, dlg.Columns);
             }
@@ -710,7 +710,7 @@ namespace mde
         private static T FindVisualAncestorOrSelf<T>(DependencyObject a_start) where T : DependencyObject
         {
             var current = a_start;
-            while (current != null)
+            while (null != current)
             {
                 if (current is T match) return match;
                 current = VisualTreeHelper.GetParent(current);
@@ -817,7 +817,7 @@ namespace mde
             {
                 Filter = "Markdownファイル (*.md;*.markdown)|*.md;*.markdown|すべてのファイル (*.*)|*.*"
             };
-            if (dlg.ShowDialog() == true)
+            if (true == dlg.ShowDialog())
             {
                 LoadFile(dlg.FileName);
             }
@@ -846,7 +846,7 @@ namespace mde
                 m_pendingFileEdits.Remove(a_path); // このファイルの保留中の編集も破棄する
 
                 string onDiskContent = SafeReadFile(a_path);
-                if (onDiskContent == null)
+                if (null == onDiskContent)
                 {
                     MessageBox.Show("ファイルを開けませんでした。", "ファイルを開く", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
@@ -871,10 +871,10 @@ namespace mde
             SnapshotCurrentFileIfDirty();
 
             string md = GetCurrentContentForFile(a_path);
-            if (md == null)
+            if (null == md)
             {
                 md = SafeReadFile(a_path);
-                if (md == null)
+                if (null == md)
                 {
                     MessageBox.Show("ファイルを開けませんでした。", "ファイルを開く",
                         MessageBoxButton.OK, MessageBoxImage.Error);
@@ -982,14 +982,14 @@ namespace mde
             var dlg = new Microsoft.Win32.SaveFileDialog
             {
                 Filter = "Markdownファイル (*.md)|*.md|すべてのファイル (*.*)|*.*",
-                FileName = m_currentFilePath != null ? Path.GetFileName(m_currentFilePath) : "document.md"
+                FileName = null != m_currentFilePath ? Path.GetFileName(m_currentFilePath) : "document.md"
             };
             // 現在の文書自体には保存先フォルダがまだ無くても（新規作成直後など）、フォルダビューに
             // 何かフォルダが表示されていれば、そちらを初期フォルダとして使う。
             string initialDirectory = m_currentFileDirectory ?? m_folderTreeManager.LoadedFolderRootPath;
             if (!string.IsNullOrEmpty(initialDirectory)) dlg.InitialDirectory = initialDirectory;
 
-            if (dlg.ShowDialog() != true) return;
+            if (true != dlg.ShowDialog()) return;
 
             string newFilePath = dlg.FileName;
             string newFileDirectory = Path.GetDirectoryName(dlg.FileName);
@@ -1059,7 +1059,7 @@ namespace mde
             }
 
             var dlg = new System.Windows.Controls.PrintDialog();
-            if (dlg.ShowDialog() != true) return;
+            if (true != dlg.ShowDialog()) return;
 
             try
             {
@@ -1228,7 +1228,7 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void SourceEditorTextChanged(object a_sender, TextChangedEventArgs a_args)
         {
-            if (m_folderTreeManager == null) return; // InitializeComponent中の発火に対するガード
+            if (null == m_folderTreeManager) return; // InitializeComponent中の発火に対するガード
             m_currentFileIsDirtyFlg = true;
             m_folderTreeManager.RefreshDirtyMarkers();
         }
@@ -1238,7 +1238,7 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorSizeChanged(object a_sender, SizeChangedEventArgs a_args)
         {
-            if (m_imageManager == null) return; // InitializeComponent中の発火に対するガード
+            if (null == m_imageManager) return; // InitializeComponent中の発火に対するガード
             if (m_isSourceModeFlg) return;
             foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
             {
@@ -1333,7 +1333,7 @@ namespace mde
         /// <summary>検索と置換ウィンドウを開く（すでに開いていれば、そちらを前面に出す）。</summary>
         private void OpenFindReplaceWindow()
         {
-            if (m_openFindReplaceWindow != null)
+            if (null != m_openFindReplaceWindow)
             {
                 m_openFindReplaceWindow.Activate();
                 m_openFindReplaceWindow.Focus();
@@ -1444,7 +1444,7 @@ namespace mde
             string previousRelativePath = m_folderTreeManager.GetCurrentFileRelativePath();
 
             var dlg = new Microsoft.Win32.OpenFolderDialog();
-            if (dlg.ShowDialog() != true) return;
+            if (true != dlg.ShowDialog()) return;
 
             DiscardCurrentDocumentSilently();
             m_folderTreeManager.LoadFolderTree(dlg.FolderName);
@@ -1475,7 +1475,7 @@ namespace mde
                 var child = VisualTreeHelper.GetChild(a_root, i);
                 if (child is T match) return match;
                 var found = FindVisualChild<T>(child);
-                if (found != null) return found;
+                if (null != found) return found;
             }
             return null;
         }
@@ -1488,7 +1488,7 @@ namespace mde
             // スクロールしてしまい、ファイル名が長い場合に横スクロールバーが右へずれてしまう。
             // このレイアウトパスが終わった直後（Loaded優先度）に横スクロールだけを0へ戻すことで、
             // それ以外のタイミングでのユーザーによる手動スクロールには一切影響しないようにする。
-            if (m_folderTreeScrollViewer != null)
+            if (null != m_folderTreeScrollViewer)
             {
                 Dispatcher.BeginInvoke(new Action(() => m_folderTreeScrollViewer.ScrollToHorizontalOffset(0)),
                     System.Windows.Threading.DispatcherPriority.Loaded);

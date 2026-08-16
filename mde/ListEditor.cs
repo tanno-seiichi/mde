@@ -44,10 +44,10 @@ namespace mde
         public bool IsInListItem(Paragraph a_para, out ListItem a_liRf, out List a_parentListRf)
         {
             a_liRf = a_para.Parent as ListItem;
-            if (a_liRf != null)
+            if (null != a_liRf)
             {
                 a_parentListRf = a_liRf.Parent as List;
-                return a_parentListRf != null;
+                return null != a_parentListRf;
             }
             a_parentListRf = null;
             return false;
@@ -93,11 +93,11 @@ namespace mde
         public string GetOwnListItemText(ListItem a_li)
         {
             var ownPara = a_li.Blocks.FirstBlock as Paragraph;
-            if (ownPara == null) return "";
+            if (null == ownPara) return "";
             var sb = new StringBuilder();
             AppendPlainInlineText(ownPara.Inlines, sb);
             string t = sb.ToString().Trim();
-            if (t.Length == 0 && HasDescendantImage(ownPara)) return "\u200B";
+            if (0 == t.Length && HasDescendantImage(ownPara)) return "\u200B";
             return t;
         }
 
@@ -142,7 +142,7 @@ namespace mde
             m_runAsProgrammaticChange(() =>
             {
                 bool hasNestedListFlg = a_li.Blocks.Count > 1;
-                bool isEmptyFlg = !hasNestedListFlg && GetOwnListItemText(a_li).Length == 0;
+                bool isEmptyFlg = !hasNestedListFlg && 0 == GetOwnListItemText(a_li).Length;
 
                 if (isEmptyFlg)
                 {
@@ -158,7 +158,7 @@ namespace mde
                     m_editor.Document.Blocks.InsertAfter(topList, newPara);
 
                     a_parentList.ListItems.Remove(a_li);
-                    if (a_parentList.ListItems.Count == 0)
+                    if (0 == a_parentList.ListItems.Count)
                     {
                         RemoveEmptyList(a_parentList);
                     }
@@ -202,12 +202,12 @@ namespace mde
                 if (item == a_li) break;
                 prevLi = item;
             }
-            if (prevLi == null) return; // 先頭の項目は字下げできない
+            if (null == prevLi) return; // 先頭の項目は字下げできない
 
             m_runAsProgrammaticChange(() =>
             {
                 List nestedList = prevLi.Blocks.Count > 1 ? prevLi.Blocks.LastBlock as List : null;
-                if (nestedList == null)
+                if (null == nestedList)
                 {
                     bool parentOrderedFlg = a_parentList.MarkerStyle == TextMarkerStyle.Decimal;
                     nestedList = new List
@@ -266,7 +266,7 @@ namespace mde
                     if (k == gIdx) grandList.ListItems.Add(a_li);
                 }
 
-                if (a_parentList.ListItems.Count == 0)
+                if (0 == a_parentList.ListItems.Count)
                 {
                     parentLi.Blocks.Remove(a_parentList);
                 }

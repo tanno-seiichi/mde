@@ -334,7 +334,7 @@ namespace mde
             while (guard++ < 5000)
             {
                 TextRange found = FindTextFrom(pos, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-                if (found == null) break;
+                if (null == found) break;
                 AddHighlight(found);
                 results.Add(found);
 
@@ -343,10 +343,10 @@ namespace mde
                 // ある一致箇所（別の見出しなど）に到達できなくなる。必ず前へ進むことを
                 // 保証する安全策として、進んでいなければ1文字分だけ強制的に前進させる。
                 TextPointer next = found.End;
-                if (next == null || next.CompareTo(pos) <= 0)
+                if (null == next || next.CompareTo(pos) <= 0)
                 {
                     next = pos.GetPositionAtOffset(1);
-                    if (next == null || next.CompareTo(pos) <= 0) break;
+                    if (null == next || next.CompareTo(pos) <= 0) break;
                 }
                 pos = next;
             }
@@ -378,7 +378,7 @@ namespace mde
             TextPointer startFrom = m_lastFoundMatch?.End ?? m_editor.CaretPosition;
             TextRange found = FindTextFrom(startFrom, a_term, a_caseSensitiveFlg, a_useRegexFlg)
                             ?? FindTextFrom(m_editor.Document.ContentStart, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (found == null) return false;
+            if (null == found) return false;
 
             m_editor.Selection.Select(found.Start, found.End);
             if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg)) ApplyHighlight(found);
@@ -403,7 +403,7 @@ namespace mde
             if (m_isSourceMode() || string.IsNullOrEmpty(a_term)) return false;
 
             TextRange found = FindTextFrom(m_editor.CaretPosition, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (found == null) return false;
+            if (null == found) return false;
 
             m_editor.Selection.Select(found.Start, found.End);
             if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg)) ApplyHighlight(found);
@@ -424,7 +424,7 @@ namespace mde
             var comparison = a_caseSensitiveFlg ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
             TextPointer navigator = a_start;
-            while (navigator != null)
+            while (null != navigator)
             {
                 if (navigator.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
                 {
@@ -448,7 +448,7 @@ namespace mde
                         {
                             TextPointer matchStart = navigator.GetPositionAtOffset(idx);
                             TextPointer matchEnd = matchStart?.GetPositionAtOffset(len);
-                            if (matchStart != null && matchEnd != null)
+                            if (null != matchStart && null != matchEnd)
                                 return new TextRange(matchStart, matchEnd);
                         }
                     }
@@ -479,7 +479,7 @@ namespace mde
             var comparison = a_caseSensitiveFlg ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
             TextPointer navigator = a_start;
-            while (navigator != null)
+            while (null != navigator)
             {
                 if (navigator.GetPointerContext(LogicalDirection.Backward) == TextPointerContext.Text)
                 {
@@ -508,7 +508,7 @@ namespace mde
                             TextPointer runStart = navigator.GetPositionAtOffset(-runText.Length);
                             TextPointer matchStart = runStart?.GetPositionAtOffset(idx);
                             TextPointer matchEnd = matchStart?.GetPositionAtOffset(len);
-                            if (matchStart != null && matchEnd != null)
+                            if (null != matchStart && null != matchEnd)
                                 return new TextRange(matchStart, matchEnd);
                         }
                     }
@@ -533,7 +533,7 @@ namespace mde
             TextPointer startFrom = m_lastFoundMatch?.Start ?? m_editor.CaretPosition;
             TextRange found = FindTextBackwardFrom(startFrom, a_term, a_caseSensitiveFlg, a_useRegexFlg)
                             ?? FindTextBackwardFrom(m_editor.Document.ContentEnd, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (found == null) return false;
+            if (null == found) return false;
 
             m_editor.Selection.Select(found.Start, found.End);
             if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg)) ApplyHighlight(found);
@@ -556,7 +556,7 @@ namespace mde
 
             TextPointer from = !m_editor.Selection.IsEmpty ? m_editor.Selection.Start : m_editor.CaretPosition;
             TextRange found = FindTextBackwardFrom(from, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (found == null) return false;
+            if (null == found) return false;
 
             m_editor.Selection.Select(found.Start, found.End);
             if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg)) ApplyHighlight(found);
@@ -590,7 +590,7 @@ namespace mde
         {
             TextPointer from = (a_fromSelectionEndFlg && !m_editor.Selection.IsEmpty) ? m_editor.Selection.End : m_editor.CaretPosition;
             TextRange found = FindTextFrom(from, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (found == null) return false;
+            if (null == found) return false;
 
             m_editor.Selection.Select(found.Start, found.End);
             ApplyHighlight(found);
@@ -677,7 +677,7 @@ namespace mde
 
             string md = m_converter.DocumentToMarkdown(m_editor.Document);
             int count = CountOccurrences(md, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (count == 0) return 0;
+            if (0 == count) return 0;
 
             string replaced = ReplaceAllText(md, a_term, a_replacement, a_caseSensitiveFlg, a_useRegexFlg);
             m_runAsProgrammaticChange(() => m_converter.MarkdownToDocument(replaced, m_editor.Document));
@@ -718,7 +718,7 @@ namespace mde
             foreach (var file in GetAllMarkdownFilesInRoot())
             {
                 string content = m_getCurrentContentForFile(file) ?? SafeReadFile(file);
-                if (content == null) continue;
+                if (null == content) continue;
                 int count = CountOccurrences(content, a_term, a_caseSensitiveFlg, a_useRegexFlg);
                 if (count > 0) results.Add((file, count));
             }
@@ -740,10 +740,10 @@ namespace mde
             foreach (var file in GetAllMarkdownFilesInRoot())
             {
                 string content = m_getCurrentContentForFile(file) ?? SafeReadFile(file);
-                if (content == null) continue;
+                if (null == content) continue;
 
                 int count = CountOccurrences(content, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-                if (count == 0) continue;
+                if (0 == count) continue;
 
                 string replaced = ReplaceAllText(content, a_term, a_replacement, a_caseSensitiveFlg, a_useRegexFlg);
                 SetFileContentForReplace(file, replaced);

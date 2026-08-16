@@ -102,11 +102,11 @@ namespace mde
         /// <param name="a_ownerWindow">URL入力ダイアログの親ウィンドウ。</param>
         public void ApplyTextStyleFromMenu(string a_style, Window a_ownerWindow)
         {
-            if (a_style == "link")
+            if ("link" == a_style)
             {
                 if (m_editor.Selection.IsEmpty) return;
                 var dlg = new LinkInputDialog { Owner = a_ownerWindow };
-                if (dlg.ShowDialog() == true && !string.IsNullOrWhiteSpace(dlg.Url))
+                if (true == dlg.ShowDialog() && !string.IsNullOrWhiteSpace(dlg.Url))
                 {
                     ApplyLinkStyle(dlg.Url);
                 }
@@ -131,7 +131,7 @@ namespace mde
             var sb = new StringBuilder();
             TextPointer navigator = a_start;
             int guard = 0;
-            while (navigator != null && navigator.CompareTo(a_end) < 0 && guard < 10000)
+            while (null != navigator && navigator.CompareTo(a_end) < 0 && guard < 10000)
             {
                 guard++;
                 if (navigator.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
@@ -140,7 +140,7 @@ namespace mde
                     if (!string.IsNullOrEmpty(runText))
                     {
                         TextPointer runEnd = navigator.GetPositionAtOffset(runText.Length);
-                        if (runEnd != null && runEnd.CompareTo(a_end) > 0)
+                        if (null != runEnd && runEnd.CompareTo(a_end) > 0)
                         {
                             // このRunが範囲の終端をまたいでいるので、1文字ずつ終端まで数える
                             TextPointer probe = navigator;
@@ -148,7 +148,7 @@ namespace mde
                             for (int i = 0; i < runText.Length; i++)
                             {
                                 TextPointer next = probe.GetPositionAtOffset(1);
-                                if (next == null || next.CompareTo(a_end) > 0) break;
+                                if (null == next || next.CompareTo(a_end) > 0) break;
                                 probe = next;
                                 fitCount++;
                             }
@@ -167,7 +167,7 @@ namespace mde
 
         public void ApplyLinkStyle(string a_url)
         {
-            if (m_editor.Selection == null || m_editor.Selection.IsEmpty) return;
+            if (null == m_editor.Selection || m_editor.Selection.IsEmpty) return;
             string text = GetSafeRangeText(m_editor.Selection.Start, m_editor.Selection.End);
             if (string.IsNullOrEmpty(text)) return;
 
@@ -198,7 +198,7 @@ namespace mde
         /// <param name="a_style">"normal"、"code"、"bold"、"strikethrough"のいずれか。</param>
         private void ApplyInlineStyle(string a_style)
         {
-            if (m_editor.Selection == null || m_editor.Selection.IsEmpty) return;
+            if (null == m_editor.Selection || m_editor.Selection.IsEmpty) return;
             string text = GetSafeRangeText(m_editor.Selection.Start, m_editor.Selection.End);
             if (string.IsNullOrEmpty(text)) return;
 
@@ -264,7 +264,7 @@ namespace mde
         {
             if (!(ContextLinkRun?.Tag is LinkInfo li)) return;
             var dlg = new LinkInputDialog(li.m_url) { Owner = a_ownerWindow };
-            if (dlg.ShowDialog() == true && !string.IsNullOrWhiteSpace(dlg.Url))
+            if (true == dlg.ShowDialog() && !string.IsNullOrWhiteSpace(dlg.Url))
             {
                 m_originalTextTracker.Invalidate(ContextLinkRun.ContentStart);
                 li.m_url = dlg.Url;
@@ -277,7 +277,7 @@ namespace mde
         /// <summary>ContextLinkRunからリンクの見た目・Tagを取り除き、通常のテキストに戻す。</summary>
         public void RemoveContextLink()
         {
-            if (ContextLinkRun == null) return;
+            if (null == ContextLinkRun) return;
             m_originalTextTracker.Invalidate(ContextLinkRun.ContentStart);
             m_runAsProgrammaticChange(() =>
             {
@@ -296,7 +296,7 @@ namespace mde
         /// </summary>
         public void CopyCodeBlockAsMarkdown()
         {
-            if (ContextParagraph == null || !(ContextParagraph.Tag is CodeBlockInfo)) return;
+            if (null == ContextParagraph || !(ContextParagraph.Tag is CodeBlockInfo)) return;
             string md = m_blockToMarkdown(ContextParagraph);
             if (!string.IsNullOrEmpty(md)) Clipboard.SetText(md);
         }
@@ -388,7 +388,7 @@ namespace mde
         public void JumpToAnchor(string a_anchor)
         {
             a_anchor = a_anchor.Trim();
-            if (a_anchor.Length == 0) return;
+            if (0 == a_anchor.Length) return;
 
             foreach (Block block in m_editor.Document.Blocks)
             {
@@ -405,10 +405,10 @@ namespace mde
             }
 
             Run anchorRun = FindAnchorRun(m_editor.Document, a_anchor);
-            if (anchorRun != null)
+            if (null != anchorRun)
             {
                 DependencyObject node = anchorRun;
-                while (node != null && !(node is Paragraph))
+                while (null != node && !(node is Paragraph))
                     node = (node as TextElement)?.Parent ?? (node is TableCell cell ? cell.Parent : null);
                 if (node is Paragraph anchorPara)
                 {
@@ -423,7 +423,7 @@ namespace mde
             foreach (Block block in a_doc.Blocks)
             {
                 var found = FindAnchorRunInBlock(block, a_id);
-                if (found != null) return found;
+                if (null != found) return found;
             }
             return null;
         }
@@ -437,7 +437,7 @@ namespace mde
                     foreach (Block b in li.Blocks)
                     {
                         var found = FindAnchorRunInBlock(b, a_id);
-                        if (found != null) return found;
+                        if (null != found) return found;
                     }
             }
             else if (a_block is Table table)
@@ -448,7 +448,7 @@ namespace mde
                             foreach (Block b in cell.Blocks)
                             {
                                 var found = FindAnchorRunInBlock(b, a_id);
-                                if (found != null) return found;
+                                if (null != found) return found;
                             }
             }
             return null;
@@ -462,7 +462,7 @@ namespace mde
                 if (inline is Span span)
                 {
                     var found = FindAnchorRunInInlines(span.Inlines, a_id);
-                    if (found != null) return found;
+                    if (null != found) return found;
                 }
             }
             return null;
@@ -477,7 +477,7 @@ namespace mde
             if (Keyboard.Modifiers != ModifierKeys.Control) return;
 
             var pos = m_editor.GetPositionFromPoint(a_args.GetPosition(m_editor), true);
-            if (pos == null) return;
+            if (null == pos) return;
 
             if (pos.Parent is Run run && run.Tag is LinkInfo linkInfo && !string.IsNullOrWhiteSpace(linkInfo.m_url))
             {
@@ -517,7 +517,7 @@ namespace mde
         {
             var caret = m_editor.CaretPosition;
             var para = caret.Paragraph;
-            if (para == null || para.Tag is CodeBlockInfo) return false;
+            if (null == para || para.Tag is CodeBlockInfo) return false;
 
             // 1つのRun区間ずつ後ろ向きにたどり、各区間自身のテキストと、その区間の開始位置の
             // TextPointerを記憶していく。こうすることで、複数の区間をまたいだ位置計算を
@@ -528,15 +528,15 @@ namespace mde
             TextPointer walker = caret;
             int totalLen = 0;
             int guard = 0;
-            while (walker != null && walker.CompareTo(para.ContentStart) > 0 && totalLen < 300 && guard < 50)
+            while (null != walker && walker.CompareTo(para.ContentStart) > 0 && totalLen < 300 && guard < 50)
             {
                 guard++;
                 string chunk = walker.GetTextInRun(LogicalDirection.Backward);
                 if (!string.IsNullOrEmpty(chunk))
                 {
                     var segStart = walker.GetPositionAtOffset(-chunk.Length);
-                    if (segStart == null) break;
-                    bool isEscapedFlg = (walker.Parent as Run)?.Tag as string == "escaped";
+                    if (null == segStart) break;
+                    bool isEscapedFlg = "escaped" == (walker.Parent as Run)?.Tag as string;
                     segments.Insert(0, (chunk, segStart, isEscapedFlg));
                     totalLen += chunk.Length;
                     walker = segStart;
@@ -544,18 +544,18 @@ namespace mde
                 else
                 {
                     var prevContext = walker.GetNextContextPosition(LogicalDirection.Backward);
-                    if (prevContext == null || prevContext.CompareTo(walker) == 0) break;
+                    if (null == prevContext || prevContext.CompareTo(walker) == 0) break;
                     walker = prevContext;
                 }
             }
-            if (segments.Count == 0) return false;
+            if (0 == segments.Count) return false;
 
             // textBeforeは実際のマッチング用：エスケープ済みの区間は、区切り記号として絶対に
             // 認識されない目印文字（\uE0FF）で長さを保ったまま置き換える。これにより、
             // \によって既に確定した文字が、後から入力される別の記号と組み合わさって
             // 誤って装飾のトリガーとして再解釈されることを防ぐ。
             string textBefore = string.Concat(segments.Select(s => s.isEscaped ? new string('\uE0FF', s.text.Length) : s.text));
-            if (textBefore.Length == 0) return false;
+            if (0 == textBefore.Length) return false;
 
             char lastChar = textBefore[textBefore.Length - 1];
             string style = null;
@@ -575,25 +575,25 @@ namespace mde
                     match = null;
                 }
             }
-            if (style == null && lastChar == '`')
+            if (null == style && lastChar == '`')
             {
                 match = Regex.Match(textBefore, "`([^`]+)`$");
                 if (match.Success && !IsEscapedAt(textBefore, match.Index)) style = "code";
                 else match = null;
             }
-            if (style == null && lastChar == '*')
+            if (null == style && lastChar == '*')
             {
                 match = Regex.Match(textBefore, "\\*\\*([^*]+)\\*\\*$");
                 if (match.Success && !IsEscapedAt(textBefore, match.Index)) style = "bold";
                 else match = null;
             }
-            if (style == null && lastChar == '~')
+            if (null == style && lastChar == '~')
             {
                 match = Regex.Match(textBefore, "~~([^~]+)~~$");
                 if (match.Success && !IsEscapedAt(textBefore, match.Index)) style = "strikethrough";
                 else match = null;
             }
-            if (style == null)
+            if (null == style)
             {
                 // 上のどの装飾トリガーにも一致しなかった場合、直前が「\ + 直前の1文字」という
                 // 完成したエスケープ記法になっていないかを確認する。なっていれば、\を隠して
@@ -613,7 +613,7 @@ namespace mde
                         }
                         escRemaining -= seg.text.Length;
                     }
-                    if (escStart != null)
+                    if (null != escStart)
                     {
                         ReplaceEscapedCharacter(caret, escStart, lastChar);
                         return true;
@@ -633,9 +633,9 @@ namespace mde
                 }
                 remaining -= seg.text.Length;
             }
-            if (start == null) return false;
+            if (null == start) return false;
 
-            if (style == "link")
+            if ("link" == style)
                 ReplaceTextBeforeCaretWithLinkRun(caret, start, match.Groups[1].Value, linkUrl);
             else
                 ReplaceTextBeforeCaretWithStyledRun(caret, start, match.Groups[1].Value, style);
@@ -696,9 +696,9 @@ namespace mde
                 new TextRange(a_start, a_caret).Text = "";
 
                 Run newRun;
-                if (a_style == "bold")
+                if ("bold" == a_style)
                     newRun = new Run(a_content, a_start) { FontWeight = FontWeights.Bold, Tag = "bold" };
-                else if (a_style == "strikethrough")
+                else if ("strikethrough" == a_style)
                     newRun = new Run(a_content, a_start) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
                 else
                     newRun = new Run(a_content, a_start)

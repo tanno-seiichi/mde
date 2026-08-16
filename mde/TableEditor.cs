@@ -77,7 +77,7 @@ namespace mde
         public bool IsCaretAtStart(TableCell a_cell)
         {
             var firstPara = a_cell.Blocks.FirstBlock as Paragraph;
-            if (firstPara == null) return true;
+            if (null == firstPara) return true;
             return m_editor.CaretPosition.CompareTo(firstPara.ContentStart) <= 0;
         }
 
@@ -87,7 +87,7 @@ namespace mde
         public bool IsCaretAtEnd(TableCell a_cell)
         {
             var lastPara = a_cell.Blocks.LastBlock as Paragraph;
-            if (lastPara == null) return true;
+            if (null == lastPara) return true;
             return m_editor.CaretPosition.CompareTo(lastPara.ContentEnd) >= 0;
         }
 
@@ -117,7 +117,7 @@ namespace mde
             int rIdx = rg.Rows.IndexOf(row);
             int cIdx = row.Cells.IndexOf(a_cell);
 
-            if (a_dir == 1)
+            if (1 == a_dir)
             {
                 if (cIdx + 1 < row.Cells.Count)
                 {
@@ -193,7 +193,7 @@ namespace mde
 
             m_runAsProgrammaticChange(() =>
             {
-                if (ContextParagraph != null && ContextParagraph.Parent is FlowDocument)
+                if (null != ContextParagraph && ContextParagraph.Parent is FlowDocument)
                 {
                     m_editor.Document.Blocks.InsertAfter(ContextParagraph, table);
                     m_editor.Document.Blocks.InsertAfter(table, trailingPara);
@@ -214,7 +214,7 @@ namespace mde
         /// <param name="a_aboveFlg">true なら現在の行の上に、false なら下に挿入する。</param>
         public void InsertRow(bool a_aboveFlg)
         {
-            if (ContextCell == null) return;
+            if (null == ContextCell) return;
             m_originalTextTracker.Invalidate(ContextCell.ContentStart);
             if (!(ContextCell.Parent is TableRow row)) return;
             if (!(row.Parent is TableRowGroup rg)) return;
@@ -246,7 +246,7 @@ namespace mde
         /// <param name="a_leftFlg">true なら現在の列の左に、false なら右に挿入する。</param>
         public void InsertColumn(bool a_leftFlg)
         {
-            if (ContextCell == null) return;
+            if (null == ContextCell) return;
             m_originalTextTracker.Invalidate(ContextCell.ContentStart);
             if (!(ContextCell.Parent is TableRow row)) return;
             if (!(row.Parent is TableRowGroup rg)) return;
@@ -266,7 +266,7 @@ namespace mde
                     BorderThickness = new Thickness(1),
                     Padding = new Thickness(8, 6, 8, 6)
                 };
-                if (r == 0)
+                if (0 == r)
                 {
                     cell.FontWeight = FontWeights.Bold;
                     cell.Background = HEADER_BACKGROUND;
@@ -289,7 +289,7 @@ namespace mde
         /// <summary>ContextCellが属する行を削除する（表の唯一の行なら表ごと削除する）。</summary>
         public void DeleteRow()
         {
-            if (ContextCell == null) return;
+            if (null == ContextCell) return;
             m_originalTextTracker.Invalidate(ContextCell.ContentStart);
             if (!(ContextCell.Parent is TableRow row)) return;
             if (!(row.Parent is TableRowGroup rg)) return;
@@ -307,7 +307,7 @@ namespace mde
         /// <summary>ContextCellが属する列を削除する（表の唯一の列なら表ごと削除する）。</summary>
         public void DeleteColumn()
         {
-            if (ContextCell == null) return;
+            if (null == ContextCell) return;
             m_originalTextTracker.Invalidate(ContextCell.ContentStart);
             if (!(ContextCell.Parent is TableRow row)) return;
             if (!(row.Parent is TableRowGroup rg)) return;
@@ -408,7 +408,7 @@ namespace mde
                 for (int c = a_range.m_minCol; c <= a_range.m_maxCol && c < cells.Count; c++)
                 {
                     // 選択範囲の先頭行が「表そのもののヘッダー行」である場合だけ th として書き出す。
-                    string tag = r == 0 ? "th" : "td";
+                    string tag = 0 == r ? "th" : "td";
                     string text = WebUtility.HtmlEncode(CellPlainText(cells[c])).Replace("\n", "<br>");
                     sb.Append('<').Append(tag).Append(" style=\"border:1px solid #999999;padding:4px 8px;\">")
                       .Append(text).Append("</").Append(tag).Append('>');
@@ -449,7 +449,7 @@ namespace mde
                 sb.Append("<tr>");
                 foreach (TableCell cell in rows[r].Cells)
                 {
-                    string tag = r == 0 ? "th" : "td";
+                    string tag = 0 == r ? "th" : "td";
                     string text = WebUtility.HtmlEncode(CellPlainText(cell)).Replace("\n", "<br>");
                     sb.Append('<').Append(tag).Append(" style=\"border:1px solid #999999;padding:4px 8px;\">")
                       .Append(text).Append("</").Append(tag).Append('>');
@@ -499,19 +499,19 @@ namespace mde
             if (m_isSourceMode() || a_args.IsDragDrop) return;
 
             var selection = m_editor.Selection;
-            if (selection == null || selection.IsEmpty) return;
+            if (null == selection || selection.IsEmpty) return;
 
             var startCell = selection.Start?.Paragraph?.Parent as TableCell;
             var endCell = selection.End?.Paragraph?.Parent as TableCell;
             var anyCell = startCell ?? endCell;
-            if (anyCell == null) return;
+            if (null == anyCell) return;
 
             var table = FindEnclosingTable(anyCell);
-            if (table == null) return;
+            if (null == table) return;
 
             var rows = GetTableRows(table);
             CellRange range = null;
-            if (startCell != null && endCell != null &&
+            if (null != startCell && null != endCell &&
                 FindEnclosingTable(startCell) == table && FindEnclosingTable(endCell) == table)
             {
                 range = GetSelectedCellRange(rows, startCell, endCell);
@@ -519,8 +519,8 @@ namespace mde
 
             // 正確なセル範囲が特定できればその範囲だけをコピーし、そうでなければ
             // （選択範囲が表の外にはみ出している場合など）表全体を書き出す。
-            string tsv = range != null ? RangeToTsv(rows, range) : TableToTsv(table);
-            string htmlFragment = range != null ? RangeToHtmlFragment(rows, range) : TableToHtmlFragment(table);
+            string tsv = null != range ? RangeToTsv(rows, range) : TableToTsv(table);
+            string htmlFragment = null != range ? RangeToHtmlFragment(rows, range) : TableToHtmlFragment(table);
             a_args.DataObject.SetData(DataFormats.Text, tsv);
             a_args.DataObject.SetData(DataFormats.Html, BuildHtmlClipboardFragment(htmlFragment));
         }
@@ -566,9 +566,9 @@ namespace mde
         /// <param name="a_rows">解析済みの行データ（先頭行がヘッダーとして扱われる）。</param>
         public void InsertParsedTable(List<List<string>> a_rows)
         {
-            if (a_rows == null || a_rows.Count == 0) return;
+            if (null == a_rows || 0 == a_rows.Count) return;
             int colCount = a_rows.Max(r => r.Count);
-            if (colCount == 0) return;
+            if (0 == colCount) return;
 
             var table = new Table();
             for (int c = 0; c < colCount; c++) table.Columns.Add(new TableColumn());
@@ -587,7 +587,7 @@ namespace mde
                         BorderThickness = new Thickness(1),
                         Padding = new Thickness(8, 6, 8, 6)
                     };
-                    if (r == 0)
+                    if (0 == r)
                     {
                         cell.FontWeight = FontWeights.Bold;
                         cell.Background = HEADER_BACKGROUND;
@@ -601,7 +601,7 @@ namespace mde
             {
                 var para = m_editor.CaretPosition?.Paragraph;
                 var trailingPara = new Paragraph();
-                if (para != null && para.Parent is FlowDocument)
+                if (null != para && para.Parent is FlowDocument)
                 {
                     m_editor.Document.Blocks.InsertAfter(para, table);
                     m_editor.Document.Blocks.InsertAfter(table, trailingPara);
@@ -634,7 +634,7 @@ namespace mde
             // コードブロックへの貼り付け：常にリテラルなテキストとして、同じフェンス内に挿入する
             // （既定の貼り付け動作のままだと新しい段落に分割されてしまうため）。
             var currentPara = m_editor.CaretPosition?.Paragraph;
-            if (currentPara != null && currentPara.Tag is CodeBlockInfo && a_args.SourceDataObject.GetDataPresent(DataFormats.Text))
+            if (null != currentPara && currentPara.Tag is CodeBlockInfo && a_args.SourceDataObject.GetDataPresent(DataFormats.Text))
             {
                 string codeText = (string)a_args.SourceDataObject.GetData(DataFormats.Text);
                 a_args.CancelCommand();
@@ -648,7 +648,7 @@ namespace mde
             {
                 string html = (string)a_args.SourceDataObject.GetData(DataFormats.Html);
                 var tableData = TryParseHtmlTable(html);
-                if (tableData != null)
+                if (null != tableData)
                 {
                     a_args.CancelCommand();
                     InsertParsedTable(tableData);
@@ -663,7 +663,7 @@ namespace mde
                 if (LooksLikeTsv(text))
                 {
                     var tableData = ParseTsv(text);
-                    if (tableData != null && tableData.Any(r => r.Count > 1))
+                    if (null != tableData && tableData.Any(r => r.Count > 1))
                     {
                         a_args.CancelCommand();
                         InsertParsedTable(tableData);

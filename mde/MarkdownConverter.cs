@@ -115,7 +115,7 @@ namespace mde
             foreach (ListItem li in a_list.ListItems)
             {
                 var ownPara = li.Blocks.FirstBlock as Paragraph;
-                string ownText = ownPara != null ? ParagraphInlineToMarkdown(ownPara) : "";
+                string ownText = null != ownPara ? ParagraphInlineToMarkdown(ownPara) : "";
                 var parts = ownText.Split('\n');
                 string prefix = orderedFlg ? ((constantNumberingFlg ? 1 : number) + ". ") : (bulletMarker + " ");
                 lines.Add(indent + prefix + parts[0]);
@@ -139,7 +139,7 @@ namespace mde
             var rows = new List<TableRow>();
             foreach (TableRowGroup rg in a_table.RowGroups)
                 foreach (TableRow r in rg.Rows) rows.Add(r);
-            if (rows.Count == 0) return "";
+            if (0 == rows.Count) return "";
 
             var mdRows = new List<string>();
             foreach (var row in rows)
@@ -189,7 +189,7 @@ namespace mde
                 Inline inline = inlineList[i];
 
                 if (inline is Run run && run.Tag is string tag &&
-                    (tag == "bold" || tag == "strikethrough" || tag == "inline-code"))
+                    ("bold" == tag || "strikethrough" == tag || "inline-code" == tag))
                 {
                     var spanText = new StringBuilder();
                     spanText.Append(run.Text.Replace("\u200B", ""));
@@ -204,8 +204,8 @@ namespace mde
                     }
 
                     string content = spanText.ToString();
-                    if (tag == "inline-code") a_sb.Append('`').Append(content).Append('`');
-                    else if (tag == "bold") a_sb.Append("**").Append(content).Append("**");
+                    if ("inline-code" == tag) a_sb.Append('`').Append(content).Append('`');
+                    else if ("bold" == tag) a_sb.Append("**").Append(content).Append("**");
                     else a_sb.Append("~~").Append(content).Append("~~");
 
                     i = j;
@@ -256,7 +256,7 @@ namespace mde
             var info = a_img.Tag as ImageInfo;
             string src = info?.m_originalSrc ?? "";
             string alt = info?.m_alt ?? "";
-            if (info?.m_format == "md") return "![" + alt + "](" + src + ")";
+            if ("md" == info?.m_format) return "![" + alt + "](" + src + ")";
 
             string tag = "<img src=\"" + src + "\" alt=\"" + alt + "\"";
             if (!string.IsNullOrEmpty(info?.m_style)) tag += " style=\"" + info.m_style + "\"";
@@ -294,7 +294,7 @@ namespace mde
                     string language = Regex.Match(line.TrimStart(), "^```(\\S*)").Groups[1].Value;
                     i++;
                     var codeLines = new List<string>();
-                    while (i < lines.Length && lines[i].Trim() != "```")
+                    while (i < lines.Length && "```" != lines[i].Trim())
                     {
                         codeLines.Add(lines[i]);
                         i++;
@@ -424,7 +424,7 @@ namespace mde
                 m_originalTextTracker.Record(para, lines, blockStart, i);
             }
 
-            if (a_doc.Blocks.Count == 0) a_doc.Blocks.Add(new Paragraph());
+            if (0 == a_doc.Blocks.Count) a_doc.Blocks.Add(new Paragraph());
 
             m_imageManager.ResolveImages(a_doc);
         }
@@ -466,7 +466,7 @@ namespace mde
                 var m = Regex.Match(line, "^(\\s*)(?:([*-])|(\\d+)\\.)\\s+(.*)$");
                 if (m.Success)
                 {
-                    if (pendingPara != null)
+                    if (null != pendingPara)
                         AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
 
                     int indent = m.Groups[1].Value.Length;
@@ -490,7 +490,7 @@ namespace mde
                     {
                         var lastLi = top.list.ListItems.Cast<ListItem>().Last();
                         List nestedList = lastLi.Blocks.Count > 1 ? lastLi.Blocks.LastBlock as List : null;
-                        if (nestedList == null)
+                        if (null == nestedList)
                         {
                             nestedList = new List
                             {
@@ -521,12 +521,12 @@ namespace mde
                 }
                 else
                 {
-                    if (pendingPara != null)
+                    if (null != pendingPara)
                         pendingTextLines.Add(line.Trim());
                 }
             }
 
-            if (pendingPara != null)
+            if (null != pendingPara)
                 AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
 
             // ソースがすべての項目で同じ数字を使っていた場合（例: "1." / "1." / "1."。
@@ -534,7 +534,7 @@ namespace mde
             // ListToMarkdown は連番ではなく常に "1." で書き出すようになる。
             foreach (var kv in numbersByList)
             {
-                if (kv.Value.Count > 1 && kv.Value.Distinct().Count() == 1)
+                if (kv.Value.Count > 1 && 1 == kv.Value.Distinct().Count())
                     kv.Key.Tag = "const";
             }
 
@@ -613,7 +613,7 @@ namespace mde
                     continue;
                 }
 
-                if (runLen == 1)
+                if (1 == runLen)
                 {
                     if (i < a_text.Length)
                     {
@@ -642,7 +642,7 @@ namespace mde
         /// <returns>実際の文字に戻したテキスト。</returns>
         private string RestorePlaceholders(string a_text)
         {
-            if (a_text.Length == 0) return a_text;
+            if (0 == a_text.Length) return a_text;
             var sb = new StringBuilder(a_text.Length);
             foreach (char c in a_text)
                 sb.Append(PLACEHOLDER_TO_CHAR.TryGetValue(c, out char real) ? real : c);
@@ -718,7 +718,7 @@ namespace mde
         /// <param name="a_segment">対象の1行分のテキスト。</param>
         private void AppendPlainSegmentWithEscapeTags(Paragraph a_p, string a_segment)
         {
-            if (a_segment.Length == 0) return;
+            if (0 == a_segment.Length) return;
             var plain = new StringBuilder();
             foreach (char c in a_segment)
             {
@@ -750,9 +750,9 @@ namespace mde
                 if (i > 0) a_p.Inlines.Add(new LineBreak());
                 string segText = RestorePlaceholders(segments[i]);
                 Run run;
-                if (a_style == "bold")
+                if ("bold" == a_style)
                     run = new Run(segText) { FontWeight = FontWeights.Bold, Tag = "bold" };
-                else if (a_style == "strikethrough")
+                else if ("strikethrough" == a_style)
                     run = new Run(segText) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
                 else
                     run = new Run(segText)

@@ -40,7 +40,7 @@ namespace mde
                 if (block is Paragraph p && p.Tag is int level && level > 0)
                 {
                     string text = new TextRange(p.ContentStart, p.ContentEnd).Text.Trim();
-                    if (text.Length == 0) text = "(無題)";
+                    if (0 == text.Length) text = "(無題)";
                     Items.Add(new OutlineEntry { Level = level, Text = text, Target = p });
                 }
             }
@@ -65,9 +65,9 @@ namespace mde
                         else break; // ブロックは文書順に並んでいるので、超えた時点で打ち切ってよい
                     }
                 }
-                if (nearestHeading == null) continue;
+                if (null == nearestHeading) continue;
                 var entry = Items.FirstOrDefault(e => e.Target == nearestHeading);
-                if (entry != null) entry.IsSearchMatch = true;
+                if (null != entry) entry.IsSearchMatch = true;
             }
         }
 
@@ -83,7 +83,7 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         public void HandleSelectionChanged(object a_sender, SelectionChangedEventArgs a_args)
         {
-            if (a_sender is ListBox list && list.SelectedItem is OutlineEntry entry && entry.Target != null)
+            if (a_sender is ListBox list && list.SelectedItem is OutlineEntry entry && null != entry.Target)
             {
                 m_editor.CaretPosition = entry.Target.ContentStart;
                 ScrollParagraphToTop(entry.Target, m_editor);
@@ -113,7 +113,7 @@ namespace mde
                 var child = VisualTreeHelper.GetChild(a_root, i);
                 if (child is T match) return match;
                 var found = FindVisualChild<T>(child);
-                if (found != null) return found;
+                if (null != found) return found;
             }
             return null;
         }

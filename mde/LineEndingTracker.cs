@@ -46,7 +46,7 @@ namespace mde
                 if (i > 0 && a_content[i - 1] == '\r') crlfCount++;
                 else lfOnlyCount++;
             }
-            if (crlfCount == 0 && lfOnlyCount == 0) return "\r\n";
+            if (0 == crlfCount && 0 == lfOnlyCount) return "\r\n";
             return crlfCount >= lfOnlyCount ? "\r\n" : "\n";
         }
 
@@ -80,7 +80,7 @@ namespace mde
         public string Apply(string a_text, string a_lineEnding)
         {
             string normalized = a_text.Replace("\r\n", "\n");
-            return a_lineEnding == "\n" ? normalized : normalized.Replace("\n", a_lineEnding);
+            return "\n" == a_lineEnding ? normalized : normalized.Replace("\n", a_lineEnding);
         }
     }
 }

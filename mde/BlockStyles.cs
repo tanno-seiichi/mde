@@ -38,8 +38,8 @@ namespace mde
         public static void ApplyHeadingStyle(Paragraph a_p, int a_level)
         {
             ClearSpecialStyling(a_p);
-            a_p.Tag = a_level == 0 ? null : (object)a_level;
-            if (a_level == 0)
+            a_p.Tag = 0 == a_level ? null : (object)a_level;
+            if (0 == a_level)
             {
                 a_p.FontSize = 16;
                 a_p.FontWeight = FontWeights.Normal;
@@ -54,7 +54,7 @@ namespace mde
                 if (a_level <= 2)
                 {
                     a_p.BorderBrush = CELL_BORDER;
-                    a_p.BorderThickness = new Thickness(0, 0, 0, a_level == 1 ? 0.75 : 0.5);
+                    a_p.BorderThickness = new Thickness(0, 0, 0, 1 == a_level ? 0.75 : 0.5);
                     a_p.Padding = new Thickness(0, 0, 0, 4);
                 }
                 else

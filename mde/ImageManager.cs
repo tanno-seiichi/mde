@@ -138,7 +138,7 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void ImagePreviewMouseMove(object a_sender, MouseEventArgs a_args)
         {
-            if (a_args.LeftButton != MouseButtonState.Pressed || m_imageDragStartPoint == null) return;
+            if (a_args.LeftButton != MouseButtonState.Pressed || null == m_imageDragStartPoint) return;
             if (!(a_sender is Image img)) return;
 
             Point current = a_args.GetPosition(null);
@@ -150,7 +150,7 @@ namespace mde
             m_imageDragStartPoint = null;
 
             string filePath = GetExportableFilePath(img);
-            if (filePath == null) return;
+            if (null == filePath) return;
 
             var data = new DataObject(DataFormats.FileDrop, new[] { filePath });
             DragDrop.DoDragDrop(img, data, DragDropEffects.Copy);
@@ -169,7 +169,7 @@ namespace mde
             string src = info.m_originalSrc;
 
             if (Uri.TryCreate(src, UriKind.Absolute, out Uri u) &&
-                (u.Scheme == "http" || u.Scheme == "https" || u.Scheme == "data"))
+                ("http" == u.Scheme || "https" == u.Scheme || "data" == u.Scheme))
                 return null;
 
             string currentFileDirectory = m_getCurrentFileDirectory();
@@ -198,9 +198,9 @@ namespace mde
         /// <param name="a_ownerWindow">ダイアログの親ウィンドウ。</param>
         public void SaveImageAs(Window a_ownerWindow)
         {
-            if (ContextImage == null) return;
+            if (null == ContextImage) return;
             string sourcePath = GetExportableFilePath(ContextImage);
-            if (sourcePath == null)
+            if (null == sourcePath)
             {
                 MessageBox.Show("この画像は保存できません（リモート画像か、元ファイルが見つかりません）。",
                     "画像を保存", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -213,7 +213,7 @@ namespace mde
                 Filter = "画像ファイル|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|すべてのファイル|*.*",
                 OverwritePrompt = false
             };
-            if (dlg.ShowDialog() != true) return;
+            if (true != dlg.ShowDialog()) return;
 
             try
             {
@@ -260,7 +260,7 @@ namespace mde
             {
                 Uri uri;
                 if (Uri.TryCreate(a_src, UriKind.Absolute, out Uri absoluteUri) &&
-                    (absoluteUri.Scheme == "http" || absoluteUri.Scheme == "https" || absoluteUri.Scheme == "data"))
+                    ("http" == absoluteUri.Scheme || "https" == absoluteUri.Scheme || "data" == absoluteUri.Scheme))
                 {
                     uri = absoluteUri;
                 }
@@ -389,13 +389,13 @@ namespace mde
             if (!(a_args.Data.GetData(DataFormats.FileDrop) is string[] files)) return;
 
             var imageFiles = files.Where(IsImageFile).ToList();
-            if (imageFiles.Count == 0) return;
+            if (0 == imageFiles.Count) return;
 
             a_args.Handled = true;
 
             Point dropPoint = a_args.GetPosition(m_editor);
             TextPointer insertAt = m_editor.GetPositionFromPoint(dropPoint, true);
-            if (insertAt == null) return;
+            if (null == insertAt) return;
 
             m_originalTextTracker.Invalidate(insertAt);
 
@@ -408,7 +408,7 @@ namespace mde
                     // までは実際の images フォルダに一切触れない。実フォルダへの移動は
                     // RelocatePendingTempImages が Save / Save As のたびに行う。
                     string tempPath = CopyFileWithDedup(file, GetOrCreateTempImageFolder());
-                    if (tempPath == null) continue;
+                    if (null == tempPath) continue;
 
                     var img = BuildImageFromMarkdown(Path.GetFileNameWithoutExtension(file), tempPath);
                     var container = new InlineUIContainer(img, insertAt);
@@ -501,7 +501,7 @@ namespace mde
                 if (!fullSrc.StartsWith(tempDir, StringComparison.OrdinalIgnoreCase)) continue; // このウィンドウの一時ファイルではない
 
                 string destPath = CopyFileWithDedup(fullSrc, Path.Combine(currentFileDirectory, "images"));
-                if (destPath == null) continue;
+                if (null == destPath) continue;
 
                 info.m_originalSrc = "images/" + Path.GetFileName(destPath);
                 SetImageSource(img, info.m_originalSrc);

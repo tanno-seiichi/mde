@@ -90,8 +90,8 @@ namespace mde
 
         private string Term => m_searchBox.Text;
         private string Replacement => m_replaceBox.Text ?? "";
-        private bool CaseSensitive => m_caseSensitiveBox.IsChecked == true;
-        private bool UseRegex => m_useRegexBox.IsChecked == true;
+        private bool CaseSensitive => true == m_caseSensitiveBox.IsChecked;
+        private bool UseRegex => true == m_useRegexBox.IsChecked;
 
         // ---------------- 一括検索・一括置換 ----------------
 
@@ -117,7 +117,7 @@ namespace mde
                 m_resultsList.Visibility = Visibility.Collapsed;
             }
 
-            if (m_scopeCurrentFile.IsChecked == true)
+            if (true == m_scopeCurrentFile.IsChecked)
             {
                 bool foundFlg = m_owner.SearchReplace.FindNextInCurrentFile(Term, CaseSensitive, UseRegex);
                 m_statusText.Text = foundFlg ? "見つかりました（エディタ内で強調表示しています）。" : "見つかりませんでした。";
@@ -140,7 +140,7 @@ namespace mde
         /// </summary>
         private void EnsureFolderWalkInitialized()
         {
-            if (m_folderFindFileList != null) return;
+            if (null != m_folderFindFileList) return;
 
             m_folderFindFileList = m_owner.SearchReplace.GetFolderFiles();
             m_folderFindCurrentFileIdx = -1;
@@ -188,10 +188,10 @@ namespace mde
         private void FindNextInFolder()
         {
             EnsureFolderWalkInitialized();
-            if (m_folderFindFileList.Count == 0) { m_statusText.Text = "見つかりませんでした。"; return; }
+            if (0 == m_folderFindFileList.Count) { m_statusText.Text = "見つかりませんでした。"; return; }
 
             // 今のファイルの一致箇所一覧の中で、まだ次に進める一致箇所があるか。
-            if (m_folderFindCurrentFileMatches != null && m_folderFindCurrentMatchIdx + 1 < m_folderFindCurrentFileMatches.Count)
+            if (null != m_folderFindCurrentFileMatches && m_folderFindCurrentMatchIdx + 1 < m_folderFindCurrentFileMatches.Count)
             {
                 m_folderFindCurrentMatchIdx++;
                 m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[m_folderFindCurrentMatchIdx]);
@@ -233,7 +233,7 @@ namespace mde
         /// <param name="a_path">今表示しているファイルの絶対パス。</param>
         private void SyncResultsListSelection(string a_path)
         {
-            if (m_resultsPaths == null || m_resultsPaths.Count == 0) return;
+            if (null == m_resultsPaths || 0 == m_resultsPaths.Count) return;
             int idx = m_resultsPaths.FindIndex(p => PathsEqual(p, a_path));
             if (idx >= 0 && idx < m_resultsList.Items.Count)
                 m_resultsList.SelectedIndex = idx;
@@ -251,7 +251,7 @@ namespace mde
                 m_resultsList.Visibility = Visibility.Collapsed;
             }
 
-            if (m_scopeCurrentFile.IsChecked == true)
+            if (true == m_scopeCurrentFile.IsChecked)
             {
                 bool foundFlg = m_owner.SearchReplace.FindPreviousInCurrentFile(Term, CaseSensitive, UseRegex);
                 m_statusText.Text = foundFlg ? "見つかりました（エディタ内で強調表示しています）。" : "見つかりませんでした。";
@@ -271,9 +271,9 @@ namespace mde
         private void FindPreviousInFolder()
         {
             EnsureFolderWalkInitialized();
-            if (m_folderFindFileList.Count == 0) { m_statusText.Text = "見つかりませんでした。"; return; }
+            if (0 == m_folderFindFileList.Count) { m_statusText.Text = "見つかりませんでした。"; return; }
 
-            if (m_folderFindCurrentFileMatches != null && m_folderFindCurrentMatchIdx - 1 >= 0)
+            if (null != m_folderFindCurrentFileMatches && m_folderFindCurrentMatchIdx - 1 >= 0)
             {
                 m_folderFindCurrentMatchIdx--;
                 m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[m_folderFindCurrentMatchIdx]);
@@ -317,7 +317,7 @@ namespace mde
             m_folderFindFileList = null; // 次を検索/前を検索の位置情報が古いまま残らないようリセット
             m_lastFindAllTerm = Term;
 
-            if (m_scopeCurrentFile.IsChecked == true)
+            if (true == m_scopeCurrentFile.IsChecked)
             {
                 var matches = m_owner.SearchReplace.HighlightAllMatchesInCurrentFile(Term, CaseSensitive, UseRegex);
                 m_currentFileMatchRanges = matches;
@@ -330,7 +330,7 @@ namespace mde
                     try
                     {
                         var para = range.Start.Paragraph;
-                        if (para != null) context = new TextRange(para.ContentStart, para.ContentEnd).Text.Trim();
+                        if (null != para) context = new TextRange(para.ContentStart, para.ContentEnd).Text.Trim();
                     }
                     catch { /* 取得できなければ空のまま表示する */ }
                     if (context.Length > 70) context = context.Substring(0, 70) + "…";
@@ -368,7 +368,7 @@ namespace mde
             int idx = m_resultsList.SelectedIndex;
             if (idx < 0) return;
 
-            if (m_currentFileMatchRanges != null)
+            if (null != m_currentFileMatchRanges)
             {
                 if (idx < m_currentFileMatchRanges.Count)
                     m_owner.SearchReplace.SelectAndScrollTo(m_currentFileMatchRanges[idx]);
@@ -393,7 +393,7 @@ namespace mde
             if (string.IsNullOrEmpty(Term)) return;
             m_folderFindFileList = null;
 
-            if (m_scopeCurrentFile.IsChecked == true)
+            if (true == m_scopeCurrentFile.IsChecked)
             {
                 int count = m_owner.SearchReplace.ReplaceAllInCurrentFile(Term, Replacement, CaseSensitive, UseRegex);
                 m_statusText.Text = count + " 件を置換しました（保存するまでファイルには反映されません）。";
@@ -423,7 +423,7 @@ namespace mde
             m_folderFindFileList = null;
 
             m_sessionActiveFlg = true;
-            m_sessionFolderScopeFlg = m_scopeFolder.IsChecked == true;
+            m_sessionFolderScopeFlg = true == m_scopeFolder.IsChecked;
             m_sessionTotalReplaced = 0;
             m_sessionFilesChanged = 0;
             m_resultsList.Visibility = Visibility.Collapsed;
@@ -460,7 +460,7 @@ namespace mde
             CommitSessionFileIfChanged();
 
             m_sessionFileIndex++;
-            if (m_sessionFiles == null || m_sessionFileIndex >= m_sessionFiles.Count)
+            if (null == m_sessionFiles || m_sessionFileIndex >= m_sessionFiles.Count)
             {
                 m_sessionContent = null;
                 return;
@@ -475,8 +475,8 @@ namespace mde
         /// 保留中の編集）へ書き戻す。</summary>
         private void CommitSessionFileIfChanged()
         {
-            if (!m_sessionFileChangedFlg || m_sessionContent == null) return;
-            if (m_sessionFiles == null || m_sessionFileIndex < 0 || m_sessionFileIndex >= m_sessionFiles.Count) return;
+            if (!m_sessionFileChangedFlg || null == m_sessionContent) return;
+            if (null == m_sessionFiles || m_sessionFileIndex < 0 || m_sessionFileIndex >= m_sessionFiles.Count) return;
 
             m_owner.SearchReplace.SetFileContentForReplace(m_sessionFiles[m_sessionFileIndex], m_sessionContent);
             m_sessionFilesChanged++;
@@ -488,10 +488,10 @@ namespace mde
         /// どのファイルにも一致箇所が残っていなければセッションを終了する。</summary>
         private void AdvanceToNextSessionMatch()
         {
-            while (m_sessionContent != null)
+            while (null != m_sessionContent)
             {
                 var match = m_owner.SearchReplace.FindNextMatchInText(m_sessionContent, Term, CaseSensitive, UseRegex, m_sessionSearchPos);
-                if (match != null)
+                if (null != match)
                 {
                     m_sessionPendingMatch = match;
                     ShowSessionMatch();
@@ -536,7 +536,7 @@ namespace mde
                 return;
             }
 
-            if (m_sessionPendingMatch == null) return;
+            if (null == m_sessionPendingMatch) return;
             var (idx, len) = m_sessionPendingMatch.Value;
             m_sessionContent = m_owner.SearchReplace.ReplaceOneMatch(m_sessionContent, Term, Replacement, CaseSensitive, UseRegex, idx, len);
             m_sessionFileChangedFlg = true;
@@ -561,7 +561,7 @@ namespace mde
                 return;
             }
 
-            if (m_sessionPendingMatch == null) return;
+            if (null == m_sessionPendingMatch) return;
             var (idx, len) = m_sessionPendingMatch.Value;
             m_sessionSearchPos = idx + len;
             AdvanceToNextSessionMatch();
@@ -582,10 +582,10 @@ namespace mde
                 return;
             }
 
-            while (m_sessionContent != null)
+            while (null != m_sessionContent)
             {
                 var match = m_owner.SearchReplace.FindNextMatchInText(m_sessionContent, Term, CaseSensitive, UseRegex, m_sessionSearchPos);
-                if (match == null)
+                if (null == match)
                 {
                     AdvanceToNextSessionFile();
                     continue;

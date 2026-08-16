@@ -103,9 +103,9 @@ namespace mde
         /// （サブフォルダは除く）を開く。</summary>
         public void OpenFirstFileInLoadedFolder()
         {
-            if (Roots.Count == 0) return;
+            if (0 == Roots.Count) return;
             var firstFile = Roots[0].Children.FirstOrDefault(c => !c.IsDirectory);
-            if (firstFile != null) m_loadFile(firstFile.FullPath);
+            if (null != firstFile) m_loadFile(firstFile.FullPath);
         }
 
         /// <summary>ルートフォルダを指定して、フォルダツリーペインの内容を読み込む。</summary>
@@ -141,7 +141,7 @@ namespace mde
 
         private void RefreshDirtyMarkerRecursive(FileSystemItem a_node)
         {
-            if (!a_node.IsDirectory && a_node.FullPath != null)
+            if (!a_node.IsDirectory && null != a_node.FullPath)
             {
                 string currentFilePath = m_getCurrentFilePath();
                 bool isCurrentFlg = !string.IsNullOrEmpty(currentFilePath) && m_pathsReferToSameFile(a_node.FullPath, currentFilePath);
@@ -175,7 +175,7 @@ namespace mde
         private bool MarkSearchMatchRecursive(FileSystemItem a_node, HashSet<string> a_matchedFullPaths)
         {
             bool anyMatchBelowFlg = false;
-            if (!a_node.IsDirectory && a_node.FullPath != null)
+            if (!a_node.IsDirectory && null != a_node.FullPath)
             {
                 try
                 {
@@ -219,7 +219,7 @@ namespace mde
         /// <param name="a_filePath">追加するファイルの絶対パス。</param>
         public void AddFileNodeIfMissing(string a_filePath)
         {
-            if (Roots.Count == 0 || string.IsNullOrEmpty(a_filePath)) return;
+            if (0 == Roots.Count || string.IsNullOrEmpty(a_filePath)) return;
 
             string dir;
             try { dir = Path.GetDirectoryName(Path.GetFullPath(a_filePath)); }
@@ -227,10 +227,10 @@ namespace mde
             if (string.IsNullOrEmpty(dir)) return;
 
             var folderNode = FindFolderNode(Roots[0], dir);
-            if (folderNode == null) return;
+            if (null == folderNode) return;
 
             // まだ子が読み込まれていない（プレースホルダのみ）場合は、展開時に自然に反映される
-            if (folderNode.Children.Count == 1 && folderNode.Children[0].FullPath == null) return;
+            if (1 == folderNode.Children.Count && null == folderNode.Children[0].FullPath) return;
 
             if (folderNode.Children.Any(c => !c.IsDirectory && PathsEqualLocal(c.FullPath, a_filePath))) return;
 
@@ -290,7 +290,7 @@ namespace mde
             {
                 if (!child.IsDirectory) continue;
                 var found = FindFolderNode(child, a_dir);
-                if (found != null) return found;
+                if (null != found) return found;
             }
             return null;
         }
@@ -380,7 +380,7 @@ namespace mde
         {
             if (a_sender is TreeViewItem tvi && tvi.DataContext is FileSystemItem node && node.IsDirectory)
             {
-                if (node.Children.Count == 1 && node.Children[0].FullPath == null)
+                if (1 == node.Children.Count && null == node.Children[0].FullPath)
                 {
                     node.Children.Clear();
                     PopulateChildren(node);
@@ -394,7 +394,7 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         public void HandleSelectedItemChanged(object a_sender, RoutedPropertyChangedEventArgs<object> a_args)
         {
-            if (a_args.NewValue is FileSystemItem item && !item.IsDirectory && item.FullPath != null)
+            if (a_args.NewValue is FileSystemItem item && !item.IsDirectory && null != item.FullPath)
             {
                 m_loadFile(item.FullPath);
             }
