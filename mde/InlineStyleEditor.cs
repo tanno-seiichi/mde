@@ -2,7 +2,7 @@
 //
 // mde (MarkDown インラインエディタ) の一部。
 // 文中の太字・取り消し線・インラインコード・リンクの装飾を担当するクラス。
-// 右クリックメニューからの適用、入力中のリアルタイム変換（**text**などを打ち終えた瞬間に
+// 右クリックメニューからの適用、入力中のリアルタイム変換（**a_text**などを打ち終えた瞬間に
 // 反映する）、リンクのクリック・編集・解除を扱う。
 
 using System;
@@ -25,15 +25,15 @@ namespace mde
     /// </summary>
     public class InlineStyleEditor
     {
-        private static readonly Brush LinkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
-        private static readonly Brush CodeBlockBackground = BlockStyles.CodeBlockBackgroundBrush;
+        private static readonly Brush LINK_BRUSH = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
+        private static readonly Brush CODE_BLOCK_BACKGROUND = BlockStyles.CodeBlockBackgroundBrush;
 
-        private readonly RichTextBox editor;
-        private readonly OriginalTextTracker originalTextTracker;
-        private readonly Action<Action> runAsProgrammaticChange;
-        private readonly Action markDirty;
-        private readonly Action refreshOutline;
-        private readonly Func<Block, string> blockToMarkdown;
+        private readonly RichTextBox m_editor;
+        private readonly OriginalTextTracker m_originalTextTracker;
+        private readonly Action<Action> m_runAsProgrammaticChange;
+        private readonly Action m_markDirty;
+        private readonly Action m_refreshOutline;
+        private readonly Func<Block, string> m_blockToMarkdown;
 
         /// <summary>右クリック時にマウス下にあったリンクのRun。右クリックメニューの各項目から参照される。</summary>
         public Run ContextLinkRun { get; set; }
@@ -50,46 +50,46 @@ namespace mde
         /// <param name="markDirty">ファイルが変更されたことを通知するdelegate。</param>
         /// <param name="refreshOutline">アウトラインペインの再構築を依頼するdelegate。</param>
         /// <param name="blockToMarkdown">ブロックをMarkDownテキストへ変換するdelegate（コードブロックのコピーに使う）。</param>
-        private readonly Func<string> getCurrentFileDirectory;
-        private readonly Action<string> loadFile;
-        private readonly Func<string, bool> isWithinLoadedFolder;
-        private readonly Action<string, string> openInNewWindow;
+        private readonly Func<string> m_getCurrentFileDirectory;
+        private readonly Action<string> m_loadFile;
+        private readonly Func<string, bool> m_isWithinLoadedFolder;
+        private readonly Action<string, string> m_openInNewWindow;
 
         /// <summary>
         /// InlineStyleEditorを構築する。
         /// </summary>
-        /// <param name="editor">編集対象のRichTextBox。</param>
-        /// <param name="originalTextTracker">「元テキスト保持」の追跡役。</param>
-        /// <param name="runAsProgrammaticChange">処理を「プログラムによる変更」として実行するdelegate。</param>
-        /// <param name="markDirty">ファイルが変更されたことを通知するdelegate。</param>
-        /// <param name="refreshOutline">アウトラインペインの再構築を依頼するdelegate。</param>
-        /// <param name="blockToMarkdown">ブロックをMarkDownテキストへ変換するdelegate（コードブロックのコピーに使う）。</param>
-        /// <param name="getCurrentFileDirectory">現在のファイルの保存先フォルダを返すdelegate（ファイルリンクの相対パス解決に使う）。</param>
-        /// <param name="loadFile">同じウィンドウでファイルを開くdelegate。</param>
-        /// <param name="isWithinLoadedFolder">指定フォルダが、現在フォルダペインに表示されているフォルダの範囲内かどうかを判定するdelegate。</param>
-        /// <param name="openInNewWindow">フォルダペインの範囲外にあるファイルを、新しいウィンドウで開くdelegate（パスとジャンプ先アンカーを受け取る）。</param>
+        /// <param name="a_editor">編集対象のRichTextBox。</param>
+        /// <param name="a_originalTextTracker">「元テキスト保持」の追跡役。</param>
+        /// <param name="a_runAsProgrammaticChange">処理を「プログラムによる変更」として実行するdelegate。</param>
+        /// <param name="a_markDirty">ファイルが変更されたことを通知するdelegate。</param>
+        /// <param name="a_refreshOutline">アウトラインペインの再構築を依頼するdelegate。</param>
+        /// <param name="a_blockToMarkdown">ブロックをMarkDownテキストへ変換するdelegate（コードブロックのコピーに使う）。</param>
+        /// <param name="a_getCurrentFileDirectory">現在のファイルの保存先フォルダを返すdelegate（ファイルリンクの相対パス解決に使う）。</param>
+        /// <param name="a_loadFile">同じウィンドウでファイルを開くdelegate。</param>
+        /// <param name="a_isWithinLoadedFolder">指定フォルダが、現在フォルダペインに表示されているフォルダの範囲内かどうかを判定するdelegate。</param>
+        /// <param name="a_openInNewWindow">フォルダペインの範囲外にあるファイルを、新しいウィンドウで開くdelegate（パスとジャンプ先アンカーを受け取る）。</param>
         public InlineStyleEditor(
-            RichTextBox editor,
-            OriginalTextTracker originalTextTracker,
-            Action<Action> runAsProgrammaticChange,
-            Action markDirty,
-            Action refreshOutline,
-            Func<Block, string> blockToMarkdown,
-            Func<string> getCurrentFileDirectory,
-            Action<string> loadFile,
-            Func<string, bool> isWithinLoadedFolder,
-            Action<string, string> openInNewWindow)
+            RichTextBox a_editor,
+            OriginalTextTracker a_originalTextTracker,
+            Action<Action> a_runAsProgrammaticChange,
+            Action a_markDirty,
+            Action a_refreshOutline,
+            Func<Block, string> a_blockToMarkdown,
+            Func<string> a_getCurrentFileDirectory,
+            Action<string> a_loadFile,
+            Func<string, bool> a_isWithinLoadedFolder,
+            Action<string, string> a_openInNewWindow)
         {
-            this.editor = editor;
-            this.originalTextTracker = originalTextTracker;
-            this.runAsProgrammaticChange = runAsProgrammaticChange;
-            this.markDirty = markDirty;
-            this.refreshOutline = refreshOutline;
-            this.blockToMarkdown = blockToMarkdown;
-            this.getCurrentFileDirectory = getCurrentFileDirectory;
-            this.loadFile = loadFile;
-            this.isWithinLoadedFolder = isWithinLoadedFolder;
-            this.openInNewWindow = openInNewWindow;
+            this.m_editor = a_editor;
+            this.m_originalTextTracker = a_originalTextTracker;
+            this.m_runAsProgrammaticChange = a_runAsProgrammaticChange;
+            this.m_markDirty = a_markDirty;
+            this.m_refreshOutline = a_refreshOutline;
+            this.m_blockToMarkdown = a_blockToMarkdown;
+            this.m_getCurrentFileDirectory = a_getCurrentFileDirectory;
+            this.m_loadFile = a_loadFile;
+            this.m_isWithinLoadedFolder = a_isWithinLoadedFolder;
+            this.m_openInNewWindow = a_openInNewWindow;
         }
 
         // ======================================================================
@@ -98,40 +98,40 @@ namespace mde
 
         /// <summary>右クリック「文字装飾」メニューの処理。"link" が選ばれた場合はURL入力
         /// ダイアログを表示し、それ以外は選択範囲へ直接スタイルを適用する。</summary>
-        /// <param name="style">"normal"/"code"/"bold"/"strikethrough"/"link"。</param>
-        /// <param name="ownerWindow">URL入力ダイアログの親ウィンドウ。</param>
-        public void ApplyTextStyleFromMenu(string style, Window ownerWindow)
+        /// <param name="a_style">"normal"/"code"/"bold"/"strikethrough"/"link"。</param>
+        /// <param name="a_ownerWindow">URL入力ダイアログの親ウィンドウ。</param>
+        public void ApplyTextStyleFromMenu(string a_style, Window a_ownerWindow)
         {
-            if (style == "link")
+            if (a_style == "link")
             {
-                if (editor.Selection.IsEmpty) return;
-                var dlg = new LinkInputDialog { Owner = ownerWindow };
+                if (m_editor.Selection.IsEmpty) return;
+                var dlg = new LinkInputDialog { Owner = a_ownerWindow };
                 if (dlg.ShowDialog() == true && !string.IsNullOrWhiteSpace(dlg.Url))
                 {
                     ApplyLinkStyle(dlg.Url);
                 }
                 return;
             }
-            ApplyInlineStyle(style);
+            ApplyInlineStyle(a_style);
         }
 
         /// <summary>現在の選択範囲を、指定URLへのリンクRunに置き換える。</summary>
         /// <param name="url">リンク先URL。</param>
         /// <summary>
         /// 指定した範囲のテキストを、リストのマーカー記号を巻き込まない安全な方法で取得する。
-        /// editor.Selection.TextやTextRange.Textは、選択範囲が箇条書き項目の中にある場合、
+        /// m_editor.Selection.TextやTextRange.Textは、選択範囲が箇条書き項目の中にある場合、
         /// 行頭のマーカー記号（「1.」や「•」）まで文字列に含んでしまうことがあるため、
         /// 代わりにRunのテキストを直接1区間ずつたどって連結する。
         /// </summary>
-        /// <param name="start">範囲の開始位置。</param>
-        /// <param name="end">範囲の終了位置。</param>
+        /// <param name="a_start">範囲の開始位置。</param>
+        /// <param name="a_end">範囲の終了位置。</param>
         /// <returns>範囲内のプレーンテキスト。</returns>
-        private string GetSafeRangeText(TextPointer start, TextPointer end)
+        private string GetSafeRangeText(TextPointer a_start, TextPointer a_end)
         {
             var sb = new StringBuilder();
-            TextPointer navigator = start;
+            TextPointer navigator = a_start;
             int guard = 0;
-            while (navigator != null && navigator.CompareTo(end) < 0 && guard < 10000)
+            while (navigator != null && navigator.CompareTo(a_end) < 0 && guard < 10000)
             {
                 guard++;
                 if (navigator.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
@@ -140,7 +140,7 @@ namespace mde
                     if (!string.IsNullOrEmpty(runText))
                     {
                         TextPointer runEnd = navigator.GetPositionAtOffset(runText.Length);
-                        if (runEnd != null && runEnd.CompareTo(end) > 0)
+                        if (runEnd != null && runEnd.CompareTo(a_end) > 0)
                         {
                             // このRunが範囲の終端をまたいでいるので、1文字ずつ終端まで数える
                             TextPointer probe = navigator;
@@ -148,7 +148,7 @@ namespace mde
                             for (int i = 0; i < runText.Length; i++)
                             {
                                 TextPointer next = probe.GetPositionAtOffset(1);
-                                if (next == null || next.CompareTo(end) > 0) break;
+                                if (next == null || next.CompareTo(a_end) > 0) break;
                                 probe = next;
                                 fitCount++;
                             }
@@ -165,52 +165,52 @@ namespace mde
             return sb.ToString();
         }
 
-        public void ApplyLinkStyle(string url)
+        public void ApplyLinkStyle(string a_url)
         {
-            if (editor.Selection == null || editor.Selection.IsEmpty) return;
-            string text = GetSafeRangeText(editor.Selection.Start, editor.Selection.End);
+            if (m_editor.Selection == null || m_editor.Selection.IsEmpty) return;
+            string text = GetSafeRangeText(m_editor.Selection.Start, m_editor.Selection.End);
             if (string.IsNullOrEmpty(text)) return;
 
-            originalTextTracker.Invalidate(editor.Selection.Start);
+            m_originalTextTracker.Invalidate(m_editor.Selection.Start);
 
-            runAsProgrammaticChange(() =>
+            m_runAsProgrammaticChange(() =>
             {
-                TextPointer start = editor.Selection.Start;
-                editor.Selection.Text = "";
+                TextPointer start = m_editor.Selection.Start;
+                m_editor.Selection.Text = "";
                 var newRun = new Run(text, start)
                 {
-                    Foreground = LinkBrush,
+                    Foreground = LINK_BRUSH,
                     TextDecorations = TextDecorations.Underline,
-                    Tag = new LinkInfo { Url = url, IsAutoLink = false },
-                    ToolTip = url
+                    Tag = new LinkInfo { m_url = a_url, m_isAutoLinkFlg = false },
+                    ToolTip = a_url
                 };
-                editor.Selection.Select(newRun.ContentStart, newRun.ContentEnd);
-                editor.CaretPosition = newRun.ContentEnd;
+                m_editor.Selection.Select(newRun.ContentStart, newRun.ContentEnd);
+                m_editor.CaretPosition = newRun.ContentEnd;
             });
-            refreshOutline();
-            markDirty();
+            m_refreshOutline();
+            m_markDirty();
         }
 
         /// <summary>右クリック「文字装飾」の通常スタイル実装。現在の選択範囲を、指定スタイルの
         /// 新しいRunで置き換える。既存のRunのプロパティを個別にリセットしようとすると、
         /// WPFの仕様上（FontFamilyをnullにできない等）うまくいかないケースがあるため、
         /// 常に新しいRunを作り直す方式にしている。</summary>
-        /// <param name="style">"normal"、"code"、"bold"、"strikethrough"のいずれか。</param>
-        private void ApplyInlineStyle(string style)
+        /// <param name="a_style">"normal"、"code"、"bold"、"strikethrough"のいずれか。</param>
+        private void ApplyInlineStyle(string a_style)
         {
-            if (editor.Selection == null || editor.Selection.IsEmpty) return;
-            string text = GetSafeRangeText(editor.Selection.Start, editor.Selection.End);
+            if (m_editor.Selection == null || m_editor.Selection.IsEmpty) return;
+            string text = GetSafeRangeText(m_editor.Selection.Start, m_editor.Selection.End);
             if (string.IsNullOrEmpty(text)) return;
 
-            originalTextTracker.Invalidate(editor.Selection.Start);
+            m_originalTextTracker.Invalidate(m_editor.Selection.Start);
 
-            runAsProgrammaticChange(() =>
+            m_runAsProgrammaticChange(() =>
             {
-                TextPointer start = editor.Selection.Start;
-                editor.Selection.Text = ""; // 元の（別スタイルだったかもしれない）内容を削除
+                TextPointer start = m_editor.Selection.Start;
+                m_editor.Selection.Text = ""; // 元の（別スタイルだったかもしれない）内容を削除
 
                 Run newRun;
-                switch (style)
+                switch (a_style)
                 {
                     case "bold":
                         newRun = new Run(text, start) { FontWeight = FontWeights.Bold, Tag = "bold" };
@@ -223,7 +223,7 @@ namespace mde
                         {
                             FontFamily = new FontFamily("Consolas"),
                             FontSize = 13.5,
-                            Background = CodeBlockBackground,
+                            Background = CODE_BLOCK_BACKGROUND,
                             Tag = "inline-code"
                         };
                         break;
@@ -232,11 +232,11 @@ namespace mde
                         break;
                 }
 
-                editor.Selection.Select(newRun.ContentStart, newRun.ContentEnd);
-                editor.CaretPosition = newRun.ContentEnd;
+                m_editor.Selection.Select(newRun.ContentStart, newRun.ContentEnd);
+                m_editor.CaretPosition = newRun.ContentEnd;
             });
-            refreshOutline();
-            markDirty();
+            m_refreshOutline();
+            m_markDirty();
         }
 
         // ======================================================================
@@ -246,7 +246,7 @@ namespace mde
         /// <summary>ContextLinkRunのリンクを既定のブラウザで開く。</summary>
         public void OpenContextLink()
         {
-            if (ContextLinkRun?.Tag is LinkInfo li) NavigateLink(li.Url);
+            if (ContextLinkRun?.Tag is LinkInfo li) NavigateLink(li.m_url);
         }
 
         /// <summary>ContextLinkRunのURLをクリップボードへコピーする。</summary>
@@ -254,23 +254,23 @@ namespace mde
         {
             if (ContextLinkRun?.Tag is LinkInfo li)
             {
-                try { Clipboard.SetText(li.Url); } catch { /* 失敗しても致命的ではない */ }
+                try { Clipboard.SetText(li.m_url); } catch { /* 失敗しても致命的ではない */ }
             }
         }
 
         /// <summary>ContextLinkRunのURLを、ダイアログで入力した新しいURLに置き換える。</summary>
-        /// <param name="ownerWindow">ダイアログの親ウィンドウ。</param>
-        public void EditContextLink(Window ownerWindow)
+        /// <param name="a_ownerWindow">ダイアログの親ウィンドウ。</param>
+        public void EditContextLink(Window a_ownerWindow)
         {
             if (!(ContextLinkRun?.Tag is LinkInfo li)) return;
-            var dlg = new LinkInputDialog(li.Url) { Owner = ownerWindow };
+            var dlg = new LinkInputDialog(li.m_url) { Owner = a_ownerWindow };
             if (dlg.ShowDialog() == true && !string.IsNullOrWhiteSpace(dlg.Url))
             {
-                originalTextTracker.Invalidate(ContextLinkRun.ContentStart);
-                li.Url = dlg.Url;
-                li.IsAutoLink = false;
+                m_originalTextTracker.Invalidate(ContextLinkRun.ContentStart);
+                li.m_url = dlg.Url;
+                li.m_isAutoLinkFlg = false;
                 ContextLinkRun.ToolTip = dlg.Url;
-                markDirty();
+                m_markDirty();
             }
         }
 
@@ -278,15 +278,15 @@ namespace mde
         public void RemoveContextLink()
         {
             if (ContextLinkRun == null) return;
-            originalTextTracker.Invalidate(ContextLinkRun.ContentStart);
-            runAsProgrammaticChange(() =>
+            m_originalTextTracker.Invalidate(ContextLinkRun.ContentStart);
+            m_runAsProgrammaticChange(() =>
             {
                 ContextLinkRun.Tag = null;
                 ContextLinkRun.ClearValue(TextElement.ForegroundProperty);
                 ContextLinkRun.ClearValue(Inline.TextDecorationsProperty);
                 ContextLinkRun.ToolTip = null;
             });
-            markDirty();
+            m_markDirty();
         }
 
         /// <summary>
@@ -297,17 +297,17 @@ namespace mde
         public void CopyCodeBlockAsMarkdown()
         {
             if (ContextParagraph == null || !(ContextParagraph.Tag is CodeBlockInfo)) return;
-            string md = blockToMarkdown(ContextParagraph);
+            string md = m_blockToMarkdown(ContextParagraph);
             if (!string.IsNullOrEmpty(md)) Clipboard.SetText(md);
         }
 
         /// <summary>URLを既定のブラウザで開く。</summary>
-        /// <param name="url">開くURL。</param>
-        public void OpenUrl(string url)
+        /// <param name="a_url">開くURL。</param>
+        public void OpenUrl(string a_url)
         {
             try
             {
-                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo(a_url) { UseShellExecute = true });
             }
             catch (Exception ex)
             {
@@ -322,28 +322,28 @@ namespace mde
         /// "#見出し" は現在のファイル内でのジャンプ、"path/to/file.md" はファイルを開く、
         /// "path/to/file.md#見出し" は別のファイルを開いたうえでそのジャンプ先へ移動する。
         /// </summary>
-        /// <param name="url">リンクのURL部分。</param>
-        public void NavigateLink(string url)
+        /// <param name="a_url">リンクのURL部分。</param>
+        public void NavigateLink(string a_url)
         {
-            if (string.IsNullOrWhiteSpace(url)) return;
+            if (string.IsNullOrWhiteSpace(a_url)) return;
 
-            if (Regex.IsMatch(url, "^[a-zA-Z][a-zA-Z0-9+.-]*:") && !Regex.IsMatch(url, "^[a-zA-Z]:[\\\\/]"))
+            if (Regex.IsMatch(a_url, "^[a-zA-Z][a-zA-Z0-9+.-]*:") && !Regex.IsMatch(a_url, "^[a-zA-Z]:[\\\\/]"))
             {
                 // http://, https://, mailto: など（Windowsのドライブレター "C:\..." は除く）は
                 // 外部URLとして扱う。
-                OpenUrl(url);
+                OpenUrl(a_url);
                 return;
             }
 
             string filePart;
             string anchor;
-            int hashIdx = url.IndexOf('#');
-            if (hashIdx < 0) { filePart = url; anchor = null; }
-            else { filePart = url.Substring(0, hashIdx); anchor = url.Substring(hashIdx + 1); }
+            int hashIdx = a_url.IndexOf('#');
+            if (hashIdx < 0) { filePart = a_url; anchor = null; }
+            else { filePart = a_url.Substring(0, hashIdx); anchor = a_url.Substring(hashIdx + 1); }
 
             if (!string.IsNullOrEmpty(filePart))
             {
-                string dir = getCurrentFileDirectory();
+                string dir = m_getCurrentFileDirectory();
                 string resolved = filePart;
                 try
                 {
@@ -363,15 +363,15 @@ namespace mde
                 }
 
                 string resolvedDir = System.IO.Path.GetDirectoryName(resolved);
-                if (isWithinLoadedFolder(resolvedDir))
+                if (m_isWithinLoadedFolder(resolvedDir))
                 {
-                    loadFile(resolved);
+                    m_loadFile(resolved);
                 }
                 else
                 {
                     // フォルダペインに表示されていない範囲のファイルは、現在の文書を置き換えず
                     // 新しいウィンドウで開く。
-                    openInNewWindow(resolved, anchor);
+                    m_openInNewWindow(resolved, anchor);
                     return;
                 }
             }
@@ -382,29 +382,29 @@ namespace mde
             }
         }
 
-        /// <summary>現在の文書内で、指定した見出しテキストまたはカスタムアンカー（&lt;a id&gt;）に
+        /// <summary>現在の文書内で、指定した見出しテキストまたはカスタムアンカー（&lt;a a_id&gt;）に
         /// 一致するジャンプ先を探し、そこまでスクロールする。</summary>
-        /// <param name="anchor">見出しの完全なテキスト、またはアンカーのid。</param>
-        public void JumpToAnchor(string anchor)
+        /// <param name="a_anchor">見出しの完全なテキスト、またはアンカーのid。</param>
+        public void JumpToAnchor(string a_anchor)
         {
-            anchor = anchor.Trim();
-            if (anchor.Length == 0) return;
+            a_anchor = a_anchor.Trim();
+            if (a_anchor.Length == 0) return;
 
-            foreach (Block block in editor.Document.Blocks)
+            foreach (Block block in m_editor.Document.Blocks)
             {
                 if (block is Paragraph p && p.Tag is int level && level > 0)
                 {
                     string text = new TextRange(p.ContentStart, p.ContentEnd).Text.Trim();
-                    if (text == anchor)
+                    if (text == a_anchor)
                     {
-                        editor.CaretPosition = p.ContentStart;
-                        OutlineManager.ScrollParagraphToTop(p, editor);
+                        m_editor.CaretPosition = p.ContentStart;
+                        OutlineManager.ScrollParagraphToTop(p, m_editor);
                         return;
                     }
                 }
             }
 
-            Run anchorRun = FindAnchorRun(editor.Document, anchor);
+            Run anchorRun = FindAnchorRun(m_editor.Document, a_anchor);
             if (anchorRun != null)
             {
                 DependencyObject node = anchorRun;
@@ -412,56 +412,56 @@ namespace mde
                     node = (node as TextElement)?.Parent ?? (node is TableCell cell ? cell.Parent : null);
                 if (node is Paragraph anchorPara)
                 {
-                    editor.CaretPosition = anchorRun.ContentStart;
-                    OutlineManager.ScrollParagraphToTop(anchorPara, editor);
+                    m_editor.CaretPosition = anchorRun.ContentStart;
+                    OutlineManager.ScrollParagraphToTop(anchorPara, m_editor);
                 }
             }
         }
 
-        private Run FindAnchorRun(FlowDocument doc, string id)
+        private Run FindAnchorRun(FlowDocument a_doc, string a_id)
         {
-            foreach (Block block in doc.Blocks)
+            foreach (Block block in a_doc.Blocks)
             {
-                var found = FindAnchorRunInBlock(block, id);
+                var found = FindAnchorRunInBlock(block, a_id);
                 if (found != null) return found;
             }
             return null;
         }
 
-        private Run FindAnchorRunInBlock(Block block, string id)
+        private Run FindAnchorRunInBlock(Block a_block, string a_id)
         {
-            if (block is Paragraph p) return FindAnchorRunInInlines(p.Inlines, id);
-            if (block is List list)
+            if (a_block is Paragraph p) return FindAnchorRunInInlines(p.Inlines, a_id);
+            if (a_block is List list)
             {
                 foreach (ListItem li in list.ListItems)
                     foreach (Block b in li.Blocks)
                     {
-                        var found = FindAnchorRunInBlock(b, id);
+                        var found = FindAnchorRunInBlock(b, a_id);
                         if (found != null) return found;
                     }
             }
-            else if (block is Table table)
+            else if (a_block is Table table)
             {
                 foreach (TableRowGroup rg in table.RowGroups)
                     foreach (TableRow row in rg.Rows)
                         foreach (TableCell cell in row.Cells)
                             foreach (Block b in cell.Blocks)
                             {
-                                var found = FindAnchorRunInBlock(b, id);
+                                var found = FindAnchorRunInBlock(b, a_id);
                                 if (found != null) return found;
                             }
             }
             return null;
         }
 
-        private Run FindAnchorRunInInlines(InlineCollection inlines, string id)
+        private Run FindAnchorRunInInlines(InlineCollection a_inlines, string a_id)
         {
-            foreach (Inline inline in inlines)
+            foreach (Inline inline in a_inlines)
             {
-                if (inline is Run run && run.Tag is AnchorInfo info && info.Id == id) return run;
+                if (inline is Run run && run.Tag is AnchorInfo info && info.m_id == a_id) return run;
                 if (inline is Span span)
                 {
-                    var found = FindAnchorRunInInlines(span.Inlines, id);
+                    var found = FindAnchorRunInInlines(span.Inlines, a_id);
                     if (found != null) return found;
                 }
             }
@@ -470,17 +470,17 @@ namespace mde
 
         /// <summary>Ctrl+クリックでリンクを開く。Ctrl無しのクリックは通常のキャレット移動に
         /// 任せ、何もしない。</summary>
-        public void HandlePreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        public void HandlePreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args)
         {
             if (Keyboard.Modifiers != ModifierKeys.Control) return;
 
-            var pos = editor.GetPositionFromPoint(e.GetPosition(editor), true);
+            var pos = m_editor.GetPositionFromPoint(a_args.GetPosition(m_editor), true);
             if (pos == null) return;
 
-            if (pos.Parent is Run run && run.Tag is LinkInfo linkInfo && !string.IsNullOrWhiteSpace(linkInfo.Url))
+            if (pos.Parent is Run run && run.Tag is LinkInfo linkInfo && !string.IsNullOrWhiteSpace(linkInfo.m_url))
             {
-                NavigateLink(linkInfo.Url);
-                e.Handled = true;
+                NavigateLink(linkInfo.m_url);
+                a_args.Handled = true;
             }
         }
 
@@ -490,7 +490,7 @@ namespace mde
 
         /// <summary>
         /// 直前に入力した文字が、キャレット位置で `コード`、**太字**、~~取り消し線~~、
-        /// または[リンク](url)の記法を閉じたかどうかを調べ、そうであればそのMarkDown記法を
+        /// または[リンク](a_url)の記法を閉じたかどうかを調べ、そうであればそのMarkDown記法を
         /// スタイル付きのRunへ即座に置き換える。1つのRunの中のテキストだけでなく、
         /// 後ろ向きに複数のRunをまたいでたどるため、段落中のどこでも（箇条書き項目の中でも）
         /// 確実に動作する。
@@ -500,20 +500,20 @@ namespace mde
         /// 指定位置にある区切り記号（`/**/~~/[ の開始位置）が、直前の連続する\の個数（奇数なら
         /// エスケープされている）から見てエスケープされているかどうかを判定する。
         /// </summary>
-        /// <param name="text">対象の文字列。</param>
-        /// <param name="position">区切り記号の開始位置。</param>
+        /// <param name="a_text">対象の文字列。</param>
+        /// <param name="a_position">区切り記号の開始位置。</param>
         /// <returns>エスケープされていれば true。</returns>
-        private bool IsEscapedAt(string text, int position)
+        private bool IsEscapedAt(string a_text, int a_position)
         {
             int count = 0;
-            int i = position - 1;
-            while (i >= 0 && text[i] == '\\') { count++; i--; }
+            int i = a_position - 1;
+            while (i >= 0 && a_text[i] == '\\') { count++; i--; }
             return count % 2 == 1;
         }
 
         public bool CheckInlineFormatTrigger()
         {
-            var caret = editor.CaretPosition;
+            var caret = m_editor.CaretPosition;
             var para = caret.Paragraph;
             if (para == null || para.Tag is CodeBlockInfo) return false;
 
@@ -534,8 +534,8 @@ namespace mde
                 {
                     var segStart = walker.GetPositionAtOffset(-chunk.Length);
                     if (segStart == null) break;
-                    bool isEscaped = (walker.Parent as Run)?.Tag as string == "escaped";
-                    segments.Insert(0, (chunk, segStart, isEscaped));
+                    bool isEscapedFlg = (walker.Parent as Run)?.Tag as string == "escaped";
+                    segments.Insert(0, (chunk, segStart, isEscapedFlg));
                     totalLen += chunk.Length;
                     walker = segStart;
                 }
@@ -644,58 +644,58 @@ namespace mde
         /// 入力し終えた「\ + 1文字」のエスケープ記法を、\を隠して実際の文字だけを表示する
         /// Run（Tag="escaped"）に置き換える。保存時にはこのTagを見て再び\付きで書き戻す。
         /// </summary>
-        /// <param name="caret">現在のキャレット位置（エスケープ対象の文字の直後）。</param>
-        /// <param name="start">\の開始位置。</param>
-        /// <param name="escapedChar">エスケープされた文字。</param>
-        private void ReplaceEscapedCharacter(TextPointer caret, TextPointer start, char escapedChar)
+        /// <param name="a_caret">現在のキャレット位置（エスケープ対象の文字の直後）。</param>
+        /// <param name="a_start">\の開始位置。</param>
+        /// <param name="a_escapedChar">エスケープされた文字。</param>
+        private void ReplaceEscapedCharacter(TextPointer a_caret, TextPointer a_start, char a_escapedChar)
         {
-            runAsProgrammaticChange(() =>
+            m_runAsProgrammaticChange(() =>
             {
-                new TextRange(start, caret).Text = "";
-                var newRun = new Run(escapedChar.ToString(), start) { Tag = "escaped" };
+                new TextRange(a_start, a_caret).Text = "";
+                var newRun = new Run(a_escapedChar.ToString(), a_start) { Tag = "escaped" };
                 var trailingRun = new Run("\u200B", newRun.ContentEnd);
-                editor.CaretPosition = trailingRun.ContentEnd;
+                m_editor.CaretPosition = trailingRun.ContentEnd;
             });
         }
 
-        /// <summary>入力し終えた [text](url) 記法を、スタイル付きのリンクRunに置き換える。</summary>
-        private void ReplaceTextBeforeCaretWithLinkRun(TextPointer caret, TextPointer start, string linkText, string url)
+        /// <summary>入力し終えた [a_text](a_url) 記法を、スタイル付きのリンクRunに置き換える。</summary>
+        private void ReplaceTextBeforeCaretWithLinkRun(TextPointer a_caret, TextPointer a_start, string a_linkText, string a_url)
         {
-            runAsProgrammaticChange(() =>
+            m_runAsProgrammaticChange(() =>
             {
-                new TextRange(start, caret).Text = "";
-                var newRun = new Run(linkText, start)
+                new TextRange(a_start, a_caret).Text = "";
+                var newRun = new Run(a_linkText, a_start)
                 {
-                    Foreground = LinkBrush,
+                    Foreground = LINK_BRUSH,
                     TextDecorations = TextDecorations.Underline,
-                    Tag = new LinkInfo { Url = url, IsAutoLink = false },
-                    ToolTip = url
+                    Tag = new LinkInfo { m_url = a_url, m_isAutoLinkFlg = false },
+                    ToolTip = a_url
                 };
                 var trailingRun = new Run("\u200B", newRun.ContentEnd);
-                editor.CaretPosition = trailingRun.ContentEnd;
+                m_editor.CaretPosition = trailingRun.ContentEnd;
             });
         }
 
         /// <summary>入力し終えた `コード`/**太字**/~~取り消し線~~ 記法を、スタイル付きのRunに
         /// 置き換える。直後に、通常スタイルの空のゼロ幅スペースRunを続けて挿入することで、
         /// 以降の入力がそのスタイルを引き継がないようにしている。</summary>
-        private void ReplaceTextBeforeCaretWithStyledRun(TextPointer caret, TextPointer start, string content, string style)
+        private void ReplaceTextBeforeCaretWithStyledRun(TextPointer a_caret, TextPointer a_start, string a_content, string a_style)
         {
-            runAsProgrammaticChange(() =>
+            m_runAsProgrammaticChange(() =>
             {
-                new TextRange(start, caret).Text = "";
+                new TextRange(a_start, a_caret).Text = "";
 
                 Run newRun;
-                if (style == "bold")
-                    newRun = new Run(content, start) { FontWeight = FontWeights.Bold, Tag = "bold" };
-                else if (style == "strikethrough")
-                    newRun = new Run(content, start) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
+                if (a_style == "bold")
+                    newRun = new Run(a_content, a_start) { FontWeight = FontWeights.Bold, Tag = "bold" };
+                else if (a_style == "strikethrough")
+                    newRun = new Run(a_content, a_start) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
                 else
-                    newRun = new Run(content, start)
+                    newRun = new Run(a_content, a_start)
                     {
                         FontFamily = new FontFamily("Consolas"),
                         FontSize = 13.5,
-                        Background = CodeBlockBackground,
+                        Background = CODE_BLOCK_BACKGROUND,
                         Tag = "inline-code"
                     };
 
@@ -703,7 +703,7 @@ namespace mde
                 // 太字/取り消し線/コードのスタイルを引き継がないようにするためのもの。
                 // 保存時には自動的に取り除かれる（MarkdownConverter.AppendInlinesMarkdown参照）。
                 var trailingRun = new Run("\u200B", newRun.ContentEnd);
-                editor.CaretPosition = trailingRun.ContentEnd;
+                m_editor.CaretPosition = trailingRun.ContentEnd;
             });
         }
     }

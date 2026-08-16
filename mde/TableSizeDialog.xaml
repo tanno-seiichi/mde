@@ -15,17 +15,17 @@
 
         <TextBlock Text="行数（見出し行を含む）" Margin="0,0,0,4"
                    Foreground="{StaticResource InkSoftBrush}" FontSize="12"/>
-        <TextBox x:Name="RowsBox" Text="3" Margin="0,0,0,14" Padding="6,4"/>
+        <TextBox x:Name="m_rowsBox" Text="3" Margin="0,0,0,14" Padding="6,4"/>
 
         <TextBlock Text="列数" Margin="0,0,0,4"
                    Foreground="{StaticResource InkSoftBrush}" FontSize="12"/>
-        <TextBox x:Name="ColsBox" Text="3" Margin="0,0,0,22" Padding="6,4"/>
+        <TextBox x:Name="m_colsBox" Text="3" Margin="0,0,0,22" Padding="6,4"/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="キャンセル" Width="84" Height="30" Margin="0,0,8,0"
-                    Style="{StaticResource ToolbarButton}" Click="Cancel_Click"/>
+                    Style="{StaticResource ToolbarButton}" Click="CancelClick"/>
             <Button Content="挿入" Width="84" Height="30" IsDefault="True"
-                    Style="{StaticResource ToolbarButton}" Click="Ok_Click"/>
+                    Style="{StaticResource ToolbarButton}" Click="OkClick"/>
         </StackPanel>
     </StackPanel>
 </Window>

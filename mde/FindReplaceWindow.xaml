@@ -9,57 +9,57 @@
         FontFamily="Segoe UI, Yu Gothic UI"
         FontSize="13"
         Background="{StaticResource PaperBrush}"
-        PreviewKeyDown="FindReplaceWindow_PreviewKeyDown">
+        PreviewKeyDown="FindReplaceWindowPreviewKeyDown">
     <StackPanel Margin="22,22,22,20">
 
         <TextBlock Text="検索する文字列" Margin="0,0,0,0"/>
-        <TextBox x:Name="SearchBox" Padding="6,4" Margin="0,4,0,12" FontFamily="Consolas"/>
+        <TextBox x:Name="m_searchBox" Padding="6,4" Margin="0,4,0,12" FontFamily="Consolas"/>
 
-        <Expander x:Name="ReplaceExpander" Header="置換後の文字列" Margin="0,0,0,14"
-                  Expanded="ReplaceExpander_Toggled" Collapsed="ReplaceExpander_Toggled">
-            <TextBox x:Name="ReplaceBox" Padding="6,4" Margin="0,2,0,0" FontFamily="Consolas"/>
+        <Expander x:Name="m_replaceExpander" Header="置換後の文字列" Margin="0,0,0,14"
+                  Expanded="ReplaceExpanderToggled" Collapsed="ReplaceExpanderToggled">
+            <TextBox x:Name="m_replaceBox" Padding="6,4" Margin="0,2,0,0" FontFamily="Consolas"/>
         </Expander>
 
         <TextBlock Text="対象範囲" Margin="0,0,0,6"/>
         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-            <RadioButton x:Name="ScopeCurrentFile" Content="現在のファイル" GroupName="scope" IsChecked="True" VerticalAlignment="Center"/>
-            <RadioButton x:Name="ScopeFolder" Content="フォルダ全体（サブフォルダ含む）" GroupName="scope" Margin="20,0,0,0" VerticalAlignment="Center"/>
+            <RadioButton x:Name="m_scopeCurrentFile" Content="現在のファイル" GroupName="scope" IsChecked="True" VerticalAlignment="Center"/>
+            <RadioButton x:Name="m_scopeFolder" Content="フォルダ全体（サブフォルダ含む）" GroupName="scope" Margin="20,0,0,0" VerticalAlignment="Center"/>
         </StackPanel>
 
         <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-            <CheckBox x:Name="CaseSensitiveBox" Content="大文字・小文字を区別する"/>
-            <CheckBox x:Name="UseRegexBox" Content="正規表現を使用する" Margin="20,0,0,0"/>
+            <CheckBox x:Name="m_caseSensitiveBox" Content="大文字・小文字を区別する"/>
+            <CheckBox x:Name="m_useRegexBox" Content="正規表現を使用する" Margin="20,0,0,0"/>
         </StackPanel>
 
         <WrapPanel>
-            <Button Content="前を検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindPrevious_Click"/>
-            <Button Content="次を検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindNext_Click"/>
-            <Button Content="すべて検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindAll_Click"/>
-            <Button x:Name="StepReplaceButton" Content="1件ずつ置換…" Width="100" Style="{StaticResource ToolbarButton}"
-                    Click="StepReplace_Click" Visibility="Collapsed"/>
-            <Button x:Name="ReplaceAllButton" Content="すべて置換" Width="86" Style="{StaticResource ToolbarButton}"
-                    Click="ReplaceAll_Click" Visibility="Collapsed"/>
+            <Button Content="前を検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindPreviousClick"/>
+            <Button Content="次を検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindNextClick"/>
+            <Button Content="すべて検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindAllClick"/>
+            <Button x:Name="m_stepReplaceButton" Content="1件ずつ置換…" Width="100" Style="{StaticResource ToolbarButton}"
+                    Click="StepReplaceClick" Visibility="Collapsed"/>
+            <Button x:Name="m_replaceAllButton" Content="すべて置換" Width="86" Style="{StaticResource ToolbarButton}"
+                    Click="ReplaceAllClick" Visibility="Collapsed"/>
         </WrapPanel>
 
-        <TextBlock x:Name="StatusText" Margin="0,14,0,0" TextWrapping="Wrap" FontSize="12"
+        <TextBlock x:Name="m_statusText" Margin="0,14,0,0" TextWrapping="Wrap" FontSize="12"
                    Foreground="{StaticResource InkSoftBrush}"/>
 
-        <ListBox x:Name="ResultsList" Margin="0,8,0,0" MaxHeight="500" Visibility="Collapsed"
-                 MouseDoubleClick="ResultsList_MouseDoubleClick" FontFamily="Consolas" FontSize="12"/>
+        <ListBox x:Name="m_resultsList" Margin="0,8,0,0" MaxHeight="500" Visibility="Collapsed"
+                 MouseDoubleClick="ResultsListMouseDoubleClick" FontFamily="Consolas" FontSize="12"/>
 
         <!-- Step-by-step (one match at a time) session panel -->
-        <Border x:Name="StepPanel" Visibility="Collapsed" Margin="0,14,0,0" Padding="14"
+        <Border x:Name="m_stepPanel" Visibility="Collapsed" Margin="0,14,0,0" Padding="14"
                 Background="{StaticResource AccentSoftBrush}" CornerRadius="8">
             <StackPanel>
-                <TextBlock x:Name="StepFileText" FontSize="11" FontFamily="Consolas"
+                <TextBlock x:Name="m_stepFileText" FontSize="11" FontFamily="Consolas"
                            Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6" TextWrapping="Wrap"/>
-                <TextBlock x:Name="StepContextText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"
+                <TextBlock x:Name="m_stepContextText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"
                            Foreground="{StaticResource InkBrush}" Margin="0,0,0,12"/>
                 <WrapPanel>
-                    <Button Content="置換" Width="80" Style="{StaticResource ToolbarButton}" Click="StepReplaceOne_Click"/>
-                    <Button Content="スキップ" Width="80" Style="{StaticResource ToolbarButton}" Click="StepSkip_Click"/>
-                    <Button Content="残りをすべて置換" Width="120" Style="{StaticResource ToolbarButton}" Click="StepReplaceRemaining_Click"/>
-                    <Button Content="終了" Width="70" Style="{StaticResource ToolbarButton}" Click="StepEnd_Click"/>
+                    <Button Content="置換" Width="80" Style="{StaticResource ToolbarButton}" Click="StepReplaceOneClick"/>
+                    <Button Content="スキップ" Width="80" Style="{StaticResource ToolbarButton}" Click="StepSkipClick"/>
+                    <Button Content="残りをすべて置換" Width="120" Style="{StaticResource ToolbarButton}" Click="StepReplaceRemainingClick"/>
+                    <Button Content="終了" Width="70" Style="{StaticResource ToolbarButton}" Click="StepEndClick"/>
                 </WrapPanel>
             </StackPanel>
         </Border>

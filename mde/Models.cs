@@ -16,16 +16,16 @@ namespace mde
     public class ImageInfo
     {
         /// <summary>MarkDown/HTML上に書かれていた元のsrc（相対パス・絶対パス・URLなど）。</summary>
-        public string OriginalSrc;
+        public string m_originalSrc;
 
         /// <summary>alt属性（代替テキスト）。</summary>
-        public string Alt;
+        public string m_alt;
 
         /// <summary>HTML形式の場合のstyle属性。MarkDown形式では未使用。</summary>
-        public string Style;
+        public string m_style;
 
         /// <summary>元の記法。"html"（&lt;img&gt;タグ）または"md"（![alt](src)）。</summary>
-        public string Format;
+        public string m_format;
     }
 
     /// <summary>
@@ -35,7 +35,7 @@ namespace mde
     public class AnchorInfo
     {
         /// <summary>アンカーのid（[text](#id) からのジャンプ先として参照される）。</summary>
-        public string Id;
+        public string m_id;
     }
 
     /// <summary>
@@ -44,7 +44,7 @@ namespace mde
     public class CodeBlockInfo
     {
         /// <summary>```の直後に書かれた言語名（例: "csharp"）。未指定なら空文字。</summary>
-        public string Language = "";
+        public string m_language = "";
     }
 
     /// <summary>
@@ -54,10 +54,10 @@ namespace mde
     public class LinkInfo
     {
         /// <summary>リンク先URL。</summary>
-        public string Url;
+        public string m_url;
 
         /// <summary>true の場合、&lt;url&gt; 形式（山括弧の自動リンク）から読み込まれたことを示す。</summary>
-        public bool IsAutoLink;
+        public bool m_isAutoLinkFlg;
     }
 
     /// <summary>アウトラインペインの1行分（見出しのテキスト・レベル・対応する段落）。</summary>
@@ -81,17 +81,17 @@ namespace mde
         /// <summary>アウトラインの表示上のフォントサイズ（レベル1〜2は少し大きめ）。</summary>
         public double FontSizeValue => Level <= 2 ? 13 : 12;
 
-        private bool isSearchMatch;
+        private bool m_isSearchMatchFlg;
 
         /// <summary>「すべて検索」の結果、この見出しの区間に一致箇所があるかどうか。
         /// アウトラインペインでの強調表示に使う。</summary>
         public bool IsSearchMatch
         {
-            get => isSearchMatch;
+            get => m_isSearchMatchFlg;
             set
             {
-                if (isSearchMatch == value) return;
-                isSearchMatch = value;
+                if (m_isSearchMatchFlg == value) return;
+                m_isSearchMatchFlg = value;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSearchMatch)));
             }
         }
@@ -105,7 +105,7 @@ namespace mde
     {
         public event PropertyChangedEventHandler PropertyChanged;
 
-        private bool isDirty;
+        private bool m_isDirtyFlg;
 
         /// <summary>ファイル名（拡張子込み）。フォルダの場合はフォルダ名。</summary>
         public string Name { get; set; }
@@ -116,32 +116,32 @@ namespace mde
         /// <summary>フォルダかどうか。</summary>
         public bool IsDirectory { get; set; }
 
-        private bool isExpanded;
+        private bool m_isExpandedFlg;
 
         /// <summary>TreeViewの展開状態（バインディング用）。コードから選択・展開する際にも
         /// 画面へ反映されるよう、変更通知付きのプロパティにしている。</summary>
         public bool IsExpanded
         {
-            get => isExpanded;
+            get => m_isExpandedFlg;
             set
             {
-                if (isExpanded == value) return;
-                isExpanded = value;
+                if (m_isExpandedFlg == value) return;
+                m_isExpandedFlg = value;
                 OnPropertyChanged(nameof(IsExpanded));
             }
         }
 
-        private bool isSelected;
+        private bool m_isSelectedFlg;
 
         /// <summary>TreeViewの選択状態（バインディング用）。保存したファイルをフォルダビューで
         /// 選択状態にする、といった用途でコード側から設定する。</summary>
         public bool IsSelected
         {
-            get => isSelected;
+            get => m_isSelectedFlg;
             set
             {
-                if (isSelected == value) return;
-                isSelected = value;
+                if (m_isSelectedFlg == value) return;
+                m_isSelectedFlg = value;
                 OnPropertyChanged(nameof(IsSelected));
             }
         }
@@ -156,27 +156,27 @@ namespace mde
         /// <summary>未保存の変更があるファイルかどうか。変更すると DisplayName も更新される。</summary>
         public bool IsDirty
         {
-            get => isDirty;
+            get => m_isDirtyFlg;
             set
             {
-                if (isDirty == value) return;
-                isDirty = value;
+                if (m_isDirtyFlg == value) return;
+                m_isDirtyFlg = value;
                 OnPropertyChanged(nameof(IsDirty));
                 OnPropertyChanged(nameof(DisplayName));
             }
         }
 
-        private bool isSearchMatch;
+        private bool m_isSearchMatchFlg;
 
         /// <summary>「すべて検索」（フォルダ全体）の結果、このファイル（または、これを含む
         /// フォルダ）に一致箇所があるかどうか。フォルダツリーペインでの強調表示に使う。</summary>
         public bool IsSearchMatch
         {
-            get => isSearchMatch;
+            get => m_isSearchMatchFlg;
             set
             {
-                if (isSearchMatch == value) return;
-                isSearchMatch = value;
+                if (m_isSearchMatchFlg == value) return;
+                m_isSearchMatchFlg = value;
                 OnPropertyChanged(nameof(IsSearchMatch));
             }
         }
@@ -184,7 +184,7 @@ namespace mde
         /// <summary>画面表示用の名前。未保存の変更があるファイルには "* " を先頭に付ける。</summary>
         public string DisplayName => IsDirty ? "* " + Name : Name;
 
-        private void OnPropertyChanged(string propertyName) =>
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        private void OnPropertyChanged(string a_propertyName) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(a_propertyName));
     }
 }

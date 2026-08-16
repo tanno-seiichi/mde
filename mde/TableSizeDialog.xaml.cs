@@ -1,8 +1,8 @@
 ﻿// TableSizeDialog.xaml.cs
 //
 // Part of mde (MarkDown インラインエディタ).
-// A small modal dialog for choosing a new table's row/column count, shown from the editor's
-// right-click "表を挿入" (insert table) menu item.
+// A small modal dialog for choosing a new m_table's row/column count, shown from the m_editor's
+// right-click "表を挿入" (insert m_table) menu item.
 
 using System.Windows;
 
@@ -21,18 +21,18 @@ namespace mde
         public TableSizeDialog()
         {
             InitializeComponent();
-            RowsBox.Focus();
-            RowsBox.SelectAll();
+            m_rowsBox.Focus();
+            m_rowsBox.SelectAll();
         }
 
         /// <summary>Validates and clamps the entered values, then closes the dialog with a positive
         /// result.</summary>
-        /// <param name="sender">The OK button.</param>
-        /// <param name="e">Click event.</param>
-        private void Ok_Click(object sender, RoutedEventArgs e)
+        /// <param name="a_sender">The OK button.</param>
+        /// <param name="a_args">Click event.</param>
+        private void OkClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (!int.TryParse(RowsBox.Text, out int r) || r < 1) r = 1;
-            if (!int.TryParse(ColsBox.Text, out int c) || c < 1) c = 1;
+            if (!int.TryParse(m_rowsBox.Text, out int r) || r < 1) r = 1;
+            if (!int.TryParse(m_colsBox.Text, out int c) || c < 1) c = 1;
             if (r > 50) r = 50;
             if (c > 20) c = 20;
 
@@ -42,9 +42,9 @@ namespace mde
         }
 
         /// <summary>Closes the dialog without applying any changes.</summary>
-        /// <param name="sender">The Cancel button.</param>
-        /// <param name="e">Click event.</param>
-        private void Cancel_Click(object sender, RoutedEventArgs e)
+        /// <param name="a_sender">The Cancel button.</param>
+        /// <param name="a_args">Click event.</param>
+        private void CancelClick(object a_sender, RoutedEventArgs a_args)
         {
             DialogResult = false;
         }

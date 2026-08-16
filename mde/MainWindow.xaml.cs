@@ -34,76 +34,76 @@ namespace mde
         // ======================================================================
 
         /// <summary>ソースモード（生テキスト表示）中はtrue。</summary>
-        private bool isSourceMode = false;
+        private bool m_isSourceModeFlg = false;
 
         /// <summary>ユーザーの入力ではなく、コードによる変更を行っている間だけtrueにするガード
         /// フラグ。TextChangedハンドラの自動変換ロジックが、プログラムによる変更にまで
         /// 反応してしまわないようにするためのもの。</summary>
-        private bool isProgrammaticChange = false;
+        private bool m_isProgrammaticChangeFlg = false;
 
         /// <summary>検索結果のハイライト（背景色）を適用/解除している間だけtrueにするガード
         /// フラグ。TextChangedがこれを見て、ダーティ扱いにしないようにする。</summary>
-        private bool isApplyingHighlight = false;
+        private bool m_isApplyingHighlightFlg = false;
 
         /// <summary>現在エディタに表示中のファイルの絶対パス。未保存なら null。</summary>
-        private string currentFilePath = null;
+        private string m_currentFilePath = null;
 
         /// <summary>currentFilePathの保存先フォルダ（画像の相対パス解決で毎回計算し直さずに
         /// 済むようキャッシュしている）。</summary>
-        private string currentFileDirectory = null;
+        private string m_currentFileDirectory = null;
 
         /// <summary>まだディスクに書き出されていない、メモリ上だけの編集内容（フォルダ全体の
         /// 置換、または編集中のファイルから離れた際に発生する）。キー=絶対パス、値=そのファイルの
         /// 現在のMarkDown内容。</summary>
-        private readonly Dictionary<string, string> pendingFileEdits =
+        private readonly Dictionary<string, string> m_pendingFileEdits =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>現在のファイル（currentFilePath）に未保存の変更があるかどうか。</summary>
-        private bool currentFileIsDirty = false;
+        /// <summary>現在のファイル（m_currentFilePath）に未保存の変更があるかどうか。</summary>
+        private bool m_currentFileIsDirtyFlg = false;
 
         /// <summary>エディタに適用中のズーム倍率（1.0が100%）。</summary>
-        private double zoomLevel = 1.0;
+        private double m_zoomLevel = 1.0;
 
         /// <summary>このウィンドウ専用の一時フォルダ識別子（複数ウィンドウを同時に開いた際、
         /// ドラッグ挿入した画像のファイル名が衝突しないようにするため）。</summary>
-        private readonly string instanceTempId = Guid.NewGuid().ToString("N");
+        private readonly string m_instanceTempId = Guid.NewGuid().ToString("N");
 
         /// <summary>起動時に読み込んだ、前回終了時のウィンドウ状態設定。</summary>
-        private AppSettings savedSettings;
+        private AppSettings m_savedSettings;
 
         /// <summary>アプリ起動時のコマンドライン引数を使ってよいのは最初の1つのウィンドウだけ、
         /// という制御のための静的フラグ（プロセス全体で共有される）。</summary>
-        private static bool isFirstWindowInstance = true;
+        private static bool m_isFirstWindowInstanceFlg = true;
 
         /// <summary>現在開いている検索と置換ウィンドウ（Ctrl+Fなどで、同時に2つ開かず既存の
         /// ものを前面に出すために使う）。開いていなければ null。</summary>
-        private FindReplaceWindow openFindReplaceWindow;
+        private FindReplaceWindow m_openFindReplaceWindow;
 
         // フォルダ/アウトラインペインの表示・非表示状態
-        private double lastFolderColumnWidth = 190;
-        private double lastOutlineColumnWidth = 210;
-        private bool folderPaneVisible = false;
-        private bool outlinePaneVisible = false;
+        private double m_lastFolderColumnWidth = 190;
+        private double m_lastOutlineColumnWidth = 210;
+        private bool m_folderPaneVisibleFlg = false;
+        private bool m_outlinePaneVisibleFlg = false;
 
         // 右クリック時の対象（表・コードブロックまわりはTableEditor/InlineStyleEditorに
         // それぞれ専用のプロパティがあるので、ここではまだどのクラスにも属さないものだけを保持する）
-        private Paragraph ctxParagraph;
+        private Paragraph m_ctxParagraph;
 
         // ======================================================================
         //  各機能クラス（協力オブジェクト）
         // ======================================================================
 
-        private readonly OriginalTextTracker originalTextTracker;
-        private readonly LineEndingTracker lineEndingTracker;
-        private readonly ImageManager imageManager;
-        private readonly MarkdownConverter markdownConverter;
-        private readonly ListEditor listEditor;
-        private readonly HeadingCodeBlockEditor headingCodeBlockEditor;
-        private readonly TableEditor tableEditor;
-        private readonly InlineStyleEditor inlineStyleEditor;
-        private readonly SearchReplaceService searchReplaceService;
-        private readonly OutlineManager outlineManager;
-        private readonly FolderTreeManager folderTreeManager;
+        private readonly OriginalTextTracker m_originalTextTracker;
+        private readonly LineEndingTracker m_lineEndingTracker;
+        private readonly ImageManager m_imageManager;
+        private readonly MarkdownConverter m_markdownConverter;
+        private readonly ListEditor m_listEditor;
+        private readonly HeadingCodeBlockEditor m_headingCodeBlockEditor;
+        private readonly TableEditor m_tableEditor;
+        private readonly InlineStyleEditor m_inlineStyleEditor;
+        private readonly SearchReplaceService m_searchReplaceService;
+        private readonly OutlineManager m_outlineManager;
+        private readonly FolderTreeManager m_folderTreeManager;
 
         /// <summary>ウィンドウを初期化し、各機能クラスを構築・配線したうえで、初回起動時の
         /// 案内文書を読み込む。</summary>
@@ -111,51 +111,51 @@ namespace mde
         {
             InitializeComponent();
 
-            savedSettings = AppSettings.Load();
-            if (!double.IsNaN(savedSettings.WindowLeft) && !double.IsNaN(savedSettings.WindowTop))
+            m_savedSettings = AppSettings.Load();
+            if (!double.IsNaN(m_savedSettings.WindowLeft) && !double.IsNaN(m_savedSettings.WindowTop))
             {
                 this.WindowStartupLocation = WindowStartupLocation.Manual;
-                this.Left = savedSettings.WindowLeft;
-                this.Top = savedSettings.WindowTop;
+                this.Left = m_savedSettings.WindowLeft;
+                this.Top = m_savedSettings.WindowTop;
             }
-            this.Width = savedSettings.WindowWidth;
-            this.Height = savedSettings.WindowHeight;
-            zoomLevel = savedSettings.ZoomLevel;
-            folderPaneVisible = savedSettings.FolderPaneVisible;
-            outlinePaneVisible = savedSettings.OutlinePaneVisible;
-            if (savedSettings.FolderPaneWidth > 0) lastFolderColumnWidth = savedSettings.FolderPaneWidth;
-            if (savedSettings.OutlinePaneWidth > 0) lastOutlineColumnWidth = savedSettings.OutlinePaneWidth;
+            this.Width = m_savedSettings.WindowWidth;
+            this.Height = m_savedSettings.WindowHeight;
+            m_zoomLevel = m_savedSettings.ZoomLevel;
+            m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
+            m_outlinePaneVisibleFlg = m_savedSettings.OutlinePaneVisible;
+            if (m_savedSettings.FolderPaneWidth > 0) m_lastFolderColumnWidth = m_savedSettings.FolderPaneWidth;
+            if (m_savedSettings.OutlinePaneWidth > 0) m_lastOutlineColumnWidth = m_savedSettings.OutlinePaneWidth;
 
-            originalTextTracker = new OriginalTextTracker(Editor);
-            lineEndingTracker = new LineEndingTracker(PathsReferToSameFile);
-            outlineManager = new OutlineManager(Editor);
-            imageManager = new ImageManager(
-                Editor, originalTextTracker, () => isSourceMode, () => currentFileDirectory,
-                RunAsProgrammaticChange, outlineManager.Refresh, instanceTempId);
-            markdownConverter = new MarkdownConverter(originalTextTracker, imageManager);
-            listEditor = new ListEditor(Editor, originalTextTracker, RunAsProgrammaticChange);
-            headingCodeBlockEditor = new HeadingCodeBlockEditor(Editor, originalTextTracker, RunAsProgrammaticChange);
-            tableEditor = new TableEditor(
-                Editor, originalTextTracker, MarkDirty, RunAsProgrammaticChange, () => isSourceMode,
-                outlineManager.Refresh, InsertPlainTextWithLineBreaksForCodeBlock);
-            folderTreeManager = new FolderTreeManager(
-                LoadFile, () => currentFilePath, () => currentFileIsDirty,
-                () => pendingFileEdits.Keys, PathsReferToSameFile);
-            inlineStyleEditor = new InlineStyleEditor(
-                Editor, originalTextTracker, RunAsProgrammaticChange, MarkDirty, outlineManager.Refresh,
-                markdownConverter.BlockToMarkdown, () => currentFileDirectory, LoadFile,
-                folderTreeManager.IsWithinLoadedFolder, OpenFileInNewWindow);
-            searchReplaceService = new SearchReplaceService(
-                Editor, SourceEditor, markdownConverter, originalTextTracker, lineEndingTracker,
-                () => isSourceMode, RunAsProgrammaticChange, outlineManager.Refresh, p => OutlineManager.ScrollParagraphToTop(p, Editor),
-                () => folderTreeManager.LoadedFolderRootPath, GetCurrentContentForFile,
-                SetFileContentForReplaceImpl, LoadFile, RunWithoutDirtyMarking, outlineManager.MarkSearchMatches);
+            m_originalTextTracker = new OriginalTextTracker(m_editor);
+            m_lineEndingTracker = new LineEndingTracker(PathsReferToSameFile);
+            m_outlineManager = new OutlineManager(m_editor);
+            m_imageManager = new ImageManager(
+                m_editor, m_originalTextTracker, () => m_isSourceModeFlg, () => m_currentFileDirectory,
+                RunAsProgrammaticChange, m_outlineManager.Refresh, m_instanceTempId);
+            m_markdownConverter = new MarkdownConverter(m_originalTextTracker, m_imageManager);
+            m_listEditor = new ListEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange);
+            m_headingCodeBlockEditor = new HeadingCodeBlockEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange);
+            m_tableEditor = new TableEditor(
+                m_editor, m_originalTextTracker, MarkDirty, RunAsProgrammaticChange, () => m_isSourceModeFlg,
+                m_outlineManager.Refresh, InsertPlainTextWithLineBreaksForCodeBlock);
+            m_folderTreeManager = new FolderTreeManager(
+                LoadFile, () => m_currentFilePath, () => m_currentFileIsDirtyFlg,
+                () => m_pendingFileEdits.Keys, PathsReferToSameFile);
+            m_inlineStyleEditor = new InlineStyleEditor(
+                m_editor, m_originalTextTracker, RunAsProgrammaticChange, MarkDirty, m_outlineManager.Refresh,
+                m_markdownConverter.BlockToMarkdown, () => m_currentFileDirectory, LoadFile,
+                m_folderTreeManager.IsWithinLoadedFolder, OpenFileInNewWindow);
+            m_searchReplaceService = new SearchReplaceService(
+                m_editor, m_sourceEditor, m_markdownConverter, m_originalTextTracker, m_lineEndingTracker,
+                () => m_isSourceModeFlg, RunAsProgrammaticChange, m_outlineManager.Refresh, p => OutlineManager.ScrollParagraphToTop(p, m_editor),
+                () => m_folderTreeManager.LoadedFolderRootPath, GetCurrentContentForFile,
+                SetFileContentForReplaceImpl, LoadFile, RunWithoutDirtyMarking, m_outlineManager.MarkSearchMatches);
 
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version;
-            OutlineList.ItemsSource = outlineManager.Items;
-            FolderTree.ItemsSource = folderTreeManager.Roots;
-            DataObject.AddCopyingHandler(Editor, tableEditor.HandleCopying);
-            DataObject.AddPastingHandler(Editor, tableEditor.HandlePasting);
+            m_outlineList.ItemsSource = m_outlineManager.Items;
+            m_folderTree.ItemsSource = m_folderTreeManager.Roots;
+            DataObject.AddCopyingHandler(m_editor, m_tableEditor.HandleCopying);
+            DataObject.AddPastingHandler(m_editor, m_tableEditor.HandlePasting);
 
             // 起動時引数でMarkDownファイルのパスを受け取っていれば、そちらを開く
             // （ファイルの関連付けからのダブルクリック起動などに対応するため）。
@@ -163,26 +163,26 @@ namespace mde
             if (!string.IsNullOrEmpty(startupFilePath) && File.Exists(startupFilePath))
             {
                 LoadFile(startupFilePath);
-                folderTreeManager.SelectFileNode(startupFilePath);
+                m_folderTreeManager.SelectFileNode(startupFilePath);
             }
 
             ApplyFolderPaneVisibility();
             ApplyOutlinePaneVisibility();
-            SetZoom(zoomLevel);
-            if (savedSettings.IsMaximized) this.WindowState = WindowState.Maximized;
+            SetZoom(m_zoomLevel);
+            if (m_savedSettings.IsMaximized) this.WindowState = WindowState.Maximized;
         }
 
         /// <summary>ウィンドウを閉じようとした時、未保存の変更があれば確認する。</summary>
-        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        private void WindowClosing(object a_sender, System.ComponentModel.CancelEventArgs a_args)
         {
-            if (currentFileIsDirty || pendingFileEdits.Count > 0)
+            if (m_currentFileIsDirtyFlg || m_pendingFileEdits.Count > 0)
             {
                 var result = MessageBox.Show(
                     "保存されていない変更があります。破棄して閉じますか？",
                     "閉じる", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
                 if (result != MessageBoxResult.OK)
                 {
-                    e.Cancel = true;
+                    a_args.Cancel = true;
                 }
             }
         }
@@ -198,8 +198,8 @@ namespace mde
             // 起動時引数は、プロセス全体で共通の情報であり、ウィンドウ単位のものではない。
             // 「新しいウィンドウ」やファイルリンクからの別ウィンドウ起動でも同じ引数が
             // 見えてしまうため、最初の1つのウィンドウでだけ使うようにする。
-            if (!isFirstWindowInstance) return null;
-            isFirstWindowInstance = false;
+            if (!m_isFirstWindowInstanceFlg) return null;
+            m_isFirstWindowInstanceFlg = false;
 
             try
             {
@@ -216,12 +216,12 @@ namespace mde
 
         /// <summary>ウィンドウを閉じる際、このウィンドウ専用の一時画像フォルダを削除し、
         /// 次回起動時に復元するウィンドウ状態を保存する。</summary>
-        protected override void OnClosed(EventArgs e)
+        protected override void OnClosed(EventArgs a_args)
         {
-            base.OnClosed(e);
+            base.OnClosed(a_args);
             try
             {
-                string dir = Path.Combine(Path.GetTempPath(), "mde", instanceTempId);
+                string dir = Path.Combine(Path.GetTempPath(), "mde", m_instanceTempId);
                 if (Directory.Exists(dir)) Directory.Delete(dir, true);
             }
             catch
@@ -229,27 +229,27 @@ namespace mde
                 // 削除できなくても致命的ではない（ベストエフォート）
             }
 
-            bool maximized = this.WindowState == WindowState.Maximized;
-            Rect bounds = maximized ? this.RestoreBounds : new Rect(this.Left, this.Top, this.Width, this.Height);
+            bool maximizedFlg = this.WindowState == WindowState.Maximized;
+            Rect bounds = maximizedFlg ? this.RestoreBounds : new Rect(this.Left, this.Top, this.Width, this.Height);
             // 表示中のペインについては、その時点の実際の幅（スプリッタでドラッグ調整された
             // 最新の値）を保存する。非表示のペインについては、直前に表示していた時の幅を使う。
-            double folderWidthToSave = (folderPaneVisible && FolderColumnDef.Width.Value > 0)
-                ? FolderColumnDef.Width.Value : lastFolderColumnWidth;
-            double outlineWidthToSave = (outlinePaneVisible && OutlineColumnDef.Width.Value > 0)
-                ? OutlineColumnDef.Width.Value : lastOutlineColumnWidth;
+            double folderWidthToSave = (m_folderPaneVisibleFlg && m_folderColumnDef.Width.Value > 0)
+                ? m_folderColumnDef.Width.Value : m_lastFolderColumnWidth;
+            double outlineWidthToSave = (m_outlinePaneVisibleFlg && m_outlineColumnDef.Width.Value > 0)
+                ? m_outlineColumnDef.Width.Value : m_lastOutlineColumnWidth;
 
             var settings = new AppSettings
             {
-                IsMaximized = maximized,
-                WindowWidth = bounds.Width > 0 ? bounds.Width : savedSettings.WindowWidth,
-                WindowHeight = bounds.Height > 0 ? bounds.Height : savedSettings.WindowHeight,
+                IsMaximized = maximizedFlg,
+                WindowWidth = bounds.Width > 0 ? bounds.Width : m_savedSettings.WindowWidth,
+                WindowHeight = bounds.Height > 0 ? bounds.Height : m_savedSettings.WindowHeight,
                 WindowLeft = bounds.X,
                 WindowTop = bounds.Y,
-                FolderPaneVisible = folderPaneVisible,
-                OutlinePaneVisible = outlinePaneVisible,
+                FolderPaneVisible = m_folderPaneVisibleFlg,
+                OutlinePaneVisible = m_outlinePaneVisibleFlg,
                 FolderPaneWidth = folderWidthToSave,
                 OutlinePaneWidth = outlineWidthToSave,
-                ZoomLevel = zoomLevel
+                ZoomLevel = m_zoomLevel
             };
             settings.Save();
         }
@@ -260,40 +260,40 @@ namespace mde
 
         /// <summary>渡された処理を「プログラムによる変更」として実行する。実行中は
         /// Editor_TextChangedの自動変換ロジック（*や#での自動変換など）が働かない。</summary>
-        /// <param name="action">実行する処理。</param>
-        private void RunAsProgrammaticChange(Action action)
+        /// <param name="a_action">実行する処理。</param>
+        private void RunAsProgrammaticChange(Action a_action)
         {
-            isProgrammaticChange = true;
-            try { action(); }
-            finally { isProgrammaticChange = false; }
+            m_isProgrammaticChangeFlg = true;
+            try { a_action(); }
+            finally { m_isProgrammaticChangeFlg = false; }
         }
 
         /// <summary>渡された処理を「ハイライトの適用/解除のみ」として実行する。実行中は
         /// Editor_TextChangedがダーティ扱い・アウトライン再構築・元テキスト保持の破棄を
         /// 行わないようにする（検索結果の背景色変更は実際の編集ではないため）。</summary>
-        /// <param name="action">実行する処理。</param>
-        private void RunWithoutDirtyMarking(Action action)
+        /// <param name="a_action">実行する処理。</param>
+        private void RunWithoutDirtyMarking(Action a_action)
         {
-            isApplyingHighlight = true;
-            try { action(); }
-            finally { isApplyingHighlight = false; }
+            m_isApplyingHighlightFlg = true;
+            try { a_action(); }
+            finally { m_isApplyingHighlightFlg = false; }
         }
 
         /// <summary>現在のファイルに未保存の変更があることを記録し、フォルダツリーの表示も
         /// 更新する。</summary>
         private void MarkDirty()
         {
-            currentFileIsDirty = true;
-            folderTreeManager.RefreshDirtyMarkers();
+            m_currentFileIsDirtyFlg = true;
+            m_folderTreeManager.RefreshDirtyMarkers();
         }
 
         /// <summary>2つのパスが同一ファイルを指しているかどうかを調べる（大文字小文字を
         /// 区別せず、完全パスで比較する）。</summary>
-        private bool PathsReferToSameFile(string a, string b)
+        private bool PathsReferToSameFile(string a_a, string a_b)
         {
             try
             {
-                return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+                return string.Equals(Path.GetFullPath(a_a), Path.GetFullPath(a_b), StringComparison.OrdinalIgnoreCase);
             }
             catch
             {
@@ -303,20 +303,20 @@ namespace mde
 
         /// <summary>コードブロックへの貼り付け時に使う、改行を保ったプレーンテキスト挿入。
         /// TableEditorの貼り付け処理から呼ばれる。</summary>
-        private void InsertPlainTextWithLineBreaksForCodeBlock(string text)
+        private void InsertPlainTextWithLineBreaksForCodeBlock(string a_text)
         {
-            originalTextTracker.Invalidate(Editor.CaretPosition);
-            var lines = text.Replace("\r\n", "\n").Split('\n');
+            m_originalTextTracker.Invalidate(m_editor.CaretPosition);
+            var lines = a_text.Replace("\r\n", "\n").Split('\n');
             RunAsProgrammaticChange(() =>
             {
-                Editor.Selection.Text = lines[0];
-                Editor.CaretPosition = Editor.Selection.End;
+                m_editor.Selection.Text = lines[0];
+                m_editor.CaretPosition = m_editor.Selection.End;
                 for (int i = 1; i < lines.Length; i++)
                 {
-                    Editor.CaretPosition = Editor.CaretPosition.InsertLineBreak();
-                    Editor.Selection.Select(Editor.CaretPosition, Editor.CaretPosition);
-                    Editor.Selection.Text = lines[i];
-                    Editor.CaretPosition = Editor.Selection.End;
+                    m_editor.CaretPosition = m_editor.CaretPosition.InsertLineBreak();
+                    m_editor.Selection.Select(m_editor.CaretPosition, m_editor.CaretPosition);
+                    m_editor.Selection.Text = lines[i];
+                    m_editor.CaretPosition = m_editor.Selection.End;
                 }
             });
         }
@@ -325,16 +325,16 @@ namespace mde
         /// フォルダペインに表示されていない範囲のファイルへのリンクをクリックした際、現在の
         /// ウィンドウの文書を置き換えるのではなく、新しいウィンドウでそのファイルを開く。
         /// </summary>
-        /// <param name="path">開くファイルの絶対パス。</param>
-        /// <param name="anchor">開いたあとにジャンプする見出し/アンカーのテキスト（無ければnull）。</param>
-        private void OpenFileInNewWindow(string path, string anchor)
+        /// <param name="a_path">開くファイルの絶対パス。</param>
+        /// <param name="a_anchor">開いたあとにジャンプする見出し/アンカーのテキスト（無ければnull）。</param>
+        private void OpenFileInNewWindow(string a_path, string a_anchor)
         {
             var newWindow = new MainWindow();
             newWindow.Show();
-            newWindow.LoadFile(path);
-            if (!string.IsNullOrEmpty(anchor))
+            newWindow.LoadFile(a_path);
+            if (!string.IsNullOrEmpty(a_anchor))
             {
-                newWindow.inlineStyleEditor.JumpToAnchor(anchor);
+                newWindow.m_inlineStyleEditor.JumpToAnchor(a_anchor);
             }
         }
 
@@ -343,42 +343,42 @@ namespace mde
         /// 保留中の編集があればそれ、どちらでもなければ null（呼び出し側がディスクから
         /// 読み込む）。
         /// </summary>
-        private string GetCurrentContentForFile(string path)
+        private string GetCurrentContentForFile(string a_path)
         {
-            if (!string.IsNullOrEmpty(currentFilePath) && PathsReferToSameFile(path, currentFilePath))
-                return isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
+            if (!string.IsNullOrEmpty(m_currentFilePath) && PathsReferToSameFile(a_path, m_currentFilePath))
+                return m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
 
-            foreach (var kv in pendingFileEdits)
-                if (PathsReferToSameFile(kv.Key, path)) return kv.Value;
+            foreach (var kv in m_pendingFileEdits)
+                if (PathsReferToSameFile(kv.Key, a_path)) return kv.Value;
 
             return null;
         }
 
         /// <summary>検索・置換の結果をファイルへ反映する：現在開いているファイルならライブな
         /// エディタへ直接、そうでなければ保留中の編集として記憶する。</summary>
-        private void SetFileContentForReplaceImpl(string path, string newContent)
+        private void SetFileContentForReplaceImpl(string a_path, string a_newContent)
         {
-            if (!string.IsNullOrEmpty(currentFilePath) && PathsReferToSameFile(path, currentFilePath))
+            if (!string.IsNullOrEmpty(m_currentFilePath) && PathsReferToSameFile(a_path, m_currentFilePath))
             {
-                if (isSourceMode)
+                if (m_isSourceModeFlg)
                 {
-                    SourceEditor.Text = newContent;
+                    m_sourceEditor.Text = a_newContent;
                 }
                 else
                 {
-                    RunAsProgrammaticChange(() => markdownConverter.MarkdownToDocument(newContent, Editor.Document));
-                    outlineManager.Refresh();
+                    RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(a_newContent, m_editor.Document));
+                    m_outlineManager.Refresh();
                 }
             }
             else
             {
-                pendingFileEdits[path] = newContent;
-                folderTreeManager.RefreshDirtyMarkers();
+                m_pendingFileEdits[a_path] = a_newContent;
+                m_folderTreeManager.RefreshDirtyMarkers();
             }
         }
 
         // ======================================================================
-        //  入力中の自動変換の起点（Editor_TextChanged）
+        //  入力中の自動変換の起点（EditorTextChanged）
         // ======================================================================
 
         /// <summary>
@@ -387,33 +387,33 @@ namespace mde
         /// （プログラムによる変更でなければ）、インライン装飾・箇条書き/見出しへの自動変換の
         /// トリガーもチェックする。
         /// </summary>
-        private void Editor_TextChanged(object sender, TextChangedEventArgs e)
+        private void EditorTextChanged(object a_sender, TextChangedEventArgs a_args)
         {
             // RichTextBoxはInitializeComponent中に、既定の空文書を設定する際にTextChangedを
             // 発生させることがある。その時点ではコンストラクタでの各クラスの構築がまだ
             // 完了していない可能性があるため、念のためガードしておく。
-            if (outlineManager == null || folderTreeManager == null || originalTextTracker == null) return;
+            if (m_outlineManager == null || m_folderTreeManager == null || m_originalTextTracker == null) return;
 
-            if (isSourceMode) return;
+            if (m_isSourceModeFlg) return;
 
             // 検索結果のハイライト（背景色）の適用/解除も、WPFの仕様上TextChangedを発生させて
             // しまうが、これは実際の編集ではないため、ダーティ扱いにしたり元テキスト保持の
             // 記憶を破棄したりしてはいけない。
-            if (isApplyingHighlight) return;
+            if (m_isApplyingHighlightFlg) return;
 
-            outlineManager.Refresh();
+            m_outlineManager.Refresh();
 
-            currentFileIsDirty = true;
-            folderTreeManager.RefreshDirtyMarkers();
-            originalTextTracker.Invalidate(Editor.CaretPosition);
+            m_currentFileIsDirtyFlg = true;
+            m_folderTreeManager.RefreshDirtyMarkers();
+            m_originalTextTracker.Invalidate(m_editor.CaretPosition);
 
-            if (isProgrammaticChange) return;
+            if (m_isProgrammaticChangeFlg) return;
 
-            var para = Editor.CaretPosition?.Paragraph;
+            var para = m_editor.CaretPosition?.Paragraph;
             if (para == null) return;
             if (para.Tag is CodeBlockInfo) return; // コードブロック内は自動整形しない
 
-            if (inlineStyleEditor.CheckInlineFormatTrigger()) return;
+            if (m_inlineStyleEditor.CheckInlineFormatTrigger()) return;
 
             if (!(para.Parent is FlowDocument)) return; // 箇条書き/見出しへの自動変換はトップレベル段落のみ
 
@@ -423,19 +423,19 @@ namespace mde
             var bulletMatch = Regex.Match(text, "^([*-])[ \u00A0]$");
             if (bulletMatch.Success)
             {
-                listEditor.ConvertParagraphToListItem(para, bulletMatch.Groups[1].Value, false);
+                m_listEditor.ConvertParagraphToListItem(para, bulletMatch.Groups[1].Value, false);
                 return;
             }
             var orderedMatch = Regex.Match(text, "^\\d+\\.[ \u00A0]$");
             if (orderedMatch.Success)
             {
-                listEditor.ConvertParagraphToListItem(para, null, true);
+                m_listEditor.ConvertParagraphToListItem(para, null, true);
                 return;
             }
             var m = Regex.Match(text, "^(#{1,6})[ \u00A0]$");
             if (m.Success)
             {
-                headingCodeBlockEditor.ConvertParagraphToHeading(para, m.Groups[1].Value.Length);
+                m_headingCodeBlockEditor.ConvertParagraphToHeading(para, m.Groups[1].Value.Length);
             }
         }
 
@@ -451,67 +451,67 @@ namespace mde
         /// <summary>
         /// 箇条書き/順序付きリストへの変換の入口（スペースキー）。印字可能な文字（スペースを含む）は
         /// WPFではPreviewKeyDownではなくPreviewTextInputを通じて挿入されるため、PreviewKeyDownで
-        /// e.Handled=trueを設定するだけでは確実に文字の挿入を防げない。このイベントで直接
+        /// a_args.Handled=trueを設定するだけでは確実に文字の挿入を防げない。このイベントで直接
         /// 判定・処理することで、変換後に元のスペース文字が余分に残ってしまう不具合を防ぐ。
         /// </summary>
-        private void Editor_PreviewTextInput(object sender, TextCompositionEventArgs e)
+        private void EditorPreviewTextInput(object a_sender, TextCompositionEventArgs a_args)
         {
-            if (isSourceMode || e.Text != " ") return;
+            if (m_isSourceModeFlg || a_args.Text != " ") return;
 
-            var para = Editor.CaretPosition?.Paragraph;
+            var para = m_editor.CaretPosition?.Paragraph;
             if (para == null || !(para.Parent is FlowDocument) || para.Tag is CodeBlockInfo) return;
-            if (Editor.CaretPosition.CompareTo(para.ContentEnd) != 0) return;
+            if (m_editor.CaretPosition.CompareTo(para.ContentEnd) != 0) return;
 
             string beforeSpace = new TextRange(para.ContentStart, para.ContentEnd).Text.TrimEnd('\r', '\n');
 
             var bulletKeyMatch = Regex.Match(beforeSpace, "^([*-])$");
             if (bulletKeyMatch.Success)
             {
-                e.Handled = true;
-                listEditor.ConvertParagraphToListItem(para, bulletKeyMatch.Groups[1].Value, false);
+                a_args.Handled = true;
+                m_listEditor.ConvertParagraphToListItem(para, bulletKeyMatch.Groups[1].Value, false);
                 return;
             }
             var orderedKeyMatch = Regex.Match(beforeSpace, "^\\d+\\.$");
             if (orderedKeyMatch.Success)
             {
-                e.Handled = true;
-                listEditor.ConvertParagraphToListItem(para, null, true);
+                a_args.Handled = true;
+                m_listEditor.ConvertParagraphToListItem(para, null, true);
             }
         }
 
-        private void Editor_PreviewKeyDown(object sender, KeyEventArgs e)
+        private void EditorPreviewKeyDown(object a_sender, KeyEventArgs a_args)
         {
-            if (isSourceMode) return;
-            var para = Editor.CaretPosition?.Paragraph;
+            if (m_isSourceModeFlg) return;
+            var para = m_editor.CaretPosition?.Paragraph;
             if (para == null) return;
 
-            if (e.Key == Key.Enter)
+            if (a_args.Key == Key.Enter)
             {
-                if (listEditor.IsInListItem(para, out ListItem li, out List parentList))
+                if (m_listEditor.IsInListItem(para, out ListItem li, out List parentList))
                 {
-                    e.Handled = true;
+                    a_args.Handled = true;
                     if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
-                        headingCodeBlockEditor.InsertLineBreakAtCaret();
+                        m_headingCodeBlockEditor.InsertLineBreakAtCaret();
                     else
-                        listEditor.HandleListEnter(li, parentList);
+                        m_listEditor.HandleListEnter(li, parentList);
                     return;
                 }
                 if (para.Tag is int level && level > 0)
                 {
-                    e.Handled = true;
-                    headingCodeBlockEditor.HandleHeadingEnter(para);
+                    a_args.Handled = true;
+                    m_headingCodeBlockEditor.HandleHeadingEnter(para);
                     return;
                 }
                 if (para.Tag is CodeBlockInfo)
                 {
-                    e.Handled = true;
-                    headingCodeBlockEditor.InsertLineBreakAtCaret();
+                    a_args.Handled = true;
+                    m_headingCodeBlockEditor.InsertLineBreakAtCaret();
                     return;
                 }
                 if (para.Parent is TableCell)
                 {
-                    e.Handled = true;
-                    headingCodeBlockEditor.InsertLineBreakAtCaret();
+                    a_args.Handled = true;
+                    m_headingCodeBlockEditor.InsertLineBreakAtCaret();
                     return;
                 }
                 if (para.Parent is FlowDocument)
@@ -520,56 +520,56 @@ namespace mde
                     var fenceMatch = Regex.Match(plainText, "^```(\\S*)$");
                     if (fenceMatch.Success)
                     {
-                        e.Handled = true;
-                        headingCodeBlockEditor.ConvertParagraphToCodeBlock(para, fenceMatch.Groups[1].Value);
+                        a_args.Handled = true;
+                        m_headingCodeBlockEditor.ConvertParagraphToCodeBlock(para, fenceMatch.Groups[1].Value);
                         return;
                     }
                 }
                 return; // 通常の段落: WPF標準の動作（新しい段落の作成）に任せる
             }
 
-            if (e.Key == Key.Tab && listEditor.IsInListItem(para, out ListItem tabLi, out List tabList))
+            if (a_args.Key == Key.Tab && m_listEditor.IsInListItem(para, out ListItem tabLi, out List tabList))
             {
-                e.Handled = true;
+                a_args.Handled = true;
                 if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
-                    listEditor.OutdentListItem(tabLi, tabList);
+                    m_listEditor.OutdentListItem(tabLi, tabList);
                 else
-                    listEditor.IndentListItem(tabLi, tabList);
+                    m_listEditor.IndentListItem(tabLi, tabList);
                 return;
             }
 
-            if (e.Key == Key.Tab && para.Tag is CodeBlockInfo)
+            if (a_args.Key == Key.Tab && para.Tag is CodeBlockInfo)
             {
-                e.Handled = true;
+                a_args.Handled = true;
                 if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
                 {
-                    headingCodeBlockEditor.OutdentCodeLine(para);
+                    m_headingCodeBlockEditor.OutdentCodeLine(para);
                 }
                 else
                 {
-                    Editor.Selection.Text = "\t";
-                    Editor.CaretPosition = Editor.Selection.End;
-                    Editor.Selection.Select(Editor.CaretPosition, Editor.CaretPosition);
+                    m_editor.Selection.Text = "\t";
+                    m_editor.CaretPosition = m_editor.Selection.End;
+                    m_editor.Selection.Select(m_editor.CaretPosition, m_editor.CaretPosition);
                 }
                 return;
             }
 
             if (para.Parent is TableCell cell)
             {
-                if (e.Key == Key.Up || e.Key == Key.Down)
+                if (a_args.Key == Key.Up || a_args.Key == Key.Down)
                 {
-                    e.Handled = true;
-                    tableEditor.MoveVertical(cell, e.Key == Key.Up ? -1 : 1);
+                    a_args.Handled = true;
+                    m_tableEditor.MoveVertical(cell, a_args.Key == Key.Up ? -1 : 1);
                 }
-                else if (e.Key == Key.Left && tableEditor.IsCaretAtStart(cell))
+                else if (a_args.Key == Key.Left && m_tableEditor.IsCaretAtStart(cell))
                 {
-                    e.Handled = true;
-                    tableEditor.MoveHorizontal(cell, -1);
+                    a_args.Handled = true;
+                    m_tableEditor.MoveHorizontal(cell, -1);
                 }
-                else if (e.Key == Key.Right && tableEditor.IsCaretAtEnd(cell))
+                else if (a_args.Key == Key.Right && m_tableEditor.IsCaretAtEnd(cell))
                 {
-                    e.Handled = true;
-                    tableEditor.MoveHorizontal(cell, 1);
+                    a_args.Handled = true;
+                    m_tableEditor.MoveHorizontal(cell, 1);
                 }
             }
         }
@@ -584,111 +584,111 @@ namespace mde
         /// （TableEditor.ContextCellなど）へ格納し、以後のメニュー項目クリックから
         /// 参照できるようにする。
         /// </summary>
-        private void Editor_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+        private void EditorContextMenuOpening(object a_sender, ContextMenuEventArgs a_args)
         {
-            if (isSourceMode) { e.Handled = true; return; }
+            if (m_isSourceModeFlg) { a_args.Handled = true; return; }
 
-            Point pos = Mouse.GetPosition(Editor);
-            TextPointer tp = Editor.GetPositionFromPoint(pos, true);
-            ctxParagraph = tp?.Paragraph;
-            tableEditor.ContextCell = ctxParagraph?.Parent as TableCell;
-            tableEditor.ContextParagraph = ctxParagraph;
-            inlineStyleEditor.ContextParagraph = ctxParagraph;
+            Point pos = Mouse.GetPosition(m_editor);
+            TextPointer tp = m_editor.GetPositionFromPoint(pos, true);
+            m_ctxParagraph = tp?.Paragraph;
+            m_tableEditor.ContextCell = m_ctxParagraph?.Parent as TableCell;
+            m_tableEditor.ContextParagraph = m_ctxParagraph;
+            m_inlineStyleEditor.ContextParagraph = m_ctxParagraph;
 
-            var hit = VisualTreeHelper.HitTest(Editor, pos);
-            imageManager.ContextImage = FindVisualAncestorOrSelf<Image>(hit?.VisualHit);
+            var hit = VisualTreeHelper.HitTest(m_editor, pos);
+            m_imageManager.ContextImage = FindVisualAncestorOrSelf<Image>(hit?.VisualHit);
 
             var linkRun = tp?.Parent as Run;
-            inlineStyleEditor.ContextLinkRun = linkRun?.Tag is LinkInfo ? linkRun : null;
+            m_inlineStyleEditor.ContextLinkRun = linkRun?.Tag is LinkInfo ? linkRun : null;
 
-            bool inTable = tableEditor.ContextCell != null;
-            bool inCodeBlock = ctxParagraph?.Tag is CodeBlockInfo;
-            HeadingMenuItem.Visibility = inTable ? Visibility.Collapsed : Visibility.Visible;
-            InsertTableMenuItem.Visibility = inTable ? Visibility.Collapsed : Visibility.Visible;
-            InsertRowAboveMenuItem.Visibility = inTable ? Visibility.Visible : Visibility.Collapsed;
-            InsertRowBelowMenuItem.Visibility = inTable ? Visibility.Visible : Visibility.Collapsed;
-            InsertColumnLeftMenuItem.Visibility = inTable ? Visibility.Visible : Visibility.Collapsed;
-            InsertColumnRightMenuItem.Visibility = inTable ? Visibility.Visible : Visibility.Collapsed;
-            DeleteRowMenuItem.Visibility = inTable ? Visibility.Visible : Visibility.Collapsed;
-            DeleteColumnMenuItem.Visibility = inTable ? Visibility.Visible : Visibility.Collapsed;
-            CopyCodeBlockMenuItem.Visibility = inCodeBlock ? Visibility.Visible : Visibility.Collapsed;
-            SaveImageMenuItem.Visibility = imageManager.ContextImage != null ? Visibility.Visible : Visibility.Collapsed;
-            TextStyleMenuItem.Visibility = (!Editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
-            LinkMenuItem.Visibility = inlineStyleEditor.ContextLinkRun != null ? Visibility.Visible : Visibility.Collapsed;
-            ToggleModeMenuItem.Header = isSourceMode ? "MarkDownモードに切り替え" : "ソースモードに切り替え";
+            bool inTableFlg = m_tableEditor.ContextCell != null;
+            bool inCodeBlockFlg = m_ctxParagraph?.Tag is CodeBlockInfo;
+            m_headingMenuItem.Visibility = inTableFlg ? Visibility.Collapsed : Visibility.Visible;
+            m_insertTableMenuItem.Visibility = inTableFlg ? Visibility.Collapsed : Visibility.Visible;
+            m_insertRowAboveMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_insertRowBelowMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_insertColumnLeftMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_insertColumnRightMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_deleteRowMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_deleteColumnMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_copyCodeBlockMenuItem.Visibility = inCodeBlockFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_saveImageMenuItem.Visibility = m_imageManager.ContextImage != null ? Visibility.Visible : Visibility.Collapsed;
+            m_textStyleMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
+            m_linkMenuItem.Visibility = m_inlineStyleEditor.ContextLinkRun != null ? Visibility.Visible : Visibility.Collapsed;
+            m_toggleModeMenuItem.Header = m_isSourceModeFlg ? "MarkDownモードに切り替え" : "ソースモードに切り替え";
         }
 
         /// <summary>ソースモードの右クリックメニュー。カット/コピー/貼り付けのみで、独自の
         /// 項目は追加しない。</summary>
-        private void SourceEditor_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+        private void SourceEditorContextMenuOpening(object a_sender, ContextMenuEventArgs a_args)
         {
         }
 
         // ---- 見出し ----
 
         /// <summary>右クリックメニューから見出しレベルを変更する。</summary>
-        private void HeadingItem_Click(object sender, RoutedEventArgs e)
+        private void HeadingItemClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (ctxParagraph == null) return;
-            int level = int.Parse((string)((MenuItem)sender).Tag);
-            headingCodeBlockEditor.ChangeHeadingLevel(ctxParagraph, level);
-            outlineManager.Refresh();
+            if (m_ctxParagraph == null) return;
+            int level = int.Parse((string)((MenuItem)a_sender).Tag);
+            m_headingCodeBlockEditor.ChangeHeadingLevel(m_ctxParagraph, level);
+            m_outlineManager.Refresh();
             MarkDirty();
         }
 
         // ---- 表 ----
 
-        private void InsertTableItem_Click(object sender, RoutedEventArgs e)
+        private void InsertTableItemClick(object a_sender, RoutedEventArgs a_args)
         {
-            tableEditor.ContextParagraph = ctxParagraph;
+            m_tableEditor.ContextParagraph = m_ctxParagraph;
             var dlg = new TableSizeDialog { Owner = this };
             if (dlg.ShowDialog() == true)
             {
-                tableEditor.InsertTable(dlg.Rows, dlg.Columns);
+                m_tableEditor.InsertTable(dlg.Rows, dlg.Columns);
             }
         }
 
-        private void InsertRowAboveItem_Click(object sender, RoutedEventArgs e) => tableEditor.InsertRow(above: true);
-        private void InsertRowBelowItem_Click(object sender, RoutedEventArgs e) => tableEditor.InsertRow(above: false);
-        private void InsertColumnLeftItem_Click(object sender, RoutedEventArgs e) => tableEditor.InsertColumn(left: true);
-        private void InsertColumnRightItem_Click(object sender, RoutedEventArgs e) => tableEditor.InsertColumn(left: false);
-        private void DeleteRowItem_Click(object sender, RoutedEventArgs e) => tableEditor.DeleteRow();
-        private void DeleteColumnItem_Click(object sender, RoutedEventArgs e) => tableEditor.DeleteColumn();
+        private void InsertRowAboveItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.InsertRow(a_aboveFlg: true);
+        private void InsertRowBelowItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.InsertRow(a_aboveFlg: false);
+        private void InsertColumnLeftItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.InsertColumn(a_leftFlg: true);
+        private void InsertColumnRightItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.InsertColumn(a_leftFlg: false);
+        private void DeleteRowItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteRow();
+        private void DeleteColumnItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteColumn();
 
         // ---- 画像 ----
 
-        private void SaveImageItem_Click(object sender, RoutedEventArgs e) => imageManager.SaveImageAs(this);
+        private void SaveImageItemClick(object a_sender, RoutedEventArgs a_args) => m_imageManager.SaveImageAs(this);
 
         // ---- コードブロック ----
 
-        private void CopyCodeBlockItem_Click(object sender, RoutedEventArgs e) => inlineStyleEditor.CopyCodeBlockAsMarkdown();
+        private void CopyCodeBlockItemClick(object a_sender, RoutedEventArgs a_args) => m_inlineStyleEditor.CopyCodeBlockAsMarkdown();
 
         // ---- 文字装飾・リンク ----
 
-        private void TextStyleItem_Click(object sender, RoutedEventArgs e)
+        private void TextStyleItemClick(object a_sender, RoutedEventArgs a_args)
         {
-            string style = (string)((MenuItem)sender).Tag;
-            inlineStyleEditor.ApplyTextStyleFromMenu(style, this);
+            string style = (string)((MenuItem)a_sender).Tag;
+            m_inlineStyleEditor.ApplyTextStyleFromMenu(style, this);
         }
 
-        private void LinkOpen_Click(object sender, RoutedEventArgs e) => inlineStyleEditor.OpenContextLink();
-        private void LinkCopyUrl_Click(object sender, RoutedEventArgs e) => inlineStyleEditor.CopyContextLinkUrl();
-        private void LinkEdit_Click(object sender, RoutedEventArgs e) => inlineStyleEditor.EditContextLink(this);
-        private void LinkRemove_Click(object sender, RoutedEventArgs e) => inlineStyleEditor.RemoveContextLink();
+        private void LinkOpenClick(object a_sender, RoutedEventArgs a_args) => m_inlineStyleEditor.OpenContextLink();
+        private void LinkCopyUrlClick(object a_sender, RoutedEventArgs a_args) => m_inlineStyleEditor.CopyContextLinkUrl();
+        private void LinkEditClick(object a_sender, RoutedEventArgs a_args) => m_inlineStyleEditor.EditContextLink(this);
+        private void LinkRemoveClick(object a_sender, RoutedEventArgs a_args) => m_inlineStyleEditor.RemoveContextLink();
 
-        private void Editor_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) =>
-            inlineStyleEditor.HandlePreviewMouseLeftButtonDown(sender, e);
+        private void EditorPreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args) =>
+            m_inlineStyleEditor.HandlePreviewMouseLeftButtonDown(a_sender, a_args);
 
         // ======================================================================
         //  視覚ツリーのヘルパー（Editor_ContextMenuOpeningでのみ使用）
         // ======================================================================
 
         /// <summary>指定した型の、最も近い視覚ツリーの祖先（またはその要素自身）を見つける。</summary>
-        /// <param name="start">探索を始める要素。</param>
+        /// <param name="a_start">探索を始める要素。</param>
         /// <returns>見つかった要素。なければ null。</returns>
-        private static T FindVisualAncestorOrSelf<T>(DependencyObject start) where T : DependencyObject
+        private static T FindVisualAncestorOrSelf<T>(DependencyObject a_start) where T : DependencyObject
         {
-            var current = start;
+            var current = a_start;
             while (current != null)
             {
                 if (current is T match) return match;
@@ -702,34 +702,34 @@ namespace mde
         // ======================================================================
 
         /// <summary>MarkDownモード（WYSIWYG）とソースモード（生テキスト）を切り替える。</summary>
-        private void ToggleModeBtn_Click(object sender, RoutedEventArgs e)
+        private void ToggleModeBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            bool wasDirty = currentFileIsDirty;
+            bool wasDirtyFlg = m_currentFileIsDirtyFlg;
 
-            if (!isSourceMode)
+            if (!m_isSourceModeFlg)
             {
-                SourceEditor.Text = markdownConverter.DocumentToMarkdown(Editor.Document);
-                Editor.Visibility = Visibility.Collapsed;
-                SourceEditor.Visibility = Visibility.Visible;
-                isSourceMode = true;
-                ModeIndicator.Text = "ソースモード";
-                SourceEditor.Focus();
+                m_sourceEditor.Text = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+                m_editor.Visibility = Visibility.Collapsed;
+                m_sourceEditor.Visibility = Visibility.Visible;
+                m_isSourceModeFlg = true;
+                m_modeIndicator.Text = "ソースモード";
+                m_sourceEditor.Focus();
             }
             else
             {
-                RunAsProgrammaticChange(() => markdownConverter.MarkdownToDocument(SourceEditor.Text, Editor.Document));
-                SourceEditor.Visibility = Visibility.Collapsed;
-                Editor.Visibility = Visibility.Visible;
-                isSourceMode = false;
-                ModeIndicator.Text = "MarkDownモード";
-                outlineManager.Refresh();
-                Editor.Focus();
+                RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(m_sourceEditor.Text, m_editor.Document));
+                m_sourceEditor.Visibility = Visibility.Collapsed;
+                m_editor.Visibility = Visibility.Visible;
+                m_isSourceModeFlg = false;
+                m_modeIndicator.Text = "MarkDownモード";
+                m_outlineManager.Refresh();
+                m_editor.Focus();
             }
 
             // 表示モードの切り替えは、同じ内容を表示し直しているだけなので、それ自体で
             // ファイルが「未保存」扱いになってしまってはいけない。
-            currentFileIsDirty = wasDirty;
-            folderTreeManager.RefreshDirtyMarkers();
+            m_currentFileIsDirtyFlg = wasDirtyFlg;
+            m_folderTreeManager.RefreshDirtyMarkers();
         }
 
         // ======================================================================
@@ -741,12 +741,12 @@ namespace mde
         /// ダイアログなしで新規作成する（あとでフォルダビューから開き直して保存できるため）。
         /// フォルダビューに表示されていないファイル（またはそもそも未保存の新規文書）の場合は、
         /// 内容が失われる可能性があるため従来通り確認する。</summary>
-        private void NewBtn_Click(object sender, RoutedEventArgs e)
+        private void NewBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            bool currentFileInFolderView = !string.IsNullOrEmpty(currentFileDirectory) &&
-                folderTreeManager.IsWithinLoadedFolder(currentFileDirectory);
+            bool currentFileInFolderViewFlg = !string.IsNullOrEmpty(m_currentFileDirectory) &&
+                m_folderTreeManager.IsWithinLoadedFolder(m_currentFileDirectory);
 
-            if (!currentFileInFolderView && (currentFileIsDirty || pendingFileEdits.Count > 0))
+            if (!currentFileInFolderViewFlg && (m_currentFileIsDirtyFlg || m_pendingFileEdits.Count > 0))
             {
                 var result = MessageBox.Show(
                     "現在の内容を破棄して新規作成します。保存されていない変更は失われますが、よろしいですか？",
@@ -754,7 +754,7 @@ namespace mde
                 if (result != MessageBoxResult.OK) return;
             }
 
-            if (currentFileInFolderView)
+            if (currentFileInFolderViewFlg)
             {
                 SnapshotCurrentFileIfDirty();
                 StartNewDocumentKeepingPendingEdits();
@@ -763,24 +763,24 @@ namespace mde
             {
                 DiscardCurrentDocumentSilently();
             }
-            Editor.Focus();
+            m_editor.Focus();
         }
 
         /// <summary>新しいウィンドウを開く（現在のウィンドウの内容には触れない）。</summary>
-        private void NewWindow_Click(object sender, RoutedEventArgs e)
+        private void NewWindowClick(object a_sender, RoutedEventArgs a_args)
         {
             var newWindow = new MainWindow();
             newWindow.Show();
         }
 
         /// <summary>このウィンドウを閉じる（未保存の変更があればWindow_Closingで確認される）。</summary>
-        private void CloseBtn_Click(object sender, RoutedEventArgs e)
+        private void CloseBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             Close();
         }
 
         /// <summary>ファイルを開くダイアログを表示し、選択されたファイルを読み込む。</summary>
-        private void OpenBtn_Click(object sender, RoutedEventArgs e)
+        private void OpenBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             var dlg = new Microsoft.Win32.OpenFileDialog
             {
@@ -797,52 +797,52 @@ namespace mde
         /// （未保存の変更を破棄してディスクの内容に戻すかどうかの確認）と、別のファイルへ
         /// 切り替える場合（まず今のファイルの未保存内容を退避する）の両方に対応する。
         /// </summary>
-        /// <param name="path">開くファイルの絶対パス。</param>
-        private void LoadFile(string path)
+        /// <param name="a_path">開くファイルの絶対パス。</param>
+        private void LoadFile(string a_path)
         {
             // 特殊ケース：すでにアクティブなファイルを再度開こうとした場合。この判定がないと、
             // 下のGetCurrentContentForFileがライブな（編集中の）内容をそのまま返してしまい、
             // 「開く」操作が何もしていないように見えてしまう。
-            if (!string.IsNullOrEmpty(currentFilePath) && PathsReferToSameFile(path, currentFilePath))
+            if (!string.IsNullOrEmpty(m_currentFilePath) && PathsReferToSameFile(a_path, m_currentFilePath))
             {
-                if (!currentFileIsDirty) return; // 読み込み・保存後に編集がなければ何もしない
+                if (!m_currentFileIsDirtyFlg) return; // 読み込み・保存後に編集がなければ何もしない
 
                 var result = MessageBox.Show(
                     "このファイルには保存されていない変更があります。破棄して、保存済みの内容で開き直しますか？",
                     "ファイルを開き直す", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
                 if (result != MessageBoxResult.OK) return;
 
-                pendingFileEdits.Remove(path); // このファイルの保留中の編集も破棄する
+                m_pendingFileEdits.Remove(a_path); // このファイルの保留中の編集も破棄する
 
-                string onDiskContent = SafeReadFile(path);
+                string onDiskContent = SafeReadFile(a_path);
                 if (onDiskContent == null)
                 {
                     MessageBox.Show("ファイルを開けませんでした。", "ファイルを開く", MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
 
-                if (isSourceMode)
+                if (m_isSourceModeFlg)
                 {
-                    SourceEditor.Text = onDiskContent;
+                    m_sourceEditor.Text = onDiskContent;
                 }
                 else
                 {
-                    RunAsProgrammaticChange(() => markdownConverter.MarkdownToDocument(onDiskContent, Editor.Document));
-                    outlineManager.Refresh();
+                    RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(onDiskContent, m_editor.Document));
+                    m_outlineManager.Refresh();
                 }
-                searchReplaceService.OnDocumentReplaced();
+                m_searchReplaceService.OnDocumentReplaced();
 
-                currentFileIsDirty = false;
-                folderTreeManager.RefreshDirtyMarkers();
+                m_currentFileIsDirtyFlg = false;
+                m_folderTreeManager.RefreshDirtyMarkers();
                 return;
             }
 
             SnapshotCurrentFileIfDirty();
 
-            string md = GetCurrentContentForFile(path);
+            string md = GetCurrentContentForFile(a_path);
             if (md == null)
             {
-                md = SafeReadFile(path);
+                md = SafeReadFile(a_path);
                 if (md == null)
                 {
                     MessageBox.Show("ファイルを開けませんでした。", "ファイルを開く",
@@ -851,28 +851,28 @@ namespace mde
                 }
             }
 
-            currentFilePath = path;
-            currentFileDirectory = Path.GetDirectoryName(path);
-            this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(path);
-            pendingFileEdits.Remove(path); // このファイルの内容は、以後エディタ自体が真実の情報源になる
+            m_currentFilePath = a_path;
+            m_currentFileDirectory = Path.GetDirectoryName(a_path);
+            this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(a_path);
+            m_pendingFileEdits.Remove(a_path); // このファイルの内容は、以後エディタ自体が真実の情報源になる
 
-            if (isSourceMode)
+            if (m_isSourceModeFlg)
             {
-                SourceEditor.Text = md;
+                m_sourceEditor.Text = md;
             }
             else
             {
-                RunAsProgrammaticChange(() => markdownConverter.MarkdownToDocument(md, Editor.Document));
-                outlineManager.Refresh();
+                RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
+                m_outlineManager.Refresh();
             }
-            searchReplaceService.OnDocumentReplaced();
+            m_searchReplaceService.OnDocumentReplaced();
 
-            currentFileIsDirty = false;
+            m_currentFileIsDirtyFlg = false;
 
-            if (!string.IsNullOrEmpty(currentFileDirectory) && !folderTreeManager.IsWithinLoadedFolder(currentFileDirectory))
-                folderTreeManager.LoadFolderTree(currentFileDirectory);
+            if (!string.IsNullOrEmpty(m_currentFileDirectory) && !m_folderTreeManager.IsWithinLoadedFolder(m_currentFileDirectory))
+                m_folderTreeManager.LoadFolderTree(m_currentFileDirectory);
             else
-                folderTreeManager.RefreshDirtyMarkers();
+                m_folderTreeManager.RefreshDirtyMarkers();
         }
 
         /// <summary>
@@ -882,17 +882,17 @@ namespace mde
         /// </summary>
         private void SnapshotCurrentFileIfDirty()
         {
-            if (string.IsNullOrEmpty(currentFilePath) || isSourceMode) return;
+            if (string.IsNullOrEmpty(m_currentFilePath) || m_isSourceModeFlg) return;
 
-            if (!currentFileIsDirty)
+            if (!m_currentFileIsDirtyFlg)
             {
-                pendingFileEdits.Remove(currentFilePath);
+                m_pendingFileEdits.Remove(m_currentFilePath);
                 return;
             }
 
             try
             {
-                pendingFileEdits[currentFilePath] = markdownConverter.DocumentToMarkdown(Editor.Document);
+                m_pendingFileEdits[m_currentFilePath] = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
             }
             catch
             {
@@ -901,12 +901,12 @@ namespace mde
         }
 
         /// <summary>ファイルの内容を読み込み、改行コードを検出・記憶する。</summary>
-        private string SafeReadFile(string path)
+        private string SafeReadFile(string a_path)
         {
             try
             {
-                string content = File.ReadAllText(path, Encoding.UTF8);
-                lineEndingTracker.DetectAndRemember(path, content);
+                string content = File.ReadAllText(a_path, Encoding.UTF8);
+                m_lineEndingTracker.DetectAndRemember(a_path, content);
                 return content;
             }
             catch
@@ -916,24 +916,24 @@ namespace mde
         }
 
         /// <summary>現在のファイルを保存する（未保存の新規ファイルなら名前を付けて保存へ）。</summary>
-        private void SaveBtn_Click(object sender, RoutedEventArgs e)
+        private void SaveBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (string.IsNullOrEmpty(currentFilePath))
+            if (string.IsNullOrEmpty(m_currentFilePath))
             {
                 SaveAs();
                 return;
             }
-            if (!isSourceMode) imageManager.RelocatePendingTempImages(Editor.Document);
-            string md = isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
-            File.WriteAllText(currentFilePath, lineEndingTracker.Apply(md, lineEndingTracker.GetFor(currentFilePath)), new UTF8Encoding(false));
-            currentFileIsDirty = false;
-            folderTreeManager.AddFileNodeIfMissing(currentFilePath);
-            folderTreeManager.RefreshDirtyMarkers();
-            folderTreeManager.SelectFileNode(currentFilePath);
+            if (!m_isSourceModeFlg) m_imageManager.RelocatePendingTempImages(m_editor.Document);
+            string md = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+            File.WriteAllText(m_currentFilePath, m_lineEndingTracker.Apply(md, m_lineEndingTracker.GetFor(m_currentFilePath)), new UTF8Encoding(false));
+            m_currentFileIsDirtyFlg = false;
+            m_folderTreeManager.AddFileNodeIfMissing(m_currentFilePath);
+            m_folderTreeManager.RefreshDirtyMarkers();
+            m_folderTreeManager.SelectFileNode(m_currentFilePath);
         }
 
         /// <summary>「名前を付けて保存」ダイアログを開く。</summary>
-        private void SaveAsBtn_Click(object sender, RoutedEventArgs e)
+        private void SaveAsBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             SaveAs();
         }
@@ -945,11 +945,11 @@ namespace mde
             var dlg = new Microsoft.Win32.SaveFileDialog
             {
                 Filter = "Markdownファイル (*.md)|*.md|すべてのファイル (*.*)|*.*",
-                FileName = currentFilePath != null ? Path.GetFileName(currentFilePath) : "document.md"
+                FileName = m_currentFilePath != null ? Path.GetFileName(m_currentFilePath) : "document.md"
             };
             // 現在の文書自体には保存先フォルダがまだ無くても（新規作成直後など）、フォルダビューに
             // 何かフォルダが表示されていれば、そちらを初期フォルダとして使う。
-            string initialDirectory = currentFileDirectory ?? folderTreeManager.LoadedFolderRootPath;
+            string initialDirectory = m_currentFileDirectory ?? m_folderTreeManager.LoadedFolderRootPath;
             if (!string.IsNullOrEmpty(initialDirectory)) dlg.InitialDirectory = initialDirectory;
 
             if (dlg.ShowDialog() != true) return;
@@ -959,50 +959,50 @@ namespace mde
 
             // 「名前を付けて保存」は、保存元ファイルの改行コードスタイルを引き継ぐ
             // （名前や場所が変わっただけで、その設定を失わせないため）。
-            string lineEnding = !string.IsNullOrEmpty(currentFilePath) ? lineEndingTracker.GetFor(currentFilePath) : "\r\n";
-            lineEndingTracker.SetFor(newFilePath, lineEnding);
+            string lineEnding = !string.IsNullOrEmpty(m_currentFilePath) ? m_lineEndingTracker.GetFor(m_currentFilePath) : "\r\n";
+            m_lineEndingTracker.SetFor(newFilePath, lineEnding);
 
-            bool folderIsLoaded = !string.IsNullOrEmpty(folderTreeManager.LoadedFolderRootPath);
-            bool isWithinCurrentFolder = folderIsLoaded && folderTreeManager.IsWithinLoadedFolder(newFileDirectory);
+            bool folderIsLoadedFlg = !string.IsNullOrEmpty(m_folderTreeManager.LoadedFolderRootPath);
+            bool isWithinCurrentFolderFlg = folderIsLoadedFlg && m_folderTreeManager.IsWithinLoadedFolder(newFileDirectory);
 
-            if (folderIsLoaded && !isWithinCurrentFolder)
+            if (folderIsLoadedFlg && !isWithinCurrentFolderFlg)
             {
                 // 現在表示中のフォルダの外に保存する場合：このウィンドウでの編集内容は
                 // 保存先ファイルへ引き継がれる（新しいウィンドウで開く）ため、このウィンドウ
                 // 自体は表示中のフォルダの表示を維持したまま、その先頭のファイルへ切り替える。
-                string savedDirectoryBackup = currentFileDirectory;
-                currentFileDirectory = newFileDirectory; // 画像パスの解決に一時的に必要
-                if (!isSourceMode) imageManager.RelocatePendingTempImages(Editor.Document);
+                string savedDirectoryBackup = m_currentFileDirectory;
+                m_currentFileDirectory = newFileDirectory; // 画像パスの解決に一時的に必要
+                if (!m_isSourceModeFlg) m_imageManager.RelocatePendingTempImages(m_editor.Document);
 
-                string outsideMd = isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
-                File.WriteAllText(newFilePath, lineEndingTracker.Apply(outsideMd, lineEnding), new UTF8Encoding(false));
+                string outsideMd = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+                File.WriteAllText(newFilePath, m_lineEndingTracker.Apply(outsideMd, lineEnding), new UTF8Encoding(false));
 
                 // 古いパスの情報を破棄する（他のファイルの保留中の編集には触れない）。
-                currentFilePath = null;
-                currentFileDirectory = null;
-                currentFileIsDirty = false;
-                folderTreeManager.OpenFirstFileInLoadedFolder();
+                m_currentFilePath = null;
+                m_currentFileDirectory = null;
+                m_currentFileIsDirtyFlg = false;
+                m_folderTreeManager.OpenFirstFileInLoadedFolder();
 
                 OpenFileInNewWindow(newFilePath, null);
                 return;
             }
 
-            currentFilePath = newFilePath;
-            currentFileDirectory = newFileDirectory;
+            m_currentFilePath = newFilePath;
+            m_currentFileDirectory = newFileDirectory;
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(newFilePath);
 
-            if (!isSourceMode) imageManager.RelocatePendingTempImages(Editor.Document);
+            if (!m_isSourceModeFlg) m_imageManager.RelocatePendingTempImages(m_editor.Document);
 
-            string md = isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
-            File.WriteAllText(newFilePath, lineEndingTracker.Apply(md, lineEnding), new UTF8Encoding(false));
-            currentFileIsDirty = false;
+            string md = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+            File.WriteAllText(newFilePath, m_lineEndingTracker.Apply(md, lineEnding), new UTF8Encoding(false));
+            m_currentFileIsDirtyFlg = false;
 
-            if (!folderIsLoaded)
-                folderTreeManager.LoadFolderTree(currentFileDirectory);
+            if (!folderIsLoadedFlg)
+                m_folderTreeManager.LoadFolderTree(m_currentFileDirectory);
             else
-                folderTreeManager.AddFileNodeIfMissing(newFilePath);
-            folderTreeManager.RefreshDirtyMarkers();
-            folderTreeManager.SelectFileNode(newFilePath);
+                m_folderTreeManager.AddFileNodeIfMissing(newFilePath);
+            m_folderTreeManager.RefreshDirtyMarkers();
+            m_folderTreeManager.SelectFileNode(newFilePath);
         }
 
         /// <summary>
@@ -1010,9 +1010,9 @@ namespace mde
         /// PDF」仮想プリンタへ印刷する形で実現している（印刷ダイアログでこのプリンタを選ぶと、
         /// 保存先を聞かれてPDFファイルが作成される）。
         /// </summary>
-        private void ExportPdfBtn_Click(object sender, RoutedEventArgs e)
+        private void ExportPdfBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (isSourceMode)
+            if (m_isSourceModeFlg)
             {
                 MessageBox.Show("PDFへの書き出しはMarkDownモードでのみ利用できます。", "PDFに書き出し",
                     MessageBoxButton.OK, MessageBoxImage.Information);
@@ -1024,9 +1024,9 @@ namespace mde
 
             try
             {
-                var paginator = ((IDocumentPaginatorSource)Editor.Document).DocumentPaginator;
+                var paginator = ((IDocumentPaginatorSource)m_editor.Document).DocumentPaginator;
                 paginator.PageSize = new Size(dlg.PrintableAreaWidth, dlg.PrintableAreaHeight);
-                string docName = "mde - " + (!string.IsNullOrEmpty(currentFilePath) ? Path.GetFileName(currentFilePath) : "無題");
+                string docName = "mde - " + (!string.IsNullOrEmpty(m_currentFilePath) ? Path.GetFileName(m_currentFilePath) : "無題");
                 dlg.PrintDocument(paginator, docName);
             }
             catch (Exception ex)
@@ -1037,9 +1037,9 @@ namespace mde
         }
 
         /// <summary>現在のファイルと、保留中の編集があるすべてのファイルを保存する。</summary>
-        private void SaveAllBtn_Click(object sender, RoutedEventArgs e)
+        private void SaveAllBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (currentFileIsDirty || pendingFileEdits.Count > 0)
+            if (m_currentFileIsDirtyFlg || m_pendingFileEdits.Count > 0)
             {
                 var confirmResult = MessageBox.Show(
                     "編集中のすべてのファイルを保存します。よろしいですか？",
@@ -1054,29 +1054,29 @@ namespace mde
             int savedCount = 0;
             var failures = new List<string>();
 
-            if (!string.IsNullOrEmpty(currentFilePath))
+            if (!string.IsNullOrEmpty(m_currentFilePath))
             {
                 try
                 {
-                    if (!isSourceMode) imageManager.RelocatePendingTempImages(Editor.Document);
-                    string md = isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
-                    File.WriteAllText(currentFilePath, lineEndingTracker.Apply(md, lineEndingTracker.GetFor(currentFilePath)), new UTF8Encoding(false));
-                    pendingFileEdits.Remove(currentFilePath);
-                    currentFileIsDirty = false;
+                    if (!m_isSourceModeFlg) m_imageManager.RelocatePendingTempImages(m_editor.Document);
+                    string md = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+                    File.WriteAllText(m_currentFilePath, m_lineEndingTracker.Apply(md, m_lineEndingTracker.GetFor(m_currentFilePath)), new UTF8Encoding(false));
+                    m_pendingFileEdits.Remove(m_currentFilePath);
+                    m_currentFileIsDirtyFlg = false;
                     savedCount++;
                 }
                 catch (Exception ex)
                 {
-                    failures.Add(currentFilePath + " (" + ex.Message + ")");
+                    failures.Add(m_currentFilePath + " (" + ex.Message + ")");
                 }
             }
 
-            foreach (var kv in new List<KeyValuePair<string, string>>(pendingFileEdits))
+            foreach (var kv in new List<KeyValuePair<string, string>>(m_pendingFileEdits))
             {
                 try
                 {
-                    File.WriteAllText(kv.Key, lineEndingTracker.Apply(kv.Value, lineEndingTracker.GetFor(kv.Key)), new UTF8Encoding(false));
-                    pendingFileEdits.Remove(kv.Key);
+                    File.WriteAllText(kv.Key, m_lineEndingTracker.Apply(kv.Value, m_lineEndingTracker.GetFor(kv.Key)), new UTF8Encoding(false));
+                    m_pendingFileEdits.Remove(kv.Key);
                     savedCount++;
                 }
                 catch (Exception ex)
@@ -1085,7 +1085,7 @@ namespace mde
                 }
             }
 
-            folderTreeManager.RefreshDirtyMarkers();
+            m_folderTreeManager.RefreshDirtyMarkers();
 
             string message = savedCount + " 個のファイルを保存しました。";
             if (failures.Count > 0)
@@ -1100,102 +1100,102 @@ namespace mde
         /// 前提とする）。</summary>
         private void DiscardCurrentDocumentSilently()
         {
-            currentFilePath = null;
-            currentFileDirectory = null;
+            m_currentFilePath = null;
+            m_currentFileDirectory = null;
             this.Title = Assembly.GetExecutingAssembly().GetName().Name;
 
-            pendingFileEdits.Clear();
-            currentFileIsDirty = false;
+            m_pendingFileEdits.Clear();
+            m_currentFileIsDirtyFlg = false;
 
             RunAsProgrammaticChange(() =>
             {
-                if (isSourceMode)
+                if (m_isSourceModeFlg)
                 {
-                    SourceEditor.Text = "";
+                    m_sourceEditor.Text = "";
                 }
                 else
                 {
-                    Editor.Document.Blocks.Clear();
-                    Editor.Document.Blocks.Add(new Paragraph());
+                    m_editor.Document.Blocks.Clear();
+                    m_editor.Document.Blocks.Add(new Paragraph());
                 }
             });
-            outlineManager.Refresh();
-            folderTreeManager.RefreshDirtyMarkers();
+            m_outlineManager.Refresh();
+            m_folderTreeManager.RefreshDirtyMarkers();
         }
 
         /// <summary>
         /// DiscardCurrentDocumentSilentlyと同様に、エディタを空の無題文書へリセットするが、
-        /// 他のファイルの保留中の編集（pendingFileEdits）はそのまま残す。フォルダビューに
+        /// 他のファイルの保留中の編集（m_pendingFileEdits）はそのまま残す。フォルダビューに
         /// 表示されているファイルから新規作成する際、そのファイル自身の編集内容は事前に
         /// SnapshotCurrentFileIfDirtyで退避済みであることを前提とする。
         /// </summary>
         private void StartNewDocumentKeepingPendingEdits()
         {
-            currentFilePath = null;
-            currentFileDirectory = null;
+            m_currentFilePath = null;
+            m_currentFileDirectory = null;
             this.Title = Assembly.GetExecutingAssembly().GetName().Name;
-            currentFileIsDirty = false;
+            m_currentFileIsDirtyFlg = false;
 
             RunAsProgrammaticChange(() =>
             {
-                if (isSourceMode)
+                if (m_isSourceModeFlg)
                 {
-                    SourceEditor.Text = "";
+                    m_sourceEditor.Text = "";
                 }
                 else
                 {
-                    Editor.Document.Blocks.Clear();
-                    Editor.Document.Blocks.Add(new Paragraph());
+                    m_editor.Document.Blocks.Clear();
+                    m_editor.Document.Blocks.Add(new Paragraph());
                 }
             });
-            outlineManager.Refresh();
-            folderTreeManager.RefreshDirtyMarkers();
+            m_outlineManager.Refresh();
+            m_folderTreeManager.RefreshDirtyMarkers();
         }
 
         // ======================================================================
         //  ズーム
         // ======================================================================
 
-        private void ZoomIn_Click(object sender, RoutedEventArgs e) => SetZoom(zoomLevel + 0.1);
-        private void ZoomOut_Click(object sender, RoutedEventArgs e) => SetZoom(zoomLevel - 0.1);
-        private void ZoomReset_Click(object sender, RoutedEventArgs e) => SetZoom(1.0);
+        private void ZoomInClick(object a_sender, RoutedEventArgs a_args) => SetZoom(m_zoomLevel + 0.1);
+        private void ZoomOutClick(object a_sender, RoutedEventArgs a_args) => SetZoom(m_zoomLevel - 0.1);
+        private void ZoomResetClick(object a_sender, RoutedEventArgs a_args) => SetZoom(1.0);
 
         /// <summary>Ctrl+ホイールでエディタをズームする（スクロールの代わり）。</summary>
-        private void Editor_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        private void EditorPreviewMouseWheel(object a_sender, MouseWheelEventArgs a_args)
         {
             if (Keyboard.Modifiers == ModifierKeys.Control)
             {
-                e.Handled = true;
-                SetZoom(zoomLevel + (e.Delta > 0 ? 0.1 : -0.1));
+                a_args.Handled = true;
+                SetZoom(m_zoomLevel + (a_args.Delta > 0 ? 0.1 : -0.1));
             }
         }
 
         /// <summary>新しいズーム倍率を適用し、ツールバーのパーセント表示を更新する。</summary>
-        /// <param name="value">新しいズーム倍率（1.0が100%）。妥当な範囲に丸められる。</param>
-        private void SetZoom(double value)
+        /// <param name="a_value">新しいズーム倍率（1.0が100%）。妥当な範囲に丸められる。</param>
+        private void SetZoom(double a_value)
         {
-            zoomLevel = Math.Max(0.5, Math.Min(2.5, Math.Round(value, 2)));
-            Editor.LayoutTransform = new ScaleTransform(zoomLevel, zoomLevel);
-            SourceEditor.FontSize = 16 * zoomLevel;
-            ZoomLabelBtn.Content = Math.Round(zoomLevel * 100) + "%";
+            m_zoomLevel = Math.Max(0.5, Math.Min(2.5, Math.Round(a_value, 2)));
+            m_editor.LayoutTransform = new ScaleTransform(m_zoomLevel, m_zoomLevel);
+            m_sourceEditor.FontSize = 16 * m_zoomLevel;
+            m_zoomLabelBtn.Content = Math.Round(m_zoomLevel * 100) + "%";
         }
 
         /// <summary>ソースモード編集中、ファイルをダーティにする。</summary>
-        private void SourceEditor_TextChanged(object sender, TextChangedEventArgs e)
+        private void SourceEditorTextChanged(object a_sender, TextChangedEventArgs a_args)
         {
-            if (folderTreeManager == null) return; // InitializeComponent中の発火に対するガード
-            currentFileIsDirty = true;
-            folderTreeManager.RefreshDirtyMarkers();
+            if (m_folderTreeManager == null) return; // InitializeComponent中の発火に対するガード
+            m_currentFileIsDirtyFlg = true;
+            m_folderTreeManager.RefreshDirtyMarkers();
         }
 
         /// <summary>エディタの幅が変わったら、画像のサイズ調整をやり直す。</summary>
-        private void Editor_SizeChanged(object sender, SizeChangedEventArgs e)
+        private void EditorSizeChanged(object a_sender, SizeChangedEventArgs a_args)
         {
-            if (imageManager == null) return; // InitializeComponent中の発火に対するガード
-            if (isSourceMode) return;
-            foreach (var img in imageManager.FindAllImages(Editor.Document))
+            if (m_imageManager == null) return; // InitializeComponent中の発火に対するガード
+            if (m_isSourceModeFlg) return;
+            foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
             {
-                imageManager.ApplyImageSizing(img);
+                m_imageManager.ApplyImageSizing(img);
             }
         }
 
@@ -1203,80 +1203,80 @@ namespace mde
         //  ドラッグ&ドロップでの画像挿入（ImageManagerへそのまま橋渡し）
         // ======================================================================
 
-        private void Editor_DragEnter(object sender, DragEventArgs e) => imageManager.HandleDragEnter(sender, e);
-        private void Editor_DragOver(object sender, DragEventArgs e) => imageManager.HandleDragOver(sender, e);
-        private void Editor_Drop(object sender, DragEventArgs e) => imageManager.HandleDrop(sender, e);
+        private void EditorDragEnter(object a_sender, DragEventArgs a_args) => m_imageManager.HandleDragEnter(a_sender, a_args);
+        private void EditorDragOver(object a_sender, DragEventArgs a_args) => m_imageManager.HandleDragOver(a_sender, a_args);
+        private void EditorDrop(object a_sender, DragEventArgs a_args) => m_imageManager.HandleDrop(a_sender, a_args);
 
         // ======================================================================
         //  検索と置換（FindReplaceWindowを開く）
         // ======================================================================
 
         /// <summary>検索・置換の公開API。FindReplaceWindowから使う。</summary>
-        public SearchReplaceService SearchReplace => searchReplaceService;
+        public SearchReplaceService SearchReplace => m_searchReplaceService;
 
         /// <summary>現在開いているファイルの絶対パス（未保存なら null）。FindReplaceWindowが
         /// 「今開いているファイルから検索を始める」ために参照する。</summary>
-        public string CurrentFilePath => currentFilePath;
+        public string CurrentFilePath => m_currentFilePath;
 
         /// <summary>アウトラインペインの管理役。検索結果の反映などにFindReplaceWindowから使う。</summary>
-        public OutlineManager OutlinePane => outlineManager;
+        public OutlineManager OutlinePane => m_outlineManager;
 
         /// <summary>フォルダツリーペインの管理役。検索結果の反映などにFindReplaceWindowから使う。</summary>
-        public FolderTreeManager FolderTreePane => folderTreeManager;
+        public FolderTreeManager FolderTreePane => m_folderTreeManager;
 
-        private void FindReplaceBtn_Click(object sender, RoutedEventArgs e)
+        private void FindReplaceBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             OpenFindReplaceWindow();
         }
 
         /// <summary>メインウインドウのキーボードショートカットの実装。</summary>
-        private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        private void MainWindowPreviewKeyDown(object a_sender, KeyEventArgs a_args)
         {
-            if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+            if (a_args.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                e.Handled = true;
+                a_args.Handled = true;
                 OpenFindReplaceWindow();
             }
             // Ctrl+Nは「新規作成」のショートカットとして扱う（Windows標準のCtrl+Nは「新しいウィンドウ」なので、そちらは無効化する）。
-            else if (e.Key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
+            else if (a_args.Key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                e.Handled = true;
-                NewBtn_Click(sender, null);
+                a_args.Handled = true;
+                NewBtnClick(a_sender, null);
             }
             // Shift+Ctrl+Nは「新しいウィンドウ」のショートカットとして扱う。
-            else if (e.Key == Key.N && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+            else if (a_args.Key == Key.N && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
             {
-                e.Handled = true;
-                NewWindow_Click(sender, null);
+                a_args.Handled = true;
+                NewWindowClick(a_sender, null);
             }
             // Ctrl+Oは「開く」のショートカットとして扱う。
-            else if (e.Key == Key.O && Keyboard.Modifiers == ModifierKeys.Control)
+            else if (a_args.Key == Key.O && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                e.Handled = true;
-                OpenBtn_Click(sender, null);
+                a_args.Handled = true;
+                OpenBtnClick(a_sender, null);
             }
             // Ctrl+Sは「保存」のショートカットとして扱う（Windows標準のCtrl+Sは「すべて保存」なので、そちらは無効化する）。
-            else if (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control)
+            else if (a_args.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                e.Handled = true;
-                SaveBtn_Click(sender, null);
+                a_args.Handled = true;
+                SaveBtnClick(a_sender, null);
             }
             // Shift+Ctrl+Sは「名前を付けて保存...」のショートカットとして扱う。
-            else if (e.Key == Key.S && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+            else if (a_args.Key == Key.S && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
             {
-                e.Handled = true;
+                a_args.Handled = true;
                 SaveAs();
             }
             // Ctrl+Pは「PDFに書き出し」のショートカットとして扱う（Windows標準のCtrl+Pは「印刷」なので、そちらは無効化する）。
-            else if (e.Key == Key.P && Keyboard.Modifiers == ModifierKeys.Control)
+            else if (a_args.Key == Key.P && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                e.Handled = true;
-                ExportPdfBtn_Click(sender, null);
+                a_args.Handled = true;
+                ExportPdfBtnClick(a_sender, null);
             }
             // Ctrl+Wは「ウィンドウを閉じる」のショートカットとして扱う。
-            else if (e.Key == Key.W && Keyboard.Modifiers == ModifierKeys.Control)
+            else if (a_args.Key == Key.W && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                e.Handled = true;
+                a_args.Handled = true;
                 Close();
             }
         }
@@ -1284,19 +1284,19 @@ namespace mde
         /// <summary>検索と置換ウィンドウを開く（すでに開いていれば、そちらを前面に出す）。</summary>
         private void OpenFindReplaceWindow()
         {
-            if (openFindReplaceWindow != null)
+            if (m_openFindReplaceWindow != null)
             {
-                openFindReplaceWindow.Activate();
-                openFindReplaceWindow.Focus();
+                m_openFindReplaceWindow.Activate();
+                m_openFindReplaceWindow.Focus();
                 return;
             }
-            openFindReplaceWindow = new FindReplaceWindow(this) { Owner = this };
-            openFindReplaceWindow.Closed += (s, e) => openFindReplaceWindow = null;
-            openFindReplaceWindow.Show();
+            m_openFindReplaceWindow = new FindReplaceWindow(this) { Owner = this };
+            m_openFindReplaceWindow.Closed += (s, e) => m_openFindReplaceWindow = null;
+            m_openFindReplaceWindow.Show();
         }
 
         /// <summary>「バージョン情報」ボタン。アプリ名とバージョン番号を表示する。</summary>
-        private void VersionInfoBtn_Click(object sender, RoutedEventArgs e)
+        private void VersionInfoBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             var aboutWindow = new AboutWindow { Owner = this };
             aboutWindow.ShowDialog();
@@ -1308,10 +1308,10 @@ namespace mde
 
         /// <summary>フォルダツリーペインの表示/非表示を切り替える（幅は次に表示する時のために
         /// 記憶しておく）。</summary>
-        private void ToggleFolderPaneBtn_Click(object sender, RoutedEventArgs e)
+        private void ToggleFolderPaneBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (folderPaneVisible && FolderColumnDef.Width.Value > 0) lastFolderColumnWidth = FolderColumnDef.Width.Value;
-            folderPaneVisible = !folderPaneVisible;
+            if (m_folderPaneVisibleFlg && m_folderColumnDef.Width.Value > 0) m_lastFolderColumnWidth = m_folderColumnDef.Width.Value;
+            m_folderPaneVisibleFlg = !m_folderPaneVisibleFlg;
             ApplyFolderPaneVisibility();
         }
 
@@ -1319,30 +1319,30 @@ namespace mde
         /// コントロールへ反映する（ボタンクリック時、起動時の状態復元時の両方から呼ばれる）。</summary>
         private void ApplyFolderPaneVisibility()
         {
-            if (folderPaneVisible)
+            if (m_folderPaneVisibleFlg)
             {
-                FolderColumnDef.Width = new GridLength(lastFolderColumnWidth);
-                FolderSplitterColumnDef.Width = new GridLength(2);
-                FolderPaneBorder.Visibility = Visibility.Visible;
-                FolderSplitter.Visibility = Visibility.Visible;
-                ToggleFolderPaneBtn.Content = "フォルダを隠す";
+                m_folderColumnDef.Width = new GridLength(m_lastFolderColumnWidth);
+                m_folderSplitterColumnDef.Width = new GridLength(2);
+                m_folderPaneBorder.Visibility = Visibility.Visible;
+                m_folderSplitter.Visibility = Visibility.Visible;
+                m_toggleFolderPaneBtn.Content = "フォルダを隠す";
             }
             else
             {
-                FolderColumnDef.Width = new GridLength(0);
-                FolderSplitterColumnDef.Width = new GridLength(0);
-                FolderPaneBorder.Visibility = Visibility.Collapsed;
-                FolderSplitter.Visibility = Visibility.Collapsed;
-                ToggleFolderPaneBtn.Content = "フォルダを表示";
+                m_folderColumnDef.Width = new GridLength(0);
+                m_folderSplitterColumnDef.Width = new GridLength(0);
+                m_folderPaneBorder.Visibility = Visibility.Collapsed;
+                m_folderSplitter.Visibility = Visibility.Collapsed;
+                m_toggleFolderPaneBtn.Content = "フォルダを表示";
             }
         }
 
         /// <summary>アウトラインペインの表示/非表示を切り替える（幅は次に表示する時のために
         /// 記憶しておく）。</summary>
-        private void ToggleOutlinePaneBtn_Click(object sender, RoutedEventArgs e)
+        private void ToggleOutlinePaneBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (outlinePaneVisible && OutlineColumnDef.Width.Value > 0) lastOutlineColumnWidth = OutlineColumnDef.Width.Value;
-            outlinePaneVisible = !outlinePaneVisible;
+            if (m_outlinePaneVisibleFlg && m_outlineColumnDef.Width.Value > 0) m_lastOutlineColumnWidth = m_outlineColumnDef.Width.Value;
+            m_outlinePaneVisibleFlg = !m_outlinePaneVisibleFlg;
             ApplyOutlinePaneVisibility();
         }
 
@@ -1350,21 +1350,21 @@ namespace mde
         /// コントロールへ反映する（ボタンクリック時、起動時の状態復元時の両方から呼ばれる）。</summary>
         private void ApplyOutlinePaneVisibility()
         {
-            if (outlinePaneVisible)
+            if (m_outlinePaneVisibleFlg)
             {
-                OutlineColumnDef.Width = new GridLength(lastOutlineColumnWidth);
-                OutlineSplitterColumnDef.Width = new GridLength(2);
-                OutlinePaneBorder.Visibility = Visibility.Visible;
-                OutlineSplitter.Visibility = Visibility.Visible;
-                ToggleOutlinePaneBtn.Content = "アウトラインを隠す";
+                m_outlineColumnDef.Width = new GridLength(m_lastOutlineColumnWidth);
+                m_outlineSplitterColumnDef.Width = new GridLength(2);
+                m_outlinePaneBorder.Visibility = Visibility.Visible;
+                m_outlineSplitter.Visibility = Visibility.Visible;
+                m_toggleOutlinePaneBtn.Content = "アウトラインを隠す";
             }
             else
             {
-                OutlineColumnDef.Width = new GridLength(0);
-                OutlineSplitterColumnDef.Width = new GridLength(0);
-                OutlinePaneBorder.Visibility = Visibility.Collapsed;
-                OutlineSplitter.Visibility = Visibility.Collapsed;
-                ToggleOutlinePaneBtn.Content = "アウトラインを表示";
+                m_outlineColumnDef.Width = new GridLength(0);
+                m_outlineSplitterColumnDef.Width = new GridLength(0);
+                m_outlinePaneBorder.Visibility = Visibility.Collapsed;
+                m_outlineSplitter.Visibility = Visibility.Collapsed;
+                m_toggleOutlinePaneBtn.Content = "アウトラインを表示";
             }
         }
 
@@ -1374,9 +1374,9 @@ namespace mde
 
         /// <summary>フォルダピッカーを表示し、選択されたフォルダをフォルダツリーペインへ
         /// 読み込む（可能であれば同じ相対パスのファイルを開いたままにする）。</summary>
-        private void OpenFolderTreeBtn_Click(object sender, RoutedEventArgs e)
+        private void OpenFolderTreeBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (currentFileIsDirty || pendingFileEdits.Count > 0)
+            if (m_currentFileIsDirtyFlg || m_pendingFileEdits.Count > 0)
             {
                 var confirmResult = MessageBox.Show(
                     "保存されていない変更があります。破棄して別のフォルダを開きますか？",
@@ -1384,17 +1384,17 @@ namespace mde
                 if (confirmResult != MessageBoxResult.OK) return;
             }
 
-            string previousRelativePath = folderTreeManager.GetCurrentFileRelativePath();
+            string previousRelativePath = m_folderTreeManager.GetCurrentFileRelativePath();
 
             var dlg = new Microsoft.Win32.OpenFolderDialog();
             if (dlg.ShowDialog() != true) return;
 
             DiscardCurrentDocumentSilently();
-            folderTreeManager.LoadFolderTree(dlg.FolderName);
-            folderTreeManager.OpenMatchingOrFirstFile(dlg.FolderName, previousRelativePath);
+            m_folderTreeManager.LoadFolderTree(dlg.FolderName);
+            m_folderTreeManager.OpenMatchingOrFirstFile(dlg.FolderName, previousRelativePath);
         }
 
-        private void TreeViewItem_Expanded(object sender, RoutedEventArgs e) => folderTreeManager.HandleTreeViewItemExpanded(sender, e);
+        private void TreeViewItemExpanded(object a_sender, RoutedEventArgs a_args) => m_folderTreeManager.HandleTreeViewItemExpanded(a_sender, a_args);
 
         /// <summary>
         /// フォルダツリーの選択項目が切り替わると、WPF標準の動作でその項目を横方向にも
@@ -1404,18 +1404,18 @@ namespace mde
         /// </summary>
         /// <summary>フォルダツリー内部のScrollViewerへの参照（選択項目切り替え後の横スクロール
         /// リセットに使う）。</summary>
-        private ScrollViewer folderTreeScrollViewer;
+        private ScrollViewer m_folderTreeScrollViewer;
 
-        private void FolderTree_Loaded(object sender, RoutedEventArgs e)
+        private void FolderTreeLoaded(object a_sender, RoutedEventArgs a_args)
         {
-            folderTreeScrollViewer = FindVisualChild<ScrollViewer>(FolderTree);
+            m_folderTreeScrollViewer = FindVisualChild<ScrollViewer>(m_folderTree);
         }
 
-        private static T FindVisualChild<T>(DependencyObject root) where T : DependencyObject
+        private static T FindVisualChild<T>(DependencyObject a_root) where T : DependencyObject
         {
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(a_root); i++)
             {
-                var child = VisualTreeHelper.GetChild(root, i);
+                var child = VisualTreeHelper.GetChild(a_root, i);
                 if (child is T match) return match;
                 var found = FindVisualChild<T>(child);
                 if (found != null) return found;
@@ -1423,17 +1423,17 @@ namespace mde
             return null;
         }
 
-        private void FolderTree_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        private void FolderTreeSelectedItemChanged(object a_sender, RoutedPropertyChangedEventArgs<object> a_args)
         {
-            folderTreeManager.HandleSelectedItemChanged(sender, e);
+            m_folderTreeManager.HandleSelectedItemChanged(a_sender, a_args);
 
             // 選択項目が切り替わると、WPF標準の動作でその項目を横方向にも完全に見えるよう
             // スクロールしてしまい、ファイル名が長い場合に横スクロールバーが右へずれてしまう。
             // このレイアウトパスが終わった直後（Loaded優先度）に横スクロールだけを0へ戻すことで、
             // それ以外のタイミングでのユーザーによる手動スクロールには一切影響しないようにする。
-            if (folderTreeScrollViewer != null)
+            if (m_folderTreeScrollViewer != null)
             {
-                Dispatcher.BeginInvoke(new Action(() => folderTreeScrollViewer.ScrollToHorizontalOffset(0)),
+                Dispatcher.BeginInvoke(new Action(() => m_folderTreeScrollViewer.ScrollToHorizontalOffset(0)),
                     System.Windows.Threading.DispatcherPriority.Loaded);
             }
         }
@@ -1442,7 +1442,7 @@ namespace mde
         //  アウトラインペイン
         // ======================================================================
 
-        private void OutlineList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
-            outlineManager.HandleSelectionChanged(sender, e);
+        private void OutlineListSelectionChanged(object a_sender, SelectionChangedEventArgs a_args) =>
+            m_outlineManager.HandleSelectionChanged(a_sender, a_args);
     }
 }

@@ -19,11 +19,11 @@ namespace mde
     /// <summary>フォルダツリーペインの読み込み・表示更新・ファイルオープンを担当する。</summary>
     public class FolderTreeManager
     {
-        private readonly Action<string> loadFile;
-        private readonly Func<string> getCurrentFilePath;
-        private readonly Func<bool> getCurrentFileIsDirty;
-        private readonly Func<IEnumerable<string>> getPendingEditPaths;
-        private readonly Func<string, string, bool> pathsReferToSameFile;
+        private readonly Action<string> m_loadFile;
+        private readonly Func<string> m_getCurrentFilePath;
+        private readonly Func<bool> m_getCurrentFileIsDirty;
+        private readonly Func<IEnumerable<string>> m_getPendingEditPaths;
+        private readonly Func<string, string, bool> m_pathsReferToSameFile;
 
         /// <summary>現在読み込んでいるフォルダのルートパス。未読み込みなら null。</summary>
         public string LoadedFolderRootPath { get; private set; }
@@ -34,23 +34,23 @@ namespace mde
         /// <summary>
         /// FolderTreeManagerを構築する。
         /// </summary>
-        /// <param name="loadFile">ファイルを開くdelegate。</param>
-        /// <param name="getCurrentFilePath">現在開いているファイルのパスを返すdelegate。</param>
-        /// <param name="getCurrentFileIsDirty">現在のファイルに未保存の変更があるかを返すdelegate。</param>
-        /// <param name="getPendingEditPaths">保留中の編集があるファイルパス一覧を返すdelegate。</param>
-        /// <param name="pathsReferToSameFile">2つのパスが同一ファイルを指すかを判定するdelegate。</param>
+        /// <param name="a_loadFile">ファイルを開くdelegate。</param>
+        /// <param name="a_getCurrentFilePath">現在開いているファイルのパスを返すdelegate。</param>
+        /// <param name="a_getCurrentFileIsDirty">現在のファイルに未保存の変更があるかを返すdelegate。</param>
+        /// <param name="a_getPendingEditPaths">保留中の編集があるファイルパス一覧を返すdelegate。</param>
+        /// <param name="a_pathsReferToSameFile">2つのパスが同一ファイルを指すかを判定するdelegate。</param>
         public FolderTreeManager(
-            Action<string> loadFile,
-            Func<string> getCurrentFilePath,
-            Func<bool> getCurrentFileIsDirty,
-            Func<IEnumerable<string>> getPendingEditPaths,
-            Func<string, string, bool> pathsReferToSameFile)
+            Action<string> a_loadFile,
+            Func<string> a_getCurrentFilePath,
+            Func<bool> a_getCurrentFileIsDirty,
+            Func<IEnumerable<string>> a_getPendingEditPaths,
+            Func<string, string, bool> a_pathsReferToSameFile)
         {
-            this.loadFile = loadFile;
-            this.getCurrentFilePath = getCurrentFilePath;
-            this.getCurrentFileIsDirty = getCurrentFileIsDirty;
-            this.getPendingEditPaths = getPendingEditPaths;
-            this.pathsReferToSameFile = pathsReferToSameFile;
+            this.m_loadFile = a_loadFile;
+            this.m_getCurrentFilePath = a_getCurrentFilePath;
+            this.m_getCurrentFileIsDirty = a_getCurrentFileIsDirty;
+            this.m_getPendingEditPaths = a_getPendingEditPaths;
+            this.m_pathsReferToSameFile = a_pathsReferToSameFile;
         }
 
         /// <summary>現在開いているファイルの、読み込んでいるフォルダからの相対パス
@@ -58,7 +58,7 @@ namespace mde
         /// 場合は null。</summary>
         public string GetCurrentFileRelativePath()
         {
-            string currentFilePath = getCurrentFilePath();
+            string currentFilePath = m_getCurrentFilePath();
             if (string.IsNullOrEmpty(currentFilePath) || string.IsNullOrEmpty(LoadedFolderRootPath)) return null;
             try
             {
@@ -75,18 +75,18 @@ namespace mde
 
         /// <summary>新しく読み込んだフォルダの中に、同じ相対パスのファイルがあればそれを開き、
         /// なければフォルダの最初のファイルを開く。</summary>
-        /// <param name="newFolderPath">新しく読み込むフォルダ。</param>
-        /// <param name="relativePath">以前開いていたファイルの相対パス。</param>
-        public void OpenMatchingOrFirstFile(string newFolderPath, string relativePath)
+        /// <param name="a_newFolderPath">新しく読み込むフォルダ。</param>
+        /// <param name="a_relativePath">以前開いていたファイルの相対パス。</param>
+        public void OpenMatchingOrFirstFile(string a_newFolderPath, string a_relativePath)
         {
-            if (!string.IsNullOrEmpty(relativePath))
+            if (!string.IsNullOrEmpty(a_relativePath))
             {
                 try
                 {
-                    string candidate = Path.Combine(newFolderPath, relativePath);
+                    string candidate = Path.Combine(a_newFolderPath, a_relativePath);
                     if (File.Exists(candidate))
                     {
-                        loadFile(candidate);
+                        m_loadFile(candidate);
                         return;
                     }
                 }
@@ -104,18 +104,18 @@ namespace mde
         {
             if (Roots.Count == 0) return;
             var firstFile = Roots[0].Children.FirstOrDefault(c => !c.IsDirectory);
-            if (firstFile != null) loadFile(firstFile.FullPath);
+            if (firstFile != null) m_loadFile(firstFile.FullPath);
         }
 
         /// <summary>ルートフォルダを指定して、フォルダツリーペインの内容を読み込む。</summary>
-        /// <param name="folderPath">読み込むフォルダ。</param>
-        public void LoadFolderTree(string folderPath)
+        /// <param name="a_folderPath">読み込むフォルダ。</param>
+        public void LoadFolderTree(string a_folderPath)
         {
-            LoadedFolderRootPath = folderPath;
+            LoadedFolderRootPath = a_folderPath;
             Roots.Clear();
             try
             {
-                var root = BuildFileSystemNode(folderPath, true);
+                var root = BuildFileSystemNode(a_folderPath, true);
                 root.Children.Clear();
                 PopulateChildren(root);
                 root.IsExpanded = true;
@@ -138,17 +138,17 @@ namespace mde
                 RefreshDirtyMarkerRecursive(root);
         }
 
-        private void RefreshDirtyMarkerRecursive(FileSystemItem node)
+        private void RefreshDirtyMarkerRecursive(FileSystemItem a_node)
         {
-            if (!node.IsDirectory && node.FullPath != null)
+            if (!a_node.IsDirectory && a_node.FullPath != null)
             {
-                string currentFilePath = getCurrentFilePath();
-                bool isCurrent = !string.IsNullOrEmpty(currentFilePath) && pathsReferToSameFile(node.FullPath, currentFilePath);
-                node.IsDirty = isCurrent
-                    ? getCurrentFileIsDirty()
-                    : getPendingEditPaths().Any(k => pathsReferToSameFile(k, node.FullPath));
+                string currentFilePath = m_getCurrentFilePath();
+                bool isCurrentFlg = !string.IsNullOrEmpty(currentFilePath) && m_pathsReferToSameFile(a_node.FullPath, currentFilePath);
+                a_node.IsDirty = isCurrentFlg
+                    ? m_getCurrentFileIsDirty()
+                    : m_getPendingEditPaths().Any(k => m_pathsReferToSameFile(k, a_node.FullPath));
             }
-            foreach (var child in node.Children)
+            foreach (var child in a_node.Children)
                 RefreshDirtyMarkerRecursive(child);
         }
 
@@ -157,12 +157,12 @@ namespace mde
         /// そのファイル自身と、それを含むフォルダを強調表示する。呼び出し前の強調表示は
         /// クリアされる。
         /// </summary>
-        /// <param name="matchedFilePaths">一致箇所があったファイルの絶対パス一覧。</param>
-        public void MarkSearchMatches(IEnumerable<string> matchedFilePaths)
+        /// <param name="a_matchedFilePaths">一致箇所があったファイルの絶対パス一覧。</param>
+        public void MarkSearchMatches(IEnumerable<string> a_matchedFilePaths)
         {
             ClearSearchMatches();
             var matchedSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var p in matchedFilePaths)
+            foreach (var p in a_matchedFilePaths)
             {
                 try { matchedSet.Add(Path.GetFullPath(p)); }
                 catch { /* 無効なパスは無視する */ }
@@ -171,27 +171,27 @@ namespace mde
                 MarkSearchMatchRecursive(root, matchedSet);
         }
 
-        private bool MarkSearchMatchRecursive(FileSystemItem node, HashSet<string> matchedFullPaths)
+        private bool MarkSearchMatchRecursive(FileSystemItem a_node, HashSet<string> a_matchedFullPaths)
         {
-            bool anyMatchBelow = false;
-            if (!node.IsDirectory && node.FullPath != null)
+            bool anyMatchBelowFlg = false;
+            if (!a_node.IsDirectory && a_node.FullPath != null)
             {
                 try
                 {
-                    if (matchedFullPaths.Contains(Path.GetFullPath(node.FullPath)))
+                    if (a_matchedFullPaths.Contains(Path.GetFullPath(a_node.FullPath)))
                     {
-                        node.IsSearchMatch = true;
-                        anyMatchBelow = true;
+                        a_node.IsSearchMatch = true;
+                        anyMatchBelowFlg = true;
                     }
                 }
                 catch { /* 無効なパスは無視する */ }
             }
-            foreach (var child in node.Children)
+            foreach (var child in a_node.Children)
             {
-                if (MarkSearchMatchRecursive(child, matchedFullPaths)) anyMatchBelow = true;
+                if (MarkSearchMatchRecursive(child, a_matchedFullPaths)) anyMatchBelowFlg = true;
             }
-            if (anyMatchBelow) node.IsSearchMatch = true; // フォルダ自身も、含むファイルに一致があれば強調する
-            return anyMatchBelow;
+            if (anyMatchBelowFlg) a_node.IsSearchMatch = true; // フォルダ自身も、含むファイルに一致があれば強調する
+            return anyMatchBelowFlg;
         }
 
         /// <summary>検索結果の強調表示をすべて解除する。</summary>
@@ -201,10 +201,10 @@ namespace mde
                 ClearSearchMatchRecursive(root);
         }
 
-        private void ClearSearchMatchRecursive(FileSystemItem node)
+        private void ClearSearchMatchRecursive(FileSystemItem a_node)
         {
-            node.IsSearchMatch = false;
-            foreach (var child in node.Children)
+            a_node.IsSearchMatch = false;
+            foreach (var child in a_node.Children)
                 ClearSearchMatchRecursive(child);
         }
 
@@ -215,13 +215,13 @@ namespace mde
         /// ツリー内に見つからない場合は何もしない（展開時、または次回のフォルダ読み込み時に
         /// 自然に反映される）。すでに同じファイルのノードがあれば何もしない。
         /// </summary>
-        /// <param name="filePath">追加するファイルの絶対パス。</param>
-        public void AddFileNodeIfMissing(string filePath)
+        /// <param name="a_filePath">追加するファイルの絶対パス。</param>
+        public void AddFileNodeIfMissing(string a_filePath)
         {
-            if (Roots.Count == 0 || string.IsNullOrEmpty(filePath)) return;
+            if (Roots.Count == 0 || string.IsNullOrEmpty(a_filePath)) return;
 
             string dir;
-            try { dir = Path.GetDirectoryName(Path.GetFullPath(filePath)); }
+            try { dir = Path.GetDirectoryName(Path.GetFullPath(a_filePath)); }
             catch { return; }
             if (string.IsNullOrEmpty(dir)) return;
 
@@ -231,10 +231,10 @@ namespace mde
             // まだ子が読み込まれていない（プレースホルダのみ）場合は、展開時に自然に反映される
             if (folderNode.Children.Count == 1 && folderNode.Children[0].FullPath == null) return;
 
-            if (folderNode.Children.Any(c => !c.IsDirectory && PathsEqualLocal(c.FullPath, filePath))) return;
+            if (folderNode.Children.Any(c => !c.IsDirectory && PathsEqualLocal(c.FullPath, a_filePath))) return;
 
-            string fileName = Path.GetFileName(filePath);
-            var newItem = new FileSystemItem { Name = fileName, FullPath = filePath, IsDirectory = false };
+            string fileName = Path.GetFileName(a_filePath);
+            var newItem = new FileSystemItem { Name = fileName, FullPath = a_filePath, IsDirectory = false };
 
             // 既存の並び（フォルダの後にファイル名順）に合わせて挿入位置を探す
             int insertIdx = folderNode.Children.Count;
@@ -256,52 +256,52 @@ namespace mde
         /// （見つからなければ何もしない）。そのノードまでの経路にあるフォルダは、
         /// 隠れて見えなくならないよう展開状態にする。
         /// </summary>
-        /// <param name="filePath">選択したいファイルの絶対パス。</param>
-        public void SelectFileNode(string filePath)
+        /// <param name="a_filePath">選択したいファイルの絶対パス。</param>
+        public void SelectFileNode(string a_filePath)
         {
             foreach (var root in Roots)
-                if (SelectFileNodeRecursive(root, filePath)) return;
+                if (SelectFileNodeRecursive(root, a_filePath)) return;
         }
 
-        private bool SelectFileNodeRecursive(FileSystemItem node, string filePath)
+        private bool SelectFileNodeRecursive(FileSystemItem a_node, string a_filePath)
         {
-            foreach (var child in node.Children)
+            foreach (var child in a_node.Children)
             {
-                if (!child.IsDirectory && PathsEqualLocal(child.FullPath, filePath))
+                if (!child.IsDirectory && PathsEqualLocal(child.FullPath, a_filePath))
                 {
                     child.IsSelected = true;
-                    node.IsExpanded = true;
+                    a_node.IsExpanded = true;
                     return true;
                 }
-                if (child.IsDirectory && SelectFileNodeRecursive(child, filePath))
+                if (child.IsDirectory && SelectFileNodeRecursive(child, a_filePath))
                 {
-                    node.IsExpanded = true;
+                    a_node.IsExpanded = true;
                     return true;
                 }
             }
             return false;
         }
 
-        private FileSystemItem FindFolderNode(FileSystemItem node, string dir)
+        private FileSystemItem FindFolderNode(FileSystemItem a_node, string a_dir)
         {
-            if (node.IsDirectory && PathsEqualLocal(node.FullPath, dir)) return node;
-            foreach (var child in node.Children)
+            if (a_node.IsDirectory && PathsEqualLocal(a_node.FullPath, a_dir)) return a_node;
+            foreach (var child in a_node.Children)
             {
                 if (!child.IsDirectory) continue;
-                var found = FindFolderNode(child, dir);
+                var found = FindFolderNode(child, a_dir);
                 if (found != null) return found;
             }
             return null;
         }
 
-        private bool PathsEqualLocal(string a, string b)
+        private bool PathsEqualLocal(string a_a, string a_b)
         {
-            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
+            if (string.IsNullOrEmpty(a_a) || string.IsNullOrEmpty(a_b)) return false;
             try
             {
                 return string.Equals(
-                    Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar),
-                    Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar),
+                    Path.GetFullPath(a_a).TrimEnd(Path.DirectorySeparatorChar),
+                    Path.GetFullPath(a_b).TrimEnd(Path.DirectorySeparatorChar),
                     StringComparison.OrdinalIgnoreCase);
             }
             catch
@@ -311,17 +311,17 @@ namespace mde
         }
 
         /// <summary>
-        /// 'dir' が、現在フォルダペインに表示されているフォルダそのもの、またはそのサブフォルダで
+        /// 'a_dir' が、現在フォルダペインに表示されているフォルダそのもの、またはそのサブフォルダで
         /// あれば true を返す。true の場合、同じ範囲のファイルを開いただけならツリーを
         /// 作り直す（ユーザーが展開していた状態を失わせる）必要はない。
         /// </summary>
-        public bool IsWithinLoadedFolder(string dir)
+        public bool IsWithinLoadedFolder(string a_dir)
         {
-            if (string.IsNullOrEmpty(LoadedFolderRootPath) || string.IsNullOrEmpty(dir)) return false;
+            if (string.IsNullOrEmpty(LoadedFolderRootPath) || string.IsNullOrEmpty(a_dir)) return false;
             try
             {
                 string root = Path.GetFullPath(LoadedFolderRootPath).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant();
-                string target = Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant();
+                string target = Path.GetFullPath(a_dir).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant();
                 return target == root || target.StartsWith(root + Path.DirectorySeparatorChar);
             }
             catch
@@ -330,15 +330,15 @@ namespace mde
             }
         }
 
-        private FileSystemItem BuildFileSystemNode(string path, bool isDirectory)
+        private FileSystemItem BuildFileSystemNode(string a_path, bool a_isDirectoryFlg)
         {
             var item = new FileSystemItem
             {
-                Name = string.IsNullOrEmpty(Path.GetFileName(path)) ? path : Path.GetFileName(path),
-                FullPath = path,
-                IsDirectory = isDirectory
+                Name = string.IsNullOrEmpty(Path.GetFileName(a_path)) ? a_path : Path.GetFileName(a_path),
+                FullPath = a_path,
+                IsDirectory = a_isDirectoryFlg
             };
-            if (isDirectory)
+            if (a_isDirectoryFlg)
             {
                 // 遅延読み込みする前から展開矢印が表示されるよう、仮の子ノードを1つ入れておく
                 item.Children.Add(new FileSystemItem { Name = "読み込み中…", IsDirectory = false, FullPath = null });
@@ -346,22 +346,22 @@ namespace mde
             return item;
         }
 
-        private void PopulateChildren(FileSystemItem node)
+        private void PopulateChildren(FileSystemItem a_node)
         {
             try
             {
-                foreach (var dir in Directory.GetDirectories(node.FullPath).OrderBy(d => d))
+                foreach (var dir in Directory.GetDirectories(a_node.FullPath).OrderBy(d => d))
                 {
                     var name = Path.GetFileName(dir);
                     if (name.StartsWith(".")) continue;
-                    node.Children.Add(BuildFileSystemNode(dir, true));
+                    a_node.Children.Add(BuildFileSystemNode(dir, true));
                 }
-                foreach (var file in Directory.GetFiles(node.FullPath)
+                foreach (var file in Directory.GetFiles(a_node.FullPath)
                              .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
                                          f.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase))
                              .OrderBy(f => f))
                 {
-                    node.Children.Add(BuildFileSystemNode(file, false));
+                    a_node.Children.Add(BuildFileSystemNode(file, false));
                 }
             }
             catch
@@ -371,9 +371,9 @@ namespace mde
         }
 
         /// <summary>フォルダツリーのノードが初めて展開された時に、子ノードの遅延読み込みを行う。</summary>
-        public void HandleTreeViewItemExpanded(object sender, RoutedEventArgs e)
+        public void HandleTreeViewItemExpanded(object a_sender, RoutedEventArgs a_args)
         {
-            if (sender is TreeViewItem tvi && tvi.DataContext is FileSystemItem node && node.IsDirectory)
+            if (a_sender is TreeViewItem tvi && tvi.DataContext is FileSystemItem node && node.IsDirectory)
             {
                 if (node.Children.Count == 1 && node.Children[0].FullPath == null)
                 {
@@ -385,11 +385,11 @@ namespace mde
         }
 
         /// <summary>フォルダツリーでファイルノードがクリックされたら、そのファイルを開く。</summary>
-        public void HandleSelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
+        public void HandleSelectedItemChanged(object a_sender, RoutedPropertyChangedEventArgs<object> a_args)
         {
-            if (e.NewValue is FileSystemItem item && !item.IsDirectory && item.FullPath != null)
+            if (a_args.NewValue is FileSystemItem item && !item.IsDirectory && item.FullPath != null)
             {
-                loadFile(item.FullPath);
+                m_loadFile(item.FullPath);
             }
         }
     }

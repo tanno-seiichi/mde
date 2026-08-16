@@ -7,8 +7,8 @@
         Height="860" Width="1240"
         FontFamily="Segoe UI, Yu Gothic UI"
         Background="{StaticResource CardBrush}"
-        PreviewKeyDown="MainWindow_PreviewKeyDown"
-        Closing="Window_Closing">
+        PreviewKeyDown="MainWindowPreviewKeyDown"
+        Closing="WindowClosing">
 
     <Window.Resources>
         <Style TargetType="MenuItem" x:Key="CtxMenuItem">
@@ -30,19 +30,19 @@
         <Menu DockPanel.Dock="Top" Background="{StaticResource CardBrush}" Foreground="{StaticResource InkBrush}"
               BorderBrush="{StaticResource ThinBorderBrush}" BorderThickness="0,0,0,1" Padding="6,3" FontSize="13">
             <MenuItem Header="ファイル(_F)">
-                <MenuItem Header="新規作成(_N)" Click="NewBtn_Click" InputGestureText="Ctrl+N"/>
-                <MenuItem Header="新しいウインドウ" Click="NewWindow_Click" InputGestureText="Shift+Ctrl+N"/>
-                <MenuItem Header="開く…(_O)" Click="OpenBtn_Click" InputGestureText="Ctrl+O"/>
-                <MenuItem Header="保存(_S)" Click="SaveBtn_Click" InputGestureText="Ctrl+S"/>
-                <MenuItem Header="名前を付けて保存…" Click="SaveAsBtn_Click" InputGestureText="Shift+Ctrl+S"/>
-                <MenuItem Header="すべて保存(_A)" Click="SaveAllBtn_Click"/>
+                <MenuItem Header="新規作成(_N)" Click="NewBtnClick" InputGestureText="Ctrl+N"/>
+                <MenuItem Header="新しいウインドウ" Click="NewWindowClick" InputGestureText="Shift+Ctrl+N"/>
+                <MenuItem Header="開く…(_O)" Click="OpenBtnClick" InputGestureText="Ctrl+O"/>
+                <MenuItem Header="保存(_S)" Click="SaveBtnClick" InputGestureText="Ctrl+S"/>
+                <MenuItem Header="名前を付けて保存…" Click="SaveAsBtnClick" InputGestureText="Shift+Ctrl+S"/>
+                <MenuItem Header="すべて保存(_A)" Click="SaveAllBtnClick"/>
                 <Separator/>
-                <MenuItem Header="PDFに書き出し…(_P)" Click="ExportPdfBtn_Click" InputGestureText="Ctrl+P"/>
+                <MenuItem Header="PDFに書き出し…(_P)" Click="ExportPdfBtnClick" InputGestureText="Ctrl+P"/>
                 <Separator/>
-                <MenuItem Header="閉じる(_W)" Click="CloseBtn_Click" InputGestureText="Ctrl+W"/>
+                <MenuItem Header="閉じる(_W)" Click="CloseBtnClick" InputGestureText="Ctrl+W"/>
             </MenuItem>
-            <MenuItem Header="検索と置換(_F)" Click="FindReplaceBtn_Click" InputGestureText="Ctrl+F"/>
-            <MenuItem Header="バージョン情報(_A)" Click="VersionInfoBtn_Click"/>
+            <MenuItem Header="検索と置換(_F)" Click="FindReplaceBtnClick" InputGestureText="Ctrl+F"/>
+            <MenuItem Header="バージョン情報(_A)" Click="VersionInfoBtnClick"/>
         </Menu>
 
         <!-- ===================== Status bar (panes / zoom / mode) ===================== -->
@@ -50,22 +50,22 @@
                 Padding="4,4,2,4">
             <Grid>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
-                    <Button x:Name="ToggleFolderPaneBtn" Content="フォルダを隠す" Style="{StaticResource ToolbarButton}" Click="ToggleFolderPaneBtn_Click"/>
-                    <Button x:Name="ToggleOutlinePaneBtn" Content="アウトラインを隠す" Style="{StaticResource ToolbarButton}" Click="ToggleOutlinePaneBtn_Click"/>
+                    <Button x:Name="m_toggleFolderPaneBtn" Content="フォルダを隠す" Style="{StaticResource ToolbarButton}" Click="ToggleFolderPaneBtnClick"/>
+                    <Button x:Name="m_toggleOutlinePaneBtn" Content="アウトラインを隠す" Style="{StaticResource ToolbarButton}" Click="ToggleOutlinePaneBtnClick"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="ソース ⇄ MarkDown" Style="{StaticResource ToolbarButton}" Click="ToggleModeBtn_Click"/>
+                    <Button Content="ソース ⇄ MarkDown" Style="{StaticResource ToolbarButton}" Click="ToggleModeBtnClick"/>
                     <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="12" Padding="10,5" Margin="0,0,0,0">
-                        <TextBlock x:Name="ModeIndicator" Text="MarkDownモード" FontSize="11" VerticalAlignment="Center"
+                        <TextBlock x:Name="m_modeIndicator" Text="MarkDownモード" FontSize="11" VerticalAlignment="Center"
                                        Foreground="{StaticResource AccentBrush}" FontFamily="Consolas"/>
                     </Border>
 
                     <Grid Width="30" />
 
-                    <Button Content="－" Style="{StaticResource ZoomButton}" Click="ZoomOut_Click"/>
-                    <Button x:Name="ZoomLabelBtn" Content="100%" Width="52" Style="{StaticResource ToolbarButton}"
-                            Click="ZoomReset_Click"/>
-                    <Button Content="＋" Style="{StaticResource ZoomButton}" Click="ZoomIn_Click"/>
+                    <Button Content="－" Style="{StaticResource ZoomButton}" Click="ZoomOutClick"/>
+                    <Button x:Name="m_zoomLabelBtn" Content="100%" Width="52" Style="{StaticResource ToolbarButton}"
+                            Click="ZoomResetClick"/>
+                    <Button Content="＋" Style="{StaticResource ZoomButton}" Click="ZoomInClick"/>
                 </StackPanel>
             </Grid>
         </Border>
@@ -73,15 +73,15 @@
         <!-- ===================== Body: folder | outline | editor ===================== -->
         <Grid Margin="0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="FolderColumnDef" Width="190"/>
-                <ColumnDefinition x:Name="FolderSplitterColumnDef" Width="2"/>
-                <ColumnDefinition x:Name="OutlineColumnDef" Width="210"/>
-                <ColumnDefinition x:Name="OutlineSplitterColumnDef" Width="2"/>
+                <ColumnDefinition x:Name="m_folderColumnDef" Width="190"/>
+                <ColumnDefinition x:Name="m_folderSplitterColumnDef" Width="2"/>
+                <ColumnDefinition x:Name="m_outlineColumnDef" Width="210"/>
+                <ColumnDefinition x:Name="m_outlineSplitterColumnDef" Width="2"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <!-- ==== Folder pane ==== -->
-            <Border x:Name="FolderPaneBorder" Grid.Column="0" Background="{StaticResource ListPaneBrush}"
+            <Border x:Name="m_folderPaneBorder" Grid.Column="0" Background="{StaticResource ListPaneBrush}"
                     BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,0" CornerRadius="0">
                 <DockPanel Margin="0,0,0,0">
                     <Grid DockPanel.Dock="Top" Margin="8,8,4,6">
@@ -89,33 +89,33 @@
                                    Foreground="{StaticResource InkBrush}"/>
                         <Button Content="…" Width="24" Height="22" HorizontalAlignment="Right"
                                 Style="{StaticResource ToolbarButton}" Margin="0" Padding="0"
-                                Click="OpenFolderTreeBtn_Click"/>
+                                Click="OpenFolderTreeBtnClick"/>
                     </Grid>
-                    <TreeView x:Name="FolderTree" BorderThickness="0" Background="Transparent"
-                              Loaded="FolderTree_Loaded"
-                              SelectedItemChanged="FolderTree_SelectedItemChanged">
+                    <TreeView x:Name="m_folderTree" BorderThickness="0" Background="Transparent"
+                              Loaded="FolderTreeLoaded"
+                              SelectedItemChanged="FolderTreeSelectedItemChanged">
                         <TreeView.Resources>
                             <Style TargetType="TreeViewItem">
-                                <EventSetter Event="Expanded" Handler="TreeViewItem_Expanded"/>
+                                <EventSetter Event="Expanded" Handler="TreeViewItemExpanded"/>
                                 <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                                 <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
                             </Style>
                         </TreeView.Resources>
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                <Border x:Name="MatchHighlightBorder" CornerRadius="3" Padding="3,1">
+                                <Border x:Name="m_matchHighlightBorder" CornerRadius="3" Padding="3,1">
                                     <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{StaticResource InkBrush}"/>
                                 </Border>
                                 <HierarchicalDataTemplate.Triggers>
                                     <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
-                                        <Setter TargetName="MatchHighlightBorder" Property="Background" Value="#FFE166"/>
+                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#FFE166"/>
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
-                                        <Setter TargetName="MatchHighlightBorder" Property="Background" Value="#CBE8F6"/>
-                                        <Setter TargetName="MatchHighlightBorder" Property="BorderBrush" Value="#26A0DA"/>
-                                        <Setter TargetName="MatchHighlightBorder" Property="BorderThickness" Value="1,1,1,1"/>
-                                        <Setter TargetName="MatchHighlightBorder" Property="CornerRadius" Value="0"/>
-                                        <Setter TargetName="MatchHighlightBorder" Property="Margin" Value="-1,0,0,0"/>
+                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#CBE8F6"/>
+                                        <Setter TargetName="m_matchHighlightBorder" Property="BorderBrush" Value="#26A0DA"/>
+                                        <Setter TargetName="m_matchHighlightBorder" Property="BorderThickness" Value="1,1,1,1"/>
+                                        <Setter TargetName="m_matchHighlightBorder" Property="CornerRadius" Value="0"/>
+                                        <Setter TargetName="m_matchHighlightBorder" Property="Margin" Value="-1,0,0,0"/>
                                     </DataTrigger>
                                 </HierarchicalDataTemplate.Triggers>
                             </HierarchicalDataTemplate>
@@ -124,25 +124,25 @@
                 </DockPanel>
             </Border>
 
-            <GridSplitter x:Name="FolderSplitter" Grid.Column="1" HorizontalAlignment="Stretch" Width="1" Background="{StaticResource ThinBorderBrush}"/>
+            <GridSplitter x:Name="m_folderSplitter" Grid.Column="1" HorizontalAlignment="Stretch" Width="1" Background="{StaticResource ThinBorderBrush}"/>
 
             <!-- ==== Outline pane ==== -->
-            <Border x:Name="OutlinePaneBorder" Grid.Column="2" Background="{StaticResource ListPaneBrush}"
+            <Border x:Name="m_outlinePaneBorder" Grid.Column="2" Background="{StaticResource ListPaneBrush}"
                     BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,0" CornerRadius="0">
                 <DockPanel Margin="0,0,0,0">
                     <TextBlock DockPanel.Dock="Top" Text="アウトライン" FontWeight="Bold" FontSize="12"
                                Margin="8,8,8,6" Foreground="{StaticResource InkBrush}"/>
-                    <ListBox x:Name="OutlineList" BorderThickness="0" Background="Transparent"
-                             SelectionChanged="OutlineList_SelectionChanged">
+                    <ListBox x:Name="m_outlineList" BorderThickness="0" Background="Transparent"
+                             SelectionChanged="OutlineListSelectionChanged">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Border x:Name="MatchHighlightBorder" Margin="{Binding Indent}" CornerRadius="3" Padding="3,1">
+                                <Border x:Name="m_matchHighlightBorder" Margin="{Binding Indent}" CornerRadius="3" Padding="3,1">
                                     <TextBlock Text="{Binding Text}" FontSize="{Binding FontSizeValue}"
                                                TextTrimming="CharacterEllipsis" Foreground="{StaticResource InkBrush}"/>
                                 </Border>
                                 <DataTemplate.Triggers>
                                     <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
-                                        <Setter TargetName="MatchHighlightBorder" Property="Background" Value="#FFE166"/>
+                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#FFE166"/>
                                     </DataTrigger>
                                 </DataTemplate.Triggers>
                             </DataTemplate>
@@ -151,13 +151,13 @@
                 </DockPanel>
             </Border>
 
-            <GridSplitter x:Name="OutlineSplitter" Grid.Column="3" HorizontalAlignment="Stretch" Width="1" Background="{StaticResource ThinBorderBrush}"/>
+            <GridSplitter x:Name="m_outlineSplitter" Grid.Column="3" HorizontalAlignment="Stretch" Width="1" Background="{StaticResource ThinBorderBrush}"/>
 
             <!-- ==== Editor pane ==== -->
             <Border Grid.Column="4" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}"
                     BorderThickness="0,0,0,0" CornerRadius="0">
                 <Grid>
-                    <RichTextBox x:Name="Editor"
+                    <RichTextBox x:Name="m_editor"
                                  BorderThickness="0"
                                  Background="Transparent"
                                  Padding="20,20,4,0"
@@ -168,17 +168,17 @@
                                  AcceptsTab="False"
                                  IsUndoEnabled="False"
                                  SpellCheck.IsEnabled="False"
-                                 TextChanged="Editor_TextChanged"
-                                 PreviewKeyDown="Editor_PreviewKeyDown"
-                                 PreviewTextInput="Editor_PreviewTextInput"
-                                 PreviewMouseWheel="Editor_PreviewMouseWheel"
-                                 PreviewMouseLeftButtonDown="Editor_PreviewMouseLeftButtonDown"
-                                 SizeChanged="Editor_SizeChanged"
+                                 TextChanged="EditorTextChanged"
+                                 PreviewKeyDown="EditorPreviewKeyDown"
+                                 PreviewTextInput="EditorPreviewTextInput"
+                                 PreviewMouseWheel="EditorPreviewMouseWheel"
+                                 PreviewMouseLeftButtonDown="EditorPreviewMouseLeftButtonDown"
+                                 SizeChanged="EditorSizeChanged"
                                  AllowDrop="True"
-                                 PreviewDragEnter="Editor_DragEnter"
-                                 PreviewDragOver="Editor_DragOver"
-                                 PreviewDrop="Editor_Drop"
-                                 ContextMenuOpening="Editor_ContextMenuOpening">
+                                 PreviewDragEnter="EditorDragEnter"
+                                 PreviewDragOver="EditorDragOver"
+                                 PreviewDrop="EditorDrop"
+                                 ContextMenuOpening="EditorContextMenuOpening">
                         <RichTextBox.Resources>
                             <Style TargetType="Paragraph">
                                 <Setter Property="Margin" Value="0,0,0,14"/>
@@ -199,58 +199,58 @@
                             </Style>
                         </RichTextBox.Resources>
                         <RichTextBox.ContextMenu>
-                            <ContextMenu x:Name="EditorContextMenu">
-                                <MenuItem x:Name="TextStyleMenuItem" Header="文字装飾" Style="{StaticResource CtxMenuItem}"
+                            <ContextMenu x:Name="m_editorContextMenu">
+                                <MenuItem x:Name="m_textStyleMenuItem" Header="文字装飾" Style="{StaticResource CtxMenuItem}"
                                           Visibility="Collapsed">
-                                    <MenuItem Header="通常表記に戻す" Tag="normal" Click="TextStyleItem_Click"/>
-                                    <MenuItem Header="インラインコードにする" Tag="code" Click="TextStyleItem_Click"/>
-                                    <MenuItem Header="太字にする" Tag="bold" Click="TextStyleItem_Click"/>
-                                    <MenuItem Header="取り消し線にする" Tag="strikethrough" Click="TextStyleItem_Click"/>
-                                    <MenuItem Header="リンクにする…" Tag="link" Click="TextStyleItem_Click"/>
+                                    <MenuItem Header="通常表記に戻す" Tag="normal" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="インラインコードにする" Tag="code" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="太字にする" Tag="bold" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="取り消し線にする" Tag="strikethrough" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="リンクにする…" Tag="link" Click="TextStyleItemClick"/>
                                 </MenuItem>
-                                <MenuItem x:Name="LinkMenuItem" Header="リンク" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_linkMenuItem" Header="リンク" Style="{StaticResource CtxMenuItem}"
                                           Visibility="Collapsed">
-                                    <MenuItem Header="リンクを開く" Click="LinkOpen_Click"/>
-                                    <MenuItem Header="URLをコピー" Click="LinkCopyUrl_Click"/>
-                                    <MenuItem Header="リンクを編集…" Click="LinkEdit_Click"/>
-                                    <MenuItem Header="リンクを解除" Click="LinkRemove_Click"/>
+                                    <MenuItem Header="リンクを開く" Click="LinkOpenClick"/>
+                                    <MenuItem Header="URLをコピー" Click="LinkCopyUrlClick"/>
+                                    <MenuItem Header="リンクを編集…" Click="LinkEditClick"/>
+                                    <MenuItem Header="リンクを解除" Click="LinkRemoveClick"/>
                                 </MenuItem>
-                                <MenuItem x:Name="HeadingMenuItem" Header="見出し" Style="{StaticResource CtxMenuItem}">
-                                    <MenuItem Header="本文（見出しなし）" Tag="0" Click="HeadingItem_Click"/>
-                                    <MenuItem Header="# 見出し1" Tag="1" Click="HeadingItem_Click"/>
-                                    <MenuItem Header="## 見出し2" Tag="2" Click="HeadingItem_Click"/>
-                                    <MenuItem Header="### 見出し3" Tag="3" Click="HeadingItem_Click"/>
-                                    <MenuItem Header="#### 見出し4" Tag="4" Click="HeadingItem_Click"/>
-                                    <MenuItem Header="##### 見出し5" Tag="5" Click="HeadingItem_Click"/>
-                                    <MenuItem Header="###### 見出し6" Tag="6" Click="HeadingItem_Click"/>
+                                <MenuItem x:Name="m_headingMenuItem" Header="見出し" Style="{StaticResource CtxMenuItem}">
+                                    <MenuItem Header="本文（見出しなし）" Tag="0" Click="HeadingItemClick"/>
+                                    <MenuItem Header="# 見出し1" Tag="1" Click="HeadingItemClick"/>
+                                    <MenuItem Header="## 見出し2" Tag="2" Click="HeadingItemClick"/>
+                                    <MenuItem Header="### 見出し3" Tag="3" Click="HeadingItemClick"/>
+                                    <MenuItem Header="#### 見出し4" Tag="4" Click="HeadingItemClick"/>
+                                    <MenuItem Header="##### 見出し5" Tag="5" Click="HeadingItemClick"/>
+                                    <MenuItem Header="###### 見出し6" Tag="6" Click="HeadingItemClick"/>
                                 </MenuItem>
-                                <MenuItem x:Name="InsertTableMenuItem" Header="表を挿入" Style="{StaticResource CtxMenuItem}"
-                                          Click="InsertTableItem_Click"/>
-                                <MenuItem x:Name="InsertRowAboveMenuItem" Header="上に行を挿入" Style="{StaticResource CtxMenuItem}"
-                                          Click="InsertRowAboveItem_Click" Visibility="Collapsed"/>
-                                <MenuItem x:Name="InsertRowBelowMenuItem" Header="下に行を挿入" Style="{StaticResource CtxMenuItem}"
-                                          Click="InsertRowBelowItem_Click" Visibility="Collapsed"/>
-                                <MenuItem x:Name="InsertColumnLeftMenuItem" Header="左に列を挿入" Style="{StaticResource CtxMenuItem}"
-                                          Click="InsertColumnLeftItem_Click" Visibility="Collapsed"/>
-                                <MenuItem x:Name="InsertColumnRightMenuItem" Header="右に列を挿入" Style="{StaticResource CtxMenuItem}"
-                                          Click="InsertColumnRightItem_Click" Visibility="Collapsed"/>
-                                <MenuItem x:Name="DeleteRowMenuItem" Header="この行を削除" Style="{StaticResource CtxMenuItem}"
-                                          Click="DeleteRowItem_Click" Visibility="Collapsed"/>
-                                <MenuItem x:Name="DeleteColumnMenuItem" Header="この列を削除" Style="{StaticResource CtxMenuItem}"
-                                          Click="DeleteColumnItem_Click" Visibility="Collapsed"/>
-                                <MenuItem x:Name="CopyCodeBlockMenuItem" Header="コードブロック全体をコピー（```込み）" Style="{StaticResource CtxMenuItem}"
-                                          Click="CopyCodeBlockItem_Click" Visibility="Collapsed"/>
-                                <MenuItem x:Name="SaveImageMenuItem" Header="画像を保存…" Style="{StaticResource CtxMenuItem}"
-                                          Click="SaveImageItem_Click" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_insertTableMenuItem" Header="表を挿入" Style="{StaticResource CtxMenuItem}"
+                                          Click="InsertTableItemClick"/>
+                                <MenuItem x:Name="m_insertRowAboveMenuItem" Header="上に行を挿入" Style="{StaticResource CtxMenuItem}"
+                                          Click="InsertRowAboveItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_insertRowBelowMenuItem" Header="下に行を挿入" Style="{StaticResource CtxMenuItem}"
+                                          Click="InsertRowBelowItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_insertColumnLeftMenuItem" Header="左に列を挿入" Style="{StaticResource CtxMenuItem}"
+                                          Click="InsertColumnLeftItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_insertColumnRightMenuItem" Header="右に列を挿入" Style="{StaticResource CtxMenuItem}"
+                                          Click="InsertColumnRightItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_deleteRowMenuItem" Header="この行を削除" Style="{StaticResource CtxMenuItem}"
+                                          Click="DeleteRowItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_deleteColumnMenuItem" Header="この列を削除" Style="{StaticResource CtxMenuItem}"
+                                          Click="DeleteColumnItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_copyCodeBlockMenuItem" Header="コードブロック全体をコピー（```込み）" Style="{StaticResource CtxMenuItem}"
+                                          Click="CopyCodeBlockItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_saveImageMenuItem" Header="画像を保存…" Style="{StaticResource CtxMenuItem}"
+                                          Click="SaveImageItemClick" Visibility="Collapsed"/>
                                 <Separator/>
-                                <MenuItem x:Name="ToggleModeMenuItem" Header="ソースモードに切り替え"
-                                          Style="{StaticResource CtxMenuItem}" Click="ToggleModeBtn_Click"/>
+                                <MenuItem x:Name="m_toggleModeMenuItem" Header="ソースモードに切り替え"
+                                          Style="{StaticResource CtxMenuItem}" Click="ToggleModeBtnClick"/>
                             </ContextMenu>
                         </RichTextBox.ContextMenu>
-                        <FlowDocument x:Name="EditorDocument" FontFamily="Yu Gothic UI, Segoe UI"/>
+                        <FlowDocument x:Name="m_editorDocument" FontFamily="Yu Gothic UI, Segoe UI"/>
                     </RichTextBox>
 
-                    <TextBox x:Name="SourceEditor"
+                    <TextBox x:Name="m_sourceEditor"
                              Visibility="Collapsed"
                              BorderThickness="0"
                              Background="#F0F0F0"
@@ -262,10 +262,10 @@
                              AcceptsTab="True"
                              TextWrapping="Wrap"
                              VerticalScrollBarVisibility="Auto"
-                             TextChanged="SourceEditor_TextChanged">
+                             TextChanged="SourceEditorTextChanged">
                         <TextBox.ContextMenu>
                             <ContextMenu>
-                                <MenuItem Header="MarkDownモードに切り替え" Click="ToggleModeBtn_Click"/>
+                                <MenuItem Header="MarkDownモードに切り替え" Click="ToggleModeBtnClick"/>
                             </ContextMenu>
                         </TextBox.ContextMenu>
                     </TextBox>

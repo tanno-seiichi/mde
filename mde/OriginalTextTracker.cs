@@ -25,24 +25,24 @@ namespace mde
     /// </summary>
     public class OriginalTextTracker
     {
-        private readonly RichTextBox editor;
+        private readonly RichTextBox m_editor;
 
         /// <summary>ブロックごとの元テキストを保持する値クラス（参照型で包むことで、
         /// ConditionalWeakTableに値を追加/更新できるようにしている）。</summary>
         private class Holder
         {
-            public string Text;
+            public string m_text;
         }
 
-        private readonly ConditionalWeakTable<Block, Holder> table = new ConditionalWeakTable<Block, Holder>();
+        private readonly ConditionalWeakTable<Block, Holder> m_table = new ConditionalWeakTable<Block, Holder>();
 
         /// <summary>
         /// OriginalTextTrackerを構築する。
         /// </summary>
-        /// <param name="editor">対象のRichTextBox（GetTopLevelBlockでEditor.Documentと比較するために必要）。</param>
-        public OriginalTextTracker(RichTextBox editor)
+        /// <param name="a_editor">対象のRichTextBox（GetTopLevelBlockでEditor.Documentと比較するために必要）。</param>
+        public OriginalTextTracker(RichTextBox a_editor)
         {
-            this.editor = editor;
+            this.m_editor = a_editor;
         }
 
         /// <summary>
@@ -50,17 +50,17 @@ namespace mde
         /// 見つける（すでにトップレベルの段落ならその段落自身、箇条書き項目や表のセルの中の
         /// 位置なら、それを含むList/Table）。
         /// </summary>
-        /// <param name="position">起点となる位置。</param>
+        /// <param name="a_position">起点となる位置。</param>
         /// <returns>見つかったトップレベルブロック。positionがnullなら null。</returns>
-        public Block GetTopLevelBlock(TextPointer position)
+        public Block GetTopLevelBlock(TextPointer a_position)
         {
-            var para = position?.Paragraph;
+            var para = a_position?.Paragraph;
             if (para == null) return null;
 
             DependencyObject node = para;
             while (node != null)
             {
-                if (node is Block block && ReferenceEquals(block.Parent, editor.Document))
+                if (node is Block block && ReferenceEquals(block.Parent, m_editor.Document))
                     return block;
 
                 node = (node as TextElement)?.Parent;
@@ -73,25 +73,25 @@ namespace mde
         /// 記憶から取り除く。保存時にはこのブロックは元テキストではなく、現在の構造から
         /// 新たに組み立て直したテキストが使われるようになる。
         /// </summary>
-        /// <param name="position">編集が行われた位置。</param>
-        public void Invalidate(TextPointer position)
+        /// <param name="a_position">編集が行われた位置。</param>
+        public void Invalidate(TextPointer a_position)
         {
-            var block = GetTopLevelBlock(position);
-            if (block != null) table.Remove(block);
+            var block = GetTopLevelBlock(a_position);
+            if (block != null) m_table.Remove(block);
         }
 
         /// <summary>
         /// Invalidate(TextPointer)と同じことを、位置ではなくBlockの参照から直接行う。
         /// </summary>
-        /// <param name="block">編集されたブロック（またはその子孫の要素）。</param>
-        public void InvalidateForBlock(Block block)
+        /// <param name="a_block">編集されたブロック（またはその子孫の要素）。</param>
+        public void InvalidateForBlock(Block a_block)
         {
-            DependencyObject node = block;
+            DependencyObject node = a_block;
             while (node != null)
             {
-                if (node is Block b && ReferenceEquals(b.Parent, editor.Document))
+                if (node is Block b && ReferenceEquals(b.Parent, m_editor.Document))
                 {
-                    table.Remove(b);
+                    m_table.Remove(b);
                     return;
                 }
                 node = (node as TextElement)?.Parent;
@@ -102,36 +102,36 @@ namespace mde
         /// 新しく解析されたブロックについて、それを生成した元のソース行をそのまま記憶する。
         /// 一度も編集されなければ、保存時にこのテキストがそのまま書き戻される。
         /// </summary>
-        /// <param name="block">直前にドキュメントへ追加されたブロック。</param>
-        /// <param name="lines">ファイル全体のソース行配列。</param>
-        /// <param name="start">このブロックを生成した最初の行番号（含む）。</param>
-        /// <param name="end">このブロックを生成した最後の行番号（含まない）。</param>
-        public void Record(Block block, string[] lines, int start, int end)
+        /// <param name="a_block">直前にドキュメントへ追加されたブロック。</param>
+        /// <param name="a_lines">ファイル全体のソース行配列。</param>
+        /// <param name="a_start">このブロックを生成した最初の行番号（含む）。</param>
+        /// <param name="a_end">このブロックを生成した最後の行番号（含まない）。</param>
+        public void Record(Block a_block, string[] a_lines, int a_start, int a_end)
         {
-            table.AddOrUpdate(block, new Holder { Text = string.Join("\n", lines, start, end - start) });
+            m_table.AddOrUpdate(a_block, new Holder { m_text = string.Join("\n", a_lines, a_start, a_end - a_start) });
         }
 
         /// <summary>
         /// ブロックの元テキストがまだ記憶されている（＝一度も編集されていない）かどうかを調べる。
         /// </summary>
-        /// <param name="block">調べたいブロック。</param>
-        /// <param name="text">記憶されていた元テキスト（見つかった場合）。</param>
+        /// <param name="a_block">調べたいブロック。</param>
+        /// <param name="a_textRf">記憶されていた元テキスト（見つかった場合）。</param>
         /// <returns>記憶が残っていれば true。</returns>
-        public bool TryGetOriginal(Block block, out string text)
+        public bool TryGetOriginal(Block a_block, out string a_textRf)
         {
-            if (table.TryGetValue(block, out var holder))
+            if (m_table.TryGetValue(a_block, out var holder))
             {
-                text = holder.Text;
+                a_textRf = holder.m_text;
                 return true;
             }
-            text = null;
+            a_textRf = null;
             return false;
         }
 
         /// <summary>ファイルを新規に読み込む際、それ以前の記憶をすべて破棄する。</summary>
         public void Clear()
         {
-            table.Clear();
+            m_table.Clear();
         }
     }
 }

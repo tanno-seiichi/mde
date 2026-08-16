@@ -16,25 +16,25 @@ namespace mde
     public partial class App : Application
     {
         /// <summary>Registers the unhandled-exception handler on startup.</summary>
-        /// <param name="e">Startup event args.</param>
-        protected override void OnStartup(StartupEventArgs e)
+        /// <param name="a_args">Startup event args.</param>
+        protected override void OnStartup(StartupEventArgs a_args)
         {
-            base.OnStartup(e);
-            DispatcherUnhandledException += App_DispatcherUnhandledException;
+            base.OnStartup(a_args);
+            DispatcherUnhandledException += AppDispatcherUnhandledException;
         }
 
         /// <summary>Shows any otherwise-unhandled exception in a message box rather than letting the
         /// app crash silently.</summary>
-        /// <param name="sender">The Application.</param>
-        /// <param name="e">Exception details; Handled is set to true to keep the app running.</param>
-        private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+        /// <param name="a_sender">The Application.</param>
+        /// <param name="a_args">Exception details; Handled is set to true to keep the app running.</param>
+        private void AppDispatcherUnhandledException(object a_sender, DispatcherUnhandledExceptionEventArgs a_args)
         {
             MessageBox.Show(
-                "予期しないエラーが発生しました:\n\n" + e.Exception,
+                "予期しないエラーが発生しました:\n\n" + a_args.Exception,
                 "MarkDown インラインエディタ - エラー",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
-            e.Handled = true;
+            a_args.Handled = true;
         }
     }
 }
