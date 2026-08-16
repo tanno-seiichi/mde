@@ -25,10 +25,6 @@ namespace mde
         public double OutlinePaneWidth { get; set; } = 200;
         public double ZoomLevel { get; set; } = 1.0;
 
-        /// <summary>前回終了時に開いていたファイルの絶対パス（無ければ null）。次回起動時に
-        /// 自動的に開き直すために使う。</summary>
-        public string LastFilePath { get; set; }
-
         private static string SettingsPath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mde", "settings.json");
 
