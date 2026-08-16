@@ -71,6 +71,10 @@ namespace mde
         /// <summary>起動時に読み込んだ、前回終了時のウィンドウ状態設定。</summary>
         private AppSettings savedSettings;
 
+        /// <summary>アプリ起動時のコマンドライン引数を使ってよいのは最初の1つのウィンドウだけ、
+        /// という制御のための静的フラグ（プロセス全体で共有される）。</summary>
+        private static bool isFirstWindowInstance = true;
+
         /// <summary>現在開いている検索と置換ウィンドウ（Ctrl+Fなどで、同時に2つ開かず既存の
         /// ものを前面に出すために使う）。開いていなければ null。</summary>
         private FindReplaceWindow openFindReplaceWindow;
@@ -151,7 +155,16 @@ namespace mde
             DataObject.AddCopyingHandler(Editor, tableEditor.HandleCopying);
             DataObject.AddPastingHandler(Editor, tableEditor.HandlePasting);
 
-            if (!string.IsNullOrEmpty(savedSettings.LastFilePath) && File.Exists(savedSettings.LastFilePath))
+            // 起動時引数でMarkDownファイルのパスを受け取っていれば、そちらを最優先で開く
+            // （ファイルの関連付けからのダブルクリック起動などに対応するため）。無ければ、
+            // 前回終了時に開いていたファイルを復元する。
+            string startupFilePath = ResolveStartupFilePath();
+            if (!string.IsNullOrEmpty(startupFilePath) && File.Exists(startupFilePath))
+            {
+                LoadFile(startupFilePath);
+                folderTreeManager.SelectFileNode(startupFilePath);
+            }
+            else if (!string.IsNullOrEmpty(savedSettings.LastFilePath) && File.Exists(savedSettings.LastFilePath))
             {
                 LoadFile(savedSettings.LastFilePath);
                 folderTreeManager.SelectFileNode(savedSettings.LastFilePath);
@@ -175,6 +188,33 @@ namespace mde
                 {
                     e.Cancel = true;
                 }
+            }
+        }
+
+        /// <summary>
+        /// 起動時のコマンドライン引数からMarkDownファイルのパスを取り出す。ファイルの関連付けで
+        /// 「プログラムから開く」を使った場合や、コマンドプロンプトから直接パスを指定して
+        /// 起動した場合などに対応するためのもの。引数が無ければnullを返す。
+        /// </summary>
+        /// <returns>解決できた絶対パス。引数が無い、または解決に失敗した場合はnull。</returns>
+        private string ResolveStartupFilePath()
+        {
+            // 起動時引数は、プロセス全体で共通の情報であり、ウィンドウ単位のものではない。
+            // 「新しいウィンドウ」やファイルリンクからの別ウィンドウ起動でも同じ引数が
+            // 見えてしまうため、最初の1つのウィンドウでだけ使うようにする。
+            if (!isFirstWindowInstance) return null;
+            isFirstWindowInstance = false;
+
+            try
+            {
+                string[] args = Environment.GetCommandLineArgs();
+                // args[0]は実行ファイル自身のパスなので、実際の引数はargs[1]以降になる。
+                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1])) return null;
+                return Path.GetFullPath(args[1]);
+            }
+            catch
+            {
+                return null;
             }
         }
 
