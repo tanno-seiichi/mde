@@ -104,6 +104,8 @@ namespace mde
         /// <summary>Inlinesコレクションの中の、Runのリテラルテキストだけを連結する
         /// （Spanは再帰的にたどり、LineBreakは改行として扱う）。TextRange.Textと違い、
         /// リスト項目のマーカー記号を文字として拾ってしまうことがない。</summary>
+        /// <param name="a_inlines">対象のInlineコレクション。</param>
+        /// <param name="a_sb">追記先のStringBuilder。</param>
         private void AppendPlainInlineText(InlineCollection a_inlines, StringBuilder a_sb)
         {
             foreach (Inline inline in a_inlines)

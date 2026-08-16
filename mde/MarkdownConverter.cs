@@ -74,6 +74,8 @@ namespace mde
 
         /// <summary>1つのトップレベルブロックを、種類（見出し/段落・コードブロック・箇条書き・表）に
         /// 応じて適切な変換関数へ振り分ける。コードブロック丸ごとコピー機能からも利用される。</summary>
+        /// <param name="a_block">対象のブロック。</param>
+        /// <returns>変換後のMarkDown文字列。</returns>
         public string BlockToMarkdown(Block a_block)
         {
             if (a_block is Paragraph p)
@@ -99,6 +101,9 @@ namespace mde
         /// リストが「常に同じ数字を使う」スタイル（Tag=="const"）としてマークされている場合は
         /// すべての項目を "1." として書き出す。
         /// </summary>
+        /// <param name="a_list">対象のリスト。</param>
+        /// <param name="a_level">見出しレベル。</param>
+        /// <returns>変換後のMarkDown文字列。</returns>
         private string ListToMarkdown(List a_list, int a_level)
         {
             string indent = new string(' ', a_level * 3);
@@ -127,6 +132,8 @@ namespace mde
         }
 
         /// <summary>表をGitHub-flavored MarkDown形式の表構文へ書き出す。</summary>
+        /// <param name="a_table">対象の表。</param>
+        /// <returns>変換後のMarkDown文字列。</returns>
         private string TableToMarkdown(Table a_table)
         {
             var rows = new List<TableRow>();
@@ -157,6 +164,8 @@ namespace mde
 
         /// <summary>段落のInlinesをMarkDownテキストへ書き出す（見出し・段落・箇条書き項目・
         /// 表セルの内容で共通して使う）。</summary>
+        /// <param name="a_p">対象の段落。</param>
+        /// <returns>変換後のMarkDown文字列。</returns>
         private string ParagraphInlineToMarkdown(Paragraph a_p)
         {
             var sb = new StringBuilder();
@@ -169,6 +178,8 @@ namespace mde
         /// 改行をまたいで連続している場合は、行ごとに分割せず1つの**/~~/`にまとめる。
         /// リンクのRunは [a_text](a_url) または &lt;a_url&gt; に戻す。
         /// </summary>
+        /// <param name="a_inlines">対象のInlineコレクション。</param>
+        /// <param name="a_sb">追記先のStringBuilder。</param>
         private void AppendInlinesMarkdown(InlineCollection a_inlines, StringBuilder a_sb)
         {
             var inlineList = a_inlines.Cast<Inline>().ToList();
@@ -238,6 +249,8 @@ namespace mde
         }
 
         /// <summary>埋め込み画像を、元の記法（MarkDownの![]()、またはHTMLの&lt;a_img&gt;）に戻す。</summary>
+        /// <param name="a_img">対象の画像。</param>
+        /// <returns>変換後のMarkDown文字列（画像の記法）。</returns>
         private string ImageToMarkdownString(Image a_img)
         {
             var info = a_img.Tag as ImageInfo;
@@ -417,6 +430,8 @@ namespace mde
         }
 
         /// <summary>"| a | b | c |" 形式の表の行を、各セルのテキストへ分割する。</summary>
+        /// <param name="a_line">対象の行。</param>
+        /// <returns>各セルのテキストの一覧。</returns>
         private List<string> ParseTableRow(string a_line)
         {
             string t = a_line.Trim();
@@ -432,6 +447,8 @@ namespace mde
         /// 正しく認識できるようにするため）。また、すべての項目が同じ数字を使っている
         /// 順序付きリストには印を付け、保存時にそのスタイルを維持できるようにする。
         /// </summary>
+        /// <param name="a_listLines">箇条書きのソース行一覧。</param>
+        /// <returns>組み立てた（入れ子を含む）List。</returns>
         private List BuildNestedList(List<string> a_listLines)
         {
             var rootList = new List { MarkerStyle = TextMarkerStyle.Disc };
@@ -621,6 +638,8 @@ namespace mde
         }
 
         /// <summary>エスケープ処理で使ったプレースホルダ文字を、実際の文字へ戻す。</summary>
+        /// <param name="a_text">対象の文字列。</param>
+        /// <returns>実際の文字に戻したテキスト。</returns>
         private string RestorePlaceholders(string a_text)
         {
             if (a_text.Length == 0) return a_text;
@@ -665,6 +684,7 @@ namespace mde
         /// <param name="a_linkText">表示文字。</param>
         /// <param name="a_url">リンク先URL。</param>
         /// <param name="a_isAutoLinkFlg">[a_text](a_url)ではなく&lt;a_url&gt;形式から来た場合はtrue。</param>
+        /// <returns>組み立てたリンクのRun。</returns>
         public Run BuildLinkRun(string a_linkText, string a_url, bool a_isAutoLinkFlg)
         {
             return new Run(a_linkText)
@@ -680,6 +700,8 @@ namespace mde
         /// 変換する（Run単体では改行文字を改行として描画できないため）。エスケープ処理で
         /// 実際の文字に戻された部分は、保存時に再び \ を付けて書き戻せるよう
         /// Tag="escaped" を付けた専用のRunに分けておく。</summary>
+        /// <param name="a_p">対象の段落。</param>
+        /// <param name="a_text">対象の文字列。</param>
         public void AppendPlainTextWithLineBreaks(Paragraph a_p, string a_text)
         {
             var segments = a_text.Split('\n');
@@ -692,6 +714,8 @@ namespace mde
 
         /// <summary>1行分（改行を含まない）のプレーンテキストを、エスケープされた文字ごとに
         /// Runを分けながら段落へ追加する。</summary>
+        /// <param name="a_p">対象の段落。</param>
+        /// <param name="a_segment">対象の1行分のテキスト。</param>
         private void AppendPlainSegmentWithEscapeTags(Paragraph a_p, string a_segment)
         {
             if (a_segment.Length == 0) return;
@@ -715,6 +739,9 @@ namespace mde
         /// AppendPlainTextWithLineBreaksと同様だが、`コード`/**太字**/~~取り消し線~~の内容自体が
         /// 複数行にまたがる場合向け。各行が同じスタイルのRunになり、本物のLineBreakでつながる。
         /// </summary>
+        /// <param name="a_p">対象の段落。</param>
+        /// <param name="a_content">対象の内容。</param>
+        /// <param name="a_style">適用するスタイル。</param>
         public void AppendStyledRunsWithLineBreaks(Paragraph a_p, string a_content, string a_style)
         {
             var segments = a_content.Split('\n');

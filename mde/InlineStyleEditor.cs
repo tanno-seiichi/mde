@@ -470,6 +470,8 @@ namespace mde
 
         /// <summary>Ctrl+クリックでリンクを開く。Ctrl無しのクリックは通常のキャレット移動に
         /// 任せ、何もしない。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         public void HandlePreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args)
         {
             if (Keyboard.Modifiers != ModifierKeys.Control) return;
@@ -659,6 +661,10 @@ namespace mde
         }
 
         /// <summary>入力し終えた [a_text](a_url) 記法を、スタイル付きのリンクRunに置き換える。</summary>
+        /// <param name="a_caret">現在のキャレット位置。</param>
+        /// <param name="a_start">範囲の開始位置。</param>
+        /// <param name="a_linkText">リンクの表示文字列。</param>
+        /// <param name="a_url">リンク先URL。</param>
         private void ReplaceTextBeforeCaretWithLinkRun(TextPointer a_caret, TextPointer a_start, string a_linkText, string a_url)
         {
             m_runAsProgrammaticChange(() =>
@@ -679,6 +685,10 @@ namespace mde
         /// <summary>入力し終えた `コード`/**太字**/~~取り消し線~~ 記法を、スタイル付きのRunに
         /// 置き換える。直後に、通常スタイルの空のゼロ幅スペースRunを続けて挿入することで、
         /// 以降の入力がそのスタイルを引き継がないようにしている。</summary>
+        /// <param name="a_caret">現在のキャレット位置。</param>
+        /// <param name="a_start">範囲の開始位置。</param>
+        /// <param name="a_content">対象の内容。</param>
+        /// <param name="a_style">適用するスタイル。</param>
         private void ReplaceTextBeforeCaretWithStyledRun(TextPointer a_caret, TextPointer a_start, string a_content, string a_style)
         {
             m_runAsProgrammaticChange(() =>

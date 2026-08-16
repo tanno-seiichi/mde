@@ -72,6 +72,8 @@ namespace mde
         // ---------------- セル間の矢印キー移動 ----------------
 
         /// <summary>セルの内容の先頭にキャレットがあるかどうかを調べる（左/上キーでのセル移動判定用）。</summary>
+        /// <param name="a_cell">対象のセル。</param>
+        /// <returns>セルの内容の先頭にあればtrue。</returns>
         public bool IsCaretAtStart(TableCell a_cell)
         {
             var firstPara = a_cell.Blocks.FirstBlock as Paragraph;
@@ -80,6 +82,8 @@ namespace mde
         }
 
         /// <summary>セルの内容の末尾にキャレットがあるかどうかを調べる（右/下キーでのセル移動判定用）。</summary>
+        /// <param name="a_cell">対象のセル。</param>
+        /// <returns>セルの内容の末尾にあればtrue。</returns>
         public bool IsCaretAtEnd(TableCell a_cell)
         {
             var lastPara = a_cell.Blocks.LastBlock as Paragraph;
@@ -352,6 +356,10 @@ namespace mde
         /// startCellとendCellを表の行/列グリッド内で特定し、両方を含む最小の矩形範囲を返す。
         /// どちらかのセルが見つからなければ null を返す。
         /// </summary>
+        /// <param name="a_rows">対象の行一覧。</param>
+        /// <param name="a_startCell">選択範囲の開始セル。</param>
+        /// <param name="a_endCell">選択範囲の終了セル。</param>
+        /// <returns>選択されたセル範囲。どちらかのセルが見つからなければnull。</returns>
         private CellRange GetSelectedCellRange(List<TableRow> a_rows, TableCell a_startCell, TableCell a_endCell)
         {
             int startRow = -1, startCol = -1, endRow = -1, endCol = -1;
@@ -459,6 +467,8 @@ namespace mde
         /// 本物のHTMLとして認識される。オフセットはUTF-8バイト数で計算しているため、
         /// 日本語などASCII以外を含むセルでも正しく動作する。
         /// </summary>
+        /// <param name="a_htmlBodyFragment">HTMLフラグメントの本文。</param>
+        /// <returns>CF_HTML形式のヘッダーを付けて包んだ文字列。</returns>
         private string BuildHtmlClipboardFragment(string a_htmlBodyFragment)
         {
             const string HTML_PREFIX = "<html><body><!--StartFragment-->";
@@ -482,6 +492,8 @@ namespace mde
 
         /// <summary>Ctrl+Cでの表セル範囲コピー時に、TSVとCF_HTML形式をクリップボードへ追加し、
         /// Excelへの貼り付けが正しく表として認識されるようにする。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         public void HandleCopying(object a_sender, DataObjectCopyingEventArgs a_args)
         {
             if (m_isSourceMode() || a_args.IsDragDrop) return;
@@ -613,6 +625,8 @@ namespace mde
 
         /// <summary>貼り付け処理の入口。Excelなどからの表（HTML/TSV）を検出してTableへ変換し、
         /// コードブロック内へのプレーンテキスト貼り付けにも対応する。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         public void HandlePasting(object a_sender, DataObjectPastingEventArgs a_args)
         {
             if (m_isSourceMode()) return;

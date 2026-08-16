@@ -79,6 +79,8 @@ namespace mde
 
         /// <summary>アウトラインペインで見出しがクリックされた時に、エディタをその見出しまで
         /// スクロールする。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         public void HandleSelectionChanged(object a_sender, SelectionChangedEventArgs a_args)
         {
             if (a_sender is ListBox list && list.SelectedItem is OutlineEntry entry && entry.Target != null)

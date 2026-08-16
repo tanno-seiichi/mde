@@ -113,6 +113,11 @@ namespace mde
         // ======================================================================
 
         /// <summary>文字列中に検索語が何回マッチするかを数える。</summary>
+        /// <param name="a_text">対象の文字列。</param>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>一致した件数。</returns>
         public int CountOccurrences(string a_text, string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             if (string.IsNullOrEmpty(a_text) || string.IsNullOrEmpty(a_term)) return 0;
@@ -174,6 +179,11 @@ namespace mde
         /// （現在のファイル・フォルダ全体のどちらでも）が、正規表現の有無によらず統一的に
         /// 使えるように用意されている。
         /// </summary>
+        /// <param name="a_text">対象の文字列。</param>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <param name="a_fromIndex">検索を開始する文字位置。</param>
         public (int index, int length)? FindNextMatchInText(string a_text, string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg, int a_fromIndex)
         {
             if (string.IsNullOrEmpty(a_text) || string.IsNullOrEmpty(a_term) || a_fromIndex > a_text.Length) return null;
@@ -198,6 +208,14 @@ namespace mde
         }
 
         /// <summary>指定位置の一致箇所ちょうど1件だけを置換した結果を返す。</summary>
+        /// <param name="a_text">対象の文字列。</param>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_replacement">置換後の文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <param name="a_index">一致箇所の開始位置。</param>
+        /// <param name="a_length">一致箇所の長さ。</param>
+        /// <returns>置換後のテキスト。</returns>
         public string ReplaceOneMatch(string a_text, string a_term, string a_replacement, bool a_caseSensitiveFlg, bool a_useRegexFlg, int a_index, int a_length)
         {
             a_replacement = a_replacement ?? "";
@@ -264,6 +282,10 @@ namespace mde
         /// 現在の検索条件が、直前の「すべて検索」の条件と同じかどうかを調べる。同じであれば、
         /// 次を検索/前を検索の際に既存の全件ハイライトを残したままにする。
         /// </summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>既存のハイライトを残したままにすべきであればtrue。</returns>
         private bool ShouldPreserveAllHighlights(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             return m_currentHighlights.Count > 0 &&
@@ -279,6 +301,7 @@ namespace mde
         /// 間（検索と置換ウィンドウを操作している間など）は薄く表示されてしまうため、フォーカスの
         /// 有無に関わらず確実に見えるよう、選択ではなくRunの背景色を直接変更する方式にしている。
         /// </summary>
+        /// <param name="a_range">対象の範囲。</param>
         private void AddHighlight(TextRange a_range)
         {
             m_runWithoutDirtyMarking(() => a_range.ApplyPropertyValue(TextElement.BackgroundProperty, MATCH_HIGHLIGHT_BRUSH));
@@ -286,6 +309,7 @@ namespace mde
         }
 
         /// <summary>1件だけを強調表示する（既存のハイライトはクリアする）。</summary>
+        /// <param name="a_range">対象の範囲。</param>
         private void ApplyHighlight(TextRange a_range)
         {
             ClearHighlight();
@@ -370,6 +394,10 @@ namespace mde
         /// （フォルダ全体での「次を検索」の1件ずつの歩みで使う。折り返してしまうと、
         /// 「このファイルにはもう次の一致箇所がない」という判定ができなくなるため）。
         /// </summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>見つかればtrue。</returns>
         public bool FindNextInCurrentFileNoWrap(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             if (m_isSourceMode() || string.IsNullOrEmpty(a_term)) return false;
@@ -435,6 +463,11 @@ namespace mde
         /// 逆方向版で、「前を検索」の実装に使う。1つのRun区間内では、その区間の中で
         /// startに最も近い（＝一番後ろにある）一致箇所を選ぶ。
         /// </summary>
+        /// <param name="a_start">範囲の開始位置。</param>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>見つかった範囲。見つからなければnull。</returns>
         private TextRange FindTextBackwardFrom(TextPointer a_start, string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             Regex regex = null;
@@ -489,6 +522,10 @@ namespace mde
         /// キャレット（または選択範囲の先頭）より前で、次に一致する箇所を選択・スクロール
         /// 表示する。見つからなければ文書の末尾から探し直す（折り返し検索）。
         /// </summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>見つかればtrue。</returns>
         public bool FindPreviousInCurrentFile(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             if (m_isSourceMode() || string.IsNullOrEmpty(a_term)) return false;
@@ -509,6 +546,10 @@ namespace mde
 
         /// <summary>FindPreviousInCurrentFileと同様だが、見つからなければ文書の末尾へ折り返さない
         /// （フォルダ全体での「前を検索」で使う）。</summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>見つかればtrue。</returns>
         public bool FindPreviousInCurrentFileNoWrap(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             if (m_isSourceMode() || string.IsNullOrEmpty(a_term)) return false;
@@ -540,6 +581,11 @@ namespace mde
         /// <summary>次の一致箇所を探して選択・表示する。fromSelectionEndがtrueなら現在の
         /// 選択範囲の直後から再開し（セッションの途中）、falseならキャレット位置から開始する
         /// （新規セッション開始時）。</summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <param name="a_fromSelectionEndFlg">現在の選択範囲の末尾から検索を始めるかどうか。</param>
+        /// <returns>見つかればtrue。</returns>
         public bool StepFindNext(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg, bool a_fromSelectionEndFlg)
         {
             TextPointer from = (a_fromSelectionEndFlg && !m_editor.Selection.IsEmpty) ? m_editor.Selection.End : m_editor.CaretPosition;
@@ -554,6 +600,11 @@ namespace mde
         }
 
         /// <summary>現在選択中の一致箇所を置換し、次の一致箇所を探す。</summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_replacement">置換後の文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>次の一致箇所が見つかればtrue。</returns>
         public bool StepReplaceAndFindNext(string a_term, string a_replacement, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             m_currentHighlights.Clear(); // 置換対象の範囲は消えるため、古い参照は捨てておく
@@ -567,12 +618,21 @@ namespace mde
         }
 
         /// <summary>現在選択中の一致箇所を置換せずスキップし、次の一致箇所を探す。</summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>次の一致箇所が見つかればtrue。</returns>
         public bool StepSkipAndFindNext(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             return StepFindNext(a_term, a_caseSensitiveFlg, a_useRegexFlg, a_fromSelectionEndFlg: true);
         }
 
         /// <summary>現在選択中の一致箇所と、残りすべての一致箇所を、確認なしで一気に置換する。</summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_replacement">置換後の文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>置換した件数。</returns>
         public int StepReplaceAllRemaining(string a_term, string a_replacement, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             m_currentHighlights.Clear();
@@ -598,6 +658,11 @@ namespace mde
 
         /// <summary>現在のファイル内のすべての一致箇所を一度に置換する（MarkDownへ書き出してから
         /// 置換し、再度解析し直す方式）。</summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_replacement">置換後の文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>置換した件数。</returns>
         public int ReplaceAllInCurrentFile(string a_term, string a_replacement, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             if (string.IsNullOrEmpty(a_term)) return 0;
@@ -642,6 +707,9 @@ namespace mde
         }
 
         /// <summary>読み込んでいるフォルダ内のすべてのMarkDownファイルを対象に、一致箇所を探す。</summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
         public List<(string, int)> FindAllInFolder(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             var results = new List<(string, int)>();
@@ -660,6 +728,10 @@ namespace mde
         /// <summary>読み込んでいるフォルダ内のすべてのMarkDownファイルを対象に、一括で置換する
         /// （変更されたファイルは保留中の編集として記憶され、保存するまでディスクには
         /// 書き出されない）。</summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_replacement">置換後の文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
         public List<(string, int)> ReplaceAllInFolder(string a_term, string a_replacement, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             var results = new List<(string, int)>();
@@ -681,6 +753,8 @@ namespace mde
         }
 
         /// <summary>ファイルを読み込み、その改行コードを検出・記憶する。</summary>
+        /// <param name="a_path">対象のファイルパス。</param>
+        /// <returns>読み込んだファイルの内容。失敗した場合はnull。</returns>
         private string SafeReadFile(string a_path)
         {
             try
@@ -696,6 +770,7 @@ namespace mde
         }
 
         /// <summary>フォルダ内検索結果からファイルを開く（保留中の編集があればそちらを優先する）。</summary>
+        /// <param name="a_path">対象のファイルパス。</param>
         public void OpenFileForFindReplace(string a_path)
         {
             m_openFile(a_path);
@@ -704,12 +779,14 @@ namespace mde
         // ---- 1件ずつ確認する置換セッションで使う基本操作 ----
 
         /// <summary>現在のファイルのライブなMarkDown内容を取得する（FindReplaceWindow用）。</summary>
+        /// <returns>現在のファイルのライブなMarkDown内容。</returns>
         public string GetCurrentFileContent()
         {
             return m_isSourceMode() ? m_sourceEditor.Text : m_converter.DocumentToMarkdown(m_editor.Document);
         }
 
         /// <summary>現在のファイルの内容を置き換える（正規表現での一括置換結果を適用する際などに使う）。</summary>
+        /// <param name="a_newContent">新しい内容。</param>
         public void SetCurrentFileContent(string a_newContent)
         {
             m_currentHighlights.Clear();
@@ -726,6 +803,7 @@ namespace mde
 
         /// <summary>読み込んでいるフォルダ内のMarkDownファイル一覧を取得する（FindReplaceWindowの
         /// フォルダ範囲検索用）。</summary>
+        /// <returns>フォルダ内のMarkDownファイルの一覧。</returns>
         public List<string> GetFolderFiles()
         {
             return GetAllMarkdownFilesInRoot();
@@ -733,6 +811,8 @@ namespace mde
 
         /// <summary>ファイルの内容を取得する（編集中のエディタ、保留中の編集、ディスク上の
         /// いずれかを優先順位に従って返す）。</summary>
+        /// <param name="a_path">対象のファイルパス。</param>
+        /// <returns>そのファイルの内容。</returns>
         public string GetFileContentForReplace(string a_path)
         {
             return m_getCurrentContentForFile(a_path) ?? SafeReadFile(a_path);
@@ -740,6 +820,8 @@ namespace mde
 
         /// <summary>ファイルへ新しい内容を反映する（現在開いているファイルならライブエディタへ
         /// 直接、そうでなければ保留中の編集として記憶する）。</summary>
+        /// <param name="a_path">対象のファイルパス。</param>
+        /// <param name="a_newContent">新しい内容。</param>
         public void SetFileContentForReplace(string a_path, string a_newContent)
         {
             m_setFileContentForReplaceImpl(a_path, a_newContent);

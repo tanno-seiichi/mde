@@ -125,6 +125,8 @@ namespace mde
         }
 
         /// <summary>マウス押下位置を記録する（後続のドラッグ判定に使う）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void ImagePreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args)
         {
             m_imageDragStartPoint = a_args.GetPosition(null);
@@ -132,6 +134,8 @@ namespace mde
 
         /// <summary>マウス押下位置から一定距離動いたら、OSのドラッグ&amp;ドロップ操作
         /// （画像ファイルの書き出し）を開始する。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void ImagePreviewMouseMove(object a_sender, MouseEventArgs a_args)
         {
             if (a_args.LeftButton != MouseButtonState.Pressed || m_imageDragStartPoint == null) return;
@@ -191,6 +195,7 @@ namespace mde
         /// 自身が上書き確認する）とは異なり、ここでは書き込みを自前で制御するため、同名の既存
         /// ファイルを上書きすることは決してなく、代わりに自動的に連番を付ける。
         /// </summary>
+        /// <param name="a_ownerWindow">ダイアログの親ウィンドウ。</param>
         public void SaveImageAs(Window a_ownerWindow)
         {
             if (ContextImage == null) return;
@@ -235,6 +240,9 @@ namespace mde
         }
 
         /// <summary>2つの正規表現マッチのうち成功した方の値を返す。どちらも失敗なら空文字。</summary>
+        /// <param name="a_a">比較対象の1つ目。</param>
+        /// <param name="a_b">比較対象の2つ目。</param>
+        /// <returns>マッチした文字列。どちらも失敗していれば空文字。</returns>
         private string FirstGroupOrEmpty(Match a_a, Match a_b)
         {
             if (a_a.Success) return a_a.Groups[1].Value;
@@ -351,12 +359,16 @@ namespace mde
         /// Dropイベントだと横取りされてしまうため、これらはPreview（トンネリング）方式の
         /// ハンドラとしてXAML側で配線されている必要がある。
         /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         public void HandleDragEnter(object a_sender, DragEventArgs a_args)
         {
             HandleDragOver(a_sender, a_args);
         }
 
         /// <summary>現在のドラッグ内容に、挿入可能な画像ファイルが含まれているかを示す。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         public void HandleDragOver(object a_sender, DragEventArgs a_args)
         {
             bool acceptFlg = !m_isSourceMode() &&
@@ -369,6 +381,8 @@ namespace mde
 
         /// <summary>ドロップされた画像ファイルを、まずこのウィンドウの一時フォルダへ退避しつつ、
         /// ドロップ位置に挿入する。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         public void HandleDrop(object a_sender, DragEventArgs a_args)
         {
             if (m_isSourceMode() || !a_args.Data.GetDataPresent(DataFormats.FileDrop)) return;
@@ -422,6 +436,9 @@ namespace mde
         /// 連番を付ける。失敗時は null を返す。a_sourcePath がコピー先と（結果的に）同一ファイルを
         /// 指す場合はコピーを行わず、既存のパスをそのまま使う。
         /// </summary>
+        /// <param name="a_sourcePath">コピー元のパス。</param>
+        /// <param name="a_destDir">コピー先のフォルダ。</param>
+        /// <returns>コピー先のパス。失敗した場合はnull。</returns>
         public string CopyFileWithDedup(string a_sourcePath, string a_destDir)
         {
             try
@@ -495,6 +512,9 @@ namespace mde
 
         /// <summary>2つのパスが同一ファイルを指しているかどうかを調べる（大文字小文字を区別せず、
         /// 完全パスで比較する）。</summary>
+        /// <param name="a_a">比較対象の1つ目。</param>
+        /// <param name="a_b">比較対象の2つ目。</param>
+        /// <returns>同一ファイルを指していればtrue。</returns>
         public bool PathsReferToSameFile(string a_a, string a_b)
         {
             try
@@ -530,6 +550,8 @@ namespace mde
         }
 
         /// <summary>1つのブロック（段落・リスト・表）の中の画像を再帰的に見つける。</summary>
+        /// <param name="a_block">対象のブロック。</param>
+        /// <returns>見つかった画像の列挙。</returns>
         private IEnumerable<Image> FindImagesInBlock(Block a_block)
         {
             if (a_block is Paragraph p)
@@ -553,6 +575,8 @@ namespace mde
         }
 
         /// <summary>Inlinesコレクションの中の画像を再帰的に見つける（ネストしたSpanも含む）。</summary>
+        /// <param name="a_inlines">対象のInlineコレクション。</param>
+        /// <returns>見つかった画像の列挙。</returns>
         private IEnumerable<Image> FindImagesInInlines(InlineCollection a_inlines)
         {
             foreach (Inline inline in a_inlines)

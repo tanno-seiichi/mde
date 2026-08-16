@@ -30,6 +30,7 @@ namespace mde
 
         /// <summary>保存済みの設定を読み込む。ファイルが存在しない、または壊れている場合は
         /// 既定値を返す。</summary>
+        /// <returns>読み込んだ設定。読み込めなければ既定値の設定。</returns>
         public static AppSettings Load()
         {
             try

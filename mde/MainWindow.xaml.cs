@@ -173,6 +173,8 @@ namespace mde
         }
 
         /// <summary>ウィンドウを閉じようとした時、未保存の変更があれば確認する。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void WindowClosing(object a_sender, System.ComponentModel.CancelEventArgs a_args)
         {
             if (m_currentFileIsDirtyFlg || m_pendingFileEdits.Count > 0)
@@ -216,6 +218,7 @@ namespace mde
 
         /// <summary>ウィンドウを閉じる際、このウィンドウ専用の一時画像フォルダを削除し、
         /// 次回起動時に復元するウィンドウ状態を保存する。</summary>
+        /// <param name="a_args">イベントの引数。</param>
         protected override void OnClosed(EventArgs a_args)
         {
             base.OnClosed(a_args);
@@ -289,6 +292,9 @@ namespace mde
 
         /// <summary>2つのパスが同一ファイルを指しているかどうかを調べる（大文字小文字を
         /// 区別せず、完全パスで比較する）。</summary>
+        /// <param name="a_a">比較対象の1つ目。</param>
+        /// <param name="a_b">比較対象の2つ目。</param>
+        /// <returns>同一ファイルを指していればtrue。</returns>
         private bool PathsReferToSameFile(string a_a, string a_b)
         {
             try
@@ -303,6 +309,7 @@ namespace mde
 
         /// <summary>コードブロックへの貼り付け時に使う、改行を保ったプレーンテキスト挿入。
         /// TableEditorの貼り付け処理から呼ばれる。</summary>
+        /// <param name="a_text">対象の文字列。</param>
         private void InsertPlainTextWithLineBreaksForCodeBlock(string a_text)
         {
             m_originalTextTracker.Invalidate(m_editor.CaretPosition);
@@ -343,6 +350,8 @@ namespace mde
         /// 保留中の編集があればそれ、どちらでもなければ null（呼び出し側がディスクから
         /// 読み込む）。
         /// </summary>
+        /// <param name="a_path">対象のファイルパス。</param>
+        /// <returns>そのファイルの現在の内容。該当がなければnull。</returns>
         private string GetCurrentContentForFile(string a_path)
         {
             if (!string.IsNullOrEmpty(m_currentFilePath) && PathsReferToSameFile(a_path, m_currentFilePath))
@@ -356,6 +365,8 @@ namespace mde
 
         /// <summary>検索・置換の結果をファイルへ反映する：現在開いているファイルならライブな
         /// エディタへ直接、そうでなければ保留中の編集として記憶する。</summary>
+        /// <param name="a_path">対象のファイルパス。</param>
+        /// <param name="a_newContent">新しい内容。</param>
         private void SetFileContentForReplaceImpl(string a_path, string a_newContent)
         {
             if (!string.IsNullOrEmpty(m_currentFilePath) && PathsReferToSameFile(a_path, m_currentFilePath))
@@ -387,6 +398,8 @@ namespace mde
         /// （プログラムによる変更でなければ）、インライン装飾・箇条書き/見出しへの自動変換の
         /// トリガーもチェックする。
         /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void EditorTextChanged(object a_sender, TextChangedEventArgs a_args)
         {
             // RichTextBoxはInitializeComponent中に、既定の空文書を設定する際にTextChangedを
@@ -454,6 +467,8 @@ namespace mde
         /// a_args.Handled=trueを設定するだけでは確実に文字の挿入を防げない。このイベントで直接
         /// 判定・処理することで、変換後に元のスペース文字が余分に残ってしまう不具合を防ぐ。
         /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void EditorPreviewTextInput(object a_sender, TextCompositionEventArgs a_args)
         {
             if (m_isSourceModeFlg || a_args.Text != " ") return;
@@ -584,6 +599,8 @@ namespace mde
         /// （TableEditor.ContextCellなど）へ格納し、以後のメニュー項目クリックから
         /// 参照できるようにする。
         /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void EditorContextMenuOpening(object a_sender, ContextMenuEventArgs a_args)
         {
             if (m_isSourceModeFlg) { a_args.Handled = true; return; }
@@ -620,6 +637,8 @@ namespace mde
 
         /// <summary>ソースモードの右クリックメニュー。カット/コピー/貼り付けのみで、独自の
         /// 項目は追加しない。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void SourceEditorContextMenuOpening(object a_sender, ContextMenuEventArgs a_args)
         {
         }
@@ -627,6 +646,8 @@ namespace mde
         // ---- 見出し ----
 
         /// <summary>右クリックメニューから見出しレベルを変更する。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void HeadingItemClick(object a_sender, RoutedEventArgs a_args)
         {
             if (m_ctxParagraph == null) return;
@@ -702,6 +723,8 @@ namespace mde
         // ======================================================================
 
         /// <summary>MarkDownモード（WYSIWYG）とソースモード（生テキスト）を切り替える。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void ToggleModeBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             bool wasDirtyFlg = m_currentFileIsDirtyFlg;
@@ -741,6 +764,8 @@ namespace mde
         /// ダイアログなしで新規作成する（あとでフォルダビューから開き直して保存できるため）。
         /// フォルダビューに表示されていないファイル（またはそもそも未保存の新規文書）の場合は、
         /// 内容が失われる可能性があるため従来通り確認する。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void NewBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             bool currentFileInFolderViewFlg = !string.IsNullOrEmpty(m_currentFileDirectory) &&
@@ -767,6 +792,8 @@ namespace mde
         }
 
         /// <summary>新しいウィンドウを開く（現在のウィンドウの内容には触れない）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void NewWindowClick(object a_sender, RoutedEventArgs a_args)
         {
             var newWindow = new MainWindow();
@@ -774,12 +801,16 @@ namespace mde
         }
 
         /// <summary>このウィンドウを閉じる（未保存の変更があればWindow_Closingで確認される）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void CloseBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             Close();
         }
 
         /// <summary>ファイルを開くダイアログを表示し、選択されたファイルを読み込む。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void OpenBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             var dlg = new Microsoft.Win32.OpenFileDialog
@@ -901,6 +932,8 @@ namespace mde
         }
 
         /// <summary>ファイルの内容を読み込み、改行コードを検出・記憶する。</summary>
+        /// <param name="a_path">対象のファイルパス。</param>
+        /// <returns>読み込んだファイルの内容。失敗した場合はnull。</returns>
         private string SafeReadFile(string a_path)
         {
             try
@@ -916,6 +949,8 @@ namespace mde
         }
 
         /// <summary>現在のファイルを保存する（未保存の新規ファイルなら名前を付けて保存へ）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void SaveBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             if (string.IsNullOrEmpty(m_currentFilePath))
@@ -933,6 +968,8 @@ namespace mde
         }
 
         /// <summary>「名前を付けて保存」ダイアログを開く。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void SaveAsBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             SaveAs();
@@ -1010,6 +1047,8 @@ namespace mde
         /// PDF」仮想プリンタへ印刷する形で実現している（印刷ダイアログでこのプリンタを選ぶと、
         /// 保存先を聞かれてPDFファイルが作成される）。
         /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void ExportPdfBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             if (m_isSourceModeFlg)
@@ -1037,6 +1076,8 @@ namespace mde
         }
 
         /// <summary>現在のファイルと、保留中の編集があるすべてのファイルを保存する。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void SaveAllBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             if (m_currentFileIsDirtyFlg || m_pendingFileEdits.Count > 0)
@@ -1161,6 +1202,8 @@ namespace mde
         private void ZoomResetClick(object a_sender, RoutedEventArgs a_args) => SetZoom(1.0);
 
         /// <summary>Ctrl+ホイールでエディタをズームする（スクロールの代わり）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void EditorPreviewMouseWheel(object a_sender, MouseWheelEventArgs a_args)
         {
             if (Keyboard.Modifiers == ModifierKeys.Control)
@@ -1181,6 +1224,8 @@ namespace mde
         }
 
         /// <summary>ソースモード編集中、ファイルをダーティにする。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void SourceEditorTextChanged(object a_sender, TextChangedEventArgs a_args)
         {
             if (m_folderTreeManager == null) return; // InitializeComponent中の発火に対するガード
@@ -1189,6 +1234,8 @@ namespace mde
         }
 
         /// <summary>エディタの幅が変わったら、画像のサイズ調整をやり直す。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void EditorSizeChanged(object a_sender, SizeChangedEventArgs a_args)
         {
             if (m_imageManager == null) return; // InitializeComponent中の発火に対するガード
@@ -1230,6 +1277,8 @@ namespace mde
         }
 
         /// <summary>メインウインドウのキーボードショートカットの実装。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void MainWindowPreviewKeyDown(object a_sender, KeyEventArgs a_args)
         {
             if (a_args.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
@@ -1296,6 +1345,8 @@ namespace mde
         }
 
         /// <summary>「バージョン情報」ボタン。アプリ名とバージョン番号を表示する。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void VersionInfoBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             var aboutWindow = new AboutWindow { Owner = this };
@@ -1308,6 +1359,8 @@ namespace mde
 
         /// <summary>フォルダツリーペインの表示/非表示を切り替える（幅は次に表示する時のために
         /// 記憶しておく）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void ToggleFolderPaneBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             if (m_folderPaneVisibleFlg && m_folderColumnDef.Width.Value > 0) m_lastFolderColumnWidth = m_folderColumnDef.Width.Value;
@@ -1339,6 +1392,8 @@ namespace mde
 
         /// <summary>アウトラインペインの表示/非表示を切り替える（幅は次に表示する時のために
         /// 記憶しておく）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void ToggleOutlinePaneBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             if (m_outlinePaneVisibleFlg && m_outlineColumnDef.Width.Value > 0) m_lastOutlineColumnWidth = m_outlineColumnDef.Width.Value;
@@ -1374,6 +1429,8 @@ namespace mde
 
         /// <summary>フォルダピッカーを表示し、選択されたフォルダをフォルダツリーペインへ
         /// 読み込む（可能であれば同じ相対パスのファイルを開いたままにする）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void OpenFolderTreeBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             if (m_currentFileIsDirtyFlg || m_pendingFileEdits.Count > 0)

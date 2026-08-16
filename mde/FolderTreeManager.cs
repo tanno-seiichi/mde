@@ -56,6 +56,7 @@ namespace mde
         /// <summary>現在開いているファイルの、読み込んでいるフォルダからの相対パス
         /// （例: "sub\file.md"）を返す。ファイルが開かれていない、またはフォルダの外にある
         /// 場合は null。</summary>
+        /// <returns>現在のファイルの、読み込んでいるフォルダからの相対パス。フォルダの外にある場合はnull。</returns>
         public string GetCurrentFileRelativePath()
         {
             string currentFilePath = m_getCurrentFilePath();
@@ -315,6 +316,8 @@ namespace mde
         /// あれば true を返す。true の場合、同じ範囲のファイルを開いただけならツリーを
         /// 作り直す（ユーザーが展開していた状態を失わせる）必要はない。
         /// </summary>
+        /// <param name="a_dir">判定対象のディレクトリパス。</param>
+        /// <returns>指定フォルダが読み込み済みフォルダの範囲内であればtrue。</returns>
         public bool IsWithinLoadedFolder(string a_dir)
         {
             if (string.IsNullOrEmpty(LoadedFolderRootPath) || string.IsNullOrEmpty(a_dir)) return false;
@@ -371,6 +374,8 @@ namespace mde
         }
 
         /// <summary>フォルダツリーのノードが初めて展開された時に、子ノードの遅延読み込みを行う。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         public void HandleTreeViewItemExpanded(object a_sender, RoutedEventArgs a_args)
         {
             if (a_sender is TreeViewItem tvi && tvi.DataContext is FileSystemItem node && node.IsDirectory)
@@ -385,6 +390,8 @@ namespace mde
         }
 
         /// <summary>フォルダツリーでファイルノードがクリックされたら、そのファイルを開く。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         public void HandleSelectedItemChanged(object a_sender, RoutedPropertyChangedEventArgs<object> a_args)
         {
             if (a_args.NewValue is FileSystemItem item && !item.IsDirectory && item.FullPath != null)

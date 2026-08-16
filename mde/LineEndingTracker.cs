@@ -52,6 +52,7 @@ namespace mde
 
         /// <summary>以前に記憶した改行コードを取得する（未知のファイルなら既定値の "\r\n"）。</summary>
         /// <param name="a_path">ファイルパス。</param>
+        /// <returns>記憶されている改行コード。未知のファイルなら既定値の"\r\n"。</returns>
         public string GetFor(string a_path)
         {
             if (!string.IsNullOrEmpty(a_path))
@@ -64,6 +65,8 @@ namespace mde
 
         /// <summary>特定のファイルパスに対して、改行コードを明示的に設定する（例:
         /// 名前を付けて保存の際、元ファイルのスタイルを引き継ぐ場合）。</summary>
+        /// <param name="a_path">対象のファイルパス。</param>
+        /// <param name="a_lineEnding">設定する改行コード。</param>
         public void SetFor(string a_path, string a_lineEnding)
         {
             m_lineEndings[a_path] = a_lineEnding;
@@ -73,6 +76,7 @@ namespace mde
         /// 変換する（ファイル書き込み直前に使う）。</summary>
         /// <param name="a_text">"\n" 区切りのテキスト。</param>
         /// <param name="a_lineEnding">適用する改行コード。</param>
+        /// <returns>指定した改行コードに変換したテキスト。</returns>
         public string Apply(string a_text, string a_lineEnding)
         {
             string normalized = a_text.Replace("\r\n", "\n");

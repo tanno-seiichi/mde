@@ -627,6 +627,8 @@ namespace mde
         /// すべて置換）の表示/非表示を切り替える。初期状態（閉じている）では検索系の
         /// ボタンだけを表示し、開くと置換操作もできるようになる。
         /// </summary>
+        /// <param name="a_sender">イベントの発生元（エキスパンダー）。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void ReplaceExpanderToggled(object a_sender, RoutedEventArgs a_args)
         {
             var visibility = m_replaceExpander.IsExpanded ? Visibility.Visible : Visibility.Collapsed;
@@ -635,6 +637,8 @@ namespace mde
         }
 
         /// <summary>検索と置換ウィンドウのキーボードショートカットの実装。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">キーイベントの引数。</param>
         private void FindReplaceWindowPreviewKeyDown(object a_sender, KeyEventArgs a_args)
         {
             // Escキーでウィンドウを閉じる
