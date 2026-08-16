@@ -82,8 +82,8 @@ namespace mde
         // フォルダ/アウトラインペインの表示・非表示状態
         private double lastFolderColumnWidth = 190;
         private double lastOutlineColumnWidth = 210;
-        private bool folderPaneVisible = true;
-        private bool outlinePaneVisible = true;
+        private bool folderPaneVisible = false;
+        private bool outlinePaneVisible = false;
 
         // 右クリック時の対象（表・コードブロックまわりはTableEditor/InlineStyleEditorに
         // それぞれ専用のプロパティがあるので、ここではまだどのクラスにも属さないものだけを保持する）
