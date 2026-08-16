@@ -123,6 +123,8 @@ namespace mde
             zoomLevel = savedSettings.ZoomLevel;
             folderPaneVisible = savedSettings.FolderPaneVisible;
             outlinePaneVisible = savedSettings.OutlinePaneVisible;
+            if (savedSettings.FolderPaneWidth > 0) lastFolderColumnWidth = savedSettings.FolderPaneWidth;
+            if (savedSettings.OutlinePaneWidth > 0) lastOutlineColumnWidth = savedSettings.OutlinePaneWidth;
 
             originalTextTracker = new OriginalTextTracker(Editor);
             lineEndingTracker = new LineEndingTracker(PathsReferToSameFile);
@@ -235,6 +237,13 @@ namespace mde
 
             bool maximized = this.WindowState == WindowState.Maximized;
             Rect bounds = maximized ? this.RestoreBounds : new Rect(this.Left, this.Top, this.Width, this.Height);
+            // 表示中のペインについては、その時点の実際の幅（スプリッタでドラッグ調整された
+            // 最新の値）を保存する。非表示のペインについては、直前に表示していた時の幅を使う。
+            double folderWidthToSave = (folderPaneVisible && FolderColumnDef.Width.Value > 0)
+                ? FolderColumnDef.Width.Value : lastFolderColumnWidth;
+            double outlineWidthToSave = (outlinePaneVisible && OutlineColumnDef.Width.Value > 0)
+                ? OutlineColumnDef.Width.Value : lastOutlineColumnWidth;
+
             var settings = new AppSettings
             {
                 IsMaximized = maximized,
@@ -244,6 +253,8 @@ namespace mde
                 WindowTop = bounds.Y,
                 FolderPaneVisible = folderPaneVisible,
                 OutlinePaneVisible = outlinePaneVisible,
+                FolderPaneWidth = folderWidthToSave,
+                OutlinePaneWidth = outlineWidthToSave,
                 ZoomLevel = zoomLevel,
                 LastFilePath = currentFilePath
             };

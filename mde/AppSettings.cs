@@ -20,7 +20,9 @@ namespace mde
         public double WindowTop { get; set; } = double.NaN;
         public bool IsMaximized { get; set; } = false;
         public bool FolderPaneVisible { get; set; } = false;
+        public double FolderPaneWidth { get; set; } = 200;
         public bool OutlinePaneVisible { get; set; } = false;
+        public double OutlinePaneWidth { get; set; } = 200;
         public double ZoomLevel { get; set; } = 1.0;
 
         /// <summary>前回終了時に開いていたファイルの絶対パス（無ければ null）。次回起動時に
