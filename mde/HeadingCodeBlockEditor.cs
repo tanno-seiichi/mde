@@ -106,11 +106,13 @@ namespace mde
 
             TextPointer upperBound = a_p.ContentEnd;
             var nextLineStart = caret.GetLineStartPosition(1);
-            if (null != nextLineStart && nextLineStart.CompareTo(upperBound) < 0)
+            if (null != nextLineStart &&
+                nextLineStart.CompareTo(upperBound) < 0)
                 upperBound = nextLineStart;
 
             var probe = lineStart.GetPositionAtOffset(4);
-            if (null == probe || probe.CompareTo(upperBound) > 0) probe = upperBound;
+            if (null == probe ||
+                probe.CompareTo(upperBound) > 0) probe = upperBound;
             if (probe.CompareTo(lineStart) < 0) probe = lineStart;
 
             string prefix = new TextRange(lineStart, probe).Text;
@@ -122,7 +124,9 @@ namespace mde
             }
             else
             {
-                while (removeCount < prefix.Length && removeCount < 4 && prefix[removeCount] == ' ')
+                while (removeCount < prefix.Length &&
+                       removeCount < 4 &&
+                       prefix[removeCount] == ' ')
                     removeCount++;
             }
             if (0 == removeCount) return;

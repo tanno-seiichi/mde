@@ -131,7 +131,9 @@ namespace mde
             var sb = new StringBuilder();
             TextPointer navigator = a_start;
             int guard = 0;
-            while (null != navigator && navigator.CompareTo(a_end) < 0 && guard < 10000)
+            while (null != navigator &&
+                   navigator.CompareTo(a_end) < 0 &&
+                   guard < 10000)
             {
                 guard++;
                 if (navigator.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
@@ -140,7 +142,8 @@ namespace mde
                     if (!string.IsNullOrEmpty(runText))
                     {
                         TextPointer runEnd = navigator.GetPositionAtOffset(runText.Length);
-                        if (null != runEnd && runEnd.CompareTo(a_end) > 0)
+                        if (null != runEnd &&
+                            runEnd.CompareTo(a_end) > 0)
                         {
                             // このRunが範囲の終端をまたいでいるので、1文字ずつ終端まで数える
                             TextPointer probe = navigator;
@@ -148,7 +151,8 @@ namespace mde
                             for (int i = 0; i < runText.Length; i++)
                             {
                                 TextPointer next = probe.GetPositionAtOffset(1);
-                                if (null == next || next.CompareTo(a_end) > 0) break;
+                                if (null == next ||
+                                    next.CompareTo(a_end) > 0) break;
                                 probe = next;
                                 fitCount++;
                             }
@@ -509,7 +513,8 @@ namespace mde
         {
             int count = 0;
             int i = a_position - 1;
-            while (i >= 0 && a_text[i] == '\\') { count++; i--; }
+            while (i >= 0 &&
+                   a_text[i] == '\\') { count++; i--; }
             return count % 2 == 1;
         }
 
@@ -528,7 +533,10 @@ namespace mde
             TextPointer walker = caret;
             int totalLen = 0;
             int guard = 0;
-            while (null != walker && walker.CompareTo(para.ContentStart) > 0 && totalLen < 300 && guard < 50)
+            while (null != walker &&
+                   walker.CompareTo(para.ContentStart) > 0 &&
+                   totalLen < 300 &&
+                   guard < 50)
             {
                 guard++;
                 string chunk = walker.GetTextInRun(LogicalDirection.Backward);
@@ -544,7 +552,8 @@ namespace mde
                 else
                 {
                     var prevContext = walker.GetNextContextPosition(LogicalDirection.Backward);
-                    if (null == prevContext || prevContext.CompareTo(walker) == 0) break;
+                    if (null == prevContext ||
+                        prevContext.CompareTo(walker) == 0) break;
                     walker = prevContext;
                 }
             }
@@ -575,19 +584,22 @@ namespace mde
                     match = null;
                 }
             }
-            if (null == style && lastChar == '`')
+            if (null == style &&
+                lastChar == '`')
             {
                 match = Regex.Match(textBefore, "`([^`]+)`$");
                 if (match.Success && !IsEscapedAt(textBefore, match.Index)) style = "code";
                 else match = null;
             }
-            if (null == style && lastChar == '*')
+            if (null == style &&
+                lastChar == '*')
             {
                 match = Regex.Match(textBefore, "\\*\\*([^*]+)\\*\\*$");
                 if (match.Success && !IsEscapedAt(textBefore, match.Index)) style = "bold";
                 else match = null;
             }
-            if (null == style && lastChar == '~')
+            if (null == style &&
+                lastChar == '~')
             {
                 match = Regex.Match(textBefore, "~~([^~]+)~~$");
                 if (match.Success && !IsEscapedAt(textBefore, match.Index)) style = "strikethrough";
@@ -599,7 +611,8 @@ namespace mde
                 // 完成したエスケープ記法になっていないかを確認する。なっていれば、\を隠して
                 // 実際の文字だけをその場で表示する（保存時に再び\付きで書き戻せるよう
                 // Tag="escaped" を付ける）。
-                if (textBefore.Length >= 2 && textBefore[textBefore.Length - 2] == '\\' &&
+                if (textBefore.Length >= 2 &&
+                    textBefore[textBefore.Length - 2] == '\\' &&
                     !IsEscapedAt(textBefore, textBefore.Length - 2))
                 {
                     TextPointer escStart = null;

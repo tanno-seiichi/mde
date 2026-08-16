@@ -1,4 +1,4 @@
-// AppSettings.cs
+﻿// AppSettings.cs
 //
 // mde (MarkDown インラインエディタ) の一部。
 // アプリ終了時のウィンドウ状態（サイズ・位置・最大化有無・フォルダ/アウトラインペインの

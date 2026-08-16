@@ -191,7 +191,8 @@ namespace mde
             if (0 == m_folderFindFileList.Count) { m_statusText.Text = "見つかりませんでした。"; return; }
 
             // 今のファイルの一致箇所一覧の中で、まだ次に進める一致箇所があるか。
-            if (null != m_folderFindCurrentFileMatches && m_folderFindCurrentMatchIdx + 1 < m_folderFindCurrentFileMatches.Count)
+            if (null != m_folderFindCurrentFileMatches &&
+                m_folderFindCurrentMatchIdx + 1 < m_folderFindCurrentFileMatches.Count)
             {
                 m_folderFindCurrentMatchIdx++;
                 m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[m_folderFindCurrentMatchIdx]);
@@ -233,9 +234,11 @@ namespace mde
         /// <param name="a_path">今表示しているファイルの絶対パス。</param>
         private void SyncResultsListSelection(string a_path)
         {
-            if (null == m_resultsPaths || 0 == m_resultsPaths.Count) return;
+            if (null == m_resultsPaths ||
+                0 == m_resultsPaths.Count) return;
             int idx = m_resultsPaths.FindIndex(p => PathsEqual(p, a_path));
-            if (idx >= 0 && idx < m_resultsList.Items.Count)
+            if (idx >= 0 &&
+                idx < m_resultsList.Items.Count)
                 m_resultsList.SelectedIndex = idx;
         }
 
@@ -273,7 +276,8 @@ namespace mde
             EnsureFolderWalkInitialized();
             if (0 == m_folderFindFileList.Count) { m_statusText.Text = "見つかりませんでした。"; return; }
 
-            if (null != m_folderFindCurrentFileMatches && m_folderFindCurrentMatchIdx - 1 >= 0)
+            if (null != m_folderFindCurrentFileMatches &&
+                m_folderFindCurrentMatchIdx - 1 >= 0)
             {
                 m_folderFindCurrentMatchIdx--;
                 m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[m_folderFindCurrentMatchIdx]);
@@ -460,7 +464,8 @@ namespace mde
             CommitSessionFileIfChanged();
 
             m_sessionFileIndex++;
-            if (null == m_sessionFiles || m_sessionFileIndex >= m_sessionFiles.Count)
+            if (null == m_sessionFiles ||
+                m_sessionFileIndex >= m_sessionFiles.Count)
             {
                 m_sessionContent = null;
                 return;
@@ -476,7 +481,9 @@ namespace mde
         private void CommitSessionFileIfChanged()
         {
             if (!m_sessionFileChangedFlg || null == m_sessionContent) return;
-            if (null == m_sessionFiles || m_sessionFileIndex < 0 || m_sessionFileIndex >= m_sessionFiles.Count) return;
+            if (null == m_sessionFiles ||
+                m_sessionFileIndex < 0 ||
+                m_sessionFileIndex >= m_sessionFiles.Count) return;
 
             m_owner.SearchReplace.SetFileContentForReplace(m_sessionFiles[m_sessionFileIndex], m_sessionContent);
             m_sessionFilesChanged++;

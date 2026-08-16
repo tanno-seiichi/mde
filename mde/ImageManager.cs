@@ -138,7 +138,8 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void ImagePreviewMouseMove(object a_sender, MouseEventArgs a_args)
         {
-            if (a_args.LeftButton != MouseButtonState.Pressed || null == m_imageDragStartPoint) return;
+            if (a_args.LeftButton != MouseButtonState.Pressed ||
+                null == m_imageDragStartPoint) return;
             if (!(a_sender is Image img)) return;
 
             Point current = a_args.GetPosition(null);
@@ -169,7 +170,9 @@ namespace mde
             string src = info.m_originalSrc;
 
             if (Uri.TryCreate(src, UriKind.Absolute, out Uri u) &&
-                ("http" == u.Scheme || "https" == u.Scheme || "data" == u.Scheme))
+                ("http" == u.Scheme ||
+                 "https" == u.Scheme ||
+                 "data" == u.Scheme))
                 return null;
 
             string currentFileDirectory = m_getCurrentFileDirectory();
@@ -260,7 +263,9 @@ namespace mde
             {
                 Uri uri;
                 if (Uri.TryCreate(a_src, UriKind.Absolute, out Uri absoluteUri) &&
-                    ("http" == absoluteUri.Scheme || "https" == absoluteUri.Scheme || "data" == absoluteUri.Scheme))
+                    ("http" == absoluteUri.Scheme ||
+                     "https" == absoluteUri.Scheme ||
+                     "data" == absoluteUri.Scheme))
                 {
                     uri = absoluteUri;
                 }
@@ -315,11 +320,13 @@ namespace mde
             if (!(a_img.Source is BitmapSource bmp)) return;
             double naturalWidth = bmp.PixelWidth;
             double naturalHeight = bmp.PixelHeight;
-            if (naturalWidth <= 0 || naturalHeight <= 0) return;
+            if (naturalWidth <= 0 ||
+                naturalHeight <= 0) return;
 
             double availableWidth = GetAvailableImageWidth();
             double targetWidth = naturalWidth;
-            if (availableWidth > 0 && naturalWidth > availableWidth)
+            if (availableWidth > 0 &&
+                naturalWidth > availableWidth)
             {
                 targetWidth = availableWidth;
             }

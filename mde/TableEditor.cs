@@ -101,7 +101,8 @@ namespace mde
             int rIdx = rg.Rows.IndexOf(row);
             int cIdx = row.Cells.IndexOf(a_cell);
             int targetIdx = rIdx + a_dir;
-            if (targetIdx < 0 || targetIdx >= rg.Rows.Count) return;
+            if (targetIdx < 0 ||
+                targetIdx >= rg.Rows.Count) return;
             var targetRow = rg.Rows[targetIdx];
             if (cIdx < targetRow.Cells.Count && targetRow.Cells[cIdx].Blocks.LastBlock is Paragraph tp)
                 m_editor.CaretPosition = tp.ContentEnd;
@@ -370,7 +371,8 @@ namespace mde
                 c = a_rows[r].Cells.IndexOf(a_endCell);
                 if (c >= 0) { endRow = r; endCol = c; }
             }
-            if (startRow < 0 || endRow < 0) return null;
+            if (startRow < 0 ||
+                endRow < 0) return null;
 
             return new CellRange
             {
@@ -388,7 +390,10 @@ namespace mde
             {
                 var cells = a_rows[r].Cells.Cast<TableCell>().ToList();
                 var rowTexts = new List<string>();
-                for (int c = a_range.m_minCol; c <= a_range.m_maxCol && c < cells.Count; c++)
+                for (int c = a_range.m_minCol;
+                     c <= a_range.m_maxCol &&
+                     c < cells.Count;
+                     c++)
                 {
                     rowTexts.Add(CellPlainText(cells[c]).Replace('\t', ' ').Replace("\r", " ").Replace("\n", " "));
                 }
@@ -405,7 +410,10 @@ namespace mde
             {
                 sb.Append("<tr>");
                 var cells = a_rows[r].Cells.Cast<TableCell>().ToList();
-                for (int c = a_range.m_minCol; c <= a_range.m_maxCol && c < cells.Count; c++)
+                for (int c = a_range.m_minCol;
+                     c <= a_range.m_maxCol &&
+                     c < cells.Count;
+                     c++)
                 {
                     // 選択範囲の先頭行が「表そのもののヘッダー行」である場合だけ th として書き出す。
                     string tag = 0 == r ? "th" : "td";
@@ -511,8 +519,10 @@ namespace mde
 
             var rows = GetTableRows(table);
             CellRange range = null;
-            if (null != startCell && null != endCell &&
-                FindEnclosingTable(startCell) == table && FindEnclosingTable(endCell) == table)
+            if (null != startCell &&
+                null != endCell &&
+                FindEnclosingTable(startCell) == table &&
+                FindEnclosingTable(endCell) == table)
             {
                 range = GetSelectedCellRange(rows, startCell, endCell);
             }
@@ -566,7 +576,8 @@ namespace mde
         /// <param name="a_rows">解析済みの行データ（先頭行がヘッダーとして扱われる）。</param>
         public void InsertParsedTable(List<List<string>> a_rows)
         {
-            if (null == a_rows || 0 == a_rows.Count) return;
+            if (null == a_rows ||
+                0 == a_rows.Count) return;
             int colCount = a_rows.Max(r => r.Count);
             if (0 == colCount) return;
 
@@ -614,7 +625,9 @@ namespace mde
                     m_editor.Document.Blocks.Add(trailingPara);
                 }
 
-                if (rg.Rows.Count > 0 && rg.Rows[0].Cells.Count > 0 && rg.Rows[0].Cells[0].Blocks.FirstBlock is Paragraph fp)
+                if (rg.Rows.Count > 0 &&
+                    rg.Rows[0].Cells.Count > 0 &&
+                    rg.Rows[0].Cells[0].Blocks.FirstBlock is Paragraph fp)
                     m_editor.CaretPosition = fp.ContentStart;
             });
 
@@ -663,7 +676,8 @@ namespace mde
                 if (LooksLikeTsv(text))
                 {
                     var tableData = ParseTsv(text);
-                    if (null != tableData && tableData.Any(r => r.Count > 1))
+                    if (null != tableData &&
+                        tableData.Any(r => r.Count > 1))
                     {
                         a_args.CancelCommand();
                         InsertParsedTable(tableData);

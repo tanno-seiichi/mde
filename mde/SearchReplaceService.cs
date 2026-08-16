@@ -343,10 +343,12 @@ namespace mde
                 // ある一致箇所（別の見出しなど）に到達できなくなる。必ず前へ進むことを
                 // 保証する安全策として、進んでいなければ1文字分だけ強制的に前進させる。
                 TextPointer next = found.End;
-                if (null == next || next.CompareTo(pos) <= 0)
+                if (null == next ||
+                    next.CompareTo(pos) <= 0)
                 {
                     next = pos.GetPositionAtOffset(1);
-                    if (null == next || next.CompareTo(pos) <= 0) break;
+                    if (null == next ||
+                        next.CompareTo(pos) <= 0) break;
                 }
                 pos = next;
             }
@@ -448,7 +450,8 @@ namespace mde
                         {
                             TextPointer matchStart = navigator.GetPositionAtOffset(idx);
                             TextPointer matchEnd = matchStart?.GetPositionAtOffset(len);
-                            if (null != matchStart && null != matchEnd)
+                            if (null != matchStart &&
+                                null != matchEnd)
                                 return new TextRange(matchStart, matchEnd);
                         }
                     }
@@ -508,7 +511,8 @@ namespace mde
                             TextPointer runStart = navigator.GetPositionAtOffset(-runText.Length);
                             TextPointer matchStart = runStart?.GetPositionAtOffset(idx);
                             TextPointer matchEnd = matchStart?.GetPositionAtOffset(len);
-                            if (null != matchStart && null != matchEnd)
+                            if (null != matchStart &&
+                                null != matchEnd)
                                 return new TextRange(matchStart, matchEnd);
                         }
                     }

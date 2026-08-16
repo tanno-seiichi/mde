@@ -230,7 +230,8 @@ namespace mde
             if (null == folderNode) return;
 
             // まだ子が読み込まれていない（プレースホルダのみ）場合は、展開時に自然に反映される
-            if (1 == folderNode.Children.Count && null == folderNode.Children[0].FullPath) return;
+            if (1 == folderNode.Children.Count &&
+                null == folderNode.Children[0].FullPath) return;
 
             if (folderNode.Children.Any(c => !c.IsDirectory && PathsEqualLocal(c.FullPath, a_filePath))) return;
 
@@ -380,7 +381,8 @@ namespace mde
         {
             if (a_sender is TreeViewItem tvi && tvi.DataContext is FileSystemItem node && node.IsDirectory)
             {
-                if (1 == node.Children.Count && null == node.Children[0].FullPath)
+                if (1 == node.Children.Count &&
+                    null == node.Children[0].FullPath)
                 {
                     node.Children.Clear();
                     PopulateChildren(node);

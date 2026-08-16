@@ -405,7 +405,9 @@ namespace mde
             // RichTextBoxはInitializeComponent中に、既定の空文書を設定する際にTextChangedを
             // 発生させることがある。その時点ではコンストラクタでの各クラスの構築がまだ
             // 完了していない可能性があるため、念のためガードしておく。
-            if (null == m_outlineManager || null == m_folderTreeManager || null == m_originalTextTracker) return;
+            if (null == m_outlineManager ||
+                null == m_folderTreeManager ||
+                null == m_originalTextTracker) return;
 
             if (m_isSourceModeFlg) return;
 
@@ -571,7 +573,8 @@ namespace mde
 
             if (para.Parent is TableCell cell)
             {
-                if (a_args.Key == Key.Up || a_args.Key == Key.Down)
+                if (a_args.Key == Key.Up ||
+                    a_args.Key == Key.Down)
                 {
                     a_args.Handled = true;
                     m_tableEditor.MoveVertical(cell, a_args.Key == Key.Up ? -1 : 1);
@@ -1281,49 +1284,57 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void MainWindowPreviewKeyDown(object a_sender, KeyEventArgs a_args)
         {
-            if (a_args.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+            if (a_args.Key == Key.F &&
+                Keyboard.Modifiers == ModifierKeys.Control)
             {
                 a_args.Handled = true;
                 OpenFindReplaceWindow();
             }
             // Ctrl+Nは「新規作成」のショートカットとして扱う（Windows標準のCtrl+Nは「新しいウィンドウ」なので、そちらは無効化する）。
-            else if (a_args.Key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
+            else if (a_args.Key == Key.N &&
+                     Keyboard.Modifiers == ModifierKeys.Control)
             {
                 a_args.Handled = true;
                 NewBtnClick(a_sender, null);
             }
             // Shift+Ctrl+Nは「新しいウィンドウ」のショートカットとして扱う。
-            else if (a_args.Key == Key.N && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+            else if (a_args.Key == Key.N &&
+                     Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
             {
                 a_args.Handled = true;
                 NewWindowClick(a_sender, null);
             }
             // Ctrl+Oは「開く」のショートカットとして扱う。
-            else if (a_args.Key == Key.O && Keyboard.Modifiers == ModifierKeys.Control)
+            else if (a_args.Key == Key.O &&
+                     Keyboard.Modifiers == ModifierKeys.Control)
             {
                 a_args.Handled = true;
                 OpenBtnClick(a_sender, null);
             }
             // Ctrl+Sは「保存」のショートカットとして扱う（Windows標準のCtrl+Sは「すべて保存」なので、そちらは無効化する）。
-            else if (a_args.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control)
+            else if (a_args.Key == Key.S &&
+                     Keyboard.Modifiers == ModifierKeys.Control)
             {
                 a_args.Handled = true;
                 SaveBtnClick(a_sender, null);
             }
             // Shift+Ctrl+Sは「名前を付けて保存...」のショートカットとして扱う。
-            else if (a_args.Key == Key.S && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
+            else if (a_args.Key == Key.S &&
+                     Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
             {
                 a_args.Handled = true;
                 SaveAs();
             }
             // Ctrl+Pは「PDFに書き出し」のショートカットとして扱う（Windows標準のCtrl+Pは「印刷」なので、そちらは無効化する）。
-            else if (a_args.Key == Key.P && Keyboard.Modifiers == ModifierKeys.Control)
+            else if (a_args.Key == Key.P &&
+                     Keyboard.Modifiers == ModifierKeys.Control)
             {
                 a_args.Handled = true;
                 ExportPdfBtnClick(a_sender, null);
             }
             // Ctrl+Wは「ウィンドウを閉じる」のショートカットとして扱う。
-            else if (a_args.Key == Key.W && Keyboard.Modifiers == ModifierKeys.Control)
+            else if (a_args.Key == Key.W &&
+                     Keyboard.Modifiers == ModifierKeys.Control)
             {
                 a_args.Handled = true;
                 Close();

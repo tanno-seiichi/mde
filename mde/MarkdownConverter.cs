@@ -189,7 +189,9 @@ namespace mde
                 Inline inline = inlineList[i];
 
                 if (inline is Run run && run.Tag is string tag &&
-                    ("bold" == tag || "strikethrough" == tag || "inline-code" == tag))
+                    ("bold" == tag ||
+                     "strikethrough" == tag ||
+                     "inline-code" == tag))
                 {
                     var spanText = new StringBuilder();
                     spanText.Append(run.Text.Replace("\u200B", ""));
@@ -294,7 +296,8 @@ namespace mde
                     string language = Regex.Match(line.TrimStart(), "^```(\\S*)").Groups[1].Value;
                     i++;
                     var codeLines = new List<string>();
-                    while (i < lines.Length && "```" != lines[i].Trim())
+                    while (i < lines.Length &&
+                           "```" != lines[i].Trim())
                     {
                         codeLines.Add(lines[i]);
                         i++;
@@ -482,11 +485,13 @@ namespace mde
                         rootMarkerSetFlg = true;
                     }
 
-                    while (stack.Count > 1 && stack[stack.Count - 1].level > level)
+                    while (stack.Count > 1 &&
+                           stack[stack.Count - 1].level > level)
                         stack.RemoveAt(stack.Count - 1);
 
                     var top = stack[stack.Count - 1];
-                    if (top.level < level && top.list.ListItems.Count > 0)
+                    if (top.level < level &&
+                        top.list.ListItems.Count > 0)
                     {
                         var lastLi = top.list.ListItems.Cast<ListItem>().Last();
                         List nestedList = lastLi.Blocks.Count > 1 ? lastLi.Blocks.LastBlock as List : null;
@@ -534,7 +539,8 @@ namespace mde
             // ListToMarkdown は連番ではなく常に "1." で書き出すようになる。
             foreach (var kv in numbersByList)
             {
-                if (kv.Value.Count > 1 && 1 == kv.Value.Distinct().Count())
+                if (kv.Value.Count > 1 &&
+                    1 == kv.Value.Distinct().Count())
                     kv.Key.Tag = "const";
             }
 
@@ -593,7 +599,8 @@ namespace mde
             bool IsExempt(int a_idx)
             {
                 foreach (var (s, e) in exemptRanges)
-                    if (a_idx >= s && a_idx < e) return true;
+                    if (a_idx >= s &&
+                        a_idx < e) return true;
                 return false;
             }
 
@@ -605,7 +612,8 @@ namespace mde
 
                 int runStart = i;
                 int runLen = 0;
-                while (i < a_text.Length && a_text[i] == '\\') { runLen++; i++; }
+                while (i < a_text.Length &&
+                       a_text[i] == '\\') { runLen++; i++; }
 
                 if (IsExempt(runStart))
                 {

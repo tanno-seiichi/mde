@@ -65,7 +65,8 @@ namespace mde
                 var newLiPara = new Paragraph();
                 var newLi = new ListItem(newLiPara);
 
-                if (prev is List prevList && (prevList.MarkerStyle == TextMarkerStyle.Decimal) == a_orderedFlg)
+                if (prev is List prevList &&
+                    (prevList.MarkerStyle == TextMarkerStyle.Decimal) == a_orderedFlg)
                 {
                     prevList.ListItems.Add(newLi);
                     m_editor.Document.Blocks.Remove(a_p);

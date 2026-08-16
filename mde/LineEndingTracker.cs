@@ -43,10 +43,12 @@ namespace mde
             for (int i = 0; i < a_content.Length; i++)
             {
                 if (a_content[i] != '\n') continue;
-                if (i > 0 && a_content[i - 1] == '\r') crlfCount++;
+                if (i > 0 &&
+                    a_content[i - 1] == '\r') crlfCount++;
                 else lfOnlyCount++;
             }
-            if (0 == crlfCount && 0 == lfOnlyCount) return "\r\n";
+            if (0 == crlfCount &&
+                0 == lfOnlyCount) return "\r\n";
             return crlfCount >= lfOnlyCount ? "\r\n" : "\n";
         }
 
