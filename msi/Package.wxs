@@ -3,7 +3,7 @@
   <Package
 	  Name="mde"
 	  Manufacturer="tanno-seiichi"
-	  Version="1.1.0"
+	  Version="1.1.1"
 	  UpgradeCode="{AF84DAC2-4F15-4286-9979-7694751AAA89}"
 	  Scope="perMachine">
 	  
