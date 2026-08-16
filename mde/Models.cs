@@ -116,8 +116,35 @@ namespace mde
         /// <summary>フォルダかどうか。</summary>
         public bool IsDirectory { get; set; }
 
-        /// <summary>TreeViewの展開状態（バインディング用）。</summary>
-        public bool IsExpanded { get; set; }
+        private bool isExpanded;
+
+        /// <summary>TreeViewの展開状態（バインディング用）。コードから選択・展開する際にも
+        /// 画面へ反映されるよう、変更通知付きのプロパティにしている。</summary>
+        public bool IsExpanded
+        {
+            get => isExpanded;
+            set
+            {
+                if (isExpanded == value) return;
+                isExpanded = value;
+                OnPropertyChanged(nameof(IsExpanded));
+            }
+        }
+
+        private bool isSelected;
+
+        /// <summary>TreeViewの選択状態（バインディング用）。保存したファイルをフォルダビューで
+        /// 選択状態にする、といった用途でコード側から設定する。</summary>
+        public bool IsSelected
+        {
+            get => isSelected;
+            set
+            {
+                if (isSelected == value) return;
+                isSelected = value;
+                OnPropertyChanged(nameof(IsSelected));
+            }
+        }
 
         /// <summary>
         /// 子ノード一覧（フォルダの場合）。展開されるまでは「読み込み中…」の

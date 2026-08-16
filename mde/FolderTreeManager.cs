@@ -209,6 +209,108 @@ namespace mde
         }
 
         /// <summary>
+        /// 保存によって新しく作られたファイルを、既存のフォルダツリーへ追加する（ツリー全体を
+        /// 読み込み直すのではなく、対応するフォルダノードの子として1件だけ挿入する）。
+        /// 対象のフォルダがまだ子を読み込んでいない（プレースホルダのみ）場合や、そもそも
+        /// ツリー内に見つからない場合は何もしない（展開時、または次回のフォルダ読み込み時に
+        /// 自然に反映される）。すでに同じファイルのノードがあれば何もしない。
+        /// </summary>
+        /// <param name="filePath">追加するファイルの絶対パス。</param>
+        public void AddFileNodeIfMissing(string filePath)
+        {
+            if (Roots.Count == 0 || string.IsNullOrEmpty(filePath)) return;
+
+            string dir;
+            try { dir = Path.GetDirectoryName(Path.GetFullPath(filePath)); }
+            catch { return; }
+            if (string.IsNullOrEmpty(dir)) return;
+
+            var folderNode = FindFolderNode(Roots[0], dir);
+            if (folderNode == null) return;
+
+            // まだ子が読み込まれていない（プレースホルダのみ）場合は、展開時に自然に反映される
+            if (folderNode.Children.Count == 1 && folderNode.Children[0].FullPath == null) return;
+
+            if (folderNode.Children.Any(c => !c.IsDirectory && PathsEqualLocal(c.FullPath, filePath))) return;
+
+            string fileName = Path.GetFileName(filePath);
+            var newItem = new FileSystemItem { Name = fileName, FullPath = filePath, IsDirectory = false };
+
+            // 既存の並び（フォルダの後にファイル名順）に合わせて挿入位置を探す
+            int insertIdx = folderNode.Children.Count;
+            for (int i = 0; i < folderNode.Children.Count; i++)
+            {
+                var c = folderNode.Children[i];
+                if (c.IsDirectory) continue;
+                if (string.Compare(fileName, c.Name, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    insertIdx = i;
+                    break;
+                }
+            }
+            folderNode.Children.Insert(insertIdx, newItem);
+        }
+
+        /// <summary>
+        /// 指定したファイルに対応するノードを、フォルダツリーペインで選択状態にする
+        /// （見つからなければ何もしない）。そのノードまでの経路にあるフォルダは、
+        /// 隠れて見えなくならないよう展開状態にする。
+        /// </summary>
+        /// <param name="filePath">選択したいファイルの絶対パス。</param>
+        public void SelectFileNode(string filePath)
+        {
+            foreach (var root in Roots)
+                if (SelectFileNodeRecursive(root, filePath)) return;
+        }
+
+        private bool SelectFileNodeRecursive(FileSystemItem node, string filePath)
+        {
+            foreach (var child in node.Children)
+            {
+                if (!child.IsDirectory && PathsEqualLocal(child.FullPath, filePath))
+                {
+                    child.IsSelected = true;
+                    node.IsExpanded = true;
+                    return true;
+                }
+                if (child.IsDirectory && SelectFileNodeRecursive(child, filePath))
+                {
+                    node.IsExpanded = true;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private FileSystemItem FindFolderNode(FileSystemItem node, string dir)
+        {
+            if (node.IsDirectory && PathsEqualLocal(node.FullPath, dir)) return node;
+            foreach (var child in node.Children)
+            {
+                if (!child.IsDirectory) continue;
+                var found = FindFolderNode(child, dir);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        private bool PathsEqualLocal(string a, string b)
+        {
+            if (string.IsNullOrEmpty(a) || string.IsNullOrEmpty(b)) return false;
+            try
+            {
+                return string.Equals(
+                    Path.GetFullPath(a).TrimEnd(Path.DirectorySeparatorChar),
+                    Path.GetFullPath(b).TrimEnd(Path.DirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 'dir' が、現在フォルダペインに表示されているフォルダそのもの、またはそのサブフォルダで
         /// あれば true を返す。true の場合、同じ範囲のファイルを開いただけならツリーを
         /// 作り直す（ユーザーが展開していた状態を失わせる）必要はない。

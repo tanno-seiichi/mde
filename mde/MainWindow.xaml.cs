@@ -154,12 +154,28 @@ namespace mde
             if (!string.IsNullOrEmpty(savedSettings.LastFilePath) && File.Exists(savedSettings.LastFilePath))
             {
                 LoadFile(savedSettings.LastFilePath);
+                folderTreeManager.SelectFileNode(savedSettings.LastFilePath);
             }
 
             ApplyFolderPaneVisibility();
             ApplyOutlinePaneVisibility();
             SetZoom(zoomLevel);
             if (savedSettings.IsMaximized) this.WindowState = WindowState.Maximized;
+        }
+
+        /// <summary>ウィンドウを閉じようとした時、未保存の変更があれば確認する。</summary>
+        private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            if (currentFileIsDirty || pendingFileEdits.Count > 0)
+            {
+                var result = MessageBox.Show(
+                    "保存されていない変更があります。破棄して閉じますか？",
+                    "閉じる", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+                if (result != MessageBoxResult.OK)
+                {
+                    e.Cancel = true;
+                }
+            }
         }
 
         /// <summary>ウィンドウを閉じる際、このウィンドウ専用の一時画像フォルダを削除し、
@@ -676,10 +692,17 @@ namespace mde
         //  新規作成 / 開く / 保存 / 名前を付けて保存
         // ======================================================================
 
-        /// <summary>現在の内容を破棄して（未保存なら確認のうえ）新規文書を開始する。</summary>
+        /// <summary>現在の内容を破棄して新規文書を開始する。現在のファイルがフォルダビューに
+        /// 表示されている場合は、破棄前に編集内容を保留中の編集として退避したうえで、確認
+        /// ダイアログなしで新規作成する（あとでフォルダビューから開き直して保存できるため）。
+        /// フォルダビューに表示されていないファイル（またはそもそも未保存の新規文書）の場合は、
+        /// 内容が失われる可能性があるため従来通り確認する。</summary>
         private void NewBtn_Click(object sender, RoutedEventArgs e)
         {
-            if (currentFileIsDirty || pendingFileEdits.Count > 0)
+            bool currentFileInFolderView = !string.IsNullOrEmpty(currentFileDirectory) &&
+                folderTreeManager.IsWithinLoadedFolder(currentFileDirectory);
+
+            if (!currentFileInFolderView && (currentFileIsDirty || pendingFileEdits.Count > 0))
             {
                 var result = MessageBox.Show(
                     "現在の内容を破棄して新規作成します。保存されていない変更は失われますが、よろしいですか？",
@@ -687,20 +710,29 @@ namespace mde
                 if (result != MessageBoxResult.OK) return;
             }
 
-            DiscardCurrentDocumentSilently();
-            currentFileIsDirty = false;
+            if (currentFileInFolderView)
+            {
+                SnapshotCurrentFileIfDirty();
+                StartNewDocumentKeepingPendingEdits();
+            }
+            else
+            {
+                DiscardCurrentDocumentSilently();
+            }
             Editor.Focus();
         }
 
-        /// <summary>
-        /// 新しいウィンドウを開く。現在の内容は破棄されず、別ウィンドウで新規文書が開始される。
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        private void NewWindow_Click( object sender, RoutedEventArgs e )
+        /// <summary>新しいウィンドウを開く（現在のウィンドウの内容には触れない）。</summary>
+        private void NewWindow_Click(object sender, RoutedEventArgs e)
         {
             var newWindow = new MainWindow();
             newWindow.Show();
+        }
+
+        /// <summary>このウィンドウを閉じる（未保存の変更があればWindow_Closingで確認される）。</summary>
+        private void CloseBtn_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
         }
 
         /// <summary>ファイルを開くダイアログを表示し、選択されたファイルを読み込む。</summary>
@@ -851,7 +883,9 @@ namespace mde
             string md = isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
             File.WriteAllText(currentFilePath, lineEndingTracker.Apply(md, lineEndingTracker.GetFor(currentFilePath)), new UTF8Encoding(false));
             currentFileIsDirty = false;
+            folderTreeManager.AddFileNodeIfMissing(currentFilePath);
             folderTreeManager.RefreshDirtyMarkers();
+            folderTreeManager.SelectFileNode(currentFilePath);
         }
 
         /// <summary>「名前を付けて保存」ダイアログを開く。</summary>
@@ -869,30 +903,62 @@ namespace mde
                 Filter = "Markdownファイル (*.md)|*.md|すべてのファイル (*.*)|*.*",
                 FileName = currentFilePath != null ? Path.GetFileName(currentFilePath) : "document.md"
             };
-            if (currentFileDirectory != null) dlg.InitialDirectory = currentFileDirectory;
+            // 現在の文書自体には保存先フォルダがまだ無くても（新規作成直後など）、フォルダビューに
+            // 何かフォルダが表示されていれば、そちらを初期フォルダとして使う。
+            string initialDirectory = currentFileDirectory ?? folderTreeManager.LoadedFolderRootPath;
+            if (!string.IsNullOrEmpty(initialDirectory)) dlg.InitialDirectory = initialDirectory;
 
-            if (dlg.ShowDialog() == true)
+            if (dlg.ShowDialog() != true) return;
+
+            string newFilePath = dlg.FileName;
+            string newFileDirectory = Path.GetDirectoryName(dlg.FileName);
+
+            // 「名前を付けて保存」は、保存元ファイルの改行コードスタイルを引き継ぐ
+            // （名前や場所が変わっただけで、その設定を失わせないため）。
+            string lineEnding = !string.IsNullOrEmpty(currentFilePath) ? lineEndingTracker.GetFor(currentFilePath) : "\r\n";
+            lineEndingTracker.SetFor(newFilePath, lineEnding);
+
+            bool folderIsLoaded = !string.IsNullOrEmpty(folderTreeManager.LoadedFolderRootPath);
+            bool isWithinCurrentFolder = folderIsLoaded && folderTreeManager.IsWithinLoadedFolder(newFileDirectory);
+
+            if (folderIsLoaded && !isWithinCurrentFolder)
             {
-                // 「名前を付けて保存」は、保存元ファイルの改行コードスタイルを引き継ぐ
-                // （名前や場所が変わっただけで、その設定を失わせないため）。
-                string lineEnding = !string.IsNullOrEmpty(currentFilePath) ? lineEndingTracker.GetFor(currentFilePath) : "\r\n";
-                lineEndingTracker.SetFor(dlg.FileName, lineEnding);
-
-                currentFilePath = dlg.FileName;
-                currentFileDirectory = Path.GetDirectoryName(dlg.FileName);
-                this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(dlg.FileName);
-
+                // 現在表示中のフォルダの外に保存する場合：このウィンドウでの編集内容は
+                // 保存先ファイルへ引き継がれる（新しいウィンドウで開く）ため、このウィンドウ
+                // 自体は表示中のフォルダの表示を維持したまま、その先頭のファイルへ切り替える。
+                string savedDirectoryBackup = currentFileDirectory;
+                currentFileDirectory = newFileDirectory; // 画像パスの解決に一時的に必要
                 if (!isSourceMode) imageManager.RelocatePendingTempImages(Editor.Document);
 
-                string md = isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
-                File.WriteAllText(dlg.FileName, lineEndingTracker.Apply(md, lineEnding), new UTF8Encoding(false));
-                currentFileIsDirty = false;
+                string outsideMd = isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
+                File.WriteAllText(newFilePath, lineEndingTracker.Apply(outsideMd, lineEnding), new UTF8Encoding(false));
 
-                if (!string.IsNullOrEmpty(currentFileDirectory) && !folderTreeManager.IsWithinLoadedFolder(currentFileDirectory))
-                    folderTreeManager.LoadFolderTree(currentFileDirectory);
-                else
-                    folderTreeManager.RefreshDirtyMarkers();
+                // 古いパスの情報を破棄する（他のファイルの保留中の編集には触れない）。
+                currentFilePath = null;
+                currentFileDirectory = null;
+                currentFileIsDirty = false;
+                folderTreeManager.OpenFirstFileInLoadedFolder();
+
+                OpenFileInNewWindow(newFilePath, null);
+                return;
             }
+
+            currentFilePath = newFilePath;
+            currentFileDirectory = newFileDirectory;
+            this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(newFilePath);
+
+            if (!isSourceMode) imageManager.RelocatePendingTempImages(Editor.Document);
+
+            string md = isSourceMode ? SourceEditor.Text : markdownConverter.DocumentToMarkdown(Editor.Document);
+            File.WriteAllText(newFilePath, lineEndingTracker.Apply(md, lineEnding), new UTF8Encoding(false));
+            currentFileIsDirty = false;
+
+            if (!folderIsLoaded)
+                folderTreeManager.LoadFolderTree(currentFileDirectory);
+            else
+                folderTreeManager.AddFileNodeIfMissing(newFilePath);
+            folderTreeManager.RefreshDirtyMarkers();
+            folderTreeManager.SelectFileNode(newFilePath);
         }
 
         /// <summary>
@@ -929,15 +995,12 @@ namespace mde
         /// <summary>現在のファイルと、保留中の編集があるすべてのファイルを保存する。</summary>
         private void SaveAllBtn_Click(object sender, RoutedEventArgs e)
         {
-            if( currentFileIsDirty || pendingFileEdits.Count > 0 )
+            if (currentFileIsDirty || pendingFileEdits.Count > 0)
             {
-                var result = MessageBox.Show(
+                var confirmResult = MessageBox.Show(
                     "編集中のすべてのファイルを保存します。よろしいですか？",
-                    "すべて保存", MessageBoxButton.OKCancel, MessageBoxImage.Question );
-                if( result != MessageBoxResult.OK )
-                {
-                    return;
-                }
+                    "すべて保存", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+                if (confirmResult != MessageBoxResult.OK) return;
             }
             else
             {
@@ -988,12 +1051,6 @@ namespace mde
                 failures.Count > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
 
-        /// <summary>ウィンドウを閉じる。</summary>
-        private void CloseBtn_Click( object sender, RoutedEventArgs e )
-        {
-            Close();
-        }
-
         /// <summary>エディタを空の無題文書にリセットし、未保存変更の追跡もすべてクリアする
         /// （確認は行わない。呼び出し側が必要に応じて事前にユーザーへ確認済みであることを
         /// 前提とする）。</summary>
@@ -1004,6 +1061,35 @@ namespace mde
             this.Title = Assembly.GetExecutingAssembly().GetName().Name;
 
             pendingFileEdits.Clear();
+            currentFileIsDirty = false;
+
+            RunAsProgrammaticChange(() =>
+            {
+                if (isSourceMode)
+                {
+                    SourceEditor.Text = "";
+                }
+                else
+                {
+                    Editor.Document.Blocks.Clear();
+                    Editor.Document.Blocks.Add(new Paragraph());
+                }
+            });
+            outlineManager.Refresh();
+            folderTreeManager.RefreshDirtyMarkers();
+        }
+
+        /// <summary>
+        /// DiscardCurrentDocumentSilentlyと同様に、エディタを空の無題文書へリセットするが、
+        /// 他のファイルの保留中の編集（pendingFileEdits）はそのまま残す。フォルダビューに
+        /// 表示されているファイルから新規作成する際、そのファイル自身の編集内容は事前に
+        /// SnapshotCurrentFileIfDirtyで退避済みであることを前提とする。
+        /// </summary>
+        private void StartNewDocumentKeepingPendingEdits()
+        {
+            currentFilePath = null;
+            currentFileDirectory = null;
+            this.Title = Assembly.GetExecutingAssembly().GetName().Name;
             currentFileIsDirty = false;
 
             RunAsProgrammaticChange(() =>
@@ -1108,44 +1194,43 @@ namespace mde
                 OpenFindReplaceWindow();
             }
             // Ctrl+Nは「新規作成」のショートカットとして扱う（Windows標準のCtrl+Nは「新しいウィンドウ」なので、そちらは無効化する）。
-            else if( e.Key == Key.N && Keyboard.Modifiers == ModifierKeys.Control )
+            else if (e.Key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 e.Handled = true;
-                NewBtn_Click( sender, null );
+                NewBtn_Click(sender, null);
             }
-            // Shift+Ctrl+Nは「新しいウィンドウ」のショートカットとして扱う（Windows標準のCtrl+Shift+Nは「新しいウィンドウ」なので、そちらは無効化する）。
-            else if( e.Key == Key.N && Keyboard.Modifiers == ( ModifierKeys.Control | ModifierKeys.Shift ) )
+            // Shift+Ctrl+Nは「新しいウィンドウ」のショートカットとして扱う。
+            else if (e.Key == Key.N && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
             {
                 e.Handled = true;
-                var newWindow = new MainWindow();
-                newWindow.Show();
+                NewWindow_Click(sender, null);
             }
-            // Ctrl+Oは「開く」のショートカットとして扱う（Windows標準のCtrl+Oは「開く」なので、そちらは無効化する）。
-            else if( e.Key == Key.O && Keyboard.Modifiers == ModifierKeys.Control )
+            // Ctrl+Oは「開く」のショートカットとして扱う。
+            else if (e.Key == Key.O && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 e.Handled = true;
-                OpenBtn_Click( sender, null );
+                OpenBtn_Click(sender, null);
             }
             // Ctrl+Sは「保存」のショートカットとして扱う（Windows標準のCtrl+Sは「すべて保存」なので、そちらは無効化する）。
-            else if( e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control )
+            else if (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 e.Handled = true;
-                SaveBtn_Click( sender, null );
+                SaveBtn_Click(sender, null);
             }
-            // Shift+Ctrl+Sは「名前を付けて保存...」のショートカットとして扱う（Windows標準のCtrl+Shift+Sは「すべて保存」なので、そちらは無効化する）。
-            else if( e.Key == Key.S && Keyboard.Modifiers == ( ModifierKeys.Control | ModifierKeys.Shift ) )
+            // Shift+Ctrl+Sは「名前を付けて保存...」のショートカットとして扱う。
+            else if (e.Key == Key.S && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
             {
                 e.Handled = true;
                 SaveAs();
             }
             // Ctrl+Pは「PDFに書き出し」のショートカットとして扱う（Windows標準のCtrl+Pは「印刷」なので、そちらは無効化する）。
-            else if( e.Key == Key.P && Keyboard.Modifiers == ModifierKeys.Control )
+            else if (e.Key == Key.P && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 e.Handled = true;
-                ExportPdfBtn_Click( sender, null );
+                ExportPdfBtn_Click(sender, null);
             }
-            // Ctrl+Wは「ウィンドウを閉じる」のショートカットとして扱う（Windows標準のCtrl+Wは「ウィンドウを閉じる」なので、そちらは無効化する）。
-            else if( e.Key == Key.W && Keyboard.Modifiers == ModifierKeys.Control )
+            // Ctrl+Wは「ウィンドウを閉じる」のショートカットとして扱う。
+            else if (e.Key == Key.W && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 e.Handled = true;
                 Close();
@@ -1169,9 +1254,7 @@ namespace mde
         /// <summary>「バージョン情報」ボタン。アプリ名とバージョン番号を表示する。</summary>
         private void VersionInfoBtn_Click(object sender, RoutedEventArgs e)
         {
-            //AboutWindowを表示する
-            var aboutWindow = new AboutWindow();
-            aboutWindow.Owner = this;
+            var aboutWindow = new AboutWindow { Owner = this };
             aboutWindow.ShowDialog();
         }
 
@@ -1317,22 +1400,5 @@ namespace mde
 
         private void OutlineList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
             outlineManager.HandleSelectionChanged(sender, e);
-
-        /// <summary>ウィンドウを閉じるとき、未保存の変更がある場合は確認する。</summary>
-        private void Window_Closing( object sender, System.ComponentModel.CancelEventArgs e )
-        {
-            if( currentFileIsDirty || pendingFileEdits.Count > 0 )
-            {
-                var result = MessageBox.Show(
-                    "現在の内容を破棄して新規作成します。保存されていない変更は失われますが、よろしいですか？",
-                    "新規作成", MessageBoxButton.OKCancel, MessageBoxImage.Question );
-                if( result != MessageBoxResult.OK )
-                {
-                    e.Cancel = true;
-                    return;
-                }
-            }
-        }
-
     }
 }

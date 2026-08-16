@@ -54,7 +54,6 @@
                     <Button x:Name="ToggleOutlinePaneBtn" Content="アウトラインを隠す" Style="{StaticResource ToolbarButton}" Click="ToggleOutlinePaneBtn_Click"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    
                     <Button Content="ソース ⇄ MarkDown" Style="{StaticResource ToolbarButton}" Click="ToggleModeBtn_Click"/>
                     <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="12" Padding="10,5" Margin="0,0,0,0">
                         <TextBlock x:Name="ModeIndicator" Text="MarkDownモード" FontSize="11" VerticalAlignment="Center"
@@ -67,7 +66,6 @@
                     <Button x:Name="ZoomLabelBtn" Content="100%" Width="52" Style="{StaticResource ToolbarButton}"
                             Click="ZoomReset_Click"/>
                     <Button Content="＋" Style="{StaticResource ZoomButton}" Click="ZoomIn_Click"/>
-                    
                 </StackPanel>
             </Grid>
         </Border>
@@ -100,6 +98,7 @@
                             <Style TargetType="TreeViewItem">
                                 <EventSetter Event="Expanded" Handler="TreeViewItem_Expanded"/>
                                 <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
                             </Style>
                         </TreeView.Resources>
                         <TreeView.ItemTemplate>
@@ -110,6 +109,13 @@
                                 <HierarchicalDataTemplate.Triggers>
                                     <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
                                         <Setter TargetName="MatchHighlightBorder" Property="Background" Value="#FFE166"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
+                                        <Setter TargetName="MatchHighlightBorder" Property="Background" Value="#CBE8F6"/>
+                                        <Setter TargetName="MatchHighlightBorder" Property="BorderBrush" Value="#26A0DA"/>
+                                        <Setter TargetName="MatchHighlightBorder" Property="BorderThickness" Value="1,1,1,1"/>
+                                        <Setter TargetName="MatchHighlightBorder" Property="CornerRadius" Value="0"/>
+                                        <Setter TargetName="MatchHighlightBorder" Property="Margin" Value="-1,0,0,0"/>
                                     </DataTrigger>
                                 </HierarchicalDataTemplate.Triggers>
                             </HierarchicalDataTemplate>
