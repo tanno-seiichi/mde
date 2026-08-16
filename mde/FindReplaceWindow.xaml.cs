@@ -633,5 +633,20 @@ namespace mde
             StepReplaceButton.Visibility = visibility;
             ReplaceAllButton.Visibility = visibility;
         }
+
+        /// <summary>
+        /// 検索・置換ウィンドウのキーボードショートカットの実装。
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void FindReplaceWindow_PreviewKeyDown( object sender, KeyEventArgs e )
+        {
+            // Escキーでウィンドウを閉じる
+            if( e.Key == Key.Escape )
+            {
+                this.Close();
+                e.Handled = true;
+            }
+        }
     }
 }

@@ -152,9 +152,9 @@ namespace mde
             DataObject.AddPastingHandler(Editor, tableEditor.HandlePasting);
 
             if (!string.IsNullOrEmpty(savedSettings.LastFilePath) && File.Exists(savedSettings.LastFilePath))
+            {
                 LoadFile(savedSettings.LastFilePath);
-            else
-                LoadIntroContent();
+            }
 
             ApplyFolderPaneVisibility();
             ApplyOutlinePaneVisibility();
@@ -315,37 +315,6 @@ namespace mde
                 pendingFileEdits[path] = newContent;
                 folderTreeManager.RefreshDirtyMarkers();
             }
-        }
-
-        // ======================================================================
-        //  初期表示コンテンツ
-        // ======================================================================
-
-        /// <summary>初回起動時に表示する、組み込みの案内文書を読み込む。</summary>
-        private void LoadIntroContent()
-        {
-            string intro = string.Join("\n", new[]
-            {
-                "# MarkDown インラインエディタ（デスクトップ版）",
-                "",
-                "このエディタは、編集ペインとプレビューペインが分かれていません。この画面に直接書き込むと、そのままMarkDownとして整形されます。",
-                "",
-                "* 「* 」と入力すると箇条書きに変わります",
-                "* Enterキーで次の項目に進みます",
-                "* Shift+Enterで項目内改行、Tabで字下げ（Shift+Tabで戻す）ができます",
-                "* 空の項目でEnterキーを押すと箇条書きを抜けます",
-                "",
-                "「# 」〜「###### 」と入力すると見出しに変わります。右クリックでも見出しレベルを選べます。",
-                "",
-                "右クリックで表の挿入、行・列の削除、ソースモードへの切り替えもできます。",
-                "",
-                "「```」または「```言語名」と入力してEnterを押すとコードブロックになります。抜けるときはコードブロックの上下の行をクリックしてください。",
-                "",
-                "「開く…」でMarkDownファイルを選ぶと、同じフォルダにある画像も自動的に表示されます。"
-            });
-            markdownConverter.MarkdownToDocument(intro, Editor.Document);
-            outlineManager.Refresh();
-            currentFileIsDirty = false;
         }
 
         // ======================================================================
@@ -719,7 +688,19 @@ namespace mde
             }
 
             DiscardCurrentDocumentSilently();
+            currentFileIsDirty = false;
             Editor.Focus();
+        }
+
+        /// <summary>
+        /// 新しいウィンドウを開く。現在の内容は破棄されず、別ウィンドウで新規文書が開始される。
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        private void NewWindow_Click( object sender, RoutedEventArgs e )
+        {
+            var newWindow = new MainWindow();
+            newWindow.Show();
         }
 
         /// <summary>ファイルを開くダイアログを表示し、選択されたファイルを読み込む。</summary>
@@ -948,6 +929,21 @@ namespace mde
         /// <summary>現在のファイルと、保留中の編集があるすべてのファイルを保存する。</summary>
         private void SaveAllBtn_Click(object sender, RoutedEventArgs e)
         {
+            if( currentFileIsDirty || pendingFileEdits.Count > 0 )
+            {
+                var result = MessageBox.Show(
+                    "編集中のすべてのファイルを保存します。よろしいですか？",
+                    "すべて保存", MessageBoxButton.OKCancel, MessageBoxImage.Question );
+                if( result != MessageBoxResult.OK )
+                {
+                    return;
+                }
+            }
+            else
+            {
+                return;
+            }
+
             int savedCount = 0;
             var failures = new List<string>();
 
@@ -990,6 +986,12 @@ namespace mde
 
             MessageBox.Show(message, "すべて保存", MessageBoxButton.OK,
                 failures.Count > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+        }
+
+        /// <summary>ウィンドウを閉じる。</summary>
+        private void CloseBtn_Click( object sender, RoutedEventArgs e )
+        {
+            Close();
         }
 
         /// <summary>エディタを空の無題文書にリセットし、未保存変更の追跡もすべてクリアする
@@ -1097,13 +1099,56 @@ namespace mde
             OpenFindReplaceWindow();
         }
 
-        /// <summary>ウィンドウ全体でCtrl+Fを検索と置換ダイアログのショートカットとして扱う。</summary>
+        /// <summary>メインウインドウのキーボードショートカットの実装。</summary>
         private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 e.Handled = true;
                 OpenFindReplaceWindow();
+            }
+            // Ctrl+Nは「新規作成」のショートカットとして扱う（Windows標準のCtrl+Nは「新しいウィンドウ」なので、そちらは無効化する）。
+            else if( e.Key == Key.N && Keyboard.Modifiers == ModifierKeys.Control )
+            {
+                e.Handled = true;
+                NewBtn_Click( sender, null );
+            }
+            // Shift+Ctrl+Nは「新しいウィンドウ」のショートカットとして扱う（Windows標準のCtrl+Shift+Nは「新しいウィンドウ」なので、そちらは無効化する）。
+            else if( e.Key == Key.N && Keyboard.Modifiers == ( ModifierKeys.Control | ModifierKeys.Shift ) )
+            {
+                e.Handled = true;
+                var newWindow = new MainWindow();
+                newWindow.Show();
+            }
+            // Ctrl+Oは「開く」のショートカットとして扱う（Windows標準のCtrl+Oは「開く」なので、そちらは無効化する）。
+            else if( e.Key == Key.O && Keyboard.Modifiers == ModifierKeys.Control )
+            {
+                e.Handled = true;
+                OpenBtn_Click( sender, null );
+            }
+            // Ctrl+Sは「保存」のショートカットとして扱う（Windows標準のCtrl+Sは「すべて保存」なので、そちらは無効化する）。
+            else if( e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control )
+            {
+                e.Handled = true;
+                SaveBtn_Click( sender, null );
+            }
+            // Shift+Ctrl+Sは「名前を付けて保存...」のショートカットとして扱う（Windows標準のCtrl+Shift+Sは「すべて保存」なので、そちらは無効化する）。
+            else if( e.Key == Key.S && Keyboard.Modifiers == ( ModifierKeys.Control | ModifierKeys.Shift ) )
+            {
+                e.Handled = true;
+                SaveAs();
+            }
+            // Ctrl+Pは「PDFに書き出し」のショートカットとして扱う（Windows標準のCtrl+Pは「印刷」なので、そちらは無効化する）。
+            else if( e.Key == Key.P && Keyboard.Modifiers == ModifierKeys.Control )
+            {
+                e.Handled = true;
+                ExportPdfBtn_Click( sender, null );
+            }
+            // Ctrl+Wは「ウィンドウを閉じる」のショートカットとして扱う（Windows標準のCtrl+Wは「ウィンドウを閉じる」なので、そちらは無効化する）。
+            else if( e.Key == Key.W && Keyboard.Modifiers == ModifierKeys.Control )
+            {
+                e.Handled = true;
+                Close();
             }
         }
 
@@ -1272,5 +1317,22 @@ namespace mde
 
         private void OutlineList_SelectionChanged(object sender, SelectionChangedEventArgs e) =>
             outlineManager.HandleSelectionChanged(sender, e);
+
+        /// <summary>ウィンドウを閉じるとき、未保存の変更がある場合は確認する。</summary>
+        private void Window_Closing( object sender, System.ComponentModel.CancelEventArgs e )
+        {
+            if( currentFileIsDirty || pendingFileEdits.Count > 0 )
+            {
+                var result = MessageBox.Show(
+                    "現在の内容を破棄して新規作成します。保存されていない変更は失われますが、よろしいですか？",
+                    "新規作成", MessageBoxButton.OKCancel, MessageBoxImage.Question );
+                if( result != MessageBoxResult.OK )
+                {
+                    e.Cancel = true;
+                    return;
+                }
+            }
+        }
+
     }
 }

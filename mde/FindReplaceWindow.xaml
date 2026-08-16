@@ -8,7 +8,8 @@
         ResizeMode="CanResizeWithGrip"
         FontFamily="Segoe UI, Yu Gothic UI"
         FontSize="13"
-        Background="{StaticResource PaperBrush}">
+        Background="{StaticResource PaperBrush}"
+        PreviewKeyDown="FindReplaceWindow_PreviewKeyDown">
     <StackPanel Margin="22,22,22,20">
 
         <TextBlock Text="検索する文字列" Margin="0,0,0,0"/>

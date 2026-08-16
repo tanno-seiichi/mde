@@ -7,7 +7,8 @@
         Height="860" Width="1240"
         FontFamily="Segoe UI, Yu Gothic UI"
         Background="{StaticResource PaperBrush}"
-        PreviewKeyDown="MainWindow_PreviewKeyDown">
+        PreviewKeyDown="MainWindow_PreviewKeyDown"
+        Closing="Window_Closing">
 
     <Window.Resources>
         <Style TargetType="MenuItem" x:Key="CtxMenuItem">
@@ -25,25 +26,24 @@
 
     <DockPanel>
 
-        <!-- ===================== Toolbar ===================== -->
-        <Border DockPanel.Dock="Top" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,0"
-                Padding="4,2,2,2">
-            <StackPanel>
-                <WrapPanel Orientation="Horizontal">
-                    <Button Content="新規作成" Style="{StaticResource ToolbarButton}" Click="NewBtn_Click"/>
-                    <Button Content="開く…" Style="{StaticResource ToolbarButton}" Click="OpenBtn_Click"/>
-                    <Button Content="保存" Style="{StaticResource ToolbarButton}" Click="SaveBtn_Click"/>
-                    <Button Content="名前を付けて保存…" Style="{StaticResource ToolbarButton}" Click="SaveAsBtn_Click"/>
-                    <Button Content="すべて保存" Style="{StaticResource ToolbarButton}" Click="SaveAllBtn_Click"/>
-                    <Border Width="1" Background="{StaticResource LineBrush}" Margin="4,4,12,4"/>
-                    <Button Content="PDFに書き出し…" Style="{StaticResource ToolbarButton}" Click="ExportPdfBtn_Click"/>
-                    <Border Width="1" Background="{StaticResource LineBrush}" Margin="4,4,12,4"/>
-                    <Button Content="検索と置換…" Style="{StaticResource ToolbarButton}" Click="FindReplaceBtn_Click"/>
-                    <Border Width="1" Background="{StaticResource LineBrush}" Margin="4,4,12,4"/>
-                    <Button Content="バージョン情報" Style="{StaticResource ToolbarButton}" Click="VersionInfoBtn_Click"/>
-                </WrapPanel>
-            </StackPanel>
-        </Border>
+        <!-- ===================== Menu bar ===================== -->
+        <Menu DockPanel.Dock="Top" Background="{StaticResource PaperBrush}" Foreground="{StaticResource InkBrush}"
+              BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="6,3" FontSize="13">
+            <MenuItem Header="ファイル(_F)">
+                <MenuItem Header="新規作成(_N)" Click="NewBtn_Click" InputGestureText="Ctrl+N"/>
+                <MenuItem Header="新しいウインドウ" Click="NewWindow_Click" InputGestureText="Shift+Ctrl+N"/>
+                <MenuItem Header="開く…(_O)" Click="OpenBtn_Click" InputGestureText="Ctrl+O"/>
+                <MenuItem Header="保存(_S)" Click="SaveBtn_Click" InputGestureText="Ctrl+S"/>
+                <MenuItem Header="名前を付けて保存…" Click="SaveAsBtn_Click" InputGestureText="Shift+Ctrl+S"/>
+                <MenuItem Header="すべて保存(_A)" Click="SaveAllBtn_Click"/>
+                <Separator/>
+                <MenuItem Header="PDFに書き出し…(_P)" Click="ExportPdfBtn_Click" InputGestureText="Ctrl+P"/>
+                <Separator/>
+                <MenuItem Header="閉じる(_W)" Click="CloseBtn_Click" InputGestureText="Ctrl+W"/>
+            </MenuItem>
+            <MenuItem Header="検索と置換(_F)" Click="FindReplaceBtn_Click" InputGestureText="Ctrl+F"/>
+            <MenuItem Header="バージョン情報(_A)" Click="VersionInfoBtn_Click"/>
+        </Menu>
 
         <!-- ===================== Status bar (panes / zoom / mode) ===================== -->
         <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0"
