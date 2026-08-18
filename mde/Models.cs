@@ -90,7 +90,10 @@ namespace mde
             get => m_isSearchMatchFlg;
             set
             {
-                if (m_isSearchMatchFlg == value) return;
+                if (m_isSearchMatchFlg == value)
+                {
+                    return;
+                }
                 m_isSearchMatchFlg = value;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSearchMatch)));
             }
@@ -125,7 +128,10 @@ namespace mde
             get => m_isExpandedFlg;
             set
             {
-                if (m_isExpandedFlg == value) return;
+                if (m_isExpandedFlg == value)
+                {
+                    return;
+                }
                 m_isExpandedFlg = value;
                 OnPropertyChanged(nameof(IsExpanded));
             }
@@ -140,7 +146,10 @@ namespace mde
             get => m_isSelectedFlg;
             set
             {
-                if (m_isSelectedFlg == value) return;
+                if (m_isSelectedFlg == value)
+                {
+                    return;
+                }
                 m_isSelectedFlg = value;
                 OnPropertyChanged(nameof(IsSelected));
             }
@@ -159,7 +168,10 @@ namespace mde
             get => m_isDirtyFlg;
             set
             {
-                if (m_isDirtyFlg == value) return;
+                if (m_isDirtyFlg == value)
+                {
+                    return;
+                }
                 m_isDirtyFlg = value;
                 OnPropertyChanged(nameof(IsDirty));
                 OnPropertyChanged(nameof(DisplayName));
@@ -175,7 +187,10 @@ namespace mde
             get => m_isSearchMatchFlg;
             set
             {
-                if (m_isSearchMatchFlg == value) return;
+                if (m_isSearchMatchFlg == value)
+                {
+                    return;
+                }
                 m_isSearchMatchFlg = value;
                 OnPropertyChanged(nameof(IsSearchMatch));
             }

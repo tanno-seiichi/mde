@@ -140,7 +140,10 @@ namespace mde
         {
             if (a_args.LeftButton != MouseButtonState.Pressed ||
                 null == m_imageDragStartPoint) return;
-            if (!(a_sender is Image img)) return;
+            if (!(a_sender is Image img))
+            {
+                return;
+            }
 
             Point current = a_args.GetPosition(null);
             Vector diff = m_imageDragStartPoint.Value - current;
@@ -151,7 +154,10 @@ namespace mde
             m_imageDragStartPoint = null;
 
             string filePath = GetExportableFilePath(img);
-            if (null == filePath) return;
+            if (null == filePath)
+            {
+                return;
+            }
 
             var data = new DataObject(DataFormats.FileDrop, new[] { filePath });
             DragDrop.DoDragDrop(img, data, DragDropEffects.Copy);
@@ -166,7 +172,10 @@ namespace mde
         /// <returns>実ファイルパス。解決できなければ null。</returns>
         public string GetExportableFilePath(Image a_img)
         {
-            if (!(a_img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.m_originalSrc)) return null;
+            if (!(a_img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.m_originalSrc))
+            {
+                return null;
+            }
             string src = info.m_originalSrc;
 
             if (Uri.TryCreate(src, UriKind.Absolute, out Uri u) &&
@@ -201,7 +210,10 @@ namespace mde
         /// <param name="a_ownerWindow">ダイアログの親ウィンドウ。</param>
         public void SaveImageAs(Window a_ownerWindow)
         {
-            if (null == ContextImage) return;
+            if (null == ContextImage)
+            {
+                return;
+            }
             string sourcePath = GetExportableFilePath(ContextImage);
             if (null == sourcePath)
             {
@@ -216,7 +228,10 @@ namespace mde
                 Filter = "画像ファイル|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|すべてのファイル|*.*",
                 OverwritePrompt = false
             };
-            if (true != dlg.ShowDialog()) return;
+            if (true != dlg.ShowDialog())
+            {
+                return;
+            }
 
             try
             {
@@ -248,8 +263,14 @@ namespace mde
         /// <returns>マッチした文字列。どちらも失敗していれば空文字。</returns>
         private string FirstGroupOrEmpty(Match a_a, Match a_b)
         {
-            if (a_a.Success) return a_a.Groups[1].Value;
-            if (a_b.Success) return a_b.Groups[1].Value;
+            if (a_a.Success)
+            {
+                return a_a.Groups[1].Value;
+            }
+            if (a_b.Success)
+            {
+                return a_b.Groups[1].Value;
+            }
             return "";
         }
 
@@ -258,7 +279,10 @@ namespace mde
         /// <param name="a_src">MarkDownに書かれていたパス/URL。</param>
         public void SetImageSource(Image a_img, string a_src)
         {
-            if (string.IsNullOrWhiteSpace(a_src)) return;
+            if (string.IsNullOrWhiteSpace(a_src))
+            {
+                return;
+            }
             try
             {
                 Uri uri;
@@ -279,7 +303,10 @@ namespace mde
                     if (!string.IsNullOrEmpty(currentFileDirectory))
                     {
                         string combined = Path.GetFullPath(Path.Combine(currentFileDirectory, a_src.Replace('/', Path.DirectorySeparatorChar)));
-                        if (!File.Exists(combined)) return;
+                        if (!File.Exists(combined))
+                        {
+                            return;
+                        }
                         uri = new Uri(combined, UriKind.Absolute);
                     }
                     else
@@ -317,7 +344,10 @@ namespace mde
         /// <param name="a_img">対象の画像。</param>
         public void ApplyImageSizing(Image a_img)
         {
-            if (!(a_img.Source is BitmapSource bmp)) return;
+            if (!(a_img.Source is BitmapSource bmp))
+            {
+                return;
+            }
             double naturalWidth = bmp.PixelWidth;
             double naturalHeight = bmp.PixelHeight;
             if (naturalWidth <= 0 ||
@@ -341,7 +371,10 @@ namespace mde
         public double GetAvailableImageWidth()
         {
             double w = m_editor.ActualWidth;
-            if (w <= 0) return 560; // 初回レイアウト前の妥当なフォールバック値
+            if (w <= 0)
+            {
+                return 560; // 初回レイアウト前の妥当なフォールバック値
+            }
             w -= m_editor.Padding.Left + m_editor.Padding.Right;
             w -= 24; // スクロールバー＋右端が詰まりすぎないための余白
             return Math.Max(100, w);
@@ -392,17 +425,29 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         public void HandleDrop(object a_sender, DragEventArgs a_args)
         {
-            if (m_isSourceMode() || !a_args.Data.GetDataPresent(DataFormats.FileDrop)) return;
-            if (!(a_args.Data.GetData(DataFormats.FileDrop) is string[] files)) return;
+            if (m_isSourceMode() || !a_args.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                return;
+            }
+            if (!(a_args.Data.GetData(DataFormats.FileDrop) is string[] files))
+            {
+                return;
+            }
 
             var imageFiles = files.Where(IsImageFile).ToList();
-            if (0 == imageFiles.Count) return;
+            if (0 == imageFiles.Count)
+            {
+                return;
+            }
 
             a_args.Handled = true;
 
             Point dropPoint = a_args.GetPosition(m_editor);
             TextPointer insertAt = m_editor.GetPositionFromPoint(dropPoint, true);
-            if (null == insertAt) return;
+            if (null == insertAt)
+            {
+                return;
+            }
 
             m_originalTextTracker.Invalidate(insertAt);
 
@@ -415,7 +460,10 @@ namespace mde
                     // までは実際の images フォルダに一切触れない。実フォルダへの移動は
                     // RelocatePendingTempImages が Save / Save As のたびに行う。
                     string tempPath = CopyFileWithDedup(file, GetOrCreateTempImageFolder());
-                    if (null == tempPath) continue;
+                    if (null == tempPath)
+                    {
+                        continue;
+                    }
 
                     var img = BuildImageFromMarkdown(Path.GetFileNameWithoutExtension(file), tempPath);
                     var container = new InlineUIContainer(img, insertAt);
@@ -492,7 +540,10 @@ namespace mde
         public void RelocatePendingTempImages(FlowDocument a_doc)
         {
             string currentFileDirectory = m_getCurrentFileDirectory();
-            if (string.IsNullOrEmpty(currentFileDirectory)) return;
+            if (string.IsNullOrEmpty(currentFileDirectory))
+            {
+                return;
+            }
 
             string tempDir;
             try { tempDir = Path.GetFullPath(GetOrCreateTempImageFolder()); }
@@ -500,15 +551,27 @@ namespace mde
 
             foreach (var img in FindAllImages(a_doc))
             {
-                if (!(img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.m_originalSrc)) continue;
-                if (!Path.IsPathRooted(info.m_originalSrc)) continue; // 既に相対パスなら何もしない
+                if (!(img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.m_originalSrc))
+                {
+                    continue;
+                }
+                if (!Path.IsPathRooted(info.m_originalSrc))
+                {
+                    continue; // 既に相対パスなら何もしない
+                }
 
                 string fullSrc;
                 try { fullSrc = Path.GetFullPath(info.m_originalSrc); } catch { continue; }
-                if (!fullSrc.StartsWith(tempDir, StringComparison.OrdinalIgnoreCase)) continue; // このウィンドウの一時ファイルではない
+                if (!fullSrc.StartsWith(tempDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue; // このウィンドウの一時ファイルではない
+                }
 
                 string destPath = CopyFileWithDedup(fullSrc, Path.Combine(currentFileDirectory, "images"));
-                if (null == destPath) continue;
+                if (null == destPath)
+                {
+                    continue;
+                }
 
                 info.m_originalSrc = "images/" + Path.GetFileName(destPath);
                 SetImageSource(img, info.m_originalSrc);
@@ -542,7 +605,10 @@ namespace mde
         {
             foreach (var img in FindAllImages(a_doc))
             {
-                if (img.Tag is ImageInfo info) SetImageSource(img, info.m_originalSrc);
+                if (img.Tag is ImageInfo info)
+                {
+                    SetImageSource(img, info.m_originalSrc);
+                }
             }
         }
 
@@ -552,8 +618,12 @@ namespace mde
         public IEnumerable<Image> FindAllImages(FlowDocument a_doc)
         {
             foreach (Block block in a_doc.Blocks)
+            {
                 foreach (var img in FindImagesInBlock(block))
+                {
                     yield return img;
+                }
+            }
         }
 
         /// <summary>1つのブロック（段落・リスト・表）の中の画像を再帰的に見つける。</summary>
@@ -563,21 +633,42 @@ namespace mde
         {
             if (a_block is Paragraph p)
             {
-                foreach (var img in FindImagesInInlines(p.Inlines)) yield return img;
+                foreach (var img in FindImagesInInlines(p.Inlines))
+                {
+                    yield return img;
+                }
             }
             else if (a_block is List list)
             {
                 foreach (ListItem li in list.ListItems)
+                {
                     foreach (Block b in li.Blocks)
-                        foreach (var img in FindImagesInBlock(b)) yield return img;
+                    {
+                        foreach (var img in FindImagesInBlock(b))
+                        {
+                            yield return img;
+                        }
+                    }
+                }
             }
             else if (a_block is Table table)
             {
                 foreach (TableRowGroup rg in table.RowGroups)
+                {
                     foreach (TableRow row in rg.Rows)
+                    {
                         foreach (TableCell cell in row.Cells)
+                        {
                             foreach (Block b in cell.Blocks)
-                                foreach (var img in FindImagesInBlock(b)) yield return img;
+                            {
+                                foreach (var img in FindImagesInBlock(b))
+                                {
+                                    yield return img;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -588,9 +679,17 @@ namespace mde
         {
             foreach (Inline inline in a_inlines)
             {
-                if (inline is InlineUIContainer iuc && iuc.Child is Image im) yield return im;
+                if (inline is InlineUIContainer iuc && iuc.Child is Image im)
+                {
+                    yield return im;
+                }
                 else if (inline is Span span)
-                    foreach (var img in FindImagesInInlines(span.Inlines)) yield return img;
+                {
+                    foreach (var img in FindImagesInInlines(span.Inlines))
+                    {
+                        yield return img;
+                    }
+                }
             }
         }
     }

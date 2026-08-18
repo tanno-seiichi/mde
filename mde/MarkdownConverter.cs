@@ -67,7 +67,10 @@ namespace mde
             foreach (Block block in a_doc.Blocks)
             {
                 string s = m_originalTextTracker.TryGetOriginal(block, out var original) ? original : BlockToMarkdown(block);
-                if (!string.IsNullOrWhiteSpace(s)) lines.Add(s);
+                if (!string.IsNullOrWhiteSpace(s))
+                {
+                    lines.Add(s);
+                }
             }
             return string.Join("\n\n", lines);
         }
@@ -91,8 +94,14 @@ namespace mde
                 string text = ParagraphInlineToMarkdown(p);
                 return level > 0 ? new string('#', level) + " " + text : text;
             }
-            if (a_block is List list) return ListToMarkdown(list, 0);
-            if (a_block is Table table) return TableToMarkdown(table);
+            if (a_block is List list)
+            {
+                return ListToMarkdown(list, 0);
+            }
+            if (a_block is Table table)
+            {
+                return TableToMarkdown(table);
+            }
             return "";
         }
 
@@ -120,11 +129,17 @@ namespace mde
                 string prefix = orderedFlg ? ((constantNumberingFlg ? 1 : number) + ". ") : (bulletMarker + " ");
                 lines.Add(indent + prefix + parts[0]);
                 string contIndent = indent + new string(' ', prefix.Length);
-                for (int k = 1; k < parts.Length; k++) lines.Add(contIndent + parts[k]);
+                for (int k = 1; k < parts.Length; k++)
+                {
+                    lines.Add(contIndent + parts[k]);
+                }
 
                 foreach (Block b in li.Blocks)
                 {
-                    if (b is List nested) lines.Add(ListToMarkdown(nested, a_level + 1));
+                    if (b is List nested)
+                    {
+                        lines.Add(ListToMarkdown(nested, a_level + 1));
+                    }
                 }
                 number++;
             }
@@ -138,8 +153,16 @@ namespace mde
         {
             var rows = new List<TableRow>();
             foreach (TableRowGroup rg in a_table.RowGroups)
-                foreach (TableRow r in rg.Rows) rows.Add(r);
-            if (0 == rows.Count) return "";
+            {
+                foreach (TableRow r in rg.Rows)
+                {
+                    rows.Add(r);
+                }
+            }
+            if (0 == rows.Count)
+            {
+                return "";
+            }
 
             var mdRows = new List<string>();
             foreach (var row in rows)
@@ -149,7 +172,12 @@ namespace mde
                 {
                     var sb = new StringBuilder();
                     foreach (Block b in cell.Blocks)
-                        if (b is Paragraph cp) sb.Append(ParagraphInlineToMarkdown(cp));
+                    {
+                        if (b is Paragraph cp)
+                        {
+                            sb.Append(ParagraphInlineToMarkdown(cp));
+                        }
+                    }
                     cells.Add(sb.ToString().Replace("|", "\\|"));
                 }
                 mdRows.Add("| " + string.Join(" | ", cells) + " |");
@@ -206,9 +234,18 @@ namespace mde
                     }
 
                     string content = spanText.ToString();
-                    if ("inline-code" == tag) a_sb.Append('`').Append(content).Append('`');
-                    else if ("bold" == tag) a_sb.Append("**").Append(content).Append("**");
-                    else a_sb.Append("~~").Append(content).Append("~~");
+                    if ("inline-code" == tag)
+                    {
+                        a_sb.Append('`').Append(content).Append('`');
+                    }
+                    else if ("bold" == tag)
+                    {
+                        a_sb.Append("**").Append(content).Append("**");
+                    }
+                    else
+                    {
+                        a_sb.Append("~~").Append(content).Append("~~");
+                    }
 
                     i = j;
                     continue;
@@ -222,9 +259,13 @@ namespace mde
                 {
                     string content = linkRun.Text.Replace("\u200B", "");
                     if (linkInfo.m_isAutoLinkFlg && content == linkInfo.m_url)
+                    {
                         a_sb.Append('<').Append(linkInfo.m_url).Append('>');
+                    }
                     else
+                    {
                         a_sb.Append('[').Append(content).Append("](").Append(linkInfo.m_url).Append(')');
+                    }
                 }
                 else if (inline is Run anchorRun && anchorRun.Tag is AnchorInfo anchorInfo)
                 {
@@ -258,10 +299,16 @@ namespace mde
             var info = a_img.Tag as ImageInfo;
             string src = info?.m_originalSrc ?? "";
             string alt = info?.m_alt ?? "";
-            if ("md" == info?.m_format) return "![" + alt + "](" + src + ")";
+            if ("md" == info?.m_format)
+            {
+                return "![" + alt + "](" + src + ")";
+            }
 
             string tag = "<img src=\"" + src + "\" alt=\"" + alt + "\"";
-            if (!string.IsNullOrEmpty(info?.m_style)) tag += " style=\"" + info.m_style + "\"";
+            if (!string.IsNullOrEmpty(info?.m_style))
+            {
+                tag += " style=\"" + info.m_style + "\"";
+            }
             tag += " />";
             return tag;
         }
@@ -302,13 +349,19 @@ namespace mde
                         codeLines.Add(lines[i]);
                         i++;
                     }
-                    if (i < lines.Length) i++; // 閉じフェンスを読み飛ばす
+                    if (i < lines.Length)
+                    {
+                        i++; // 閉じフェンスを読み飛ばす
+                    }
 
                     var codePara = new Paragraph();
                     BlockStyles.ApplyCodeBlockStyle(codePara, language);
                     for (int k = 0; k < codeLines.Count; k++)
                     {
-                        if (k > 0) codePara.Inlines.Add(new LineBreak());
+                        if (k > 0)
+                        {
+                            codePara.Inlines.Add(new LineBreak());
+                        }
                         codePara.Inlines.Add(new Run(codeLines[k]));
                     }
                     a_doc.Blocks.Add(codePara);
@@ -354,7 +407,10 @@ namespace mde
                             // 空行の先にもリスト項目が続くなら（標準MarkDownの「緩いリスト」）、
                             // 同じリストとして扱い続ける。
                             int j = i;
-                            while (j < lines.Length && string.IsNullOrWhiteSpace(lines[j])) j++;
+                            while (j < lines.Length && string.IsNullOrWhiteSpace(lines[j]))
+                            {
+                                j++;
+                            }
                             if (j < lines.Length && Regex.IsMatch(lines[j], "^\\s*([*-]|\\d+\\.)\\s+"))
                             {
                                 while (i < j) { listLines.Add(lines[i]); i++; }
@@ -375,7 +431,10 @@ namespace mde
                     var headerCells = ParseTableRow(line);
                     i += 2;
                     var table = new Table();
-                    foreach (var _ in headerCells) table.Columns.Add(new TableColumn());
+                    foreach (var _ in headerCells)
+                    {
+                        table.Columns.Add(new TableColumn());
+                    }
                     var rg = new TableRowGroup();
                     table.RowGroups.Add(rg);
 
@@ -427,7 +486,10 @@ namespace mde
                 m_originalTextTracker.Record(para, lines, blockStart, i);
             }
 
-            if (0 == a_doc.Blocks.Count) a_doc.Blocks.Add(new Paragraph());
+            if (0 == a_doc.Blocks.Count)
+            {
+                a_doc.Blocks.Add(new Paragraph());
+            }
 
             m_imageManager.ResolveImages(a_doc);
         }
@@ -438,8 +500,14 @@ namespace mde
         private List<string> ParseTableRow(string a_line)
         {
             string t = a_line.Trim();
-            if (t.StartsWith("|")) t = t.Substring(1);
-            if (t.EndsWith("|")) t = t.Substring(0, t.Length - 1);
+            if (t.StartsWith("|"))
+            {
+                t = t.Substring(1);
+            }
+            if (t.EndsWith("|"))
+            {
+                t = t.Substring(0, t.Length - 1);
+            }
             return t.Split('|').Select(s => s.Trim()).ToList();
         }
 
@@ -464,13 +532,18 @@ namespace mde
 
             foreach (var line in a_listLines)
             {
-                if (string.IsNullOrWhiteSpace(line)) continue; // 「緩い」リストの項目間の空行
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue; // 「緩い」リストの項目間の空行
+                }
 
                 var m = Regex.Match(line, "^(\\s*)(?:([*-])|(\\d+)\\.)\\s+(.*)$");
                 if (m.Success)
                 {
                     if (null != pendingPara)
+                    {
                         AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
+                    }
 
                     int indent = m.Groups[1].Value.Length;
                     bool orderedFlg = m.Groups[3].Success;
@@ -527,12 +600,16 @@ namespace mde
                 else
                 {
                     if (null != pendingPara)
+                    {
                         pendingTextLines.Add(line.Trim());
+                    }
                 }
             }
 
             if (null != pendingPara)
+            {
                 AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
+            }
 
             // ソースがすべての項目で同じ数字を使っていた場合（例: "1." / "1." / "1."。
             // レンダラーに自動採番させる一般的なMarkDownの書き方）は、そのスタイルを維持する。
@@ -586,7 +663,10 @@ namespace mde
         /// <returns>エスケープ処理を適用した後のテキスト（プレースホルダ文字を含む）。</returns>
         private string PreprocessEscapes(string a_text)
         {
-            if (a_text.IndexOf('\\') < 0) return a_text;
+            if (a_text.IndexOf('\\') < 0)
+            {
+                return a_text;
+            }
 
             // リンク/ファイルリンクの [表示文字] 部分は、エスケープ処理の対象外とする範囲として
             // 先に洗い出しておく。
@@ -599,8 +679,13 @@ namespace mde
             bool IsExempt(int a_idx)
             {
                 foreach (var (s, e) in exemptRanges)
+                {
                     if (a_idx >= s &&
-                        a_idx < e) return true;
+                        a_idx < e)
+                    {
+                        return true;
+                    }
+                }
                 return false;
             }
 
@@ -608,16 +693,19 @@ namespace mde
             int i = 0;
             while (i < a_text.Length)
             {
-                if (a_text[i] != '\\') { sb.Append(a_text[i]); i++; continue; }
+                if ('\\' != a_text[i]) { sb.Append(a_text[i]); i++; continue; }
 
                 int runStart = i;
                 int runLen = 0;
                 while (i < a_text.Length &&
-                       a_text[i] == '\\') { runLen++; i++; }
+                       '\\' == a_text[i]) { runLen++; i++; }
 
                 if (IsExempt(runStart))
                 {
-                    for (int k = 0; k < runLen; k++) sb.Append('\\');
+                    for (int k = 0; k < runLen; k++)
+                    {
+                        sb.Append('\\');
+                    }
                     continue;
                 }
 
@@ -639,7 +727,10 @@ namespace mde
                     // 2つ以上連続する場合：1つ目が2つ目を「エスケープ」して消費し（結果として
                     // \が1つ分表示される）、3つ目以降はさらなるエスケープ処理をせずそのまま表示する。
                     sb.Append(ESCAPE_PLACEHOLDERS['\\']);
-                    for (int k = 0; k < runLen - 2; k++) sb.Append('\\');
+                    for (int k = 0; k < runLen - 2; k++)
+                    {
+                        sb.Append('\\');
+                    }
                 }
             }
             return sb.ToString();
@@ -650,42 +741,72 @@ namespace mde
         /// <returns>実際の文字に戻したテキスト。</returns>
         private string RestorePlaceholders(string a_text)
         {
-            if (0 == a_text.Length) return a_text;
+            if (0 == a_text.Length)
+            {
+                return a_text;
+            }
             var sb = new StringBuilder(a_text.Length);
             foreach (char c in a_text)
+            {
                 sb.Append(PLACEHOLDER_TO_CHAR.TryGetValue(c, out char real) ? real : c);
+            }
             return sb.ToString();
         }
 
         public void AppendInlineMarkdownToParagraph(Paragraph a_p, string a_text, bool a_appendFlg)
         {
-            if (!a_appendFlg) a_p.Inlines.Clear();
+            if (!a_appendFlg)
+            {
+                a_p.Inlines.Clear();
+            }
             a_text = PreprocessEscapes(a_text);
             int lastIndex = 0;
             foreach (Match m in INLINE_CONTENT_REGEX.Matches(a_text))
             {
-                if (m.Index > lastIndex) AppendPlainTextWithLineBreaks(a_p, a_text.Substring(lastIndex, m.Index - lastIndex));
+                if (m.Index > lastIndex)
+                {
+                    AppendPlainTextWithLineBreaks(a_p, a_text.Substring(lastIndex, m.Index - lastIndex));
+                }
 
                 if (m.Groups[1].Success)
+                {
                     a_p.Inlines.Add(new InlineUIContainer(m_imageManager.BuildImageFromHtmlTag(m.Groups[1].Value)));
+                }
                 else if (m.Groups[2].Success)
+                {
                     a_p.Inlines.Add(new InlineUIContainer(m_imageManager.BuildImageFromMarkdown(m.Groups[3].Value, m.Groups[4].Value)));
+                }
                 else if (m.Groups[5].Success)
+                {
                     AppendStyledRunsWithLineBreaks(a_p, m.Groups[6].Value, "code");
+                }
                 else if (m.Groups[7].Success)
+                {
                     AppendStyledRunsWithLineBreaks(a_p, m.Groups[8].Value, "bold");
+                }
                 else if (m.Groups[9].Success)
+                {
                     AppendStyledRunsWithLineBreaks(a_p, m.Groups[10].Value, "strikethrough");
+                }
                 else if (m.Groups[11].Success)
+                {
                     a_p.Inlines.Add(BuildLinkRun(RestorePlaceholders(m.Groups[12].Value), RestorePlaceholders(m.Groups[13].Value), false));
+                }
                 else if (m.Groups[14].Success)
+                {
                     a_p.Inlines.Add(BuildLinkRun(RestorePlaceholders(m.Groups[15].Value), RestorePlaceholders(m.Groups[15].Value), true));
+                }
                 else if (m.Groups[16].Success)
+                {
                     a_p.Inlines.Add(new Run("") { Tag = new AnchorInfo { m_id = m.Groups[17].Value } });
+                }
 
                 lastIndex = m.Index + m.Length;
             }
-            if (lastIndex < a_text.Length) AppendPlainTextWithLineBreaks(a_p, a_text.Substring(lastIndex));
+            if (lastIndex < a_text.Length)
+            {
+                AppendPlainTextWithLineBreaks(a_p, a_text.Substring(lastIndex));
+            }
         }
 
         /// <summary>スタイル付きのクリック可能なリンクRunを組み立てる。</summary>
@@ -715,7 +836,10 @@ namespace mde
             var segments = a_text.Split('\n');
             for (int i = 0; i < segments.Length; i++)
             {
-                if (i > 0) a_p.Inlines.Add(new LineBreak());
+                if (i > 0)
+                {
+                    a_p.Inlines.Add(new LineBreak());
+                }
                 AppendPlainSegmentWithEscapeTags(a_p, segments[i]);
             }
         }
@@ -726,7 +850,10 @@ namespace mde
         /// <param name="a_segment">対象の1行分のテキスト。</param>
         private void AppendPlainSegmentWithEscapeTags(Paragraph a_p, string a_segment)
         {
-            if (0 == a_segment.Length) return;
+            if (0 == a_segment.Length)
+            {
+                return;
+            }
             var plain = new StringBuilder();
             foreach (char c in a_segment)
             {
@@ -740,7 +867,10 @@ namespace mde
                     plain.Append(c);
                 }
             }
-            if (plain.Length > 0) a_p.Inlines.Add(new Run(plain.ToString()));
+            if (plain.Length > 0)
+            {
+                a_p.Inlines.Add(new Run(plain.ToString()));
+            }
         }
 
         /// <summary>
@@ -755,13 +885,20 @@ namespace mde
             var segments = a_content.Split('\n');
             for (int i = 0; i < segments.Length; i++)
             {
-                if (i > 0) a_p.Inlines.Add(new LineBreak());
+                if (i > 0)
+                {
+                    a_p.Inlines.Add(new LineBreak());
+                }
                 string segText = RestorePlaceholders(segments[i]);
                 Run run;
                 if ("bold" == a_style)
+                {
                     run = new Run(segText) { FontWeight = FontWeights.Bold, Tag = "bold" };
+                }
                 else if ("strikethrough" == a_style)
+                {
                     run = new Run(segText) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
+                }
                 else
                     run = new Run(segText)
                     {

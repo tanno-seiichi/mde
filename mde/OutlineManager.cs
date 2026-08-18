@@ -40,7 +40,10 @@ namespace mde
                 if (block is Paragraph p && p.Tag is int level && level > 0)
                 {
                     string text = new TextRange(p.ContentStart, p.ContentEnd).Text.Trim();
-                    if (0 == text.Length) text = "(無題)";
+                    if (0 == text.Length)
+                    {
+                        text = "(無題)";
+                    }
                     Items.Add(new OutlineEntry { Level = level, Text = text, Target = p });
                 }
             }
@@ -61,20 +64,35 @@ namespace mde
                 {
                     if (block is Paragraph p && p.Tag is int level && level > 0)
                     {
-                        if (p.ContentStart.CompareTo(range.Start) <= 0) nearestHeading = p;
-                        else break; // ブロックは文書順に並んでいるので、超えた時点で打ち切ってよい
+                        if (p.ContentStart.CompareTo(range.Start) <= 0)
+                        {
+                            nearestHeading = p;
+                        }
+                        else
+                        {
+                            break; // ブロックは文書順に並んでいるので、超えた時点で打ち切ってよい
+                        }
                     }
                 }
-                if (null == nearestHeading) continue;
+                if (null == nearestHeading)
+                {
+                    continue;
+                }
                 var entry = Items.FirstOrDefault(e => e.Target == nearestHeading);
-                if (null != entry) entry.IsSearchMatch = true;
+                if (null != entry)
+                {
+                    entry.IsSearchMatch = true;
+                }
             }
         }
 
         /// <summary>検索結果の強調表示をすべて解除する。</summary>
         public void ClearSearchMatches()
         {
-            foreach (var entry in Items) entry.IsSearchMatch = false;
+            foreach (var entry in Items)
+            {
+                entry.IsSearchMatch = false;
+            }
         }
 
         /// <summary>アウトラインペインで見出しがクリックされた時に、エディタをその見出しまで
@@ -111,9 +129,15 @@ namespace mde
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(a_root); i++)
             {
                 var child = VisualTreeHelper.GetChild(a_root, i);
-                if (child is T match) return match;
+                if (child is T match)
+                {
+                    return match;
+                }
                 var found = FindVisualChild<T>(child);
-                if (null != found) return found;
+                if (null != found)
+                {
+                    return found;
+                }
             }
             return null;
         }

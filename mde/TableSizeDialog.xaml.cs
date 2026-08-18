@@ -31,10 +31,22 @@ namespace mde
         /// <param name="a_args">Click event.</param>
         private void OkClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (!int.TryParse(m_rowsBox.Text, out int r) || r < 1) r = 1;
-            if (!int.TryParse(m_colsBox.Text, out int c) || c < 1) c = 1;
-            if (r > 50) r = 50;
-            if (c > 20) c = 20;
+            if (!int.TryParse(m_rowsBox.Text, out int r) || r < 1)
+            {
+                r = 1;
+            }
+            if (!int.TryParse(m_colsBox.Text, out int c) || c < 1)
+            {
+                c = 1;
+            }
+            if (r > 50)
+            {
+                r = 50;
+            }
+            if (c > 20)
+            {
+                c = 20;
+            }
 
             Rows = r;
             Columns = c;

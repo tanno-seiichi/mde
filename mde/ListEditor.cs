@@ -94,11 +94,17 @@ namespace mde
         public string GetOwnListItemText(ListItem a_li)
         {
             var ownPara = a_li.Blocks.FirstBlock as Paragraph;
-            if (null == ownPara) return "";
+            if (null == ownPara)
+            {
+                return "";
+            }
             var sb = new StringBuilder();
             AppendPlainInlineText(ownPara.Inlines, sb);
             string t = sb.ToString().Trim();
-            if (0 == t.Length && HasDescendantImage(ownPara)) return "\u200B";
+            if (0 == t.Length && HasDescendantImage(ownPara))
+            {
+                return "\u200B";
+            }
             return t;
         }
 
@@ -111,25 +117,49 @@ namespace mde
         {
             foreach (Inline inline in a_inlines)
             {
-                if (inline is Run run) a_sb.Append(run.Text);
-                else if (inline is Span span) AppendPlainInlineText(span.Inlines, a_sb);
-                else if (inline is LineBreak) a_sb.Append('\n');
+                if (inline is Run run)
+                {
+                    a_sb.Append(run.Text);
+                }
+                else if (inline is Span span)
+                {
+                    AppendPlainInlineText(span.Inlines, a_sb);
+                }
+                else if (inline is LineBreak)
+                {
+                    a_sb.Append('\n');
+                }
             }
         }
 
         private bool HasDescendantImage(Paragraph a_p)
         {
             foreach (Inline inline in a_p.Inlines)
-                if (InlineContainsImage(inline)) return true;
+            {
+                if (InlineContainsImage(inline))
+                {
+                    return true;
+                }
+            }
             return false;
         }
 
         private bool InlineContainsImage(Inline a_inline)
         {
-            if (a_inline is InlineUIContainer iuc && iuc.Child is Image) return true;
+            if (a_inline is InlineUIContainer iuc && iuc.Child is Image)
+            {
+                return true;
+            }
             if (a_inline is Span span)
+            {
                 foreach (Inline child in span.Inlines)
-                    if (InlineContainsImage(child)) return true;
+                {
+                    if (InlineContainsImage(child))
+                    {
+                        return true;
+                    }
+                }
+            }
             return false;
         }
 
@@ -174,7 +204,10 @@ namespace mde
                     for (int k = 0; k < items.Count; k++)
                     {
                         a_parentList.ListItems.Add(items[k]);
-                        if (k == idx) a_parentList.ListItems.Add(newLi);
+                        if (k == idx)
+                        {
+                            a_parentList.ListItems.Add(newLi);
+                        }
                     }
                     m_editor.CaretPosition = ((Paragraph)newLi.Blocks.FirstBlock).ContentStart;
                 }
@@ -185,9 +218,13 @@ namespace mde
         private void RemoveEmptyList(List a_list)
         {
             if (a_list.Parent is ListItem ownerLi)
+            {
                 ownerLi.Blocks.Remove(a_list);
+            }
             else if (a_list.Parent is FlowDocument doc)
+            {
                 doc.Blocks.Remove(a_list);
+            }
         }
 
         /// <summary>Tabキーでのリスト項目の字下げ。前の兄弟項目の下に新しい入れ子リストを作り、
@@ -200,10 +237,16 @@ namespace mde
             ListItem prevLi = null;
             foreach (ListItem item in a_parentList.ListItems)
             {
-                if (item == a_li) break;
+                if (item == a_li)
+                {
+                    break;
+                }
                 prevLi = item;
             }
-            if (null == prevLi) return; // 先頭の項目は字下げできない
+            if (null == prevLi)
+            {
+                return; // 先頭の項目は字下げできない
+            }
 
             m_runAsProgrammaticChange(() =>
             {
@@ -221,7 +264,10 @@ namespace mde
                 a_parentList.ListItems.Remove(a_li);
                 nestedList.ListItems.Add(a_li);
 
-                if (a_li.Blocks.FirstBlock is Paragraph fp) m_editor.CaretPosition = fp.ContentEnd;
+                if (a_li.Blocks.FirstBlock is Paragraph fp)
+                {
+                    m_editor.CaretPosition = fp.ContentEnd;
+                }
             });
             m_editor.Focus();
         }
@@ -233,8 +279,14 @@ namespace mde
         public void OutdentListItem(ListItem a_li, List a_parentList)
         {
             m_originalTextTracker.InvalidateForBlock(a_parentList);
-            if (!(a_parentList.Parent is ListItem parentLi)) return; // すでにトップレベル
-            if (!(parentLi.Parent is List grandList)) return;
+            if (!(a_parentList.Parent is ListItem parentLi))
+            {
+                return; // すでにトップレベル
+            }
+            if (!(parentLi.Parent is List grandList))
+            {
+                return;
+            }
 
             m_runAsProgrammaticChange(() =>
             {
@@ -244,7 +296,10 @@ namespace mde
                 var after = siblings.Skip(idx + 1).ToList();
 
                 a_parentList.ListItems.Clear();
-                foreach (var b in before) a_parentList.ListItems.Add(b);
+                foreach (var b in before)
+                {
+                    a_parentList.ListItems.Add(b);
+                }
 
                 if (after.Count > 0)
                 {
@@ -254,7 +309,10 @@ namespace mde
                         MarkerStyle = parentOrderedFlg ? TextMarkerStyle.Decimal : TextMarkerStyle.Circle,
                         Tag = parentOrderedFlg ? null : ((a_parentList.Tag as string) ?? "*")
                     };
-                    foreach (var a in after) ownNested.ListItems.Add(a);
+                    foreach (var a in after)
+                    {
+                        ownNested.ListItems.Add(a);
+                    }
                     a_li.Blocks.Add(ownNested);
                 }
 
@@ -264,7 +322,10 @@ namespace mde
                 for (int k = 0; k < grandItems.Count; k++)
                 {
                     grandList.ListItems.Add(grandItems[k]);
-                    if (k == gIdx) grandList.ListItems.Add(a_li);
+                    if (k == gIdx)
+                    {
+                        grandList.ListItems.Add(a_li);
+                    }
                 }
 
                 if (0 == a_parentList.ListItems.Count)
@@ -272,7 +333,10 @@ namespace mde
                     parentLi.Blocks.Remove(a_parentList);
                 }
 
-                if (a_li.Blocks.FirstBlock is Paragraph fp) m_editor.CaretPosition = fp.ContentEnd;
+                if (a_li.Blocks.FirstBlock is Paragraph fp)
+                {
+                    m_editor.CaretPosition = fp.ContentEnd;
+                }
             });
             m_editor.Focus();
         }

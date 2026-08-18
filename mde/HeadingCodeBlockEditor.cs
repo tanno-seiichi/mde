@@ -113,7 +113,10 @@ namespace mde
             var probe = lineStart.GetPositionAtOffset(4);
             if (null == probe ||
                 probe.CompareTo(upperBound) > 0) probe = upperBound;
-            if (probe.CompareTo(lineStart) < 0) probe = lineStart;
+            if (probe.CompareTo(lineStart) < 0)
+            {
+                probe = lineStart;
+            }
 
             string prefix = new TextRange(lineStart, probe).Text;
 
@@ -126,13 +129,19 @@ namespace mde
             {
                 while (removeCount < prefix.Length &&
                        removeCount < 4 &&
-                       prefix[removeCount] == ' ')
+                       ' ' == prefix[removeCount])
                     removeCount++;
             }
-            if (0 == removeCount) return;
+            if (0 == removeCount)
+            {
+                return;
+            }
 
             var removeEnd = lineStart.GetPositionAtOffset(removeCount);
-            if (null == removeEnd) return;
+            if (null == removeEnd)
+            {
+                return;
+            }
 
             m_runAsProgrammaticChange(() =>
             {

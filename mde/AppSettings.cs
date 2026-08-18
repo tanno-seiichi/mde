@@ -39,7 +39,10 @@ namespace mde
                 {
                     string json = File.ReadAllText(SettingsPath);
                     var settings = JsonSerializer.Deserialize<AppSettings>(json);
-                    if (null != settings) return settings;
+                    if (null != settings)
+                    {
+                        return settings;
+                    }
                 }
             }
             catch

@@ -123,8 +123,14 @@ namespace mde
             m_zoomLevel = m_savedSettings.ZoomLevel;
             m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
             m_outlinePaneVisibleFlg = m_savedSettings.OutlinePaneVisible;
-            if (m_savedSettings.FolderPaneWidth > 0) m_lastFolderColumnWidth = m_savedSettings.FolderPaneWidth;
-            if (m_savedSettings.OutlinePaneWidth > 0) m_lastOutlineColumnWidth = m_savedSettings.OutlinePaneWidth;
+            if (m_savedSettings.FolderPaneWidth > 0)
+            {
+                m_lastFolderColumnWidth = m_savedSettings.FolderPaneWidth;
+            }
+            if (m_savedSettings.OutlinePaneWidth > 0)
+            {
+                m_lastOutlineColumnWidth = m_savedSettings.OutlinePaneWidth;
+            }
 
             m_originalTextTracker = new OriginalTextTracker(m_editor);
             m_lineEndingTracker = new LineEndingTracker(PathsReferToSameFile);
@@ -169,7 +175,10 @@ namespace mde
             ApplyFolderPaneVisibility();
             ApplyOutlinePaneVisibility();
             SetZoom(m_zoomLevel);
-            if (m_savedSettings.IsMaximized) this.WindowState = WindowState.Maximized;
+            if (m_savedSettings.IsMaximized)
+            {
+                this.WindowState = WindowState.Maximized;
+            }
         }
 
         /// <summary>ウィンドウを閉じようとした時、未保存の変更があれば確認する。</summary>
@@ -200,14 +209,20 @@ namespace mde
             // 起動時引数は、プロセス全体で共通の情報であり、ウィンドウ単位のものではない。
             // 「新しいウィンドウ」やファイルリンクからの別ウィンドウ起動でも同じ引数が
             // 見えてしまうため、最初の1つのウィンドウでだけ使うようにする。
-            if (!m_isFirstWindowInstanceFlg) return null;
+            if (!m_isFirstWindowInstanceFlg)
+            {
+                return null;
+            }
             m_isFirstWindowInstanceFlg = false;
 
             try
             {
                 string[] args = Environment.GetCommandLineArgs();
                 // args[0]は実行ファイル自身のパスなので、実際の引数はargs[1]以降になる。
-                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1])) return null;
+                if (args.Length < 2 || string.IsNullOrWhiteSpace(args[1]))
+                {
+                    return null;
+                }
                 return Path.GetFullPath(args[1]);
             }
             catch
@@ -225,7 +240,10 @@ namespace mde
             try
             {
                 string dir = Path.Combine(Path.GetTempPath(), "mde", m_instanceTempId);
-                if (Directory.Exists(dir)) Directory.Delete(dir, true);
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, true);
+                }
             }
             catch
             {
@@ -355,10 +373,17 @@ namespace mde
         private string GetCurrentContentForFile(string a_path)
         {
             if (!string.IsNullOrEmpty(m_currentFilePath) && PathsReferToSameFile(a_path, m_currentFilePath))
+            {
                 return m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+            }
 
             foreach (var kv in m_pendingFileEdits)
-                if (PathsReferToSameFile(kv.Key, a_path)) return kv.Value;
+            {
+                if (PathsReferToSameFile(kv.Key, a_path))
+                {
+                    return kv.Value;
+                }
+            }
 
             return null;
         }
@@ -409,12 +434,18 @@ namespace mde
                 null == m_folderTreeManager ||
                 null == m_originalTextTracker) return;
 
-            if (m_isSourceModeFlg) return;
+            if (m_isSourceModeFlg)
+            {
+                return;
+            }
 
             // 検索結果のハイライト（背景色）の適用/解除も、WPFの仕様上TextChangedを発生させて
             // しまうが、これは実際の編集ではないため、ダーティ扱いにしたり元テキスト保持の
             // 記憶を破棄したりしてはいけない。
-            if (m_isApplyingHighlightFlg) return;
+            if (m_isApplyingHighlightFlg)
+            {
+                return;
+            }
 
             m_outlineManager.Refresh();
 
@@ -422,15 +453,30 @@ namespace mde
             m_folderTreeManager.RefreshDirtyMarkers();
             m_originalTextTracker.Invalidate(m_editor.CaretPosition);
 
-            if (m_isProgrammaticChangeFlg) return;
+            if (m_isProgrammaticChangeFlg)
+            {
+                return;
+            }
 
             var para = m_editor.CaretPosition?.Paragraph;
-            if (null == para) return;
-            if (para.Tag is CodeBlockInfo) return; // コードブロック内は自動整形しない
+            if (null == para)
+            {
+                return;
+            }
+            if (para.Tag is CodeBlockInfo)
+            {
+                return; // コードブロック内は自動整形しない
+            }
 
-            if (m_inlineStyleEditor.CheckInlineFormatTrigger()) return;
+            if (m_inlineStyleEditor.CheckInlineFormatTrigger())
+            {
+                return;
+            }
 
-            if (!(para.Parent is FlowDocument)) return; // 箇条書き/見出しへの自動変換はトップレベル段落のみ
+            if (!(para.Parent is FlowDocument))
+            {
+                return; // 箇条書き/見出しへの自動変換はトップレベル段落のみ
+            }
 
             string text = new TextRange(para.ContentStart, para.ContentEnd).Text;
             text = text.TrimEnd('\r', '\n');
@@ -473,11 +519,20 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorPreviewTextInput(object a_sender, TextCompositionEventArgs a_args)
         {
-            if (m_isSourceModeFlg || " " != a_args.Text) return;
+            if (m_isSourceModeFlg || " " != a_args.Text)
+            {
+                return;
+            }
 
             var para = m_editor.CaretPosition?.Paragraph;
-            if (null == para || !(para.Parent is FlowDocument) || para.Tag is CodeBlockInfo) return;
-            if (m_editor.CaretPosition.CompareTo(para.ContentEnd) != 0) return;
+            if (null == para || !(para.Parent is FlowDocument) || para.Tag is CodeBlockInfo)
+            {
+                return;
+            }
+            if (0 != m_editor.CaretPosition.CompareTo(para.ContentEnd))
+            {
+                return;
+            }
 
             string beforeSpace = new TextRange(para.ContentStart, para.ContentEnd).Text.TrimEnd('\r', '\n');
 
@@ -498,9 +553,15 @@ namespace mde
 
         private void EditorPreviewKeyDown(object a_sender, KeyEventArgs a_args)
         {
-            if (m_isSourceModeFlg) return;
+            if (m_isSourceModeFlg)
+            {
+                return;
+            }
             var para = m_editor.CaretPosition?.Paragraph;
-            if (null == para) return;
+            if (null == para)
+            {
+                return;
+            }
 
             if (a_args.Key == Key.Enter)
             {
@@ -508,9 +569,13 @@ namespace mde
                 {
                     a_args.Handled = true;
                     if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                    {
                         m_headingCodeBlockEditor.InsertLineBreakAtCaret();
+                    }
                     else
+                    {
                         m_listEditor.HandleListEnter(li, parentList);
+                    }
                     return;
                 }
                 if (para.Tag is int level && level > 0)
@@ -549,9 +614,13 @@ namespace mde
             {
                 a_args.Handled = true;
                 if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                {
                     m_listEditor.OutdentListItem(tabLi, tabList);
+                }
                 else
+                {
                     m_listEditor.IndentListItem(tabLi, tabList);
+                }
                 return;
             }
 
@@ -653,7 +722,10 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void HeadingItemClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (null == m_ctxParagraph) return;
+            if (null == m_ctxParagraph)
+            {
+                return;
+            }
             int level = int.Parse((string)((MenuItem)a_sender).Tag);
             m_headingCodeBlockEditor.ChangeHeadingLevel(m_ctxParagraph, level);
             m_outlineManager.Refresh();
@@ -715,7 +787,10 @@ namespace mde
             var current = a_start;
             while (null != current)
             {
-                if (current is T match) return match;
+                if (current is T match)
+                {
+                    return match;
+                }
                 current = VisualTreeHelper.GetParent(current);
             }
             return null;
@@ -779,7 +854,10 @@ namespace mde
                 var result = MessageBox.Show(
                     "現在の内容を破棄して新規作成します。保存されていない変更は失われますが、よろしいですか？",
                     "新規作成", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-                if (result != MessageBoxResult.OK) return;
+                if (result != MessageBoxResult.OK)
+                {
+                    return;
+                }
             }
 
             if (currentFileInFolderViewFlg)
@@ -839,12 +917,18 @@ namespace mde
             // 「開く」操作が何もしていないように見えてしまう。
             if (!string.IsNullOrEmpty(m_currentFilePath) && PathsReferToSameFile(a_path, m_currentFilePath))
             {
-                if (!m_currentFileIsDirtyFlg) return; // 読み込み・保存後に編集がなければ何もしない
+                if (!m_currentFileIsDirtyFlg)
+                {
+                    return; // 読み込み・保存後に編集がなければ何もしない
+                }
 
                 var result = MessageBox.Show(
                     "このファイルには保存されていない変更があります。破棄して、保存済みの内容で開き直しますか？",
                     "ファイルを開き直す", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-                if (result != MessageBoxResult.OK) return;
+                if (result != MessageBoxResult.OK)
+                {
+                    return;
+                }
 
                 m_pendingFileEdits.Remove(a_path); // このファイルの保留中の編集も破棄する
 
@@ -904,9 +988,13 @@ namespace mde
             m_currentFileIsDirtyFlg = false;
 
             if (!string.IsNullOrEmpty(m_currentFileDirectory) && !m_folderTreeManager.IsWithinLoadedFolder(m_currentFileDirectory))
+            {
                 m_folderTreeManager.LoadFolderTree(m_currentFileDirectory);
+            }
             else
+            {
                 m_folderTreeManager.RefreshDirtyMarkers();
+            }
         }
 
         /// <summary>
@@ -916,7 +1004,10 @@ namespace mde
         /// </summary>
         private void SnapshotCurrentFileIfDirty()
         {
-            if (string.IsNullOrEmpty(m_currentFilePath) || m_isSourceModeFlg) return;
+            if (string.IsNullOrEmpty(m_currentFilePath) || m_isSourceModeFlg)
+            {
+                return;
+            }
 
             if (!m_currentFileIsDirtyFlg)
             {
@@ -961,7 +1052,10 @@ namespace mde
                 SaveAs();
                 return;
             }
-            if (!m_isSourceModeFlg) m_imageManager.RelocatePendingTempImages(m_editor.Document);
+            if (!m_isSourceModeFlg)
+            {
+                m_imageManager.RelocatePendingTempImages(m_editor.Document);
+            }
             string md = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
             File.WriteAllText(m_currentFilePath, m_lineEndingTracker.Apply(md, m_lineEndingTracker.GetFor(m_currentFilePath)), new UTF8Encoding(false));
             m_currentFileIsDirtyFlg = false;
@@ -990,9 +1084,15 @@ namespace mde
             // 現在の文書自体には保存先フォルダがまだ無くても（新規作成直後など）、フォルダビューに
             // 何かフォルダが表示されていれば、そちらを初期フォルダとして使う。
             string initialDirectory = m_currentFileDirectory ?? m_folderTreeManager.LoadedFolderRootPath;
-            if (!string.IsNullOrEmpty(initialDirectory)) dlg.InitialDirectory = initialDirectory;
+            if (!string.IsNullOrEmpty(initialDirectory))
+            {
+                dlg.InitialDirectory = initialDirectory;
+            }
 
-            if (true != dlg.ShowDialog()) return;
+            if (true != dlg.ShowDialog())
+            {
+                return;
+            }
 
             string newFilePath = dlg.FileName;
             string newFileDirectory = Path.GetDirectoryName(dlg.FileName);
@@ -1012,7 +1112,10 @@ namespace mde
                 // 自体は表示中のフォルダの表示を維持したまま、その先頭のファイルへ切り替える。
                 string savedDirectoryBackup = m_currentFileDirectory;
                 m_currentFileDirectory = newFileDirectory; // 画像パスの解決に一時的に必要
-                if (!m_isSourceModeFlg) m_imageManager.RelocatePendingTempImages(m_editor.Document);
+                if (!m_isSourceModeFlg)
+                {
+                    m_imageManager.RelocatePendingTempImages(m_editor.Document);
+                }
 
                 string outsideMd = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
                 File.WriteAllText(newFilePath, m_lineEndingTracker.Apply(outsideMd, lineEnding), new UTF8Encoding(false));
@@ -1031,16 +1134,23 @@ namespace mde
             m_currentFileDirectory = newFileDirectory;
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(newFilePath);
 
-            if (!m_isSourceModeFlg) m_imageManager.RelocatePendingTempImages(m_editor.Document);
+            if (!m_isSourceModeFlg)
+            {
+                m_imageManager.RelocatePendingTempImages(m_editor.Document);
+            }
 
             string md = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
             File.WriteAllText(newFilePath, m_lineEndingTracker.Apply(md, lineEnding), new UTF8Encoding(false));
             m_currentFileIsDirtyFlg = false;
 
             if (!folderIsLoadedFlg)
+            {
                 m_folderTreeManager.LoadFolderTree(m_currentFileDirectory);
+            }
             else
+            {
                 m_folderTreeManager.AddFileNodeIfMissing(newFilePath);
+            }
             m_folderTreeManager.RefreshDirtyMarkers();
             m_folderTreeManager.SelectFileNode(newFilePath);
         }
@@ -1062,7 +1172,10 @@ namespace mde
             }
 
             var dlg = new System.Windows.Controls.PrintDialog();
-            if (true != dlg.ShowDialog()) return;
+            if (true != dlg.ShowDialog())
+            {
+                return;
+            }
 
             try
             {
@@ -1088,7 +1201,10 @@ namespace mde
                 var confirmResult = MessageBox.Show(
                     "編集中のすべてのファイルを保存します。よろしいですか？",
                     "すべて保存", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-                if (confirmResult != MessageBoxResult.OK) return;
+                if (confirmResult != MessageBoxResult.OK)
+                {
+                    return;
+                }
             }
             else
             {
@@ -1102,7 +1218,10 @@ namespace mde
             {
                 try
                 {
-                    if (!m_isSourceModeFlg) m_imageManager.RelocatePendingTempImages(m_editor.Document);
+                    if (!m_isSourceModeFlg)
+                    {
+                        m_imageManager.RelocatePendingTempImages(m_editor.Document);
+                    }
                     string md = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
                     File.WriteAllText(m_currentFilePath, m_lineEndingTracker.Apply(md, m_lineEndingTracker.GetFor(m_currentFilePath)), new UTF8Encoding(false));
                     m_pendingFileEdits.Remove(m_currentFilePath);
@@ -1133,7 +1252,9 @@ namespace mde
 
             string message = savedCount + " 個のファイルを保存しました。";
             if (failures.Count > 0)
+            {
                 message += "\n\n保存に失敗したファイル:\n" + string.Join("\n", failures);
+            }
 
             MessageBox.Show(message, "すべて保存", MessageBoxButton.OK,
                 failures.Count > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
@@ -1231,7 +1352,10 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void SourceEditorTextChanged(object a_sender, TextChangedEventArgs a_args)
         {
-            if (null == m_folderTreeManager) return; // InitializeComponent中の発火に対するガード
+            if (null == m_folderTreeManager)
+            {
+                return; // InitializeComponent中の発火に対するガード
+            }
             m_currentFileIsDirtyFlg = true;
             m_folderTreeManager.RefreshDirtyMarkers();
         }
@@ -1241,8 +1365,14 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorSizeChanged(object a_sender, SizeChangedEventArgs a_args)
         {
-            if (null == m_imageManager) return; // InitializeComponent中の発火に対するガード
-            if (m_isSourceModeFlg) return;
+            if (null == m_imageManager)
+            {
+                return; // InitializeComponent中の発火に対するガード
+            }
+            if (m_isSourceModeFlg)
+            {
+                return;
+            }
             foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
             {
                 m_imageManager.ApplyImageSizing(img);
@@ -1374,7 +1504,10 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void ToggleFolderPaneBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (m_folderPaneVisibleFlg && m_folderColumnDef.Width.Value > 0) m_lastFolderColumnWidth = m_folderColumnDef.Width.Value;
+            if (m_folderPaneVisibleFlg && m_folderColumnDef.Width.Value > 0)
+            {
+                m_lastFolderColumnWidth = m_folderColumnDef.Width.Value;
+            }
             m_folderPaneVisibleFlg = !m_folderPaneVisibleFlg;
             ApplyFolderPaneVisibility();
         }
@@ -1407,7 +1540,10 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void ToggleOutlinePaneBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (m_outlinePaneVisibleFlg && m_outlineColumnDef.Width.Value > 0) m_lastOutlineColumnWidth = m_outlineColumnDef.Width.Value;
+            if (m_outlinePaneVisibleFlg && m_outlineColumnDef.Width.Value > 0)
+            {
+                m_lastOutlineColumnWidth = m_outlineColumnDef.Width.Value;
+            }
             m_outlinePaneVisibleFlg = !m_outlinePaneVisibleFlg;
             ApplyOutlinePaneVisibility();
         }
@@ -1449,13 +1585,19 @@ namespace mde
                 var confirmResult = MessageBox.Show(
                     "保存されていない変更があります。破棄して別のフォルダを開きますか？",
                     "フォルダを開く", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-                if (confirmResult != MessageBoxResult.OK) return;
+                if (confirmResult != MessageBoxResult.OK)
+                {
+                    return;
+                }
             }
 
             string previousRelativePath = m_folderTreeManager.GetCurrentFileRelativePath();
 
             var dlg = new Microsoft.Win32.OpenFolderDialog();
-            if (true != dlg.ShowDialog()) return;
+            if (true != dlg.ShowDialog())
+            {
+                return;
+            }
 
             DiscardCurrentDocumentSilently();
             m_folderTreeManager.LoadFolderTree(dlg.FolderName);
@@ -1484,9 +1626,15 @@ namespace mde
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(a_root); i++)
             {
                 var child = VisualTreeHelper.GetChild(a_root, i);
-                if (child is T match) return match;
+                if (child is T match)
+                {
+                    return match;
+                }
                 var found = FindVisualChild<T>(child);
-                if (null != found) return found;
+                if (null != found)
+                {
+                    return found;
+                }
             }
             return null;
         }

@@ -110,7 +110,10 @@ namespace mde
 
         private void FindNextClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (string.IsNullOrEmpty(Term)) return;
+            if (string.IsNullOrEmpty(Term))
+            {
+                return;
+            }
             if (Term != m_lastFindAllTerm)
             {
                 m_currentFileMatchRanges = null;
@@ -140,7 +143,10 @@ namespace mde
         /// </summary>
         private void EnsureFolderWalkInitialized()
         {
-            if (null != m_folderFindFileList) return;
+            if (null != m_folderFindFileList)
+            {
+                return;
+            }
 
             m_folderFindFileList = m_owner.SearchReplace.GetFolderFiles();
             m_folderFindCurrentFileIdx = -1;
@@ -154,7 +160,9 @@ namespace mde
                 if (idx >= 0)
                 {
                     if (idx > 0)
+                    {
                         m_folderFindFileList = m_folderFindFileList.Skip(idx).Concat(m_folderFindFileList.Take(idx)).ToList();
+                    }
                     m_folderFindCurrentFileIdx = 0;
                 }
             }
@@ -174,7 +182,9 @@ namespace mde
             m_folderFindFileList = m_owner.SearchReplace.GetFolderFiles();
             int idx = m_folderFindFileList.FindIndex(f => PathsEqual(f, a_path));
             if (idx > 0)
+            {
                 m_folderFindFileList = m_folderFindFileList.Skip(idx).Concat(m_folderFindFileList.Take(idx)).ToList();
+            }
             m_folderFindCurrentFileIdx = idx >= 0 ? 0 : -1;
             m_folderFindCurrentFileMatches = a_matches;
             m_folderFindCurrentMatchIdx = a_shownMatchIndex;
@@ -207,12 +217,17 @@ namespace mde
             while (filesChecked <= m_folderFindFileList.Count)
             {
                 m_folderFindCurrentFileIdx++;
-                if (m_folderFindCurrentFileIdx >= m_folderFindFileList.Count) m_folderFindCurrentFileIdx = 0;
+                if (m_folderFindCurrentFileIdx >= m_folderFindFileList.Count)
+                {
+                    m_folderFindCurrentFileIdx = 0;
+                }
                 filesChecked++;
 
                 string path = m_folderFindFileList[m_folderFindCurrentFileIdx];
                 if (!PathsEqual(path, m_owner.CurrentFilePath))
+                {
                     m_owner.SearchReplace.OpenFileForFindReplace(path);
+                }
                 SyncResultsListSelection(path);
 
                 m_folderFindCurrentFileMatches = m_owner.SearchReplace.HighlightAllMatchesInCurrentFile(Term, CaseSensitive, UseRegex);
@@ -247,7 +262,10 @@ namespace mde
         /// <param name="a_args">クリックイベント。</param>
         private void FindPreviousClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (string.IsNullOrEmpty(Term)) return;
+            if (string.IsNullOrEmpty(Term))
+            {
+                return;
+            }
             if (Term != m_lastFindAllTerm)
             {
                 m_currentFileMatchRanges = null;
@@ -290,12 +308,17 @@ namespace mde
             while (filesChecked <= m_folderFindFileList.Count)
             {
                 m_folderFindCurrentFileIdx--;
-                if (m_folderFindCurrentFileIdx < 0) m_folderFindCurrentFileIdx = m_folderFindFileList.Count - 1;
+                if (m_folderFindCurrentFileIdx < 0)
+                {
+                    m_folderFindCurrentFileIdx = m_folderFindFileList.Count - 1;
+                }
                 filesChecked++;
 
                 string path = m_folderFindFileList[m_folderFindCurrentFileIdx];
                 if (!PathsEqual(path, m_owner.CurrentFilePath))
+                {
                     m_owner.SearchReplace.OpenFileForFindReplace(path);
+                }
                 SyncResultsListSelection(path);
 
                 m_folderFindCurrentFileMatches = m_owner.SearchReplace.HighlightAllMatchesInCurrentFile(Term, CaseSensitive, UseRegex);
@@ -317,7 +340,10 @@ namespace mde
         /// <param name="a_args">クリックイベント。</param>
         private void FindAllClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (string.IsNullOrEmpty(Term)) return;
+            if (string.IsNullOrEmpty(Term))
+            {
+                return;
+            }
             m_folderFindFileList = null; // 次を検索/前を検索の位置情報が古いまま残らないようリセット
             m_lastFindAllTerm = Term;
 
@@ -334,10 +360,16 @@ namespace mde
                     try
                     {
                         var para = range.Start.Paragraph;
-                        if (null != para) context = new TextRange(para.ContentStart, para.ContentEnd).Text.Trim();
+                        if (null != para)
+                        {
+                            context = new TextRange(para.ContentStart, para.ContentEnd).Text.Trim();
+                        }
                     }
                     catch { /* 取得できなければ空のまま表示する */ }
-                    if (context.Length > 70) context = context.Substring(0, 70) + "…";
+                    if (context.Length > 70)
+                    {
+                        context = context.Substring(0, 70) + "…";
+                    }
                     snippets.Add(context.Length > 0 ? context : range.Text);
                 }
 
@@ -370,16 +402,24 @@ namespace mde
         private void ResultsListMouseDoubleClick(object a_sender, MouseButtonEventArgs a_args)
         {
             int idx = m_resultsList.SelectedIndex;
-            if (idx < 0) return;
+            if (idx < 0)
+            {
+                return;
+            }
 
             if (null != m_currentFileMatchRanges)
             {
                 if (idx < m_currentFileMatchRanges.Count)
+                {
                     m_owner.SearchReplace.SelectAndScrollTo(m_currentFileMatchRanges[idx]);
+                }
                 return;
             }
 
-            if (idx >= m_resultsPaths.Count) return;
+            if (idx >= m_resultsPaths.Count)
+            {
+                return;
+            }
             m_owner.SearchReplace.OpenFileForFindReplace(m_resultsPaths[idx]);
             var matches = m_owner.SearchReplace.HighlightAllMatchesInCurrentFile(Term, CaseSensitive, UseRegex);
             if (matches.Count > 0)
@@ -394,7 +434,10 @@ namespace mde
         /// <param name="a_args">クリックイベント。</param>
         private void ReplaceAllClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (string.IsNullOrEmpty(Term)) return;
+            if (string.IsNullOrEmpty(Term))
+            {
+                return;
+            }
             m_folderFindFileList = null;
 
             if (true == m_scopeCurrentFile.IsChecked)
@@ -423,7 +466,10 @@ namespace mde
         /// <param name="a_args">クリックイベント。</param>
         private void StepReplaceClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (string.IsNullOrEmpty(Term)) return;
+            if (string.IsNullOrEmpty(Term))
+            {
+                return;
+            }
             m_folderFindFileList = null;
 
             m_sessionActiveFlg = true;
@@ -442,8 +488,14 @@ namespace mde
             else
             {
                 bool foundFlg = m_owner.SearchReplace.StepFindNext(Term, CaseSensitive, UseRegex, a_fromSelectionEndFlg: false);
-                if (foundFlg) ShowLiveStepPanel();
-                else EndSession();
+                if (foundFlg)
+                {
+                    ShowLiveStepPanel();
+                }
+                else
+                {
+                    EndSession();
+                }
             }
         }
 
@@ -480,7 +532,10 @@ namespace mde
         /// 保留中の編集）へ書き戻す。</summary>
         private void CommitSessionFileIfChanged()
         {
-            if (!m_sessionFileChangedFlg || null == m_sessionContent) return;
+            if (!m_sessionFileChangedFlg || null == m_sessionContent)
+            {
+                return;
+            }
             if (null == m_sessionFiles ||
                 m_sessionFileIndex < 0 ||
                 m_sessionFileIndex >= m_sessionFiles.Count) return;
@@ -532,18 +587,30 @@ namespace mde
         /// <param name="a_args">クリックイベント。</param>
         private void StepReplaceOneClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (!m_sessionActiveFlg) return;
+            if (!m_sessionActiveFlg)
+            {
+                return;
+            }
 
             if (!m_sessionFolderScopeFlg)
             {
                 m_sessionTotalReplaced++;
                 bool foundFlg = m_owner.SearchReplace.StepReplaceAndFindNext(Term, Replacement, CaseSensitive, UseRegex);
-                if (foundFlg) ShowLiveStepPanel();
-                else EndSession();
+                if (foundFlg)
+                {
+                    ShowLiveStepPanel();
+                }
+                else
+                {
+                    EndSession();
+                }
                 return;
             }
 
-            if (null == m_sessionPendingMatch) return;
+            if (null == m_sessionPendingMatch)
+            {
+                return;
+            }
             var (idx, len) = m_sessionPendingMatch.Value;
             m_sessionContent = m_owner.SearchReplace.ReplaceOneMatch(m_sessionContent, Term, Replacement, CaseSensitive, UseRegex, idx, len);
             m_sessionFileChangedFlg = true;
@@ -558,17 +625,29 @@ namespace mde
         /// <param name="a_args">クリックイベント。</param>
         private void StepSkipClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (!m_sessionActiveFlg) return;
+            if (!m_sessionActiveFlg)
+            {
+                return;
+            }
 
             if (!m_sessionFolderScopeFlg)
             {
                 bool foundFlg = m_owner.SearchReplace.StepSkipAndFindNext(Term, CaseSensitive, UseRegex);
-                if (foundFlg) ShowLiveStepPanel();
-                else EndSession();
+                if (foundFlg)
+                {
+                    ShowLiveStepPanel();
+                }
+                else
+                {
+                    EndSession();
+                }
                 return;
             }
 
-            if (null == m_sessionPendingMatch) return;
+            if (null == m_sessionPendingMatch)
+            {
+                return;
+            }
             var (idx, len) = m_sessionPendingMatch.Value;
             m_sessionSearchPos = idx + len;
             AdvanceToNextSessionMatch();
@@ -580,7 +659,10 @@ namespace mde
         /// <param name="a_args">クリックイベント。</param>
         private void StepReplaceRemainingClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (!m_sessionActiveFlg) return;
+            if (!m_sessionActiveFlg)
+            {
+                return;
+            }
 
             if (!m_sessionFolderScopeFlg)
             {
@@ -618,7 +700,10 @@ namespace mde
         /// サマリーを表示する。</summary>
         private void EndSession()
         {
-            if (m_sessionFolderScopeFlg) CommitSessionFileIfChanged();
+            if (m_sessionFolderScopeFlg)
+            {
+                CommitSessionFileIfChanged();
+            }
             m_sessionActiveFlg = false;
             m_sessionPendingMatch = null;
             m_stepPanel.Visibility = Visibility.Collapsed;

@@ -120,7 +120,10 @@ namespace mde
         /// <returns>一致した件数。</returns>
         public int CountOccurrences(string a_text, string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
-            if (string.IsNullOrEmpty(a_text) || string.IsNullOrEmpty(a_term)) return 0;
+            if (string.IsNullOrEmpty(a_text) || string.IsNullOrEmpty(a_term))
+            {
+                return 0;
+            }
             if (a_useRegexFlg)
             {
                 try
@@ -145,7 +148,10 @@ namespace mde
 
         private string ReplaceAllText(string a_text, string a_term, string a_replacement, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
-            if (string.IsNullOrEmpty(a_term)) return a_text;
+            if (string.IsNullOrEmpty(a_term))
+            {
+                return a_text;
+            }
             a_replacement = a_replacement ?? "";
             if (a_useRegexFlg)
             {
@@ -159,7 +165,10 @@ namespace mde
                     return a_text;
                 }
             }
-            if (a_caseSensitiveFlg) return a_text.Replace(a_term, a_replacement);
+            if (a_caseSensitiveFlg)
+            {
+                return a_text.Replace(a_term, a_replacement);
+            }
 
             var sb = new StringBuilder();
             int idx = 0;
@@ -186,7 +195,10 @@ namespace mde
         /// <param name="a_fromIndex">検索を開始する文字位置。</param>
         public (int index, int length)? FindNextMatchInText(string a_text, string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg, int a_fromIndex)
         {
-            if (string.IsNullOrEmpty(a_text) || string.IsNullOrEmpty(a_term) || a_fromIndex > a_text.Length) return null;
+            if (string.IsNullOrEmpty(a_text) || string.IsNullOrEmpty(a_term) || a_fromIndex > a_text.Length)
+            {
+                return null;
+            }
             if (a_useRegexFlg)
             {
                 try
@@ -194,7 +206,10 @@ namespace mde
                     var options = a_caseSensitiveFlg ? RegexOptions.None : RegexOptions.IgnoreCase;
                     var regex = new Regex(a_term, options);
                     var m = regex.Match(a_text, a_fromIndex);
-                    if (!m.Success) return null;
+                    if (!m.Success)
+                    {
+                        return null;
+                    }
                     return (m.Index, m.Length);
                 }
                 catch (ArgumentException)
@@ -327,14 +342,20 @@ namespace mde
         {
             ClearHighlight();
             var results = new List<TextRange>();
-            if (m_isSourceMode() || string.IsNullOrEmpty(a_term)) return results;
+            if (m_isSourceMode() || string.IsNullOrEmpty(a_term))
+            {
+                return results;
+            }
 
             TextPointer pos = m_editor.Document.ContentStart;
             int guard = 0;
             while (guard++ < 5000)
             {
                 TextRange found = FindTextFrom(pos, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-                if (null == found) break;
+                if (null == found)
+                {
+                    break;
+                }
                 AddHighlight(found);
                 results.Add(found);
 
@@ -372,7 +393,10 @@ namespace mde
 
         public bool FindNextInCurrentFile(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
-            if (m_isSourceMode() || string.IsNullOrEmpty(a_term)) return false;
+            if (m_isSourceMode() || string.IsNullOrEmpty(a_term))
+            {
+                return false;
+            }
 
             // lastFoundMatchがあれば、その終端から続ける。CaretPosition/Selectionだけに頼らない
             // のは、「前を検索」から「次を検索」へ切り替えた直後など、キャレット位置の設定が
@@ -380,10 +404,16 @@ namespace mde
             TextPointer startFrom = m_lastFoundMatch?.End ?? m_editor.CaretPosition;
             TextRange found = FindTextFrom(startFrom, a_term, a_caseSensitiveFlg, a_useRegexFlg)
                             ?? FindTextFrom(m_editor.Document.ContentStart, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (null == found) return false;
+            if (null == found)
+            {
+                return false;
+            }
 
             m_editor.Selection.Select(found.Start, found.End);
-            if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg)) ApplyHighlight(found);
+            if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg))
+            {
+                ApplyHighlight(found);
+            }
             m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
             m_editor.CaretPosition = found.End;
             m_lastFoundMatch = found;
@@ -402,13 +432,22 @@ namespace mde
         /// <returns>見つかればtrue。</returns>
         public bool FindNextInCurrentFileNoWrap(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
-            if (m_isSourceMode() || string.IsNullOrEmpty(a_term)) return false;
+            if (m_isSourceMode() || string.IsNullOrEmpty(a_term))
+            {
+                return false;
+            }
 
             TextRange found = FindTextFrom(m_editor.CaretPosition, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (null == found) return false;
+            if (null == found)
+            {
+                return false;
+            }
 
             m_editor.Selection.Select(found.Start, found.End);
-            if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg)) ApplyHighlight(found);
+            if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg))
+            {
+                ApplyHighlight(found);
+            }
             m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
             m_editor.CaretPosition = found.End;
             m_editor.Focus();
@@ -532,15 +571,24 @@ namespace mde
         /// <returns>見つかればtrue。</returns>
         public bool FindPreviousInCurrentFile(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
-            if (m_isSourceMode() || string.IsNullOrEmpty(a_term)) return false;
+            if (m_isSourceMode() || string.IsNullOrEmpty(a_term))
+            {
+                return false;
+            }
 
             TextPointer startFrom = m_lastFoundMatch?.Start ?? m_editor.CaretPosition;
             TextRange found = FindTextBackwardFrom(startFrom, a_term, a_caseSensitiveFlg, a_useRegexFlg)
                             ?? FindTextBackwardFrom(m_editor.Document.ContentEnd, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (null == found) return false;
+            if (null == found)
+            {
+                return false;
+            }
 
             m_editor.Selection.Select(found.Start, found.End);
-            if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg)) ApplyHighlight(found);
+            if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg))
+            {
+                ApplyHighlight(found);
+            }
             m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
             m_editor.CaretPosition = found.Start; // 次回の「前を検索」がこの一致箇所より前から続けられるようにする
             m_lastFoundMatch = found;
@@ -556,14 +604,23 @@ namespace mde
         /// <returns>見つかればtrue。</returns>
         public bool FindPreviousInCurrentFileNoWrap(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
-            if (m_isSourceMode() || string.IsNullOrEmpty(a_term)) return false;
+            if (m_isSourceMode() || string.IsNullOrEmpty(a_term))
+            {
+                return false;
+            }
 
             TextPointer from = !m_editor.Selection.IsEmpty ? m_editor.Selection.Start : m_editor.CaretPosition;
             TextRange found = FindTextBackwardFrom(from, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (null == found) return false;
+            if (null == found)
+            {
+                return false;
+            }
 
             m_editor.Selection.Select(found.Start, found.End);
-            if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg)) ApplyHighlight(found);
+            if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg))
+            {
+                ApplyHighlight(found);
+            }
             m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
             m_editor.CaretPosition = found.Start;
             m_editor.Focus();
@@ -574,7 +631,10 @@ namespace mde
         /// 開いたファイルの末尾から後ろ向き検索を始めるために使う）。</summary>
         public void MoveCaretToDocumentEnd()
         {
-            if (m_isSourceMode()) return;
+            if (m_isSourceMode())
+            {
+                return;
+            }
             m_editor.CaretPosition = m_editor.Document.ContentEnd;
             m_editor.Selection.Select(m_editor.Document.ContentEnd, m_editor.Document.ContentEnd);
         }
@@ -594,7 +654,10 @@ namespace mde
         {
             TextPointer from = (a_fromSelectionEndFlg && !m_editor.Selection.IsEmpty) ? m_editor.Selection.End : m_editor.CaretPosition;
             TextRange found = FindTextFrom(from, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (null == found) return false;
+            if (null == found)
+            {
+                return false;
+            }
 
             m_editor.Selection.Select(found.Start, found.End);
             ApplyHighlight(found);
@@ -669,19 +732,28 @@ namespace mde
         /// <returns>置換した件数。</returns>
         public int ReplaceAllInCurrentFile(string a_term, string a_replacement, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
-            if (string.IsNullOrEmpty(a_term)) return 0;
+            if (string.IsNullOrEmpty(a_term))
+            {
+                return 0;
+            }
             m_currentHighlights.Clear(); // 文書全体を再構築するため、既存のハイライト参照は無効になる
 
             if (m_isSourceMode())
             {
                 int srcCount = CountOccurrences(m_sourceEditor.Text, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-                if (srcCount > 0) m_sourceEditor.Text = ReplaceAllText(m_sourceEditor.Text, a_term, a_replacement, a_caseSensitiveFlg, a_useRegexFlg);
+                if (srcCount > 0)
+                {
+                    m_sourceEditor.Text = ReplaceAllText(m_sourceEditor.Text, a_term, a_replacement, a_caseSensitiveFlg, a_useRegexFlg);
+                }
                 return srcCount;
             }
 
             string md = m_converter.DocumentToMarkdown(m_editor.Document);
             int count = CountOccurrences(md, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-            if (0 == count) return 0;
+            if (0 == count)
+            {
+                return 0;
+            }
 
             string replaced = ReplaceAllText(md, a_term, a_replacement, a_caseSensitiveFlg, a_useRegexFlg);
             m_runAsProgrammaticChange(() => m_converter.MarkdownToDocument(replaced, m_editor.Document));
@@ -697,7 +769,10 @@ namespace mde
         {
             var result = new List<string>();
             string root = m_getLoadedFolderRootPath();
-            if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return result;
+            if (string.IsNullOrEmpty(root) || !Directory.Exists(root))
+            {
+                return result;
+            }
             try
             {
                 result.AddRange(Directory.GetFiles(root, "*.md", SearchOption.AllDirectories));
@@ -717,14 +792,23 @@ namespace mde
         public List<(string, int)> FindAllInFolder(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             var results = new List<(string, int)>();
-            if (string.IsNullOrEmpty(a_term)) return results;
+            if (string.IsNullOrEmpty(a_term))
+            {
+                return results;
+            }
 
             foreach (var file in GetAllMarkdownFilesInRoot())
             {
                 string content = m_getCurrentContentForFile(file) ?? SafeReadFile(file);
-                if (null == content) continue;
+                if (null == content)
+                {
+                    continue;
+                }
                 int count = CountOccurrences(content, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-                if (count > 0) results.Add((file, count));
+                if (count > 0)
+                {
+                    results.Add((file, count));
+                }
             }
             return results;
         }
@@ -739,15 +823,24 @@ namespace mde
         public List<(string, int)> ReplaceAllInFolder(string a_term, string a_replacement, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             var results = new List<(string, int)>();
-            if (string.IsNullOrEmpty(a_term)) return results;
+            if (string.IsNullOrEmpty(a_term))
+            {
+                return results;
+            }
 
             foreach (var file in GetAllMarkdownFilesInRoot())
             {
                 string content = m_getCurrentContentForFile(file) ?? SafeReadFile(file);
-                if (null == content) continue;
+                if (null == content)
+                {
+                    continue;
+                }
 
                 int count = CountOccurrences(content, a_term, a_caseSensitiveFlg, a_useRegexFlg);
-                if (0 == count) continue;
+                if (0 == count)
+                {
+                    continue;
+                }
 
                 string replaced = ReplaceAllText(content, a_term, a_replacement, a_caseSensitiveFlg, a_useRegexFlg);
                 SetFileContentForReplace(file, replaced);

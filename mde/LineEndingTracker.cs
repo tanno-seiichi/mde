@@ -38,14 +38,23 @@ namespace mde
         /// <returns>"\r\n" または "\n"。</returns>
         public string Detect(string a_content)
         {
-            if (string.IsNullOrEmpty(a_content)) return "\r\n";
+            if (string.IsNullOrEmpty(a_content))
+            {
+                return "\r\n";
+            }
             int crlfCount = 0, lfOnlyCount = 0;
             for (int i = 0; i < a_content.Length; i++)
             {
-                if (a_content[i] != '\n') continue;
+                if ('\n' != a_content[i])
+                {
+                    continue;
+                }
                 if (i > 0 &&
-                    a_content[i - 1] == '\r') crlfCount++;
-                else lfOnlyCount++;
+                    '\r' == a_content[i - 1]) crlfCount++;
+                else
+                {
+                    lfOnlyCount++;
+                }
             }
             if (0 == crlfCount &&
                 0 == lfOnlyCount) return "\r\n";
@@ -60,7 +69,12 @@ namespace mde
             if (!string.IsNullOrEmpty(a_path))
             {
                 foreach (var kv in m_lineEndings)
-                    if (m_pathsReferToSameFile(kv.Key, a_path)) return kv.Value;
+                {
+                    if (m_pathsReferToSameFile(kv.Key, a_path))
+                    {
+                        return kv.Value;
+                    }
+                }
             }
             return "\r\n";
         }

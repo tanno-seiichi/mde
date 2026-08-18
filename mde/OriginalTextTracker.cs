@@ -55,13 +55,18 @@ namespace mde
         public Block GetTopLevelBlock(TextPointer a_position)
         {
             var para = a_position?.Paragraph;
-            if (null == para) return null;
+            if (null == para)
+            {
+                return null;
+            }
 
             DependencyObject node = para;
             while (null != node)
             {
                 if (node is Block block && ReferenceEquals(block.Parent, m_editor.Document))
+                {
                     return block;
+                }
 
                 node = (node as TextElement)?.Parent;
             }
@@ -77,7 +82,10 @@ namespace mde
         public void Invalidate(TextPointer a_position)
         {
             var block = GetTopLevelBlock(a_position);
-            if (null != block) m_table.Remove(block);
+            if (null != block)
+            {
+                m_table.Remove(block);
+            }
         }
 
         /// <summary>

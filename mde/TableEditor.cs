@@ -77,7 +77,10 @@ namespace mde
         public bool IsCaretAtStart(TableCell a_cell)
         {
             var firstPara = a_cell.Blocks.FirstBlock as Paragraph;
-            if (null == firstPara) return true;
+            if (null == firstPara)
+            {
+                return true;
+            }
             return m_editor.CaretPosition.CompareTo(firstPara.ContentStart) <= 0;
         }
 
@@ -87,7 +90,10 @@ namespace mde
         public bool IsCaretAtEnd(TableCell a_cell)
         {
             var lastPara = a_cell.Blocks.LastBlock as Paragraph;
-            if (null == lastPara) return true;
+            if (null == lastPara)
+            {
+                return true;
+            }
             return m_editor.CaretPosition.CompareTo(lastPara.ContentEnd) >= 0;
         }
 
@@ -96,8 +102,14 @@ namespace mde
         /// <param name="a_dir">-1で上、+1で下。</param>
         public void MoveVertical(TableCell a_cell, int a_dir)
         {
-            if (!(a_cell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
+            if (!(a_cell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
             int rIdx = rg.Rows.IndexOf(row);
             int cIdx = row.Cells.IndexOf(a_cell);
             int targetIdx = rIdx + a_dir;
@@ -105,7 +117,9 @@ namespace mde
                 targetIdx >= rg.Rows.Count) return;
             var targetRow = rg.Rows[targetIdx];
             if (cIdx < targetRow.Cells.Count && targetRow.Cells[cIdx].Blocks.LastBlock is Paragraph tp)
+            {
                 m_editor.CaretPosition = tp.ContentEnd;
+            }
         }
 
         /// <summary>左右キーでのセル間移動。行の端では隣の行へ折り返す。</summary>
@@ -113,8 +127,14 @@ namespace mde
         /// <param name="a_dir">-1で左/前、+1で右/次。</param>
         public void MoveHorizontal(TableCell a_cell, int a_dir)
         {
-            if (!(a_cell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
+            if (!(a_cell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
             int rIdx = rg.Rows.IndexOf(row);
             int cIdx = row.Cells.IndexOf(a_cell);
 
@@ -122,27 +142,38 @@ namespace mde
             {
                 if (cIdx + 1 < row.Cells.Count)
                 {
-                    if (row.Cells[cIdx + 1].Blocks.FirstBlock is Paragraph np) m_editor.CaretPosition = np.ContentStart;
+                    if (row.Cells[cIdx + 1].Blocks.FirstBlock is Paragraph np)
+                    {
+                        m_editor.CaretPosition = np.ContentStart;
+                    }
                     return;
                 }
                 if (rIdx + 1 < rg.Rows.Count)
                 {
                     var nr = rg.Rows[rIdx + 1];
-                    if (nr.Cells.Count > 0 && nr.Cells[0].Blocks.FirstBlock is Paragraph np2) m_editor.CaretPosition = np2.ContentStart;
+                    if (nr.Cells.Count > 0 && nr.Cells[0].Blocks.FirstBlock is Paragraph np2)
+                    {
+                        m_editor.CaretPosition = np2.ContentStart;
+                    }
                 }
             }
             else
             {
                 if (cIdx - 1 >= 0)
                 {
-                    if (row.Cells[cIdx - 1].Blocks.LastBlock is Paragraph pp) m_editor.CaretPosition = pp.ContentEnd;
+                    if (row.Cells[cIdx - 1].Blocks.LastBlock is Paragraph pp)
+                    {
+                        m_editor.CaretPosition = pp.ContentEnd;
+                    }
                     return;
                 }
                 if (rIdx - 1 >= 0)
                 {
                     var pr = rg.Rows[rIdx - 1];
                     if (pr.Cells.Count > 0 && pr.Cells[pr.Cells.Count - 1].Blocks.LastBlock is Paragraph pp2)
+                    {
                         m_editor.CaretPosition = pp2.ContentEnd;
+                    }
                 }
             }
         }
@@ -155,7 +186,10 @@ namespace mde
         public void InsertTable(int a_rows, int a_cols)
         {
             var table = new Table();
-            for (int c = 0; c < a_cols; c++) table.Columns.Add(new TableColumn());
+            for (int c = 0; c < a_cols; c++)
+            {
+                table.Columns.Add(new TableColumn());
+            }
             var rg = new TableRowGroup();
             table.RowGroups.Add(rg);
 
@@ -206,7 +240,10 @@ namespace mde
                 }
             });
 
-            if (headerRow.Cells[0].Blocks.FirstBlock is Paragraph hp) m_editor.CaretPosition = hp.ContentStart;
+            if (headerRow.Cells[0].Blocks.FirstBlock is Paragraph hp)
+            {
+                m_editor.CaretPosition = hp.ContentStart;
+            }
             m_editor.Focus();
             m_markDirty();
         }
@@ -215,10 +252,19 @@ namespace mde
         /// <param name="a_aboveFlg">true なら現在の行の上に、false なら下に挿入する。</param>
         public void InsertRow(bool a_aboveFlg)
         {
-            if (null == ContextCell) return;
+            if (null == ContextCell)
+            {
+                return;
+            }
             m_originalTextTracker.Invalidate(ContextCell.ContentStart);
-            if (!(ContextCell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
+            if (!(ContextCell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
 
             int colCount = row.Cells.Count;
             var newRow = new TableRow();
@@ -238,7 +284,9 @@ namespace mde
             rg.Rows.Insert(insertIdx, newRow);
 
             if (newRow.Cells.Count > 0 && newRow.Cells[0].Blocks.FirstBlock is Paragraph np)
+            {
                 m_editor.CaretPosition = np.ContentStart;
+            }
             m_editor.Focus();
             m_markDirty();
         }
@@ -247,11 +295,23 @@ namespace mde
         /// <param name="a_leftFlg">true なら現在の列の左に、false なら右に挿入する。</param>
         public void InsertColumn(bool a_leftFlg)
         {
-            if (null == ContextCell) return;
+            if (null == ContextCell)
+            {
+                return;
+            }
             m_originalTextTracker.Invalidate(ContextCell.ContentStart);
-            if (!(ContextCell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
-            if (!(rg.Parent is Table table)) return;
+            if (!(ContextCell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
+            if (!(rg.Parent is Table table))
+            {
+                return;
+            }
 
             int colIdx = row.Cells.IndexOf(ContextCell);
             int insertIdx = a_leftFlg ? colIdx : colIdx + 1;
@@ -275,14 +335,20 @@ namespace mde
 
                 int idxInRow = Math.Min(insertIdx, targetRow.Cells.Count);
                 targetRow.Cells.Insert(idxInRow, cell);
-                if (targetRow == row) firstNewCell = cell;
+                if (targetRow == row)
+                {
+                    firstNewCell = cell;
+                }
             }
 
             var newColumn = new TableColumn();
             int colInsertIdx = Math.Min(insertIdx, table.Columns.Count);
             table.Columns.Insert(colInsertIdx, newColumn);
 
-            if (firstNewCell?.Blocks.FirstBlock is Paragraph np) m_editor.CaretPosition = np.ContentStart;
+            if (firstNewCell?.Blocks.FirstBlock is Paragraph np)
+            {
+                m_editor.CaretPosition = np.ContentStart;
+            }
             m_editor.Focus();
             m_markDirty();
         }
@@ -290,14 +356,26 @@ namespace mde
         /// <summary>ContextCellが属する行を削除する（表の唯一の行なら表ごと削除する）。</summary>
         public void DeleteRow()
         {
-            if (null == ContextCell) return;
+            if (null == ContextCell)
+            {
+                return;
+            }
             m_originalTextTracker.Invalidate(ContextCell.ContentStart);
-            if (!(ContextCell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
+            if (!(ContextCell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
 
             if (rg.Rows.Count <= 1)
             {
-                if (rg.Parent is Table table) m_editor.Document.Blocks.Remove(table);
+                if (rg.Parent is Table table)
+                {
+                    m_editor.Document.Blocks.Remove(table);
+                }
                 m_markDirty();
                 return;
             }
@@ -308,11 +386,23 @@ namespace mde
         /// <summary>ContextCellが属する列を削除する（表の唯一の列なら表ごと削除する）。</summary>
         public void DeleteColumn()
         {
-            if (null == ContextCell) return;
+            if (null == ContextCell)
+            {
+                return;
+            }
             m_originalTextTracker.Invalidate(ContextCell.ContentStart);
-            if (!(ContextCell.Parent is TableRow row)) return;
-            if (!(row.Parent is TableRowGroup rg)) return;
-            if (!(rg.Parent is Table table)) return;
+            if (!(ContextCell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
+            if (!(rg.Parent is Table table))
+            {
+                return;
+            }
 
             int colIndex = row.Cells.IndexOf(ContextCell);
 
@@ -325,9 +415,15 @@ namespace mde
 
             foreach (TableRow r in rg.Rows)
             {
-                if (colIndex < r.Cells.Count) r.Cells.RemoveAt(colIndex);
+                if (colIndex < r.Cells.Count)
+                {
+                    r.Cells.RemoveAt(colIndex);
+                }
             }
-            if (table.Columns.Count > colIndex) table.Columns.RemoveAt(colIndex);
+            if (table.Columns.Count > colIndex)
+            {
+                table.Columns.RemoveAt(colIndex);
+            }
             m_markDirty();
         }
 
@@ -337,14 +433,25 @@ namespace mde
         {
             var rows = new List<TableRow>();
             foreach (TableRowGroup rg in a_table.RowGroups)
-                foreach (TableRow r in rg.Rows) rows.Add(r);
+            {
+                foreach (TableRow r in rg.Rows)
+                {
+                    rows.Add(r);
+                }
+            }
             return rows;
         }
 
         private Table FindEnclosingTable(TableCell a_cell)
         {
-            if (!(a_cell.Parent is TableRow row)) return null;
-            if (!(row.Parent is TableRowGroup rg)) return null;
+            if (!(a_cell.Parent is TableRow row))
+            {
+                return null;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return null;
+            }
             return rg.Parent as Table;
         }
 
@@ -431,7 +538,12 @@ namespace mde
         {
             var sb = new StringBuilder();
             foreach (Block b in a_cell.Blocks)
-                if (b is Paragraph p) sb.Append(new TextRange(p.ContentStart, p.ContentEnd).Text);
+            {
+                if (b is Paragraph p)
+                {
+                    sb.Append(new TextRange(p.ContentStart, p.ContentEnd).Text);
+                }
+            }
             return sb.ToString().Trim();
         }
 
@@ -504,18 +616,30 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         public void HandleCopying(object a_sender, DataObjectCopyingEventArgs a_args)
         {
-            if (m_isSourceMode() || a_args.IsDragDrop) return;
+            if (m_isSourceMode() || a_args.IsDragDrop)
+            {
+                return;
+            }
 
             var selection = m_editor.Selection;
-            if (null == selection || selection.IsEmpty) return;
+            if (null == selection || selection.IsEmpty)
+            {
+                return;
+            }
 
             var startCell = selection.Start?.Paragraph?.Parent as TableCell;
             var endCell = selection.End?.Paragraph?.Parent as TableCell;
             var anyCell = startCell ?? endCell;
-            if (null == anyCell) return;
+            if (null == anyCell)
+            {
+                return;
+            }
 
             var table = FindEnclosingTable(anyCell);
-            if (null == table) return;
+            if (null == table)
+            {
+                return;
+            }
 
             var rows = GetTableRows(table);
             CellRange range = null;
@@ -538,7 +662,10 @@ namespace mde
         private List<List<string>> TryParseHtmlTable(string a_html)
         {
             var tableMatch = Regex.Match(a_html, "<table[^>]*>(.*?)</table>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
-            if (!tableMatch.Success) return null;
+            if (!tableMatch.Success)
+            {
+                return null;
+            }
 
             var rows = new List<List<string>>();
             foreach (Match rowMatch in Regex.Matches(tableMatch.Groups[1].Value, "<tr[^>]*>(.*?)</tr>", RegexOptions.Singleline | RegexOptions.IgnoreCase))
@@ -548,7 +675,10 @@ namespace mde
                 {
                     cells.Add(StripHtmlToText(cellMatch.Groups[1].Value));
                 }
-                if (cells.Count > 0) rows.Add(cells);
+                if (cells.Count > 0)
+                {
+                    rows.Add(cells);
+                }
             }
             return rows.Count > 0 ? rows : null;
         }
@@ -579,10 +709,16 @@ namespace mde
             if (null == a_rows ||
                 0 == a_rows.Count) return;
             int colCount = a_rows.Max(r => r.Count);
-            if (0 == colCount) return;
+            if (0 == colCount)
+            {
+                return;
+            }
 
             var table = new Table();
-            for (int c = 0; c < colCount; c++) table.Columns.Add(new TableColumn());
+            for (int c = 0; c < colCount; c++)
+            {
+                table.Columns.Add(new TableColumn());
+            }
             var rg = new TableRowGroup();
             table.RowGroups.Add(rg);
 
@@ -617,7 +753,9 @@ namespace mde
                     m_editor.Document.Blocks.InsertAfter(para, table);
                     m_editor.Document.Blocks.InsertAfter(table, trailingPara);
                     if (string.IsNullOrWhiteSpace(new TextRange(para.ContentStart, para.ContentEnd).Text))
+                    {
                         m_editor.Document.Blocks.Remove(para);
+                    }
                 }
                 else
                 {
@@ -642,7 +780,10 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         public void HandlePasting(object a_sender, DataObjectPastingEventArgs a_args)
         {
-            if (m_isSourceMode()) return;
+            if (m_isSourceMode())
+            {
+                return;
+            }
 
             // コードブロックへの貼り付け：常にリテラルなテキストとして、同じフェンス内に挿入する
             // （既定の貼り付け動作のままだと新しい段落に分割されてしまうため）。

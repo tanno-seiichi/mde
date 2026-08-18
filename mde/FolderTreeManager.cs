@@ -60,12 +60,18 @@ namespace mde
         public string GetCurrentFileRelativePath()
         {
             string currentFilePath = m_getCurrentFilePath();
-            if (string.IsNullOrEmpty(currentFilePath) || string.IsNullOrEmpty(LoadedFolderRootPath)) return null;
+            if (string.IsNullOrEmpty(currentFilePath) || string.IsNullOrEmpty(LoadedFolderRootPath))
+            {
+                return null;
+            }
             try
             {
                 string root = Path.GetFullPath(LoadedFolderRootPath).TrimEnd(Path.DirectorySeparatorChar);
                 string file = Path.GetFullPath(currentFilePath);
-                if (!file.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return null;
+                if (!file.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
                 return file.Substring(root.Length + 1);
             }
             catch
@@ -103,9 +109,15 @@ namespace mde
         /// （サブフォルダは除く）を開く。</summary>
         public void OpenFirstFileInLoadedFolder()
         {
-            if (0 == Roots.Count) return;
+            if (0 == Roots.Count)
+            {
+                return;
+            }
             var firstFile = Roots[0].Children.FirstOrDefault(c => !c.IsDirectory);
-            if (null != firstFile) m_loadFile(firstFile.FullPath);
+            if (null != firstFile)
+            {
+                m_loadFile(firstFile.FullPath);
+            }
         }
 
         /// <summary>ルートフォルダを指定して、フォルダツリーペインの内容を読み込む。</summary>
@@ -136,7 +148,9 @@ namespace mde
         public void RefreshDirtyMarkers()
         {
             foreach (var root in Roots)
+            {
                 RefreshDirtyMarkerRecursive(root);
+            }
         }
 
         private void RefreshDirtyMarkerRecursive(FileSystemItem a_node)
@@ -150,7 +164,9 @@ namespace mde
                     : m_getPendingEditPaths().Any(k => m_pathsReferToSameFile(k, a_node.FullPath));
             }
             foreach (var child in a_node.Children)
+            {
                 RefreshDirtyMarkerRecursive(child);
+            }
         }
 
         /// <summary>
@@ -169,7 +185,9 @@ namespace mde
                 catch { /* 無効なパスは無視する */ }
             }
             foreach (var root in Roots)
+            {
                 MarkSearchMatchRecursive(root, matchedSet);
+            }
         }
 
         private bool MarkSearchMatchRecursive(FileSystemItem a_node, HashSet<string> a_matchedFullPaths)
@@ -189,9 +207,15 @@ namespace mde
             }
             foreach (var child in a_node.Children)
             {
-                if (MarkSearchMatchRecursive(child, a_matchedFullPaths)) anyMatchBelowFlg = true;
+                if (MarkSearchMatchRecursive(child, a_matchedFullPaths))
+                {
+                    anyMatchBelowFlg = true;
+                }
             }
-            if (anyMatchBelowFlg) a_node.IsSearchMatch = true; // フォルダ自身も、含むファイルに一致があれば強調する
+            if (anyMatchBelowFlg)
+            {
+                a_node.IsSearchMatch = true; // フォルダ自身も、含むファイルに一致があれば強調する
+            }
             return anyMatchBelowFlg;
         }
 
@@ -199,14 +223,18 @@ namespace mde
         public void ClearSearchMatches()
         {
             foreach (var root in Roots)
+            {
                 ClearSearchMatchRecursive(root);
+            }
         }
 
         private void ClearSearchMatchRecursive(FileSystemItem a_node)
         {
             a_node.IsSearchMatch = false;
             foreach (var child in a_node.Children)
+            {
                 ClearSearchMatchRecursive(child);
+            }
         }
 
         /// <summary>
@@ -219,21 +247,33 @@ namespace mde
         /// <param name="a_filePath">追加するファイルの絶対パス。</param>
         public void AddFileNodeIfMissing(string a_filePath)
         {
-            if (0 == Roots.Count || string.IsNullOrEmpty(a_filePath)) return;
+            if (0 == Roots.Count || string.IsNullOrEmpty(a_filePath))
+            {
+                return;
+            }
 
             string dir;
             try { dir = Path.GetDirectoryName(Path.GetFullPath(a_filePath)); }
             catch { return; }
-            if (string.IsNullOrEmpty(dir)) return;
+            if (string.IsNullOrEmpty(dir))
+            {
+                return;
+            }
 
             var folderNode = FindFolderNode(Roots[0], dir);
-            if (null == folderNode) return;
+            if (null == folderNode)
+            {
+                return;
+            }
 
             // まだ子が読み込まれていない（プレースホルダのみ）場合は、展開時に自然に反映される
             if (1 == folderNode.Children.Count &&
                 null == folderNode.Children[0].FullPath) return;
 
-            if (folderNode.Children.Any(c => !c.IsDirectory && PathsEqualLocal(c.FullPath, a_filePath))) return;
+            if (folderNode.Children.Any(c => !c.IsDirectory && PathsEqualLocal(c.FullPath, a_filePath)))
+            {
+                return;
+            }
 
             string fileName = Path.GetFileName(a_filePath);
             var newItem = new FileSystemItem { Name = fileName, FullPath = a_filePath, IsDirectory = false };
@@ -243,7 +283,10 @@ namespace mde
             for (int i = 0; i < folderNode.Children.Count; i++)
             {
                 var c = folderNode.Children[i];
-                if (c.IsDirectory) continue;
+                if (c.IsDirectory)
+                {
+                    continue;
+                }
                 if (string.Compare(fileName, c.Name, StringComparison.OrdinalIgnoreCase) < 0)
                 {
                     insertIdx = i;
@@ -262,7 +305,12 @@ namespace mde
         public void SelectFileNode(string a_filePath)
         {
             foreach (var root in Roots)
-                if (SelectFileNodeRecursive(root, a_filePath)) return;
+            {
+                if (SelectFileNodeRecursive(root, a_filePath))
+                {
+                    return;
+                }
+            }
         }
 
         private bool SelectFileNodeRecursive(FileSystemItem a_node, string a_filePath)
@@ -286,19 +334,31 @@ namespace mde
 
         private FileSystemItem FindFolderNode(FileSystemItem a_node, string a_dir)
         {
-            if (a_node.IsDirectory && PathsEqualLocal(a_node.FullPath, a_dir)) return a_node;
+            if (a_node.IsDirectory && PathsEqualLocal(a_node.FullPath, a_dir))
+            {
+                return a_node;
+            }
             foreach (var child in a_node.Children)
             {
-                if (!child.IsDirectory) continue;
+                if (!child.IsDirectory)
+                {
+                    continue;
+                }
                 var found = FindFolderNode(child, a_dir);
-                if (null != found) return found;
+                if (null != found)
+                {
+                    return found;
+                }
             }
             return null;
         }
 
         private bool PathsEqualLocal(string a_a, string a_b)
         {
-            if (string.IsNullOrEmpty(a_a) || string.IsNullOrEmpty(a_b)) return false;
+            if (string.IsNullOrEmpty(a_a) || string.IsNullOrEmpty(a_b))
+            {
+                return false;
+            }
             try
             {
                 return string.Equals(
@@ -321,7 +381,10 @@ namespace mde
         /// <returns>指定フォルダが読み込み済みフォルダの範囲内であればtrue。</returns>
         public bool IsWithinLoadedFolder(string a_dir)
         {
-            if (string.IsNullOrEmpty(LoadedFolderRootPath) || string.IsNullOrEmpty(a_dir)) return false;
+            if (string.IsNullOrEmpty(LoadedFolderRootPath) || string.IsNullOrEmpty(a_dir))
+            {
+                return false;
+            }
             try
             {
                 string root = Path.GetFullPath(LoadedFolderRootPath).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant();
@@ -357,7 +420,10 @@ namespace mde
                 foreach (var dir in Directory.GetDirectories(a_node.FullPath).OrderBy(d => d))
                 {
                     var name = Path.GetFileName(dir);
-                    if (name.StartsWith(".")) continue;
+                    if (name.StartsWith("."))
+                    {
+                        continue;
+                    }
                     a_node.Children.Add(BuildFileSystemNode(dir, true));
                 }
                 foreach (var file in Directory.GetFiles(a_node.FullPath)
