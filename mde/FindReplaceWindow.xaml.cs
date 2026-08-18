@@ -75,13 +75,41 @@ namespace mde
 
         /// <summary>ダイアログを作成し、検索ボックスへフォーカスする。</summary>
         /// <param name="a_owner">検索・置換対象のメインウィンドウ。</param>
+        // ダイアログを閉じても検索条件を覚えておくための静的フィールド
+        // （アプリのプロセスが続いている間、ウィンドウを開き直しても引き継がれる）。
+        private static string s_lastTerm = "";
+        private static string s_lastReplacement = "";
+        private static bool s_lastCaseSensitiveFlg = false;
+        private static bool s_lastUseRegexFlg = false;
+        private static bool s_lastScopeFolderFlg = false;
+        private static bool s_lastReplaceExpandedFlg = false;
+
         public FindReplaceWindow(MainWindow a_owner)
         {
             InitializeComponent();
             this.m_owner = a_owner;
+
+            // 前回の検索条件を復元する。
+            m_searchBox.Text = s_lastTerm;
+            m_replaceBox.Text = s_lastReplacement;
+            m_caseSensitiveBox.IsChecked = s_lastCaseSensitiveFlg;
+            m_useRegexBox.IsChecked = s_lastUseRegexFlg;
+            m_scopeFolder.IsChecked = s_lastScopeFolderFlg;
+            m_scopeCurrentFile.IsChecked = !s_lastScopeFolderFlg;
+            m_replaceExpander.IsExpanded = s_lastReplaceExpandedFlg;
+
             m_searchBox.Focus();
+            m_searchBox.SelectAll();
             Closed += (s, e) =>
             {
+                // 次回このウィンドウを開いた時のために、現在の検索条件を覚えておく。
+                s_lastTerm = m_searchBox.Text;
+                s_lastReplacement = m_replaceBox.Text;
+                s_lastCaseSensitiveFlg = CaseSensitive;
+                s_lastUseRegexFlg = UseRegex;
+                s_lastScopeFolderFlg = true == m_scopeFolder.IsChecked;
+                s_lastReplaceExpandedFlg = m_replaceExpander.IsExpanded;
+
                 a_owner.SearchReplace.ClearHighlight();
                 a_owner.OutlinePane.ClearSearchMatches();
                 a_owner.FolderTreePane.ClearSearchMatches();
@@ -134,6 +162,7 @@ namespace mde
         private bool PathsEqual(string a_a, string a_b) =>
             !string.IsNullOrEmpty(a_a) && !string.IsNullOrEmpty(a_b) &&
             string.Equals(System.IO.Path.GetFullPath(a_a), System.IO.Path.GetFullPath(a_b), StringComparison.OrdinalIgnoreCase);
+
 
         /// <summary>
         /// フォルダ全体スコープでの位置情報を、まだ無ければ初期化する。現在開いているファイルが

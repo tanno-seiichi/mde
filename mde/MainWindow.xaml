@@ -103,19 +103,18 @@
                         </TreeView.Resources>
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                                <Border x:Name="m_matchHighlightBorder" CornerRadius="3" Padding="3,1">
+                                <Border x:Name="m_matchHighlightBorder" CornerRadius="3" Padding="3,1"
+                                        BorderThickness="1,1,1,1" BorderBrush="Transparent" Margin="-1,0,0,0">
                                     <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{StaticResource InkBrush}"/>
                                 </Border>
                                 <HierarchicalDataTemplate.Triggers>
-                                    <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
-                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#FFE166"/>
-                                    </DataTrigger>
                                     <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
                                         <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#CBE8F6"/>
                                         <Setter TargetName="m_matchHighlightBorder" Property="BorderBrush" Value="#26A0DA"/>
-                                        <Setter TargetName="m_matchHighlightBorder" Property="BorderThickness" Value="1,1,1,1"/>
                                         <Setter TargetName="m_matchHighlightBorder" Property="CornerRadius" Value="0"/>
-                                        <Setter TargetName="m_matchHighlightBorder" Property="Margin" Value="-1,0,0,0"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
+                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#FFE166"/>
                                     </DataTrigger>
                                 </HierarchicalDataTemplate.Triggers>
                             </HierarchicalDataTemplate>
