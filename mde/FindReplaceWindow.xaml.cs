@@ -173,6 +173,36 @@ namespace mde
             }
         }
 
+        /// <summary>
+        /// 結果一覧に表示する用に、フルパスを検索対象のルートフォルダから始まる短い表示に変換する。
+        /// フルパスのままだと不要に長くなり見づらいため、ルートフォルダの部分は表示から省く
+        /// （ルートフォルダ自体の名前は含めたまま、その親から先を取り除く）。
+        /// </summary>
+        /// <param name="a_fullPath">対象ファイルのフルパス。</param>
+        /// <returns>ルートフォルダ名から始まる表示用のパス。ルート情報がなければフルパスのまま。</returns>
+        private string ToDisplayPath(string a_fullPath)
+        {
+            string root = m_owner.FolderTreePane.LoadedFolderRootPath;
+            if (string.IsNullOrEmpty(root))
+            {
+                return a_fullPath;
+            }
+            try
+            {
+                string rootFull = System.IO.Path.GetFullPath(root).TrimEnd(System.IO.Path.DirectorySeparatorChar);
+                string full = System.IO.Path.GetFullPath(a_fullPath);
+                if (full.StartsWith(rootFull, StringComparison.OrdinalIgnoreCase))
+                {
+                    return full.Substring(rootFull.Length).TrimStart(System.IO.Path.DirectorySeparatorChar);
+                }
+            }
+            catch
+            {
+                /* 変換に失敗した場合はフルパスのまま表示する */
+            }
+            return a_fullPath;
+        }
+
         private bool PathsEqual(string a_a, string a_b) =>
             !string.IsNullOrEmpty(a_a) && !string.IsNullOrEmpty(a_b) &&
             string.Equals(System.IO.Path.GetFullPath(a_a), System.IO.Path.GetFullPath(a_b), StringComparison.OrdinalIgnoreCase);
@@ -432,7 +462,7 @@ namespace mde
                 var results = m_owner.SearchReplace.FindAllInFolder(Term, CaseSensitive, UseRegex);
                 m_resultsPaths = results.Select(r => r.Item1).ToList();
                 m_owner.FolderTreePane.MarkSearchMatches(m_resultsPaths);
-                m_resultsList.ItemsSource = results.Select(r => r.Item1 + "　（" + r.Item2 + "件）").ToList();
+                m_resultsList.ItemsSource = results.Select(r => ToDisplayPath(r.Item1) + "　（" + r.Item2 + "件）").ToList();
                 m_resultsList.Visibility = results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
                 m_statusText.Text = results.Count > 0
                     ? results.Count + " 個のファイルで見つかりました（フォルダビューでも強調表示しています）。ダブルクリックで開きます。"
@@ -499,7 +529,7 @@ namespace mde
                 m_statusText.Text = results.Count + " 個のファイルで合計 " + totalCount +
                     " 件を置換しました（保存するまでファイルには書き出されません。ツールバーの「すべて保存」で反映してください）。";
                 m_resultsPaths = results.Select(r => r.Item1).ToList();
-                m_resultsList.ItemsSource = results.Select(r => r.Item1 + "　（" + r.Item2 + "件置換）").ToList();
+                m_resultsList.ItemsSource = results.Select(r => ToDisplayPath(r.Item1) + "　（" + r.Item2 + "件置換）").ToList();
                 m_resultsList.Visibility = results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             }
         }
