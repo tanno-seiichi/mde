@@ -302,18 +302,24 @@ namespace mde
         /// 隠れて見えなくならないよう展開状態にする。
         /// </summary>
         /// <param name="a_filePath">選択したいファイルの絶対パス。</param>
+        /// <summary>SelectFileNodeで対象のファイルノードが見つかり、選択状態にした時に発火する。
+        /// MainWindow側で、そのノードがフォルダペイン上に見えるようスクロールするために使う。</summary>
+        public event Action<FileSystemItem> NodeSelected;
+
         public void SelectFileNode(string a_filePath)
         {
             foreach (var root in Roots)
             {
-                if (SelectFileNodeRecursive(root, a_filePath))
+                var node = SelectFileNodeRecursive(root, a_filePath);
+                if (null != node)
                 {
+                    NodeSelected?.Invoke(node);
                     return;
                 }
             }
         }
 
-        private bool SelectFileNodeRecursive(FileSystemItem a_node, string a_filePath)
+        private FileSystemItem SelectFileNodeRecursive(FileSystemItem a_node, string a_filePath)
         {
             foreach (var child in a_node.Children)
             {
@@ -321,15 +327,19 @@ namespace mde
                 {
                     child.IsSelected = true;
                     a_node.IsExpanded = true;
-                    return true;
+                    return child;
                 }
-                if (child.IsDirectory && SelectFileNodeRecursive(child, a_filePath))
+                if (child.IsDirectory)
                 {
-                    a_node.IsExpanded = true;
-                    return true;
+                    var found = SelectFileNodeRecursive(child, a_filePath);
+                    if (null != found)
+                    {
+                        a_node.IsExpanded = true;
+                        return found;
+                    }
                 }
             }
-            return false;
+            return null;
         }
 
         private FileSystemItem FindFolderNode(FileSystemItem a_node, string a_dir)
@@ -464,6 +474,14 @@ namespace mde
         {
             if (a_args.NewValue is FileSystemItem item && !item.IsDirectory && null != item.FullPath)
             {
+                // SelectFileNodeによってプログラム側からIsSelectedを立てた場合にも、この
+                // イベントは発生する。すでに開いているファイルであれば、再読み込みは行わない
+                // （再読み込みすると、エディタのスクロール位置・キャレット位置が先頭にリセット
+                // されてしまうため）。
+                if (m_pathsReferToSameFile(item.FullPath, m_getCurrentFilePath()))
+                {
+                    return;
+                }
                 m_loadFile(item.FullPath);
             }
         }

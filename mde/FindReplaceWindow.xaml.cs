@@ -116,6 +116,20 @@ namespace mde
             };
         }
 
+        /// <summary>
+        /// 現在の検索条件で、今開いているファイルの一致箇所を強調表示し直す。フォルダペインの
+        /// 操作でファイルが切り替わった時など、検索と置換ウィンドウを開いたまま別のファイルへ
+        /// 移動した場合に、そのファイルでの強調表示を復元するために使う。
+        /// </summary>
+        public void ReapplyHighlightForCurrentFile()
+        {
+            if (string.IsNullOrEmpty(Term))
+            {
+                return;
+            }
+            m_owner.SearchReplace.HighlightAllMatchesInCurrentFile(Term, CaseSensitive, UseRegex);
+        }
+
         private string Term => m_searchBox.Text;
         private string Replacement => m_replaceBox.Text ?? "";
         private bool CaseSensitive => true == m_caseSensitiveBox.IsChecked;
@@ -264,6 +278,7 @@ namespace mde
                 {
                     m_folderFindCurrentMatchIdx = 0;
                     m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[0]);
+                    m_owner.FolderTreePane.SelectFileNode(path);
                     m_statusText.Text = "見つかりました：" + System.IO.Path.GetFileName(path) +
                         "（1 / " + m_folderFindCurrentFileMatches.Count + "件目）";
                     return;
@@ -355,6 +370,7 @@ namespace mde
                 {
                     m_folderFindCurrentMatchIdx = m_folderFindCurrentFileMatches.Count - 1;
                     m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[m_folderFindCurrentMatchIdx]);
+                    m_owner.FolderTreePane.SelectFileNode(path);
                     m_statusText.Text = "見つかりました：" + System.IO.Path.GetFileName(path) +
                         "（" + m_folderFindCurrentFileMatches.Count + " / " + m_folderFindCurrentFileMatches.Count + "件目）";
                     return;
@@ -456,6 +472,7 @@ namespace mde
                 m_owner.SearchReplace.SelectAndScrollTo(matches[0]);
                 SeedFolderWalkFromCurrentFile(m_resultsPaths[idx], matches, 0);
             }
+            m_owner.FolderTreePane.SelectFileNode(m_resultsPaths[idx]);
         }
 
         /// <summary>「すべて置換」ボタン。選択されている範囲のすべての一致箇所を一度に置換する。</summary>

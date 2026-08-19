@@ -4,6 +4,7 @@
 // アウトラインペイン（見出し一覧）を担当するクラス。文書から見出しを収集して一覧を作り、
 // クリックされた見出しまでエディタをスクロールする。
 
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -54,6 +55,44 @@ namespace mde
         /// より手前にある、一番近い見出し）を強調表示する。呼び出し前の強調表示はクリアされる。
         /// </summary>
         /// <param name="a_matches">強調表示したい一致箇所（ライブなTextRange）。</param>
+        /// <summary>ある段落の位置に対応する見出し項目が見つかり、選択すべき時に発火する。
+        /// MainWindow側で、アウトラインペインの選択状態・スクロール位置に反映するために使う。</summary>
+        public event Action<OutlineEntry> HeadingSelected;
+
+        /// <summary>
+        /// 指定した文書内の位置が属する見出し（その位置より手前にある、一番近い見出し）を探し、
+        /// 見つかればHeadingSelectedイベントで通知する。検索結果へのジャンプなど、エディタ内の
+        /// 特定の位置へ移動した時に、アウトラインペイン側の選択状態も追従させるために使う。
+        /// </summary>
+        /// <param name="a_position">対象の文書内の位置。</param>
+        public void SelectHeadingForPosition(TextPointer a_position)
+        {
+            Paragraph nearestHeading = null;
+            foreach (Block block in m_editor.Document.Blocks)
+            {
+                if (block is Paragraph p && p.Tag is int level && level > 0)
+                {
+                    if (p.ContentStart.CompareTo(a_position) <= 0)
+                    {
+                        nearestHeading = p;
+                    }
+                    else
+                    {
+                        break; // ブロックは文書順に並んでいるので、超えた時点で打ち切ってよい
+                    }
+                }
+            }
+            if (null == nearestHeading)
+            {
+                return;
+            }
+            var entry = Items.FirstOrDefault(e => e.Target == nearestHeading);
+            if (null != entry)
+            {
+                HeadingSelected?.Invoke(entry);
+            }
+        }
+
         public void MarkSearchMatches(IEnumerable<TextRange> a_matches)
         {
             ClearSearchMatches();

@@ -37,6 +37,7 @@ namespace mde
         private readonly Action<string> m_openFile;
         private readonly Action<Action> m_runWithoutDirtyMarking;
         private readonly Action<List<TextRange>> m_markOutlineMatches;
+        private readonly Action<TextPointer> m_selectOutlineHeading;
 
         private static readonly System.Windows.Media.Brush MATCH_HIGHLIGHT_BRUSH =
             new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xE1, 0x66));
@@ -89,7 +90,8 @@ namespace mde
             Action<string, string> a_setFileContentForReplaceImpl,
             Action<string> a_openFile,
             Action<Action> a_runWithoutDirtyMarking,
-            Action<List<TextRange>> a_markOutlineMatches)
+            Action<List<TextRange>> a_markOutlineMatches,
+            Action<TextPointer> a_selectOutlineHeading)
         {
             this.m_editor = a_editor;
             this.m_sourceEditor = a_sourceEditor;
@@ -106,6 +108,7 @@ namespace mde
             this.m_openFile = a_openFile;
             this.m_runWithoutDirtyMarking = a_runWithoutDirtyMarking;
             this.m_markOutlineMatches = a_markOutlineMatches;
+            this.m_selectOutlineHeading = a_selectOutlineHeading;
         }
 
         // ======================================================================
@@ -389,6 +392,7 @@ namespace mde
             m_scrollParagraphToTop(a_range.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
             m_editor.CaretPosition = a_range.End;
             m_editor.Focus();
+            m_selectOutlineHeading?.Invoke(a_range.Start);
         }
 
         public bool FindNextInCurrentFile(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
@@ -418,6 +422,7 @@ namespace mde
             m_editor.CaretPosition = found.End;
             m_lastFoundMatch = found;
             m_editor.Focus();
+            m_selectOutlineHeading?.Invoke(found.Start);
             return true;
         }
 
@@ -593,6 +598,7 @@ namespace mde
             m_editor.CaretPosition = found.Start; // 次回の「前を検索」がこの一致箇所より前から続けられるようにする
             m_lastFoundMatch = found;
             m_editor.Focus();
+            m_selectOutlineHeading?.Invoke(found.Start);
             return true;
         }
 

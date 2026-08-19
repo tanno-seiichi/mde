@@ -135,6 +135,7 @@ namespace mde
             m_originalTextTracker = new OriginalTextTracker(m_editor);
             m_lineEndingTracker = new LineEndingTracker(PathsReferToSameFile);
             m_outlineManager = new OutlineManager(m_editor);
+            m_outlineManager.HeadingSelected += ScrollOutlineListToEntry;
             m_imageManager = new ImageManager(
                 m_editor, m_originalTextTracker, () => m_isSourceModeFlg, () => m_currentFileDirectory,
                 RunAsProgrammaticChange, m_outlineManager.Refresh, m_instanceTempId);
@@ -147,6 +148,7 @@ namespace mde
             m_folderTreeManager = new FolderTreeManager(
                 LoadFile, () => m_currentFilePath, () => m_currentFileIsDirtyFlg,
                 () => m_pendingFileEdits.Keys, PathsReferToSameFile);
+            m_folderTreeManager.NodeSelected += ScrollFolderTreeToNode;
             m_inlineStyleEditor = new InlineStyleEditor(
                 m_editor, m_originalTextTracker, RunAsProgrammaticChange, MarkDirty, m_outlineManager.Refresh,
                 m_markdownConverter.BlockToMarkdown, () => m_currentFileDirectory, LoadFile,
@@ -155,7 +157,8 @@ namespace mde
                 m_editor, m_sourceEditor, m_markdownConverter, m_originalTextTracker, m_lineEndingTracker,
                 () => m_isSourceModeFlg, RunAsProgrammaticChange, m_outlineManager.Refresh, p => OutlineManager.ScrollParagraphToTop(p, m_editor),
                 () => m_folderTreeManager.LoadedFolderRootPath, GetCurrentContentForFile,
-                SetFileContentForReplaceImpl, LoadFile, RunWithoutDirtyMarking, m_outlineManager.MarkSearchMatches);
+                SetFileContentForReplaceImpl, LoadFile, RunWithoutDirtyMarking, m_outlineManager.MarkSearchMatches,
+                m_outlineManager.SelectHeadingForPosition);
 
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version;
             m_outlineList.ItemsSource = m_outlineManager.Items;
@@ -949,6 +952,7 @@ namespace mde
                     m_outlineManager.Refresh();
                 }
                 m_searchReplaceService.OnDocumentReplaced();
+                m_openFindReplaceWindow?.ReapplyHighlightForCurrentFile();
 
                 m_currentFileIsDirtyFlg = false;
                 m_folderTreeManager.RefreshDirtyMarkers();
@@ -984,6 +988,7 @@ namespace mde
                 m_outlineManager.Refresh();
             }
             m_searchReplaceService.OnDocumentReplaced();
+            m_openFindReplaceWindow?.ReapplyHighlightForCurrentFile();
 
             m_currentFileIsDirtyFlg = false;
 
@@ -1619,6 +1624,109 @@ namespace mde
         private void FolderTreeLoaded(object a_sender, RoutedEventArgs a_args)
         {
             m_folderTreeScrollViewer = FindVisualChild<ScrollViewer>(m_folderTree);
+        }
+
+        /// <summary>
+        /// アウトラインペインで、指定した見出し項目を選択状態にし、見えていなければ見える位置まで
+        /// スクロールする。ListBoxは標準でScrollIntoViewを持っているため、フォルダペインの
+        /// TreeViewのような複雑なコンテナ探索は不要。エディタ側の処理と干渉しないよう、
+        /// アプリケーションが完全にアイドル状態（ApplicationIdle優先度）になってから実行する。
+        /// </summary>
+        /// <param name="a_entry">選択したい見出し項目。</param>
+        private void ScrollOutlineListToEntry(OutlineEntry a_entry)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                m_outlineList.SelectedItem = a_entry;
+                m_outlineList.ScrollIntoView(a_entry);
+            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
+        /// <summary>
+        /// 指定したファイルノードが、フォルダペイン上で見える位置になるようスクロールする
+        /// （すでに見えていれば何もしない）。すべて検索の結果一覧・次を検索/前を検索から
+        /// ファイルを開いた時など、フォルダペインで選択状態にしたファイルへ、必要な祖先フォルダの
+        /// 展開・コンテナ生成が完了してからスクロールするために、アプリケーションが完全に
+        /// アイドル状態になってから処理を始める（エディタ側の移動処理と干渉しないようにするため）。
+        /// </summary>
+        /// <param name="a_node">選択したファイルノード。</param>
+        private void ScrollFolderTreeToNode(FileSystemItem a_node)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                var path = FindPathToItem(m_folderTreeManager.Roots, a_node);
+                if (null == path)
+                {
+                    return;
+                }
+                NavigateToTreeViewItem(m_folderTree, path, 0, 0);
+            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
+        /// <summary>フォルダペインのTreeViewで、ルートから対象までの経路を1階層ずつたどりながら、
+        /// 対応するTreeViewItem（表示上のコンテナ）を探す。展開直後はまだコンテナが
+        /// 生成されていないことがあるため、生成されるまで待って再試行する。</summary>
+        /// <param name="a_current">現在の階層のItemsControl（TreeViewまたはTreeViewItem）。</param>
+        /// <param name="a_path">ルートから対象までの経路。</param>
+        /// <param name="a_index">現在探している経路上のインデックス。</param>
+        /// <param name="a_retryCount">この階層での再試行回数（無限ループ防止用）。</param>
+        private void NavigateToTreeViewItem(ItemsControl a_current, List<FileSystemItem> a_path, int a_index, int a_retryCount)
+        {
+            if (a_retryCount > 20)
+            {
+                return; // 想定外の状況が続く場合は諦める（無限ループ防止）
+            }
+
+            var container = a_current.ItemContainerGenerator.ContainerFromItem(a_path[a_index]) as TreeViewItem;
+            if (null == container)
+            {
+                // まだこの階層のコンテナが生成されていない。少し待って再試行する。
+                Dispatcher.BeginInvoke(new Action(() =>
+                    NavigateToTreeViewItem(a_current, a_path, a_index, a_retryCount + 1)),
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                return;
+            }
+
+            if (a_index == a_path.Count - 1)
+            {
+                container.BringIntoView();
+                // BringIntoViewが対象を横方向にも完全に見せようとして、横スクロールバーを
+                // 右へずらしてしまうことがあるため、その後に横スクロールだけを0へ戻す。
+                if (null != m_folderTreeScrollViewer)
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                        m_folderTreeScrollViewer.ScrollToHorizontalOffset(0)),
+                        System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                }
+                return;
+            }
+
+            // 次の階層（この項目の子）が展開・生成されるのを待ってから進む。
+            Dispatcher.BeginInvoke(new Action(() =>
+                NavigateToTreeViewItem(container, a_path, a_index + 1, 0)),
+                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
+        /// <summary>ツリーのルートから対象のデータ項目までの経路（祖先を含む一覧）を探す。</summary>
+        /// <param name="a_items">探索対象の一覧（このレベルの兄弟項目）。</param>
+        /// <param name="a_target">探したいデータ項目。</param>
+        /// <returns>ルートから対象までの経路。見つからなければnull。</returns>
+        private List<FileSystemItem> FindPathToItem(IEnumerable<FileSystemItem> a_items, FileSystemItem a_target)
+        {
+            foreach (var item in a_items)
+            {
+                if (item == a_target)
+                {
+                    return new List<FileSystemItem> { item };
+                }
+                var subPath = FindPathToItem(item.Children, a_target);
+                if (null != subPath)
+                {
+                    subPath.Insert(0, item);
+                    return subPath;
+                }
+            }
+            return null;
         }
 
         private static T FindVisualChild<T>(DependencyObject a_root) where T : DependencyObject
