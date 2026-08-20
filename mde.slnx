@@ -6,9 +6,21 @@
     <Platform Name="x86" />
   </Configurations>
   <Folder Name="/ソリューション項目/">
-    <File Path="DESIGN.md" />
     <File Path="LICENSE.txt" />
     <File Path="README.md" />
+  </Folder>
+  <Folder Name="/ソリューション項目/doc/">
+    <File Path="doc/DESIGN.md" />
+  </Folder>
+  <Folder Name="/ソリューション項目/doc/images/">
+    <File Path="doc/images/architecture.png" />
+    <File Path="doc/images/class_diagram.png" />
+    <File Path="doc/images/flow_convert.png" />
+    <File Path="doc/images/flow_nondestructive.png" />
+    <File Path="doc/images/flow_panesync.png" />
+    <File Path="doc/images/flow_save.png" />
+    <File Path="doc/images/flow_search.png" />
+    <File Path="doc/images/flow_startup.png" />
   </Folder>
   <Project Path="mde\mde.csproj" />
   <Project Path="msi/msi.wixproj" Type="b7dd6f7e-def8-4e67-b5b7-07ef123db6f0">

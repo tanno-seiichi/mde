@@ -4,7 +4,7 @@
 新しい機能を追加する時、既存の挙動を変更する時に、どのクラスが何を担当しているか、
 どういう仕組みで動いているかを把握するために使ってください。
 
-エンドユーザー向けの使い方は [`README.md`](README.md) を参照してください。
+エンドユーザー向けの使い方は [`README.md`](../README.md) を参照してください。
 
 ## 目次
 
@@ -43,51 +43,7 @@ mde は「MainWindow が全ての機能クラスを組み立てて delegate で�
 基本的に他の機能クラスを直接参照せず、コンストラクタで渡された delegate 経由でのみ協調します。
 これにより、各クラスは単体でテスト・理解しやすい単位に保たれています。
 
-```mermaid
-graph TB
-    subgraph UI["画面（XAML）"]
-        MW["MainWindow<br/>（編集領域・メニュー・ステータスバー）"]
-        FRW["FindReplaceWindow<br/>（検索と置換）"]
-    end
-
-    subgraph Core["編集ロジック（MainWindowが組み立てて配線）"]
-        MC["MarkdownConverter<br/>MarkDown ⇔ FlowDocument"]
-        TE["TableEditor<br/>表の編集"]
-        LE["ListEditor<br/>箇条書き・リスト"]
-        HCE["HeadingCodeBlockEditor<br/>見出し・コードブロック"]
-        ISE["InlineStyleEditor<br/>太字・取消線・リンク等"]
-        IM["ImageManager<br/>画像の解決・挿入・退避"]
-        SRS["SearchReplaceService<br/>検索・置換"]
-        OM["OutlineManager<br/>アウトラインペイン"]
-        FTM["FolderTreeManager<br/>フォルダペイン"]
-        OTT["OriginalTextTracker<br/>非破壊保存の記憶"]
-        LET["LineEndingTracker<br/>改行コードの記憶"]
-    end
-
-    subgraph Data["データ・設定"]
-        FD["FlowDocument<br/>（RichTextBoxの内部構造）"]
-        FS["ファイルシステム<br/>（.md ファイル群）"]
-        AS["AppSettings<br/>settings.json"]
-    end
-
-    MW -->|構築・配線| MC & TE & LE & HCE & ISE & IM & SRS & OM & FTM & OTT & LET
-    MW <--> FD
-    MW --> FRW
-    FRW -->|delegate経由| SRS
-    MC <--> FD
-    MC --> IM
-    MC --> OTT
-    TE --> FD
-    LE --> FD
-    HCE --> FD
-    ISE --> FD
-    OM --> FD
-    SRS --> FD
-    SRS -.->|LoadFile delegate| MW
-    FTM -.->|LoadFile delegate| MW
-    MW <--> FS
-    MW <--> AS
-```
+![全体アーキテクチャ図](images/architecture.png)
 
 **設計方針として一貫していること**
 
@@ -104,155 +60,7 @@ graph TB
 
 ## 3. クラス図
 
-```mermaid
-classDiagram
-    class MainWindow {
-        -RichTextBox m_editor
-        -TextBox m_sourceEditor
-        -string m_currentFilePath
-        -bool m_currentFileIsDirtyFlg
-        -Dictionary~string,string~ m_pendingFileEdits
-        +LoadFile(path)
-        +MarkDirty()
-        +RunAsProgrammaticChange(action)
-    }
-
-    class MarkdownConverter {
-        +MarkdownToDocument(markdown, document)
-        +DocumentToMarkdown(document) string
-        +BlockToMarkdown(block) string
-    }
-
-    class TableEditor {
-        +InsertTable(rows, cols)
-        +InsertRow(above)
-        +InsertColumn(left)
-        +DeleteRow()
-        +DeleteColumn()
-        +HandleArrowKey(direction) bool
-        +CopySelectedCells()
-        +PasteFromClipboard()
-    }
-
-    class ListEditor {
-        +ConvertToList(paragraph, ordered)
-        +HandleEnterKey() bool
-        +HandleTabKey(shift) bool
-    }
-
-    class HeadingCodeBlockEditor {
-        +ConvertToHeading(paragraph, level)
-        +ConvertToCodeBlock(paragraph, language)
-        +HandleEnterKey() bool
-    }
-
-    class InlineStyleEditor {
-        +ApplyStyle(style)
-        +ApplyLink(url)
-        +RemoveLink()
-        +HandleRealtimeConversion()
-    }
-
-    class ImageManager {
-        +ResolveImagePath(src) string
-        +InsertImageAtCaret(filePath)
-        +MoveTempImagesToFolder(targetDir)
-        +FindAllImages(document) IEnumerable
-    }
-
-    class SearchReplaceService {
-        -Action~TextPointer~ m_selectOutlineHeading
-        +FindNextInCurrentFile(term, cs, regex) bool
-        +FindPreviousInCurrentFile(term, cs, regex) bool
-        +HighlightAllMatchesInCurrentFile(term, cs, regex) List
-        +SelectAndScrollTo(range)
-        +FindAllInFolder(term, cs, regex) List
-        +ReplaceAllInFolder(term, repl, cs, regex) List
-        +OnDocumentReplaced()
-    }
-
-    class OutlineManager {
-        +ObservableCollection~OutlineEntry~ Items
-        +event Action~OutlineEntry~ HeadingSelected
-        +Refresh()
-        +SelectHeadingForPosition(position)
-        +MarkSearchMatches(ranges)
-        +ScrollParagraphToTop(paragraph, editor)$
-    }
-
-    class FolderTreeManager {
-        +ObservableCollection~FileSystemItem~ Roots
-        +string LoadedFolderRootPath
-        +event Action~FileSystemItem~ NodeSelected
-        +LoadFolderTree(path)
-        +SelectFileNode(filePath)
-        +HandleSelectedItemChanged(sender, args)
-        +RefreshDirtyMarkers()
-        +MarkSearchMatches(paths)
-    }
-
-    class OriginalTextTracker {
-        +Remember(block, originalText)
-        +TryGetOriginal(block) string
-        +Invalidate(block)
-    }
-
-    class LineEndingTracker {
-        +DetectAndRemember(path, content)
-        +GetFor(path) string
-        +Apply(text, lineEnding) string
-    }
-
-    class FindReplaceWindow {
-        -MainWindow m_owner
-        +ReapplyHighlightForCurrentFile()
-    }
-
-    class AppSettings {
-        +double WindowWidth
-        +double WindowHeight
-        +bool FolderPaneVisible
-        +double ZoomLevel
-        +Load()$ AppSettings
-        +Save()
-    }
-
-    class OutlineEntry {
-        +string Text
-        +int Level
-        +Paragraph Target
-        +bool IsSearchMatch
-    }
-
-    class FileSystemItem {
-        +string Name
-        +string FullPath
-        +bool IsDirectory
-        +bool IsSelected
-        +bool IsExpanded
-        +bool IsDirty
-        +ObservableCollection~FileSystemItem~ Children
-    }
-
-    MainWindow "1" *-- "1" MarkdownConverter
-    MainWindow "1" *-- "1" TableEditor
-    MainWindow "1" *-- "1" ListEditor
-    MainWindow "1" *-- "1" HeadingCodeBlockEditor
-    MainWindow "1" *-- "1" InlineStyleEditor
-    MainWindow "1" *-- "1" ImageManager
-    MainWindow "1" *-- "1" SearchReplaceService
-    MainWindow "1" *-- "1" OutlineManager
-    MainWindow "1" *-- "1" FolderTreeManager
-    MainWindow "1" *-- "1" OriginalTextTracker
-    MainWindow "1" *-- "1" LineEndingTracker
-    MainWindow "1" --> "0..1" FindReplaceWindow : 開く
-    MarkdownConverter --> OriginalTextTracker : 利用
-    MarkdownConverter --> ImageManager : 利用
-    OutlineManager "1" o-- "*" OutlineEntry
-    FolderTreeManager "1" o-- "*" FileSystemItem
-    FindReplaceWindow --> SearchReplaceService : 委譲
-    MainWindow --> AppSettings : 読み書き
-```
+![クラス図](images/class_diagram.png)
 
 ## 4. 各クラスの責務
 
@@ -299,54 +107,15 @@ classDiagram
 
 ### 6.1 起動〜ファイルを開く
 
-```mermaid
-flowchart TD
-    Start([アプリ起動]) --> LoadSettings[AppSettings.Load<br/>前回のウィンドウ状態を復元]
-    LoadSettings --> CheckArg{起動引数に<br/>ファイルパスあり?}
-    CheckArg -->|あり| LoadFile1[LoadFile 実行]
-    CheckArg -->|なし| Empty[空の新規文書を表示]
-    LoadFile1 --> ShowFolder[フォルダビューに<br/>そのフォルダを読み込む]
-
-    subgraph LoadFileFlow["LoadFile(path) の内部"]
-        direction TB
-        A[未保存の変更があれば<br/>SnapshotCurrentFileIfDirty で退避] --> B[ファイル内容を取得<br/>pendingFileEdits優先、なければディスクから読む]
-        B --> C[MarkdownConverter.MarkdownToDocument<br/>で FlowDocument を構築]
-        C --> D[OutlineManager.Refresh<br/>見出し一覧を再構築]
-        D --> E[SearchReplaceService.OnDocumentReplaced<br/>検索状態をリセット]
-        E --> F[検索ウィンドウが開いていれば<br/>ハイライトを再適用]
-        F --> G[FolderTreeManager で<br/>ダーティマーカーを更新]
-    end
-```
+![起動〜ファイルを開くフロー](images/flow_startup.png)
 
 ### 6.2 保存
 
-```mermaid
-flowchart TD
-    Start([保存 Ctrl+S]) --> Dirty{ダーティ?}
-    Dirty -->|いいえ| NoOp[何もしない]
-    Dirty -->|はい| Convert[MarkdownConverter.DocumentToMarkdown<br/>で編集済みブロックだけ再構築]
-    Convert --> LineEnding[LineEndingTracker で<br/>元の改行コードに変換]
-    LineEnding --> Images{Tempフォルダに<br/>未移動の画像あり?}
-    Images -->|あり| MoveImg[ImageManager.MoveTempImagesToFolder<br/>images フォルダへ移動]
-    Images -->|なし| Write
-    MoveImg --> Write[ファイルへ書き込み]
-    Write --> ClearDirty[ダーティフラグ解除<br/>フォルダビューの'*'を消す]
-```
+![保存フロー](images/flow_save.png)
 
 ### 6.3 MarkDown → FlowDocument 変換の概略
 
-```mermaid
-flowchart LR
-    MD[MarkDownテキスト] --> Split[行単位でブロックの<br/>種類を判定]
-    Split --> H["見出し(#)"]
-    Split --> CB["コードブロック(フェンス3つ)"]
-    Split --> L["リスト(*/-/1.)"]
-    Split --> T["表(|...|)"]
-    Split --> P[通常の段落]
-    H & CB & L & T & P --> Inline[インライン解析<br/>太字・取消線・コード・リンク]
-    Inline --> Remember[OriginalTextTracker に<br/>ブロックの元テキストを記憶]
-    Remember --> FD[FlowDocument として構築]
-```
+![MarkDown変換フロー](images/flow_convert.png)
 
 逆方向（`DocumentToMarkdown`）では、`OriginalTextTracker` に記憶されている「未編集」ブロックは
 元テキストをそのまま使い、編集されたブロックだけを `FlowDocument` の現在の内容から MarkDown へ
@@ -358,16 +127,7 @@ flowchart LR
 `OriginalTextTracker` が記憶します。保存時、そのブロックが編集されていなければ記憶した元テキストを
 そのまま書き出し、編集されていれば `FlowDocument` の現在の内容から MarkDown を再構築します。
 
-```mermaid
-flowchart TD
-    Load[ファイル読み込み時] --> Remember["各ブロックごとに<br/>OriginalTextTracker.Remember(block, 元テキスト)"]
-    Edit[ユーザーが編集] --> Invalidate["編集されたブロックだけ<br/>OriginalTextTracker.Invalidate(block)<br/>（記憶から除外）"]
-    Save[保存時] --> Check{そのブロックは<br/>記憶が残っている?}
-    Check -->|残っている<br/>＝未編集| UseOriginal[記憶していた<br/>元テキストをそのまま使う]
-    Check -->|除外されている<br/>＝編集済み| Rebuild[FlowDocumentの現在の内容から<br/>MarkDownを再構築]
-    UseOriginal --> Output[出力に追加]
-    Rebuild --> Output
-```
+![非破壊保存の仕組み](images/flow_nondestructive.png)
 
 **この仕組みが必要な理由**：MarkDown には同じ見た目を表現する書き方が複数存在します
 （例：箇条書きの `*` と `-`、番号付きリストの連番か `1.` の繰り返しか、表のセル内の余白の
@@ -385,21 +145,7 @@ flowchart TD
 `SearchReplaceService` が唯一の検索・置換ロジックの実装です。`FindReplaceWindow` は状態管理と
 UI 表示のみを担当し、実際の検索・置換はすべてこのクラスに委譲します。
 
-```mermaid
-flowchart TD
-    Open[検索と置換ウィンドウを開く] --> Scope{対象範囲}
-    Scope -->|現在のファイル| CurFile[FindNextInCurrentFile<br/>FindPreviousInCurrentFile<br/>HighlightAllMatchesInCurrentFile]
-    Scope -->|フォルダ全体| Folder[FindAllInFolder<br/>ファイルを開かずにテキストとして走査]
-
-    CurFile --> Editor[エディタ内で直接<br/>ハイライト・スクロール]
-
-    Folder --> ResultList[結果一覧に<br/>ファイルパス＋件数を表示]
-    ResultList -->|ダブルクリック| OpenAndJump["OpenFileForFindReplace →<br/>HighlightAllMatchesInCurrentFile →<br/>SelectAndScrollTo"]
-    ResultList -->|次を検索/前を検索| WalkFiles["ファイルを1つずつ開きながら<br/>一致箇所をたどる<br/>(FindNextInFolder/FindPreviousInFolder)"]
-
-    OpenAndJump --> SyncPanes[フォルダペイン・アウトラインペインの<br/>選択状態も追従させる]
-    WalkFiles --> SyncPanes
-```
+![検索・置換フロー](images/flow_search.png)
 
 **フォルダ全体の置換は保存されるまでファイルに書き出されない**：`SearchReplaceService` は
 `pendingFileEdits`（`MainWindow` が保持する `Dictionary<string, string>`）にメモリ上でのみ
@@ -416,37 +162,22 @@ flowchart TD
 検索結果へジャンプした時など、エディタ内の特定の位置へ移動したのに合わせて、フォルダビュー・
 アウトラインビューの選択状態も追従させる仕組みです。
 
-```mermaid
-sequenceDiagram
-    participant SRS as SearchReplaceService
-    participant OM as OutlineManager
-    participant FTM as FolderTreeManager
-    participant MW as MainWindow
+![選択追従の仕組み](images/flow_panesync.png)
 
-    SRS->>SRS: SelectAndScrollTo(range)<br/>エディタのキャレット・スクロールを移動
-    SRS->>OM: SelectHeadingForPosition(position)
-    OM->>OM: 最も近い手前の見出しを探す
-    OM-->>MW: event HeadingSelected(entry)
-    MW->>MW: ScrollOutlineListToEntry<br/>（ApplicationIdle優先度で実行）
-
-    Note over SRS,FTM: フォルダペインの選択は、呼び出し側<br/>（FindReplaceWindow）が別途SelectFileNodeを呼ぶ
-    FTM->>FTM: SelectFileNode(path)<br/>IsSelected/IsExpandedを設定
-    FTM-->>MW: event NodeSelected(node)
-    MW->>MW: ScrollFolderTreeToNode<br/>（ApplicationIdle優先度で実行）
-```
-
-`ApplicationIdle` 優先度を使っている理由や、ここで過去に起きた不具合については
-[14.3 節](#143-フォルダペインの選択とエディタの操作を同時に行うと干渉する)を参照してください。
+`ApplicationIdle` 優先度を使っている理由や、`SuppressNextSelectionNavigation()` が必要な理由など、
+ここで過去に起きた不具合については [14.1〜14.3 節](#141-プログラム側からのuiの状態変更が-ユーザー操作用のイベントも発火させてしまう)
+を参照してください。
 
 ## 10. 画像の扱い
 
-```mermaid
-flowchart TD
-    Drop[画像をドラッグ&ドロップ] --> TempCopy["OSのTempフォルダへコピー<br/>%TEMP%\\mde\\ウィンドウ固有ID\\"]
-    TempCopy --> Insert[FlowDocumentにImage要素として挿入<br/>ImageInfoに元情報を記録]
-    Insert --> Edit{保存する?}
-    Edit -->|いいえ| Discard[Tempのファイルは残るが<br/>実ファイルには一切影響なし]
-    Edit -->|はい| Move["ImageManager.MoveTempImagesToFolder<br/>ファイルと同じフォルダのimagesへ移動<br/>同名衝突時は連番を付与"]
+```
+画像をドラッグ&ドロップ
+   → OSのTempフォルダへコピー（%TEMP%\mde\ウィンドウ固有ID\）
+   → FlowDocumentにImage要素として挿入（ImageInfoに元情報を記録）
+   → 保存する？
+       いいえ → Tempのファイルは残るが実ファイルには一切影響なし
+       はい   → ImageManager.MoveTempImagesToFolder で
+                ファイルと同じフォルダのimagesへ移動（同名衝突時は連番を付与）
 ```
 
 ウィンドウを閉じるときに、そのウィンドウ専用の Temp サブフォルダは自動的に削除されます
@@ -499,7 +230,16 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 このプロジェクトの開発を通じて実際に発生した不具合とその原因をまとめています。似たような
 実装をする際の参考にしてください。
 
-### 14.1 `TreeView`/`ListBox` の `IsSelected` を直接設定すると、ユーザー操作用のイベントも発火する
+### 14.1 プログラム側からのUIの状態変更が、ユーザー操作用のイベントも発火させてしまう
+
+これは、このプロジェクトで**最も繰り返し発生した不具合のパターン**です。2つの独立した実例
+（14.1a、14.1b）で発生しました。どちらも、「表示を今の状態に合わせて更新したいだけ」で
+`SelectedItem` や `IsSelected` などのUI依存プロパティを**プログラム側から**変更したところ、
+**ユーザーが手で操作した時と同じイベントが発火し**、そのイベントハンドラが持つ「ユーザー操作
+としての意味」（ファイルを開く、見出しの位置へジャンプする、等）が意図せず実行されてしまう、
+という共通の構造を持っています。
+
+#### 14.1a `TreeView` の `IsSelected` を直接設定すると、ファイルが再読み込みされる
 
 `FolderTreeManager.SelectFileNode()` のように、プログラム側から `FileSystemItem.IsSelected = true`
 を設定すると、データバインディングされている `TreeViewItem.IsSelected` も連動して変化し、
@@ -512,9 +252,50 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 不具合が実際に発生しました。
 
 対策として、`HandleSelectedItemChanged` では「選択されたファイルが既に開いているファイルと
-同じであれば、再読み込みしない」ガードを入れています。**プログラム側から選択状態だけを
-変更したい場合、対応するイベントハンドラが不要な副作用（再読み込みなど）を起こさないか、
-必ず確認してください。**
+同じであれば、再読み込みしない」ガードを入れています。
+
+#### 14.1b `ListBox` の `SelectedItem` を直接設定すると、エディタのキャレットが動く
+
+アウトラインペインには、元々「見出しをユーザーがクリックしたら、エディタをその見出しの
+先頭までジャンプさせる」という `SelectionChanged` イベントハンドラ
+（`OutlineManager.HandleSelectionChanged`、`m_editor.CaretPosition = entry.Target.ContentStart`
+を実行する）がありました。
+
+検索結果に合わせてアウトラインペインの選択状態を表示に反映するため、プログラム側から
+`m_outlineList.SelectedItem = entry;` を設定したところ、**この同じイベントハンドラが発火し**、
+検索でヒットした位置ではなく、**その見出し自体の先頭**へエディタのキャレットが上書きされて
+しまう不具合が発生しました。14.1a の修正（フォルダペイン側）を先に行った後も、この
+アウトラインペイン側は見過ごされたまま残っていたため、原因の特定にかなりの時間を要しました。
+
+対策として、`OutlineManager` に「次の1回だけ `SelectionChanged` のナビゲーション処理を抑止する」
+フラグ（`SuppressNextSelectionNavigation()`）を追加し、プログラム側から `SelectedItem` を
+設定する直前に必ずこれを呼ぶようにしています。
+
+```csharp
+// OutlineManager.cs
+public void SuppressNextSelectionNavigation()
+{
+    m_suppressSelectionNavigationFlg = true;
+}
+
+public void HandleSelectionChanged(object a_sender, SelectionChangedEventArgs a_args)
+{
+    if (m_suppressSelectionNavigationFlg)
+    {
+        m_suppressSelectionNavigationFlg = false;
+        return; // プログラム側からの変更なので、ナビゲーションは行わない
+    }
+    // ここから先は、ユーザーが実際にクリックした場合の処理
+    ...
+}
+```
+
+**教訓**：`TreeView`/`ListBox`/`ComboBox` など、「選択」の概念を持つ WPF コントロールでは、
+`SelectedItem`/`IsSelected` の変更は、プログラム側から行った場合とユーザー操作の場合を
+**コントロール自身は区別してくれません**。同じプロパティを操作する既存のイベントハンドラが
+「ユーザーが選ぶ」という前提で書かれていないか、新しくプログラム側から状態を更新する処理を
+追加する前に必ず確認してください。区別が必要な場合は、14.1b のような一時的な抑止フラグを
+使うのが簡単で確実です。
 
 ### 14.2 `BringIntoView()` はファイルを開いた直後だと正しい位置を認識できないことがある
 
@@ -526,7 +307,7 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 ペイン・アウトラインペインへの反映）」を明確に分離し、後者を `DispatcherPriority.ApplicationIdle`
 （アプリケーションが完全にアイドル状態になってから実行される、最も低い優先度）で遅延実行する」**
 という方針で解決しました。`Dispatcher.BeginInvoke` の優先度を `Loaded` や `Background` に
-調整するだけでは不十分だった一方、そもそも問題の本質は 14.1 節の「不要な再読み込み」だった、
+調整するだけでは不十分だった一方、そもそも問題の本質は 14.1 節の「不要な副作用」だった、
 という経緯があります。表示位置がおかしいと感じたら、まず「本当にタイミングの問題か、それとも
 どこかで不要な処理が呼ばれていないか」を疑ってください。
 
@@ -579,6 +360,29 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 大規模な自動変換を行う場合は、1ファイルで試してから全体に適用し、適用後は必ず全ファイルで
 かっこの対応（`{`/`}`、`(`/`)`）を機械的に数えて検証してください。
 
+### 14.9 ループの中で毎回スケジュールする遅延処理は、古い状態を参照したまま実行されることがある
+
+フォルダ全体を対象にした「次を検索」は、一致するファイルが見つかるまで**複数のファイルを
+順番にチェックする**ループになっています。当初はこのループの**チェックした全てのファイル**
+（一致しなかったファイルも含む）に対して、`Dispatcher.BeginInvoke(..., ApplicationIdle)` で
+フォルダペインの選択状態を更新する処理をスケジュールしていました。
+
+`ApplicationIdle` は非常に優先度が低いため、これらの遅延処理は実際には**ループが終わって
+関数から抜けた後**、まとめて実行されます。ところが、ループの各回で「その時点の現在ファイル」
+を基準にした処理（今回の場合はファイルの再読み込みガード）は、**遅延処理が実行される時点では
+状態が先へ進んでしまっている**ため、手前で一致しなかった古いファイルの選択処理が、最終的に
+表示されている（一致した）ファイルよりも**後から**動いてしまい、そのファイルを不要に再読み込みして
+キャレット位置をリセットしてしまう、という不具合が発生しました。
+
+対策として、ループの途中でチェックしただけのファイルに対しては遅延処理をスケジュールせず、
+**実際に一致箇所が見つかった、ループを抜ける直前の1回だけ**スケジュールするように修正しました。
+
+**教訓**：ループや再試行処理の中で `Dispatcher.BeginInvoke` 等の遅延処理をスケジュールする場合、
+「いつ実行されるか」だけでなく「実行される時点で、キャプチャした変数やその時点の外部状態が
+まだ有効か」を必ず検討してください。低い優先度で遅延させるほど、この種のズレは起きやすく
+なります。ループの中で無条件にスケジュールするのではなく、本当に必要な最後の1回だけに
+絞り込めないか検討するのが安全です。
+
 ## 15. 既知の制約
 
 - ブロックとブロックの間の空行の数は、編集の有無にかかわらず1行の空行に統一されます。
@@ -605,8 +409,12 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 4. **UI の同時更新は避ける**：エディタの操作と、フォルダペイン／アウトラインペインなど
    他の UI 要素の更新を同時に行う場合は、14.2〜14.3節の教訓を踏まえ、優先度やタイミングを
    意図的に分離してください。
-5. **命名規則・記述スタイルを守る**：12章のコーディング規約に従ってください。
-6. **大規模な自動変換は段階的に検証する**：14.8節を参照してください。
-7. **このドキュメントを更新する**：新しい仕組みを追加した場合、特に「他のクラスと連携する
+5. **プログラム側からのUI状態変更に注意する**：`SelectedItem`/`IsSelected` などを
+   プログラム側から変更する前に、対応するイベントハンドラが「ユーザー操作」を前提に
+   書かれていないか確認してください（14.1節）。
+6. **命名規則・記述スタイルを守る**：12章のコーディング規約に従ってください。
+7. **大規模な自動変換は段階的に検証する**：14.8節を参照してください。
+8. **ループの中の遅延処理は最小限に**：14.9節を参照してください。
+9. **このドキュメントを更新する**：新しい仕組みを追加した場合、特に「他のクラスと連携する
    処理」「タイミングに関する工夫」「はまりやすい落とし穴」は、この資料に追記しておくと
    将来の自分（またはこの会話の続きを引き継ぐ別のセッション）が助かります。
