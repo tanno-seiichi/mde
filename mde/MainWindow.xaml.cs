@@ -63,6 +63,7 @@ namespace mde
 
         /// <summary>エディタに適用中のズーム倍率（1.0が100%）。</summary>
         private double m_zoomLevel = 1.0;
+        private double m_editorLineHeight = 26;
 
         /// <summary>このウィンドウ専用の一時フォルダ識別子（複数ウィンドウを同時に開いた際、
         /// ドラッグ挿入した画像のファイル名が衝突しないようにするため）。</summary>
@@ -121,6 +122,8 @@ namespace mde
             this.Width = m_savedSettings.WindowWidth;
             this.Height = m_savedSettings.WindowHeight;
             m_zoomLevel = m_savedSettings.ZoomLevel;
+            m_editorLineHeight = m_savedSettings.EditorLineHeight > 0 ? m_savedSettings.EditorLineHeight : 26;
+            ApplyEditorLineHeight(m_editorLineHeight);
             m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
             m_outlinePaneVisibleFlg = m_savedSettings.OutlinePaneVisible;
             if (m_savedSettings.FolderPaneWidth > 0)
@@ -273,7 +276,8 @@ namespace mde
                 OutlinePaneVisible = m_outlinePaneVisibleFlg,
                 FolderPaneWidth = folderWidthToSave,
                 OutlinePaneWidth = outlineWidthToSave,
-                ZoomLevel = m_zoomLevel
+                ZoomLevel = m_zoomLevel,
+                EditorLineHeight = m_editorLineHeight
             };
             settings.Save();
         }
@@ -1501,6 +1505,46 @@ namespace mde
         {
             var aboutWindow = new AboutWindow { Owner = this };
             aboutWindow.ShowDialog();
+        }
+
+        /// <summary>メニュー「表示」→「行間を設定…」。ダイアログを開き、ライブプレビュー
+        /// しながら行間を調整できるようにする。OKで確定した値を記憶し、次回起動時にも
+        /// 復元されるようにする。</summary>
+        /// <param name="a_sender">「行間を設定…」メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void LineHeightBtnClick(object a_sender, RoutedEventArgs a_args)
+        {
+            var dialog = new LineHeightDialog(m_editorLineHeight, ApplyEditorLineHeight) { Owner = this };
+            if (true == dialog.ShowDialog())
+            {
+                m_editorLineHeight = dialog.LineHeightValue;
+            }
+            ApplyEditorLineHeight(m_editorLineHeight);
+        }
+
+        /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。</summary>
+        /// <param name="a_value">設定したい行間の値。</param>
+        /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。あわせて、
+        /// 段落・リスト・表どうしの間の余白も、既定の行間（26）に対する比率を保ったまま
+        /// 連動して縮小・拡大させる（行間だけ詰めても、別々の段落・行の間の余白が広いままだと
+        /// 見た目のまとまりが悪くなるため）。</summary>
+        /// <param name="a_value">設定したい行間の値。</param>
+        /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。
+        /// 段落内で行が折り返された時の間隔は LineHeight そのもので決まる一方、段落と段落の
+        /// 間の間隔は「前の段落のLineHeight」＋「段落の余白（Margin）」の合計になる。この2つを
+        /// 同じ間隔に揃えるため、段落・リスト・表どうしの間の余白は0にし、間隔をLineHeightだけで
+        /// 統一している。</summary>
+        /// <param name="a_value">設定したい行間の値。</param>
+        /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。
+        /// 段落と段落の間の余白（Margin）は、行間そのものと同じ値にする。これにより、
+        /// 元のMarkDownで段落間に空行が1行あった場合、それが「行の高さ1つ分の空白」として
+        /// 見える（プレーンテキストエディタで見た時の空行と同じ見え方になる）。また、行間の
+        /// 設定を変えても、常にこの比例関係が保たれる。</summary>
+        /// <param name="a_value">設定したい行間の値。</param>
+        private void ApplyEditorLineHeight(double a_value)
+        {
+            Resources["EditorLineHeight"] = a_value;
+            Resources["EditorBlockSpacing"] = new Thickness(0, 0, 0, a_value);
         }
 
         // ======================================================================

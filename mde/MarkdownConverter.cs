@@ -441,7 +441,7 @@ namespace mde
                     var headerRow = new TableRow();
                     foreach (var txt in headerCells)
                     {
-                        var hp = new Paragraph();
+                        var hp = new Paragraph { Margin = new Thickness(0) };
                         AppendInlineMarkdownToParagraph(hp, txt, false);
                         var cell = new TableCell(hp)
                         {
@@ -461,7 +461,7 @@ namespace mde
                         var row = new TableRow();
                         foreach (var txt in cellTexts)
                         {
-                            var cp = new Paragraph();
+                            var cp = new Paragraph { Margin = new Thickness(0) };
                             AppendInlineMarkdownToParagraph(cp, txt, false);
                             var cell = new TableCell(cp)
                             {
@@ -479,10 +479,21 @@ namespace mde
                     continue;
                 }
 
-                var para = new Paragraph();
-                AppendInlineMarkdownToParagraph(para, line, false);
-                a_doc.Blocks.Add(para);
+                // 通常の段落：空行や、次の別種のブロックを示す行が現れるまで、連続する行を
+                // まとめて1つの段落にする（内部的には行ごとにLineBreakでつなぐ）。1行ずつ
+                // 別々の段落にしてしまうと、元のファイルでは単純な改行だった箇所が、保存や
+                // ソースモード表示のたびに「空行付きの段落区切り」として書き出されてしまい、
+                // 元のファイルに存在しない空行が増えてしまう。
+                var paraLines = new List<string> { line };
                 i++;
+                while (i < lines.Length && !IsBlockBoundaryLine(lines[i]))
+                {
+                    paraLines.Add(lines[i]);
+                    i++;
+                }
+                var para = new Paragraph();
+                AppendInlineMarkdownToParagraph(para, string.Join("\n", paraLines), false);
+                a_doc.Blocks.Add(para);
                 m_originalTextTracker.Record(para, lines, blockStart, i);
             }
 
@@ -497,6 +508,38 @@ namespace mde
         /// <summary>"| a | b | c |" 形式の表の行を、各セルのテキストへ分割する。</summary>
         /// <param name="a_line">対象の行。</param>
         /// <returns>各セルのテキストの一覧。</returns>
+        /// <summary>
+        /// 通常の段落を組み立てている最中に、この行で段落を打ち切るべきかどうかを判定する。
+        /// 空行のほか、見出し・コードブロック・箇条書き・表など、他の種類のブロックの開始を
+        /// 示す行であれば true を返す。
+        /// </summary>
+        /// <param name="a_line">判定したい行。</param>
+        /// <returns>この行より前で段落を打ち切るべきなら true。</returns>
+        private bool IsBlockBoundaryLine(string a_line)
+        {
+            if (string.IsNullOrWhiteSpace(a_line))
+            {
+                return true;
+            }
+            if (a_line.TrimStart().StartsWith("```"))
+            {
+                return true;
+            }
+            if (Regex.IsMatch(a_line, "^(#{1,6})\\s+"))
+            {
+                return true;
+            }
+            if (Regex.IsMatch(a_line, "^\\s*([*-]|\\d+\\.)\\s+"))
+            {
+                return true;
+            }
+            if (a_line.TrimStart().StartsWith("|"))
+            {
+                return true;
+            }
+            return false;
+        }
+
         private List<string> ParseTableRow(string a_line)
         {
             string t = a_line.Trim();
@@ -591,7 +634,7 @@ namespace mde
                         nums.Add(int.Parse(m.Groups[3].Value));
                     }
 
-                    var para = new Paragraph();
+                    var para = new Paragraph { Margin = new Thickness(0) };
                     top.list.ListItems.Add(new ListItem(para));
 
                     pendingPara = para;

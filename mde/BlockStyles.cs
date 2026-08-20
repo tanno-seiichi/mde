@@ -43,7 +43,12 @@ namespace mde
             {
                 a_p.FontSize = 16;
                 a_p.FontWeight = FontWeights.Normal;
-                a_p.Margin = new Thickness(0, 0, 0, 14);
+                // Marginはここでは明示的に設定しない。RichTextBoxのStyle側で
+                // EditorBlockSpacing（行間と連動する動的リソース）による値が適用される
+                // ことで、段落と段落の間の間隔が、段落内で折り返された行同士の間隔と
+                // 揃うようにしている（ここでローカル値として設定すると、そちらを
+                // 上書きしてしまい、連動しなくなる）。
+                a_p.ClearValue(Paragraph.MarginProperty);
             }
             else
             {

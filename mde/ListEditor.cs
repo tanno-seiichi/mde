@@ -62,7 +62,7 @@ namespace mde
             m_runAsProgrammaticChange(() =>
             {
                 Block prev = a_p.PreviousBlock;
-                var newLiPara = new Paragraph();
+                var newLiPara = new Paragraph { Margin = new Thickness(0) };
                 var newLi = new ListItem(newLiPara);
 
                 if (prev is List prevList &&
@@ -197,7 +197,7 @@ namespace mde
                 }
                 else
                 {
-                    var newLi = new ListItem(new Paragraph());
+                    var newLi = new ListItem(new Paragraph { Margin = new Thickness(0) });
                     var items = a_parentList.ListItems.Cast<ListItem>().ToList();
                     int idx = items.IndexOf(a_li);
                     a_parentList.ListItems.Clear();

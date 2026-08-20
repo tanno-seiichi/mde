@@ -196,7 +196,7 @@ namespace mde
             var headerRow = new TableRow();
             for (int c = 0; c < a_cols; c++)
             {
-                var cell = new TableCell(new Paragraph())
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0) })
                 {
                     FontWeight = FontWeights.Bold,
                     Background = HEADER_BACKGROUND,
@@ -213,7 +213,7 @@ namespace mde
                 var row = new TableRow();
                 for (int c = 0; c < a_cols; c++)
                 {
-                    var cell = new TableCell(new Paragraph())
+                    var cell = new TableCell(new Paragraph { Margin = new Thickness(0) })
                     {
                         BorderBrush = CELL_BORDER,
                         BorderThickness = new Thickness(1),
@@ -270,7 +270,7 @@ namespace mde
             var newRow = new TableRow();
             for (int c = 0; c < colCount; c++)
             {
-                var cell = new TableCell(new Paragraph())
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0) })
                 {
                     BorderBrush = CELL_BORDER,
                     BorderThickness = new Thickness(1),
@@ -321,7 +321,7 @@ namespace mde
             for (int r = 0; r < rows.Count; r++)
             {
                 var targetRow = rows[r];
-                var cell = new TableCell(new Paragraph())
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0) })
                 {
                     BorderBrush = CELL_BORDER,
                     BorderThickness = new Thickness(1),
