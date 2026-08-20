@@ -422,8 +422,10 @@ namespace mde
         }
 
         /// <summary>現在の文書内で、指定した見出しテキストまたはカスタムアンカー（&lt;a a_id&gt;）に
-        /// 一致するジャンプ先を探し、そこまでスクロールする。</summary>
-        /// <param name="a_anchor">見出しの完全なテキスト、またはアンカーのid。</param>
+        /// 一致するジャンプ先を探し、そこまでスクロールする。見出しの完全なテキストとの一致に
+        /// 加えて、GitHub等が見出しから自動生成する「スラッグ」形式のアンカー（例：
+        /// 見出し「7. 依存ライブラリ」に対する #7-依存ライブラリ）にも対応する。</summary>
+        /// <param name="a_anchor">見出しの完全なテキスト、見出しのスラッグ、またはアンカーのid。</param>
         public void JumpToAnchor(string a_anchor)
         {
             a_anchor = a_anchor.Trim();
@@ -432,6 +434,7 @@ namespace mde
                 return;
             }
 
+            Paragraph slugMatch = null;
             foreach (Block block in m_editor.Document.Blocks)
             {
                 if (block is Paragraph p && p.Tag is int level && level > 0)
@@ -443,7 +446,20 @@ namespace mde
                         OutlineManager.ScrollParagraphToTop(p, m_editor);
                         return;
                     }
+                    // 完全一致が見つからない場合に備えて、GitHub形式のスラッグが一致する
+                    // 最初の見出しを覚えておく（このループの後半で他の見出しが完全一致する
+                    // 可能性がまだ残っているため、ここでは即座にジャンプしない）。
+                    if (null == slugMatch && SlugifyHeading(text) == a_anchor)
+                    {
+                        slugMatch = p;
+                    }
                 }
+            }
+            if (null != slugMatch)
+            {
+                m_editor.CaretPosition = slugMatch.ContentStart;
+                OutlineManager.ScrollParagraphToTop(slugMatch, m_editor);
+                return;
             }
 
             Run anchorRun = FindAnchorRun(m_editor.Document, a_anchor);
@@ -460,6 +476,28 @@ namespace mde
                     OutlineManager.ScrollParagraphToTop(anchorPara, m_editor);
                 }
             }
+        }
+
+        /// <summary>
+        /// 見出しのテキストから、GitHub等が採用している方式に近いアンカー用スラッグを生成する。
+        /// 小文字化した上で、英数字・アンダースコア・ハイフン・空白・Unicodeの文字（日本語等）
+        /// 以外の記号を取り除き、空白をハイフンに置き換える。
+        /// </summary>
+        /// <param name="a_headingText">見出しの完全なテキスト。</param>
+        /// <returns>アンカー用のスラッグ文字列。</returns>
+        private static string SlugifyHeading(string a_headingText)
+        {
+            string lower = a_headingText.ToLowerInvariant();
+            var sb = new StringBuilder();
+            foreach (char c in lower)
+            {
+                if (char.IsLetterOrDigit(c) || '_' == c || '-' == c || ' ' == c)
+                {
+                    sb.Append(c);
+                }
+                // それ以外の記号（. , ( ) 「」 ： 等）は読み飛ばす（GitHubの挙動に合わせる）。
+            }
+            return sb.ToString().Trim().Replace(' ', '-');
         }
 
         private Run FindAnchorRun(FlowDocument a_doc, string a_id)
