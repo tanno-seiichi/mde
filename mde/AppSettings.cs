@@ -25,6 +25,7 @@ namespace mde
         public double OutlinePaneWidth { get; set; } = 200;
         public double ZoomLevel { get; set; } = 1.0;
         public double EditorLineHeight { get; set; } = 26;
+        public bool RequireCtrlForLinkClickFlg { get; set; } = true;
 
         private static string SettingsPath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mde", "settings.json");

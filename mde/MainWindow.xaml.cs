@@ -64,6 +64,7 @@ namespace mde
         /// <summary>エディタに適用中のズーム倍率（1.0が100%）。</summary>
         private double m_zoomLevel = 1.0;
         private double m_editorLineHeight = 26;
+        private bool m_requireCtrlForLinkClickFlg = true;
 
         /// <summary>このウィンドウ専用の一時フォルダ識別子（複数ウィンドウを同時に開いた際、
         /// ドラッグ挿入した画像のファイル名が衝突しないようにするため）。</summary>
@@ -123,7 +124,9 @@ namespace mde
             this.Height = m_savedSettings.WindowHeight;
             m_zoomLevel = m_savedSettings.ZoomLevel;
             m_editorLineHeight = m_savedSettings.EditorLineHeight > 0 ? m_savedSettings.EditorLineHeight : 26;
+            m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
             ApplyEditorLineHeight(m_editorLineHeight);
+            UpdateLinkModeMenuChecks();
             m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
             m_outlinePaneVisibleFlg = m_savedSettings.OutlinePaneVisible;
             if (m_savedSettings.FolderPaneWidth > 0)
@@ -155,7 +158,7 @@ namespace mde
             m_inlineStyleEditor = new InlineStyleEditor(
                 m_editor, m_originalTextTracker, RunAsProgrammaticChange, MarkDirty, m_outlineManager.Refresh,
                 m_markdownConverter.BlockToMarkdown, () => m_currentFileDirectory, LoadFile,
-                m_folderTreeManager.IsWithinLoadedFolder, OpenFileInNewWindow);
+                m_folderTreeManager.IsWithinLoadedFolder, OpenFileInNewWindow, () => m_requireCtrlForLinkClickFlg);
             m_searchReplaceService = new SearchReplaceService(
                 m_editor, m_sourceEditor, m_markdownConverter, m_originalTextTracker, m_lineEndingTracker,
                 () => m_isSourceModeFlg, RunAsProgrammaticChange, m_outlineManager.Refresh, p => OutlineManager.ScrollParagraphToTop(p, m_editor),
@@ -277,7 +280,8 @@ namespace mde
                 FolderPaneWidth = folderWidthToSave,
                 OutlinePaneWidth = outlineWidthToSave,
                 ZoomLevel = m_zoomLevel,
-                EditorLineHeight = m_editorLineHeight
+                EditorLineHeight = m_editorLineHeight,
+                RequireCtrlForLinkClickFlg = m_requireCtrlForLinkClickFlg
             };
             settings.Save();
         }
@@ -1520,6 +1524,32 @@ namespace mde
                 m_editorLineHeight = dialog.LineHeightValue;
             }
             ApplyEditorLineHeight(m_editorLineHeight);
+        }
+
+        /// <summary>メニュー「表示」→「リンクの開き方」→「Ctrl+クリックで開く」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void LinkModeCtrlClickChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            m_requireCtrlForLinkClickFlg = true;
+            UpdateLinkModeMenuChecks();
+        }
+
+        /// <summary>メニュー「表示」→「リンクの開き方」→「クリックのみで開く」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void LinkModeClickOnlyChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            m_requireCtrlForLinkClickFlg = false;
+            UpdateLinkModeMenuChecks();
+        }
+
+        /// <summary>「リンクの開き方」メニューの2項目を、現在の設定に合わせてラジオボタンのように
+        /// 片方だけチェック状態にする。</summary>
+        private void UpdateLinkModeMenuChecks()
+        {
+            m_linkModeCtrlClickMenuItem.IsChecked = m_requireCtrlForLinkClickFlg;
+            m_linkModeClickOnlyMenuItem.IsChecked = !m_requireCtrlForLinkClickFlg;
         }
 
         /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。</summary>

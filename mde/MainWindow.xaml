@@ -47,6 +47,13 @@
             <MenuItem Header="検索と置換(_F)" Click="FindReplaceBtnClick" InputGestureText="Ctrl+F"/>
             <MenuItem Header="表示(_V)">
                 <MenuItem Header="行間を設定…(_L)" Click="LineHeightBtnClick"/>
+                <Separator/>
+                <MenuItem Header="リンクの開き方">
+                    <MenuItem x:Name="m_linkModeCtrlClickMenuItem" Header="Ctrl+クリックで開く(_C)"
+                              IsCheckable="True" Click="LinkModeCtrlClickChecked"/>
+                    <MenuItem x:Name="m_linkModeClickOnlyMenuItem" Header="クリックのみで開く(_O)"
+                              IsCheckable="True" Click="LinkModeClickOnlyChecked"/>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="バージョン情報(_A)" Click="VersionInfoBtnClick"/>
         </Menu>

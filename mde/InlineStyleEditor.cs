@@ -54,6 +54,7 @@ namespace mde
         private readonly Action<string> m_loadFile;
         private readonly Func<string, bool> m_isWithinLoadedFolder;
         private readonly Action<string, string> m_openInNewWindow;
+        private readonly Func<bool> m_requireCtrlForLinkClick;
 
         /// <summary>
         /// InlineStyleEditorを構築する。
@@ -78,7 +79,8 @@ namespace mde
             Func<string> a_getCurrentFileDirectory,
             Action<string> a_loadFile,
             Func<string, bool> a_isWithinLoadedFolder,
-            Action<string, string> a_openInNewWindow)
+            Action<string, string> a_openInNewWindow,
+            Func<bool> a_requireCtrlForLinkClick)
         {
             this.m_editor = a_editor;
             this.m_originalTextTracker = a_originalTextTracker;
@@ -90,6 +92,7 @@ namespace mde
             this.m_loadFile = a_loadFile;
             this.m_isWithinLoadedFolder = a_isWithinLoadedFolder;
             this.m_openInNewWindow = a_openInNewWindow;
+            this.m_requireCtrlForLinkClick = a_requireCtrlForLinkClick;
         }
 
         // ======================================================================
@@ -576,13 +579,15 @@ namespace mde
             return null;
         }
 
-        /// <summary>Ctrl+クリックでリンクを開く。Ctrl無しのクリックは通常のキャレット移動に
+        /// <summary>クリックでリンクを開く。動作は設定（Ctrl+クリックが必要か、クリックのみで
+        /// 開くか）によって切り替わる。条件を満たさないクリックは通常のキャレット移動に
         /// 任せ、何もしない。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         public void HandlePreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args)
         {
-            if (Keyboard.Modifiers != ModifierKeys.Control)
+            bool requireCtrlFlg = m_requireCtrlForLinkClick?.Invoke() ?? true;
+            if (requireCtrlFlg && Keyboard.Modifiers != ModifierKeys.Control)
             {
                 return;
             }
