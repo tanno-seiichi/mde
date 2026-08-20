@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -423,11 +424,22 @@ namespace mde
             return item;
         }
 
+        /// <summary>
+        /// Windowsのエクスプローラーが採用している「自然順ソート」（"2" が "10" より前に来る、
+        /// 数字部分を数値として比較する並び順）と完全に一致させるため、エクスプローラー自身が
+        /// 内部で使っているものと同じ shlwapi.dll の StrCmpLogicalW をそのまま利用する。
+        /// </summary>
+        [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
+        private static extern int StrCmpLogicalW(string a_x, string a_y);
+
+        /// <summary>ファイル名・フォルダ名を、エクスプローラーと同じ自然順で比較するコンパレータ。</summary>
+        private static readonly Comparison<string> s_naturalCompare = (a_x, a_y) => StrCmpLogicalW(a_x, a_y);
+
         private void PopulateChildren(FileSystemItem a_node)
         {
             try
             {
-                foreach (var dir in Directory.GetDirectories(a_node.FullPath).OrderBy(d => d))
+                foreach (var dir in Directory.GetDirectories(a_node.FullPath).OrderBy(d => d, Comparer<string>.Create(s_naturalCompare)))
                 {
                     var name = Path.GetFileName(dir);
                     if (name.StartsWith("."))
@@ -439,7 +451,7 @@ namespace mde
                 foreach (var file in Directory.GetFiles(a_node.FullPath)
                              .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
                                          f.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase))
-                             .OrderBy(f => f))
+                             .OrderBy(f => f, Comparer<string>.Create(s_naturalCompare)))
                 {
                     a_node.Children.Add(BuildFileSystemNode(file, false));
                 }
