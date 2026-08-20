@@ -134,12 +134,37 @@ namespace mde
             }
         }
 
+        /// <summary>
+        /// プログラム側から（検索結果に合わせてなど）アウトラインペインのSelectedItemを
+        /// 変更する時に立てるフラグ。SelectionChangedイベントは、ユーザーがクリックした時と
+        /// プログラム側から変更した時の両方で発生するため、このフラグでユーザー操作かどうかを
+        /// 区別し、プログラム側からの変更ではエディタのキャレット・スクロールを動かさない
+        /// ようにする（動かしてしまうと、検索結果へジャンプした直後にキャレットが見出しの
+        /// 先頭へ引き戻されてしまう）。
+        /// </summary>
+        private bool m_suppressSelectionNavigationFlg;
+
+        /// <summary>
+        /// 次に発生するSelectionChangedイベントで、エディタのキャレット・スクロールを
+        /// 動かさないようにする。ScrollOutlineListToEntryなど、プログラム側からSelectedItemを
+        /// 変更する直前に呼ぶこと。
+        /// </summary>
+        public void SuppressNextSelectionNavigation()
+        {
+            m_suppressSelectionNavigationFlg = true;
+        }
+
         /// <summary>アウトラインペインで見出しがクリックされた時に、エディタをその見出しまで
         /// スクロールする。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         public void HandleSelectionChanged(object a_sender, SelectionChangedEventArgs a_args)
         {
+            if (m_suppressSelectionNavigationFlg)
+            {
+                m_suppressSelectionNavigationFlg = false;
+                return;
+            }
             if (a_sender is ListBox list && list.SelectedItem is OutlineEntry entry && null != entry.Target)
             {
                 m_editor.CaretPosition = entry.Target.ContentStart;

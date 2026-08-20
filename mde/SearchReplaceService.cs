@@ -388,11 +388,25 @@ namespace mde
         /// <param name="a_range">対象の範囲。</param>
         public void SelectAndScrollTo(TextRange a_range)
         {
+            // 選択そのものは即座に行っておく（見た目の反応を早くするため）。
             m_editor.Selection.Select(a_range.Start, a_range.End);
-            m_scrollParagraphToTop(a_range.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
-            m_editor.CaretPosition = a_range.End;
-            m_editor.Focus();
-            m_selectOutlineHeading?.Invoke(a_range.Start);
+
+            // ファイルを切り替えた直後（LoadFileで文書を丸ごと再構築した直後）は、その文書再構築に
+            // 伴うキャレット位置の確定処理が非同期に行われ、ここで即座にCaretPositionを設定しても
+            // 後から上書きされてしまうことがある。そのため、レイアウトが一段落したタイミング
+            // （Loaded優先度）まで、スクロール・キャレット設定を遅らせて確実性を高める。
+            m_editor.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                m_scrollParagraphToTop(a_range.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
+                m_editor.CaretPosition = a_range.End;
+                m_editor.Focus();
+                m_selectOutlineHeading?.Invoke(a_range.Start);
+
+                // さらに遅らせて、後から書き換わっていないか確認する。
+                m_editor.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         public bool FindNextInCurrentFile(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
@@ -418,11 +432,20 @@ namespace mde
             {
                 ApplyHighlight(found);
             }
-            m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
-            m_editor.CaretPosition = found.End;
             m_lastFoundMatch = found;
-            m_editor.Focus();
-            m_selectOutlineHeading?.Invoke(found.Start);
+
+            // ファイルを開いた直後など、文書の再構築に伴うキャレット位置の確定処理が非同期に
+            // 行われることがあり、ここで即座にCaretPositionを設定しても後から上書きされて
+            // しまうことがある。レイアウトが一段落したタイミング（Loaded優先度）まで、
+            // スクロール・キャレット設定を遅らせて確実性を高める。
+            m_editor.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
+                m_editor.CaretPosition = found.End;
+                m_editor.Focus();
+                m_selectOutlineHeading?.Invoke(found.Start);
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+
             return true;
         }
 
@@ -453,9 +476,12 @@ namespace mde
             {
                 ApplyHighlight(found);
             }
-            m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
-            m_editor.CaretPosition = found.End;
-            m_editor.Focus();
+            m_editor.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
+                m_editor.CaretPosition = found.End;
+                m_editor.Focus();
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
             return true;
         }
 
@@ -594,11 +620,20 @@ namespace mde
             {
                 ApplyHighlight(found);
             }
-            m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
-            m_editor.CaretPosition = found.Start; // 次回の「前を検索」がこの一致箇所より前から続けられるようにする
             m_lastFoundMatch = found;
-            m_editor.Focus();
-            m_selectOutlineHeading?.Invoke(found.Start);
+
+            // ファイルを開いた直後など、文書の再構築に伴うキャレット位置の確定処理が非同期に
+            // 行われることがあり、ここで即座にCaretPositionを設定しても後から上書きされて
+            // しまうことがある。レイアウトが一段落したタイミング（Loaded優先度）まで、
+            // スクロール・キャレット設定を遅らせて確実性を高める。
+            m_editor.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
+                m_editor.CaretPosition = found.Start; // 次回の「前を検索」がこの一致箇所より前から続けられるようにする
+                m_editor.Focus();
+                m_selectOutlineHeading?.Invoke(found.Start);
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+
             return true;
         }
 
@@ -627,9 +662,12 @@ namespace mde
             {
                 ApplyHighlight(found);
             }
-            m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
-            m_editor.CaretPosition = found.Start;
-            m_editor.Focus();
+            m_editor.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
+                m_editor.CaretPosition = found.Start;
+                m_editor.Focus();
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
             return true;
         }
 

@@ -907,12 +907,6 @@ namespace mde
             }
         }
 
-        /// <summary>
-        /// ファイルをエディタへ読み込む。すでに開いている同じファイルを再度開こうとした場合
-        /// （未保存の変更を破棄してディスクの内容に戻すかどうかの確認）と、別のファイルへ
-        /// 切り替える場合（まず今のファイルの未保存内容を退避する）の両方に対応する。
-        /// </summary>
-        /// <param name="a_path">開くファイルの絶対パス。</param>
         private void LoadFile(string a_path)
         {
             // 特殊ケース：すでにアクティブなファイルを再度開こうとした場合。この判定がないと、
@@ -950,6 +944,11 @@ namespace mde
                 {
                     RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(onDiskContent, m_editor.Document));
                     m_outlineManager.Refresh();
+                    // 文書を丸ごと差し替えた直後は、キャレット位置が未確定・不定なままになる
+                    // ことがある（古い位置を指したままになるなど）。ここで明示的に文書の先頭へ
+                    // 設定しておくことで、その直後に検索の「次を検索」等がCaretPositionを基準に
+                    // 開始位置を計算する際、信頼できる値になるようにする。
+                    m_editor.CaretPosition = m_editor.Document.ContentStart;
                 }
                 m_searchReplaceService.OnDocumentReplaced();
                 m_openFindReplaceWindow?.ReapplyHighlightForCurrentFile();
@@ -986,6 +985,11 @@ namespace mde
             {
                 RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
                 m_outlineManager.Refresh();
+                // 文書を丸ごと差し替えた直後は、キャレット位置が未確定・不定なままになる
+                // ことがある（古い位置を指したままになるなど）。ここで明示的に文書の先頭へ
+                // 設定しておくことで、その直後に検索の「次を検索」等がCaretPositionを基準に
+                // 開始位置を計算する際、信頼できる値になるようにする。
+                m_editor.CaretPosition = m_editor.Document.ContentStart;
             }
             m_searchReplaceService.OnDocumentReplaced();
             m_openFindReplaceWindow?.ReapplyHighlightForCurrentFile();
@@ -1637,6 +1641,11 @@ namespace mde
         {
             Dispatcher.BeginInvoke(new Action(() =>
             {
+                // SelectedItemを変更すると、ユーザーが手でクリックした時と同じ
+                // SelectionChangedイベントが発生し、エディタのキャレットが見出しの先頭へ
+                // 動いてしまう。ここではあくまで「今どこにいるか」を表示に反映したいだけ
+                // なので、そのナビゲーションを抑止しておく。
+                m_outlineManager.SuppressNextSelectionNavigation();
                 m_outlineList.SelectedItem = a_entry;
                 m_outlineList.ScrollIntoView(a_entry);
             }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);

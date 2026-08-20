@@ -203,6 +203,17 @@ namespace mde
             return a_fullPath;
         }
 
+        /// <summary>
+        /// 原因切り分けのため、SelectFileNode（IsSelected/IsExpandedの設定を含む）自体を、
+        /// エディタ側の操作が完全に終わった後まで丸ごと遅らせて呼び出す。
+        /// </summary>
+        /// <param name="a_path">選択したいファイルの絶対パス。</param>
+        private void SelectFileNodeDeferred(string a_path)
+        {
+            Dispatcher.BeginInvoke(new Action(() => m_owner.FolderTreePane.SelectFileNode(a_path)),
+                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
         private bool PathsEqual(string a_a, string a_b) =>
             !string.IsNullOrEmpty(a_a) && !string.IsNullOrEmpty(a_b) &&
             string.Equals(System.IO.Path.GetFullPath(a_a), System.IO.Path.GetFullPath(a_b), StringComparison.OrdinalIgnoreCase);
@@ -308,7 +319,7 @@ namespace mde
                 {
                     m_folderFindCurrentMatchIdx = 0;
                     m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[0]);
-                    m_owner.FolderTreePane.SelectFileNode(path);
+                    SelectFileNodeDeferred(path);
                     m_statusText.Text = "見つかりました：" + System.IO.Path.GetFileName(path) +
                         "（1 / " + m_folderFindCurrentFileMatches.Count + "件目）";
                     return;
@@ -400,7 +411,7 @@ namespace mde
                 {
                     m_folderFindCurrentMatchIdx = m_folderFindCurrentFileMatches.Count - 1;
                     m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[m_folderFindCurrentMatchIdx]);
-                    m_owner.FolderTreePane.SelectFileNode(path);
+                    SelectFileNodeDeferred(path);
                     m_statusText.Text = "見つかりました：" + System.IO.Path.GetFileName(path) +
                         "（" + m_folderFindCurrentFileMatches.Count + " / " + m_folderFindCurrentFileMatches.Count + "件目）";
                     return;
@@ -496,13 +507,13 @@ namespace mde
                 return;
             }
             m_owner.SearchReplace.OpenFileForFindReplace(m_resultsPaths[idx]);
+            SelectFileNodeDeferred(m_resultsPaths[idx]);
             var matches = m_owner.SearchReplace.HighlightAllMatchesInCurrentFile(Term, CaseSensitive, UseRegex);
             if (matches.Count > 0)
             {
                 m_owner.SearchReplace.SelectAndScrollTo(matches[0]);
                 SeedFolderWalkFromCurrentFile(m_resultsPaths[idx], matches, 0);
             }
-            m_owner.FolderTreePane.SelectFileNode(m_resultsPaths[idx]);
         }
 
         /// <summary>「すべて置換」ボタン。選択されている範囲のすべての一致箇所を一度に置換する。</summary>
