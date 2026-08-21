@@ -540,6 +540,14 @@ namespace mde
             return false;
         }
 
+        /// <summary>
+        /// 表の1行分のソーステキストを、セルごとの文字列に分割する。単純に「|」で分割すると、
+        /// セルの中のインラインコード（`&amp;&amp;`/`||` のように、コードの中に「|」自体が
+        /// 含まれる場合）まで区切ってしまい、列がずれて表が壊れてしまう。そのため、バック
+        /// クォートで囲まれたコード区間の中にある「|」は区切りとして扱わないようにしている。
+        /// </summary>
+        /// <param name="a_line">表の1行分のソーステキスト。</param>
+        /// <returns>セルごとに分割した文字列。</returns>
         private List<string> ParseTableRow(string a_line)
         {
             string t = a_line.Trim();
@@ -551,7 +559,29 @@ namespace mde
             {
                 t = t.Substring(0, t.Length - 1);
             }
-            return t.Split('|').Select(s => s.Trim()).ToList();
+
+            var cells = new List<string>();
+            var current = new StringBuilder();
+            bool insideCodeFlg = false;
+            foreach (char c in t)
+            {
+                if ('`' == c)
+                {
+                    insideCodeFlg = !insideCodeFlg;
+                    current.Append(c);
+                }
+                else if ('|' == c && !insideCodeFlg)
+                {
+                    cells.Add(current.ToString().Trim());
+                    current.Clear();
+                }
+                else
+                {
+                    current.Append(c);
+                }
+            }
+            cells.Add(current.ToString().Trim());
+            return cells;
         }
 
         /// <summary>
