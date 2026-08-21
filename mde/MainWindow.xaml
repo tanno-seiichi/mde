@@ -178,7 +178,6 @@
                                  SelectionOpacity="0.45"
                                  VerticalScrollBarVisibility="Auto"
                                  AcceptsTab="False"
-                                 IsUndoEnabled="False"
                                  SpellCheck.IsEnabled="False"
                                  TextChanged="EditorTextChanged"
                                  PreviewKeyDown="EditorPreviewKeyDown"

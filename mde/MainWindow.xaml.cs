@@ -957,6 +957,7 @@ namespace mde
                     // 設定しておくことで、その直後に検索の「次を検索」等がCaretPositionを基準に
                     // 開始位置を計算する際、信頼できる値になるようにする。
                     m_editor.CaretPosition = m_editor.Document.ContentStart;
+                    ClearEditorUndoHistory();
                 }
                 m_searchReplaceService.OnDocumentReplaced();
                 m_openFindReplaceWindow?.ReapplyHighlightForCurrentFile();
@@ -984,6 +985,7 @@ namespace mde
             m_currentFileDirectory = Path.GetDirectoryName(a_path);
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(a_path);
             m_pendingFileEdits.Remove(a_path); // このファイルの内容は、以後エディタ自体が真実の情報源になる
+            RecordFileHistory(a_path);
 
             if (m_isSourceModeFlg)
             {
@@ -998,6 +1000,7 @@ namespace mde
                 // 設定しておくことで、その直後に検索の「次を検索」等がCaretPositionを基準に
                 // 開始位置を計算する際、信頼できる値になるようにする。
                 m_editor.CaretPosition = m_editor.Document.ContentStart;
+                ClearEditorUndoHistory();
             }
             m_searchReplaceService.OnDocumentReplaced();
             m_openFindReplaceWindow?.ReapplyHighlightForCurrentFile();
@@ -1019,6 +1022,88 @@ namespace mde
         /// pendingFileEditsへ退避する（1つしかないエディタを共有しているため、切り替え時に
         /// 内容が失われないようにするため）。ソースモードでは単純化のためスキップする。
         /// </summary>
+        /// <summary>
+        /// エディタのUndo（元に戻す）履歴をクリアする。IsUndoEnabledをいったんfalseにしてから
+        /// trueに戻すと、WPF標準の仕組みでUndo履歴が破棄される。ファイルを新しく読み込んで
+        /// 文書を丸ごと差し替えた直後に呼ぶことで、「Ctrl+Zを押したら別のファイルの内容に
+        /// 戻ってしまう」という混乱を防ぐ（Undo/Redoは、あくまで今のファイルの編集内容の
+        /// 範囲だけで完結させる）。
+        /// </summary>
+        private void ClearEditorUndoHistory()
+        {
+            m_editor.IsUndoEnabled = false;
+            m_editor.IsUndoEnabled = true;
+        }
+
+        /// <summary>Ctrl+左右カーソルキーで前後にたどれる、開いたファイルの履歴（ブラウザの
+        /// 「戻る/進む」と同様の仕組み）。</summary>
+        private readonly List<string> m_fileHistory = new List<string>();
+        private int m_fileHistoryIndex = -1;
+        /// <summary>Ctrl+左右による履歴移動でLoadFileを呼んでいる最中は、それ自体を新しい
+        /// 履歴として記録しないようにするためのフラグ。</summary>
+        private bool m_isNavigatingFileHistoryFlg;
+
+        /// <summary>
+        /// 新しくファイルを開いた時に、Ctrl+左右で戻れる履歴へ記録する。履歴の途中（戻った
+        /// 状態）から別のファイルを開いた場合は、それより先の「進む」履歴をブラウザと同様に
+        /// 破棄する。
+        /// </summary>
+        /// <param name="a_path">開いたファイルの絶対パス。</param>
+        private void RecordFileHistory(string a_path)
+        {
+            if (m_isNavigatingFileHistoryFlg)
+            {
+                return;
+            }
+            if (m_fileHistoryIndex < m_fileHistory.Count - 1)
+            {
+                m_fileHistory.RemoveRange(m_fileHistoryIndex + 1, m_fileHistory.Count - m_fileHistoryIndex - 1);
+            }
+            if (0 == m_fileHistory.Count || !PathsReferToSameFile(m_fileHistory[m_fileHistory.Count - 1], a_path))
+            {
+                m_fileHistory.Add(a_path);
+                m_fileHistoryIndex = m_fileHistory.Count - 1;
+            }
+        }
+
+        /// <summary>Ctrl+左カーソルキー：1つ前に開いていたファイルを開く。</summary>
+        private void NavigateFileHistoryBack()
+        {
+            if (m_fileHistoryIndex <= 0)
+            {
+                return;
+            }
+            m_fileHistoryIndex--;
+            m_isNavigatingFileHistoryFlg = true;
+            try
+            {
+                LoadFile(m_fileHistory[m_fileHistoryIndex]);
+            }
+            finally
+            {
+                m_isNavigatingFileHistoryFlg = false;
+            }
+        }
+
+        /// <summary>Ctrl+右カーソルキー：1つ後に開いていたファイルを開く。</summary>
+        private void NavigateFileHistoryForward()
+        {
+            if (m_fileHistoryIndex < 0 || m_fileHistoryIndex >= m_fileHistory.Count - 1)
+            {
+                return;
+            }
+            m_fileHistoryIndex++;
+            m_isNavigatingFileHistoryFlg = true;
+            try
+            {
+                LoadFile(m_fileHistory[m_fileHistoryIndex]);
+            }
+            finally
+            {
+                m_isNavigatingFileHistoryFlg = false;
+            }
+        }
+
         private void SnapshotCurrentFileIfDirty()
         {
             if (string.IsNullOrEmpty(m_currentFilePath) || m_isSourceModeFlg)
@@ -1485,6 +1570,44 @@ namespace mde
             {
                 a_args.Handled = true;
                 Close();
+            }
+            // Ctrl+Zは「元に戻す」のショートカットとして扱う（ソースモードでは、TextBox標準の
+            // Undoにそのまま任せる）。
+            else if (a_args.Key == Key.Z &&
+                     Keyboard.Modifiers == ModifierKeys.Control &&
+                     !m_isSourceModeFlg)
+            {
+                a_args.Handled = true;
+                if (m_editor.CanUndo)
+                {
+                    m_editor.Undo();
+                }
+            }
+            // Ctrl+Yは「やり直し」のショートカットとして扱う（ソースモードでは、TextBox標準の
+            // Redoにそのまま任せる）。
+            else if (a_args.Key == Key.Y &&
+                     Keyboard.Modifiers == ModifierKeys.Control &&
+                     !m_isSourceModeFlg)
+            {
+                a_args.Handled = true;
+                if (m_editor.CanRedo)
+                {
+                    m_editor.Redo();
+                }
+            }
+            // Ctrl+左カーソルキーは「1つ前に開いていたファイルを開く」のショートカットとして扱う。
+            else if (a_args.Key == Key.Left &&
+                     Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                a_args.Handled = true;
+                NavigateFileHistoryBack();
+            }
+            // Ctrl+右カーソルキーは「1つ後に開いていたファイルを開く」のショートカットとして扱う。
+            else if (a_args.Key == Key.Right &&
+                     Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                a_args.Handled = true;
+                NavigateFileHistoryForward();
             }
         }
 
