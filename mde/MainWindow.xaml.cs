@@ -1279,6 +1279,29 @@ namespace mde
                 return;
             }
 
+            // 画像を、印刷可能幅に収まるよう一時的に縮小する（画面上ではエディタの表示幅を
+            // 基準にサイズ調整されているため、印刷可能幅がそれより狭い場合、そのままでは
+            // ページからはみ出して欠けてしまうことがある）。書き出し後、画面表示用のサイズに
+            // 戻す。
+            double printableWidth = Math.Max(100, dlg.PrintableAreaWidth - 24);
+            var originalImageSizes = new Dictionary<Image, (double Width, double Height)>();
+            foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
+            {
+                originalImageSizes[img] = (img.Width, img.Height);
+                if (img.Width > printableWidth)
+                {
+                    double scale = printableWidth / img.Width;
+                    img.Width = printableWidth;
+                    img.Height *= scale;
+                }
+            }
+
+            // FlowDocumentは、既定では印刷可能幅に応じて自動的に段組み（複数列）にしてしまう
+            // ことがある。ColumnWidthをページ幅そのものに設定しておくことで、画面表示と同じ
+            // 単一列のレイアウトのまま印刷されるようにする。
+            double originalColumnWidth = m_editor.Document.ColumnWidth;
+            m_editor.Document.ColumnWidth = dlg.PrintableAreaWidth;
+
             try
             {
                 var paginator = ((IDocumentPaginatorSource)m_editor.Document).DocumentPaginator;
@@ -1290,6 +1313,15 @@ namespace mde
             {
                 MessageBox.Show("書き出しに失敗しました: " + ex.Message, "PDFに書き出し",
                     MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                m_editor.Document.ColumnWidth = originalColumnWidth;
+                foreach (var kv in originalImageSizes)
+                {
+                    kv.Key.Width = kv.Value.Width;
+                    kv.Key.Height = kv.Value.Height;
+                }
             }
         }
 
