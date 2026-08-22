@@ -4,6 +4,8 @@
 // Application entry point: sets up a top-level exception handler so an unexpected error shows a
 // message box instead of silently crashing the app.
 
+using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 
@@ -33,13 +35,25 @@ namespace mde
         {
             try
             {
-                ChromiumBrowserPool.ShutdownAsync().GetAwaiter().GetResult();
+                // ここ（UIスレッド）で ChromiumBrowserPool.ShutdownAsync() を直接
+                // GetAwaiter().GetResult() すると、内部のawaitがUIスレッドの
+                // SynchronizationContext（Dispatcher）へ結果を戻そうとして、まさにその
+                // Dispatcherをブロックして待っている当スレッドと待ち合ってしまい、永久に
+                // デッドロックする（＝OnExitがここで固まり、後続のEnvironment.Exitにも
+                // 到達できず、mde.exeプロセスが終了できずに残り続ける）。
+                // Task.Runで別スレッド（SynchronizationContextを持たないスレッドプール）
+                // 上でShutdownAsyncを開始させることで、このデッドロックを避ける。
+                Task.Run(() => ChromiumBrowserPool.ShutdownAsync()).GetAwaiter().GetResult();
             }
             catch
             {
                 // 終了処理での失敗は、アプリの終了自体を妨げないよう無視する
             }
             base.OnExit(a_args);
+
+            // 上記の対策後も、何らかの理由でプロセスが自然終了しないケースに備えて、
+            // ここで確実にプロセスを終了させる。終了処理はここまでで完了しているため安全に行える。
+            Environment.Exit(0);
         }
 
         /// <summary>Shows any otherwise-unhandled exception in a message box rather than letting the

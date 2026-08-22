@@ -79,7 +79,17 @@ namespace mde
             });
         }
 
-        /// <summary>起動済みのブラウザがあれば、プロセスごと終了する。アプリ終了時に呼ぶ。</summary>
+        /// <summary>正常終了（CloseAsync）の完了をこの時間（ミリ秒）だけ待つ。headless
+        /// Chromiumは実際にはメインプロセスの他にレンダラー・GPU・crashpadなど複数の
+        /// 子プロセスで構成されており、CloseAsyncが送る「穏やかな終了リクエスト」への
+        /// 応答が返ってこない場合、この時間が過ぎたら強制終了（KillProcessTree）へ切り替える。</summary>
+        private const int SHUTDOWN_GRACEFUL_TIMEOUT_MS = 3000;
+
+        /// <summary>起動済みのブラウザがあれば、プロセスごと終了する。アプリ終了時に呼ぶ。
+        /// まずCloseAsyncで穏やかな終了を試み、一定時間内に完了しなければ、レンダラー・GPU・
+        /// crashpadなどの子プロセスも含めてプロセスツリーごと強制終了する。CloseAsyncの
+        /// 「穏やかな終了リクエスト」はメインプロセスへの終了指示に過ぎず、それだけでは
+        /// 子プロセスが取り残されてしまうことがある（特にWindowsで知られている問題）ため。</summary>
         public static async Task ShutdownAsync()
         {
             IBrowser browser = s_browser;
@@ -89,13 +99,49 @@ namespace mde
                 return;
             }
 
+            // CloseAsync後はProcessを取得できなくなる可能性があるため、強制終了の保険用に
+            // 先に控えておく。
+            System.Diagnostics.Process process = null;
             try
             {
-                await browser.CloseAsync();
+                process = browser.Process;
             }
             catch
             {
-                // 終了処理での失敗は、アプリの終了自体を妨げないよう無視する
+                // 取得できなくても、その場合は強制終了の保険が使えないだけなので先へ進む
+            }
+
+            bool gracefulCloseSucceededFlg = false;
+            try
+            {
+                // ConfigureAwait(false): 呼び出し元がUIスレッド（Dispatcher）から同期的に
+                // 待っている場合でも、継続処理をそのDispatcherへ戻そうとしてデッドロックしない
+                // ようにするため。
+                Task closeTask = browser.CloseAsync();
+                Task completed = await Task.WhenAny(closeTask, Task.Delay(SHUTDOWN_GRACEFUL_TIMEOUT_MS)).ConfigureAwait(false);
+                if (completed == closeTask)
+                {
+                    await closeTask.ConfigureAwait(false); // closeTask自体が例外で終わっていた場合、ここで再スローさせる
+                    gracefulCloseSucceededFlg = true;
+                }
+            }
+            catch
+            {
+                // 穏やかな終了が例外で失敗した場合も、下の強制終了へフォールバックする
+            }
+
+            if (!gracefulCloseSucceededFlg)
+            {
+                try
+                {
+                    // 子プロセス（レンダラー・GPU・crashpad等）も含めて、プロセスツリーごと
+                    // 強制終了する。
+                    process?.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                    // 既に終了している等の理由で失敗しても、アプリの終了自体は妨げないよう無視する
+                }
             }
         }
 
