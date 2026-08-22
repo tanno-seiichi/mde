@@ -1867,7 +1867,9 @@ namespace mde
         // ======================================================================
 
         /// <summary>フォルダツリーペインの表示/非表示を切り替える（幅は次に表示する時のために
-        /// 記憶しておく）。</summary>
+        /// 記憶しておく）。切り替えでエディタの表示幅が変わり文章の折り返し位置が変わっても、
+        /// エディタペインの見た目上のスクロール位置が動かないよう、切り替えの前後でスクロール
+        /// 位置を保存・復元する。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         private void ToggleFolderPaneBtnClick(object a_sender, RoutedEventArgs a_args)
@@ -1877,7 +1879,11 @@ namespace mde
                 m_lastFolderColumnWidth = m_folderColumnDef.Width.Value;
             }
             m_folderPaneVisibleFlg = !m_folderPaneVisibleFlg;
+
+            object scrollAnchor = CaptureEditorScrollAnchor();
             ApplyFolderPaneVisibility();
+            UpdateLayout();
+            RestoreEditorScrollAnchor(scrollAnchor);
         }
 
         /// <summary>folderPaneVisibleの現在値に従って、フォルダペインの表示状態をXAML側の
@@ -1903,7 +1909,9 @@ namespace mde
         }
 
         /// <summary>アウトラインペインの表示/非表示を切り替える（幅は次に表示する時のために
-        /// 記憶しておく）。</summary>
+        /// 記憶しておく）。切り替えでエディタの表示幅が変わり文章の折り返し位置が変わっても、
+        /// エディタペインの見た目上のスクロール位置が動かないよう、切り替えの前後でスクロール
+        /// 位置を保存・復元する。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         private void ToggleOutlinePaneBtnClick(object a_sender, RoutedEventArgs a_args)
@@ -1913,7 +1921,11 @@ namespace mde
                 m_lastOutlineColumnWidth = m_outlineColumnDef.Width.Value;
             }
             m_outlinePaneVisibleFlg = !m_outlinePaneVisibleFlg;
+
+            object scrollAnchor = CaptureEditorScrollAnchor();
             ApplyOutlinePaneVisibility();
+            UpdateLayout();
+            RestoreEditorScrollAnchor(scrollAnchor);
         }
 
         /// <summary>outlinePaneVisibleの現在値に従って、アウトラインペインの表示状態をXAML側の
@@ -1935,6 +1947,141 @@ namespace mde
                 m_outlinePaneBorder.Visibility = Visibility.Collapsed;
                 m_outlineSplitter.Visibility = Visibility.Collapsed;
                 m_toggleOutlinePaneBtn.Content = "アウトラインを表示";
+            }
+        }
+
+        /// <summary>エディタ内部のScrollViewerへの参照（フォルダ/アウトラインペイン切り替え時の
+        /// スクロール位置保持に使う）。RestoreEditorScrollAnchorで初回使用時に取得する。</summary>
+        private ScrollViewer m_editorScrollViewer;
+
+        /// <summary>CaptureEditorScrollAnchorが覚えておく、MarkDownモード時のスクロール位置。
+        /// 「左上端に見えている段落」そのものと、その段落のどのくらいの割合が上端より上に
+        /// スクロールされているか（0=段落の先頭が見えている、1に近いほど段落の末尾近くまで
+        /// スクロール済み）を保持する。ピクセル量ではなく段落に対する割合で覚えておくのは、
+        /// 見出しの図解画像のように1段落がエディタの表示領域よりずっと大きいコンテンツでは、
+        /// ペイン切り替えによる幅変更で画像自体のサイズも変わるため（ImageManager.
+        /// ApplyImageSizing参照）、ピクセル量では復元後に全く違う場所を指してしまうため。</summary>
+        private class EditorScrollAnchor
+        {
+            public Paragraph Paragraph;
+            public double VerticalFraction;
+            public double HorizontalFraction;
+        }
+
+        /// <summary>フォルダ/アウトラインペインの表示・非表示を切り替える直前に呼び出し、今
+        /// エディタペインの左上端に見えている位置を覚えておく。ペインの表示・非表示で
+        /// エディタの表示幅が変わると、文章の折り返し位置や画像の縮小率が変わってしまい、
+        /// スクロール量（ピクセル位置）をそのまま維持するだけでは全く違う場所が表示されて
+        /// しまう。そこで、幅変更後にRestoreEditorScrollAnchorで同じ場所へスクロールし直す
+        /// ための情報をここで集めておく。</summary>
+        /// <returns>MarkDownモードならEditorScrollAnchor、ソースモードなら一番上に見えている
+        /// 行の先頭文字インデックス（int）。復元できる情報が無ければnull。</returns>
+        private object CaptureEditorScrollAnchor()
+        {
+            if (m_isSourceModeFlg)
+            {
+                if (!m_sourceEditor.IsLoaded)
+                {
+                    return null;
+                }
+                int firstVisibleLine = m_sourceEditor.GetFirstVisibleLineIndex();
+                if (firstVisibleLine < 0)
+                {
+                    return null;
+                }
+                return m_sourceEditor.GetCharacterIndexFromLineIndex(firstVisibleLine);
+            }
+
+            if (!m_editor.IsLoaded)
+            {
+                return null;
+            }
+
+            TextPointer nearPointer = m_editor.GetPositionFromPoint(new Point(0, 0), true);
+            Paragraph para = nearPointer?.Paragraph;
+            if (null == para)
+            {
+                return null;
+            }
+
+            Rect startRect = para.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+            Rect endRect = para.ContentEnd.GetCharacterRect(LogicalDirection.Backward);
+            double height = endRect.Bottom - startRect.Top;
+            double width = endRect.Right - startRect.Left;
+            return new EditorScrollAnchor
+            {
+                Paragraph = para,
+                // GetPositionFromPointは、その段落が図解画像1枚だけで構成されているような
+                // 場合（＝段落の途中を指す文字位置が存在しない場合）、段落の先頭か末尾の
+                // どちらか近い方へ吸着してしまい、実際にはその画像の途中までスクロールして
+                // いたという情報が失われる。そのため個々の文字位置ではなく、段落全体の
+                // 縦横のRect（先頭〜末尾）を基準に「左上端が段落の何%の位置にあるか」を
+                // 割合として覚えておくことで、画像の途中までスクロールしていた場合にも
+                // 対応できるようにしている。
+                VerticalFraction = (height > 0) ? Clamp01((0 - startRect.Top) / height) : 0,
+                HorizontalFraction = (width > 0) ? Clamp01((0 - startRect.Left) / width) : 0,
+            };
+        }
+
+        /// <summary>0〜1の範囲に収める。</summary>
+        private static double Clamp01(double a_value) => a_value < 0 ? 0 : (a_value > 1 ? 1 : a_value);
+
+        /// <summary>CaptureEditorScrollAnchorで覚えておいた位置が、再びエディタペインの左上端に
+        /// 来るようスクロール位置を復元する。ペインの表示・非表示によるレイアウト変更
+        /// （折り返し位置・画像サイズの再計算）が完了した後でないと正しい位置を計算できない
+        /// ため、呼び出し側で幅の変更後にUpdateLayout()を挟んでから呼び出すこと。</summary>
+        /// <param name="a_anchor">CaptureEditorScrollAnchorの戻り値。</param>
+        private void RestoreEditorScrollAnchor(object a_anchor)
+        {
+            if (null == a_anchor)
+            {
+                return;
+            }
+
+            if (m_isSourceModeFlg)
+            {
+                if (a_anchor is int charIndex)
+                {
+                    int newLine = m_sourceEditor.GetLineIndexFromCharacterIndex(charIndex);
+                    if (newLine >= 0)
+                    {
+                        // ScrollToLineは「見えていなければ最小限だけスクロールする」仕様のため、
+                        // 既に見えている行だと一番上への移動が起きないことがある。OutlineManager.
+                        // ScrollParagraphToTopと同じ理由・同じ対策で、先に一旦先頭へスクロール位置を
+                        // リセットしてから改めて対象行へスクロールし、毎回確実に一番上へ来るようにする。
+                        m_sourceEditor.ScrollToLine(0);
+                        m_sourceEditor.ScrollToLine(newLine);
+                    }
+                }
+                return;
+            }
+
+            if (a_anchor is EditorScrollAnchor anchor &&
+                null != anchor.Paragraph?.Parent) // 段落がまだ文書ツリーに残っていることの確認
+            {
+                if (null == m_editorScrollViewer)
+                {
+                    m_editorScrollViewer = FindVisualChild<ScrollViewer>(m_editor);
+                }
+                if (null == m_editorScrollViewer)
+                {
+                    return;
+                }
+
+                // GetCharacterRectは、現在のビューポート（見えている範囲）を基準にした相対座標を
+                // 返す。段落の（レイアウト変更後の、新しいサイズでの）先頭〜末尾のRectを改めて
+                // 取得し、記憶しておいた割合を掛けることで、「左上端にあったのと同じ場所」の
+                // 現在のビューポート内での位置を求める。それに変更前のスクロール位置を足すことで、
+                // 文書全体を基準にした「復元すべきスクロール位置」になる。
+                Rect startRect = anchor.Paragraph.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+                Rect endRect = anchor.Paragraph.ContentEnd.GetCharacterRect(LogicalDirection.Backward);
+                double height = endRect.Bottom - startRect.Top;
+                double width = endRect.Right - startRect.Left;
+                double targetTop = startRect.Top + anchor.VerticalFraction * height;
+                double targetLeft = startRect.Left + anchor.HorizontalFraction * width;
+
+                m_editorScrollViewer.ScrollToVerticalOffset(m_editorScrollViewer.VerticalOffset + targetTop);
+                m_editorScrollViewer.ScrollToHorizontalOffset(m_editorScrollViewer.HorizontalOffset + targetLeft);
             }
         }
 
