@@ -42,6 +42,18 @@ namespace mde
 
         private Point? m_imageDragStartPoint;
 
+        /// <summary>m_imageDragStartPointを記録した瞬間のタイムスタンプ（InputEventArgs.
+        /// Timestamp、ミリ秒）。ダブルクリックの1回目のクリックのわずかな手ブレでドラッグが
+        /// 誤発生してしまう（結果としてダブルクリックとして認識されなくなる）のを防ぐため、
+        /// マウス押下からある程度の時間が経ってから動いた場合だけドラッグとみなすのに使う。</summary>
+        private int m_imageDragStartTimestamp;
+
+        /// <summary>マウス押下からこの時間（ミリ秒）が経過するまでは、多少動いてもドラッグとは
+        /// みなさない。ダブルクリックの1回目のクリックで手ブレにより数ピクセル動いただけで
+        /// DragDrop.DoDragDrop（モーダルなドラッグ操作）が始まってしまうと、その裏で2回目の
+        /// クリックが正しく認識されなくなり、ダブルクリックが機能しなくなってしまうため。</summary>
+        private const int IMAGE_DRAG_MIN_HOLD_MS = 200;
+
         /// <summary>
         /// ImageManagerを構築する。
         /// </summary>
@@ -120,16 +132,80 @@ namespace mde
         private void AttachImageDragHandlers(Image a_img)
         {
             a_img.Cursor = Cursors.Hand;
+            // RichTextBox内に埋め込まれたInlineUIContainerの子要素は、RichTextBox内部の
+            // テキスト編集用カーソル制御（IBeam表示）にCursor指定が上書きされてしまうことが
+            // あるため、ForceCursorでこの画像自身の指定を優先させる。
+            a_img.ForceCursor = true;
             a_img.PreviewMouseLeftButtonDown += ImagePreviewMouseLeftButtonDown;
             a_img.PreviewMouseMove += ImagePreviewMouseMove;
         }
 
-        /// <summary>マウス押下位置を記録する（後続のドラッグ判定に使う）。</summary>
+        /// <summary>マウス押下位置を記録する（後続のドラッグ判定に使う）。ダブルクリックの検出・
+        /// 画像を開く処理自体は、MainWindow.EditorPreviewMouseLeftButtonDown側で
+        /// （RichTextBoxからのVisualTreeHelper.HitTestを使って、より確実に）行う。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         private void ImagePreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args)
         {
+            if (a_args.ClickCount >= 2)
+            {
+                return; // ダブルクリックはMainWindow側で処理済み（Handled済みのはず）。
+            }
             m_imageDragStartPoint = a_args.GetPosition(null);
+            m_imageDragStartTimestamp = a_args.Timestamp;
+        }
+
+        /// <summary>画像をダブルクリックした時に、そのリンク先の画像ファイルを既定のアプリ
+        /// （画像ビューア）で開く。ローカルの実ファイルが見つからずリモート画像（http/https）で
+        /// あれば、代わりにブラウザで開く。data:URIの埋め込み画像や、実ファイルが見つからない
+        /// 相対パスなど、開きようが無い場合は、SaveImageAsと同様に理由をダイアログで知らせる
+        /// （ユーザーが意図して開こうとした操作なので、原因が分からないまま何も起きないより、
+        /// 明示的に知らせた方が親切なため）。MainWindow.EditorPreviewMouseLeftButtonDownから
+        /// 呼ばれる。</summary>
+        /// <param name="a_img">対象の画像。</param>
+        public void OpenImageFile(Image a_img)
+        {
+            if (!(a_img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.m_originalSrc))
+            {
+                return;
+            }
+
+            string localPath = GetExportableFilePath(a_img);
+            if (null != localPath)
+            {
+                OpenWithDefaultApp(localPath);
+                return;
+            }
+
+            string src = info.m_originalSrc;
+            if (Uri.TryCreate(src, UriKind.Absolute, out Uri u) &&
+                ("http" == u.Scheme || "https" == u.Scheme))
+            {
+                OpenWithDefaultApp(src);
+                return;
+            }
+
+            MessageBox.Show("この画像は開けません（元ファイルが見つからないか、埋め込み画像です）。",
+                "画像を開く", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+
+        /// <summary>指定したパス・URLを、OS標準の関連付けアプリ（画像ファイルならビューア、
+        /// URLならブラウザ）で開く。関連付けアプリが無い環境などで開けなくても、例外を
+        /// 握りつぶしてエディタの操作自体は継続できるようにする。</summary>
+        /// <param name="a_pathOrUrl">開くファイルパスまたはURL。</param>
+        private static void OpenWithDefaultApp(string a_pathOrUrl)
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(a_pathOrUrl)
+                {
+                    UseShellExecute = true
+                });
+            }
+            catch
+            {
+                // 関連付けアプリが無い環境などでは開けないため無視する。
+            }
         }
 
         /// <summary>マウス押下位置から一定距離動いたら、OSのドラッグ&amp;ドロップ操作
@@ -141,6 +217,13 @@ namespace mde
             if (a_args.LeftButton != MouseButtonState.Pressed ||
                 null == m_imageDragStartPoint) return;
             if (!(a_sender is Image img))
+            {
+                return;
+            }
+
+            // ダブルクリックの1回目のクリックでの手ブレを、ドラッグ開始と誤認しないようにする
+            // （下のIMAGE_DRAG_MIN_HOLD_MSの説明を参照）。
+            if (a_args.Timestamp - m_imageDragStartTimestamp < IMAGE_DRAG_MIN_HOLD_MS)
             {
                 return;
             }

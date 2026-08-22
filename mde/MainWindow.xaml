@@ -253,6 +253,8 @@
                                           Click="DeleteColumnItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_copyCodeBlockMenuItem" Header="コードブロック全体をコピー（```込み）" Style="{StaticResource CtxMenuItem}"
                                           Click="CopyCodeBlockItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_openImageMenuItem" Header="画像を開く" Style="{StaticResource CtxMenuItem}"
+                                          Click="OpenImageItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_saveImageMenuItem" Header="画像を保存…" Style="{StaticResource CtxMenuItem}"
                                           Click="SaveImageItemClick" Visibility="Collapsed"/>
                                 <Separator/>
