@@ -736,6 +736,7 @@ namespace mde
             m_deleteRowMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_deleteColumnMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_copyCodeBlockMenuItem.Visibility = inCodeBlockFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_openImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_saveImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_textStyleMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
             m_linkMenuItem.Visibility = null != m_inlineStyleEditor.ContextLinkRun ? Visibility.Visible : Visibility.Collapsed;
@@ -788,6 +789,18 @@ namespace mde
 
         // ---- 画像 ----
 
+        /// <summary>右クリックメニュー「画像を開く」。ダブルクリック時と同じ
+        /// ImageManager.OpenImageFileを、右クリック位置の画像（ContextImage）に対して呼ぶ。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void OpenImageItemClick(object a_sender, RoutedEventArgs a_args)
+        {
+            if (null != m_imageManager.ContextImage)
+            {
+                m_imageManager.OpenImageFile(m_imageManager.ContextImage);
+            }
+        }
+
         private void SaveImageItemClick(object a_sender, RoutedEventArgs a_args) => m_imageManager.SaveImageAs(this);
 
         // ---- コードブロック ----
@@ -807,11 +820,37 @@ namespace mde
         private void LinkEditClick(object a_sender, RoutedEventArgs a_args) => m_inlineStyleEditor.EditContextLink(this);
         private void LinkRemoveClick(object a_sender, RoutedEventArgs a_args) => m_inlineStyleEditor.RemoveContextLink();
 
-        private void EditorPreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args) =>
+        /// <summary>エディタ上でのマウス左ボタン押下を処理する。ダブルクリック位置が画像の上
+        /// だった場合は、リンク先の画像ファイルを開くことを優先する（Ctrl+クリックでの
+        /// リンク開きより先に判定する）。それ以外は通常通りInlineStyleEditorのリンククリック
+        /// 処理へ委譲する。画像の判定は、右クリックメニュー（EditorContextMenuOpening）の
+        /// 「画像を保存」判定と同じ、RichTextBox側からのVisualTreeHelper.HitTestを使う方式。
+        /// Image要素自身にPreviewMouseLeftButtonDownを直接持たせる方式（ドラッグ書き出し用に
+        /// 元々ある仕組み）はダブルクリック検出には使わない。RichTextBox内に埋め込まれた
+        /// InlineUIContainerの子要素は、マウスイベントの到達やカーソル表示がRichTextBox内部の
+        /// テキスト編集処理と絡んで不安定になることがあるため、代わりに常に確実に動作する
+        /// RichTextBox側でのヒットテストに統一している。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void EditorPreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args)
+        {
+            if (a_args.ClickCount >= 2)
+            {
+                Point pos = a_args.GetPosition(m_editor);
+                var hit = VisualTreeHelper.HitTest(m_editor, pos);
+                Image img = FindVisualAncestorOrSelf<Image>(hit?.VisualHit);
+                if (null != img)
+                {
+                    a_args.Handled = true;
+                    m_imageManager.OpenImageFile(img);
+                    return;
+                }
+            }
             m_inlineStyleEditor.HandlePreviewMouseLeftButtonDown(a_sender, a_args);
+        }
 
         // ======================================================================
-        //  視覚ツリーのヘルパー（Editor_ContextMenuOpeningでのみ使用）
+        //  視覚ツリーのヘルパー（EditorContextMenuOpening・EditorPreviewMouseLeftButtonDownで使用）
         // ======================================================================
 
         /// <summary>指定した型の、最も近い視覚ツリーの祖先（またはその要素自身）を見つける。</summary>
