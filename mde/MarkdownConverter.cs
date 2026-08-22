@@ -441,7 +441,12 @@ namespace mde
                     var headerRow = new TableRow();
                     foreach (var txt in headerCells)
                     {
-                        var hp = new Paragraph { Margin = new Thickness(0) };
+                        // KeepTogether: ページの余白付近で表の行が跨ると、跨いだ先のセルは
+                        // 罫線（BorderBrush/BorderThickness）が描画されないままテキストだけが
+                        // 続いてしまうというWPFの制約がある。セル内の段落をページ内で分割
+                        // させないようにすることで、間に合わなければ行ごと次のページへ送られる
+                        // ようにし、行の途中で表が壊れて見える問題を避ける。
+                        var hp = new Paragraph { Margin = new Thickness(0), KeepTogether = true };
                         AppendInlineMarkdownToParagraph(hp, txt, false);
                         var cell = new TableCell(hp)
                         {
@@ -461,7 +466,8 @@ namespace mde
                         var row = new TableRow();
                         foreach (var txt in cellTexts)
                         {
-                            var cp = new Paragraph { Margin = new Thickness(0) };
+                            // KeepTogether: 上のヘッダーセルと同じ理由（罫線が崩れる問題への対策）。
+                            var cp = new Paragraph { Margin = new Thickness(0), KeepTogether = true };
                             AppendInlineMarkdownToParagraph(cp, txt, false);
                             var cell = new TableCell(cp)
                             {

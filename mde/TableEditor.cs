@@ -196,7 +196,10 @@ namespace mde
             var headerRow = new TableRow();
             for (int c = 0; c < a_cols; c++)
             {
-                var cell = new TableCell(new Paragraph { Margin = new Thickness(0) })
+                // KeepTogether: PDF書き出し時、ページの境目で表の行が跨ると、跨いだ先のセルは
+                // 罫線が描画されないままテキストだけが続いてしまうというWPFの制約があるため、
+                // セル内の段落をページ内で分割させない（間に合わなければ行ごと次のページへ）。
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), KeepTogether = true })
                 {
                     FontWeight = FontWeights.Bold,
                     Background = HEADER_BACKGROUND,
@@ -213,7 +216,7 @@ namespace mde
                 var row = new TableRow();
                 for (int c = 0; c < a_cols; c++)
                 {
-                    var cell = new TableCell(new Paragraph { Margin = new Thickness(0) })
+                    var cell = new TableCell(new Paragraph { Margin = new Thickness(0), KeepTogether = true })
                     {
                         BorderBrush = CELL_BORDER,
                         BorderThickness = new Thickness(1),
@@ -270,7 +273,7 @@ namespace mde
             var newRow = new TableRow();
             for (int c = 0; c < colCount; c++)
             {
-                var cell = new TableCell(new Paragraph { Margin = new Thickness(0) })
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), KeepTogether = true })
                 {
                     BorderBrush = CELL_BORDER,
                     BorderThickness = new Thickness(1),
@@ -321,7 +324,7 @@ namespace mde
             for (int r = 0; r < rows.Count; r++)
             {
                 var targetRow = rows[r];
-                var cell = new TableCell(new Paragraph { Margin = new Thickness(0) })
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), KeepTogether = true })
                 {
                     BorderBrush = CELL_BORDER,
                     BorderThickness = new Thickness(1),
@@ -728,7 +731,7 @@ namespace mde
                 for (int c = 0; c < colCount; c++)
                 {
                     string text = c < a_rows[r].Count ? a_rows[r][c] : "";
-                    var cell = new TableCell(new Paragraph(new Run(text)))
+                    var cell = new TableCell(new Paragraph(new Run(text)) { KeepTogether = true })
                     {
                         BorderBrush = CELL_BORDER,
                         BorderThickness = new Thickness(1),

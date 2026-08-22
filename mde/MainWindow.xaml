@@ -36,11 +36,13 @@
                 <MenuItem Header="新規作成(_N)" Click="NewBtnClick" InputGestureText="Ctrl+N"/>
                 <MenuItem Header="新しいウインドウ" Click="NewWindowClick" InputGestureText="Shift+Ctrl+N"/>
                 <MenuItem Header="開く…(_O)" Click="OpenBtnClick" InputGestureText="Ctrl+O"/>
+                <MenuItem x:Name="m_recentFilesMenu" Header="最近使ったファイル(_R)"/>
                 <MenuItem Header="保存(_S)" Click="SaveBtnClick" InputGestureText="Ctrl+S"/>
                 <MenuItem Header="名前を付けて保存…" Click="SaveAsBtnClick" InputGestureText="Shift+Ctrl+S"/>
                 <MenuItem Header="すべて保存(_A)" Click="SaveAllBtnClick"/>
                 <Separator/>
                 <MenuItem Header="PDFに書き出し…(_P)" Click="ExportPdfBtnClick" InputGestureText="Ctrl+P"/>
+                <MenuItem Header="PDFの余白を設定…(_M)" Click="PdfMarginBtnClick"/>
                 <Separator/>
                 <MenuItem Header="閉じる(_W)" Click="CloseBtnClick" InputGestureText="Ctrl+W"/>
             </MenuItem>

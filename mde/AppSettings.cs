@@ -6,6 +6,7 @@
 // %AppData%\mde\settings.json にJSON形式で保存する。
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 
@@ -26,6 +27,14 @@ namespace mde
         public double ZoomLevel { get; set; } = 1.0;
         public double EditorLineHeight { get; set; } = 26;
         public bool RequireCtrlForLinkClickFlg { get; set; } = true;
+        public double PdfMarginTop { get; set; } = 64;
+        public double PdfMarginBottom { get; set; } = 64;
+        public double PdfMarginLeft { get; set; } = 80;
+        public double PdfMarginRight { get; set; } = 80;
+
+        /// <summary>メニュー「ファイル」→「最近使ったファイル」に表示する、最近開いた/保存した
+        /// ファイルの絶対パス一覧（先頭が最新）。</summary>
+        public List<string> RecentFiles { get; set; } = new List<string>();
 
         private static string SettingsPath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mde", "settings.json");

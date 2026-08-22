@@ -11,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -65,6 +66,18 @@ namespace mde
         private double m_zoomLevel = 1.0;
         private double m_editorLineHeight = 26;
         private bool m_requireCtrlForLinkClickFlg = true;
+
+        /// <summary>PDF書き出し時の、上下左右の余白（px）。メニュー「PDFの余白を設定…」で
+        /// 変更でき、次回起動時にも復元される。既定値はAppSettingsのものと揃えてある。</summary>
+        private double m_pdfMarginTop = 64;
+        private double m_pdfMarginBottom = 64;
+        private double m_pdfMarginLeft = 80;
+        private double m_pdfMarginRight = 80;
+
+        /// <summary>メニュー「ファイル」→「最近使ったファイル」に表示する、最近開いた/保存した
+        /// ファイルの絶対パス一覧（先頭が最新）。次回起動時にも復元される。</summary>
+        private List<string> m_recentFiles = new List<string>();
+        private const int MAX_RECENT_FILES = 10;
 
         /// <summary>このウィンドウ専用の一時フォルダ識別子（複数ウィンドウを同時に開いた際、
         /// ドラッグ挿入した画像のファイル名が衝突しないようにするため）。</summary>
@@ -125,6 +138,12 @@ namespace mde
             m_zoomLevel = m_savedSettings.ZoomLevel;
             m_editorLineHeight = m_savedSettings.EditorLineHeight > 0 ? m_savedSettings.EditorLineHeight : 26;
             m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
+            m_pdfMarginTop = m_savedSettings.PdfMarginTop > 0 ? m_savedSettings.PdfMarginTop : 64;
+            m_pdfMarginBottom = m_savedSettings.PdfMarginBottom > 0 ? m_savedSettings.PdfMarginBottom : 64;
+            m_pdfMarginLeft = m_savedSettings.PdfMarginLeft > 0 ? m_savedSettings.PdfMarginLeft : 80;
+            m_pdfMarginRight = m_savedSettings.PdfMarginRight > 0 ? m_savedSettings.PdfMarginRight : 80;
+            m_recentFiles = null != m_savedSettings.RecentFiles ? new List<string>(m_savedSettings.RecentFiles) : new List<string>();
+            RebuildRecentFilesMenu();
             ApplyEditorLineHeight(m_editorLineHeight);
             UpdateLinkModeMenuChecks();
             m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
@@ -281,7 +300,12 @@ namespace mde
                 OutlinePaneWidth = outlineWidthToSave,
                 ZoomLevel = m_zoomLevel,
                 EditorLineHeight = m_editorLineHeight,
-                RequireCtrlForLinkClickFlg = m_requireCtrlForLinkClickFlg
+                RequireCtrlForLinkClickFlg = m_requireCtrlForLinkClickFlg,
+                PdfMarginTop = m_pdfMarginTop,
+                PdfMarginBottom = m_pdfMarginBottom,
+                PdfMarginLeft = m_pdfMarginLeft,
+                PdfMarginRight = m_pdfMarginRight,
+                RecentFiles = m_recentFiles
             };
             settings.Save();
         }
@@ -986,6 +1010,7 @@ namespace mde
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(a_path);
             m_pendingFileEdits.Remove(a_path); // このファイルの内容は、以後エディタ自体が真実の情報源になる
             RecordFileHistory(a_path);
+            AddToRecentFiles(a_path);
 
             if (m_isSourceModeFlg)
             {
@@ -1102,6 +1127,81 @@ namespace mde
             {
                 m_isNavigatingFileHistoryFlg = false;
             }
+        }
+
+        /// <summary>
+        /// メニュー「ファイル」→「最近使ったファイル」に表示する一覧へ、指定したファイルを
+        /// 先頭に追加する（既に一覧にあれば、いったん外してから先頭へ入れ直す）。件数が
+        /// MAX_RECENT_FILESを超えたら、古いものから切り捨てる。次回起動時にも復元される。
+        /// </summary>
+        /// <param name="a_path">開いた・保存したファイルの絶対パス。</param>
+        private void AddToRecentFiles(string a_path)
+        {
+            if (string.IsNullOrEmpty(a_path))
+            {
+                return;
+            }
+            m_recentFiles.RemoveAll(p => PathsReferToSameFile(p, a_path));
+            m_recentFiles.Insert(0, a_path);
+            if (m_recentFiles.Count > MAX_RECENT_FILES)
+            {
+                m_recentFiles.RemoveRange(MAX_RECENT_FILES, m_recentFiles.Count - MAX_RECENT_FILES);
+            }
+            RebuildRecentFilesMenu();
+        }
+
+        /// <summary>「最近使ったファイル」サブメニューの中身を、現在のm_recentFilesの内容から
+        /// 組み立て直す。</summary>
+        private void RebuildRecentFilesMenu()
+        {
+            m_recentFilesMenu.Items.Clear();
+            if (0 == m_recentFiles.Count)
+            {
+                m_recentFilesMenu.Items.Add(new MenuItem { Header = "（履歴なし）", IsEnabled = false });
+                return;
+            }
+            foreach (string path in m_recentFiles)
+            {
+                var item = new MenuItem
+                {
+                    Header = Path.GetFileName(path),
+                    ToolTip = path,
+                    Tag = path
+                };
+                item.Click += RecentFileMenuItemClick;
+                m_recentFilesMenu.Items.Add(item);
+            }
+            m_recentFilesMenu.Items.Add(new Separator());
+            var clearItem = new MenuItem { Header = "履歴をクリア(_C)" };
+            clearItem.Click += ClearRecentFilesClick;
+            m_recentFilesMenu.Items.Add(clearItem);
+        }
+
+        /// <summary>「最近使ったファイル」の項目をクリックした時、そのファイルを開く。
+        /// ファイルが見つからない（移動・削除済みなど）場合は、その旨を伝えて一覧からも外す。</summary>
+        /// <param name="a_sender">クリックされたメニュー項目（Tagにファイルの絶対パスを持つ）。</param>
+        /// <param name="a_args">Click event.</param>
+        private void RecentFileMenuItemClick(object a_sender, RoutedEventArgs a_args)
+        {
+            string path = (string)((MenuItem)a_sender).Tag;
+            if (!File.Exists(path))
+            {
+                MessageBox.Show("ファイルが見つかりませんでした：" + path, "最近使ったファイル",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                m_recentFiles.Remove(path);
+                RebuildRecentFilesMenu();
+                return;
+            }
+            LoadFile(path);
+        }
+
+        /// <summary>「履歴をクリア」：最近使ったファイルの一覧を空にする。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">Click event.</param>
+        private void ClearRecentFilesClick(object a_sender, RoutedEventArgs a_args)
+        {
+            m_recentFiles.Clear();
+            RebuildRecentFilesMenu();
         }
 
         private void SnapshotCurrentFileIfDirty()
@@ -1235,6 +1335,7 @@ namespace mde
             m_currentFilePath = newFilePath;
             m_currentFileDirectory = newFileDirectory;
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(newFilePath);
+            AddToRecentFiles(newFilePath);
 
             if (!m_isSourceModeFlg)
             {
@@ -1279,50 +1380,283 @@ namespace mde
                 return;
             }
 
-            // 画像を、印刷可能幅に収まるよう一時的に縮小する（画面上ではエディタの表示幅を
-            // 基準にサイズ調整されているため、印刷可能幅がそれより狭い場合、そのままでは
-            // ページからはみ出して欠けてしまうことがある）。書き出し後、画面表示用のサイズに
-            // 戻す。
-            double printableWidth = Math.Max(100, dlg.PrintableAreaWidth - 24);
-            var originalImageSizes = new Dictionary<Image, (double Width, double Height)>();
-            foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
+            // これ以降、書き出しのためだけにリンクの一時的な置き換え・画像サイズの一時的な
+            // 縮小・ColumnWidthの変更を行う。これらはRichTextBoxのTextChangedを発生させるため、
+            // 何もラップせずに行うと、実際には何も編集していないのに「未保存の変更がある」
+            // 扱いになってしまう。RunWithoutDirtyMarking（検索結果ハイライトの適用/解除で
+            // 使っているのと同じ仕組み）で囲むことで、ダーティフラグを立てずに済むようにする。
+            RunWithoutDirtyMarking(() =>
             {
-                originalImageSizes[img] = (img.Width, img.Height);
-                if (img.Width > printableWidth)
+                // mde内のリンクは、独自のLinkInfoタグを持つRunとして表現されており、WPF標準の
+                // Hyperlink要素ではないため、そのまま印刷してもPDF上でクリックできるリンクには
+                // ならない。書き出し中だけ、リンクを本物のHyperlink要素に一時的に置き換える。
+                // 外部URL（http://等）はそのままNavigateUriに設定する。同一文書内の見出しへの
+                // アンカーリンク（#で始まるもの）は「#アンカー名」の断片URIとして設定するが、
+                // これがPDF内のジャンプとして機能するかは、書き出し後にPDFビューアで確認が必要
+                // （XPS→PDFの変換過程で失われる場合がある）。
+                var linkSwaps = new List<(InlineCollection Parent, Run OriginalRun, Hyperlink Wrapper)>();
+                foreach (var run in FindAllLinkRuns(m_editor.Document).ToList())
                 {
-                    double scale = printableWidth / img.Width;
-                    img.Width = printableWidth;
-                    img.Height *= scale;
+                    InlineCollection parentInlines = run.Parent switch
+                    {
+                        Paragraph parentPara => parentPara.Inlines,
+                        Span parentSpan => parentSpan.Inlines,
+                        _ => null
+                    };
+                    if (null == parentInlines)
+                    {
+                        continue;
+                    }
+                    var info = (LinkInfo)run.Tag;
+                    Uri navigateUri = BuildPdfNavigateUri(info.m_url);
+                    if (null == navigateUri)
+                    {
+                        continue;
+                    }
+                    var hyperlink = new Hyperlink { NavigateUri = navigateUri };
+                    parentInlines.InsertBefore(run, hyperlink);
+                    parentInlines.Remove(run);
+                    hyperlink.Inlines.Add(run);
+                    linkSwaps.Add((parentInlines, run, hyperlink));
+                }
+
+                // ページの上下左右の余白は、メニュー「ファイル」→「PDFの余白を設定…」で設定した
+                // 値（m_pdfMarginTop/Bottom/Left/Right。既定は上下64px、左右80px）をそのまま使う。
+                var margin = new Thickness(m_pdfMarginLeft, m_pdfMarginTop, m_pdfMarginRight, m_pdfMarginBottom);
+
+                // 余白を差し引いた、実際に本文が使える幅（画像のサイズ調整・ColumnWidthの両方で
+                // 同じ値を使い、整合を取る）。
+                double contentWidth = Math.Max(100, dlg.PrintableAreaWidth - m_pdfMarginLeft - m_pdfMarginRight - 8);
+
+                // 画像を、この幅に収まるよう一時的に縮小する（画面上ではエディタの表示幅を基準に
+                // サイズ調整されているため、この幅がそれより狭い場合、そのままではページから
+                // はみ出して欠けてしまうことがある）。書き出し後、画面表示用のサイズに戻す。
+                var originalImageSizes = new Dictionary<Image, (double Width, double Height)>();
+                foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
+                {
+                    originalImageSizes[img] = (img.Width, img.Height);
+                    if (img.Width > contentWidth)
+                    {
+                        double scale = contentWidth / img.Width;
+                        img.Width = contentWidth;
+                        img.Height *= scale;
+                    }
+                }
+
+                // FlowDocumentは、既定では印刷可能幅に応じて自動的に段組み（複数列）にしてしまう
+                // ことがある。ColumnWidthを「余白を差し引いた実際の本文の幅」に合わせておくことで、
+                // 画面表示と同じ単一列のレイアウトのまま印刷されるようにする。
+                double originalColumnWidth = m_editor.Document.ColumnWidth;
+                m_editor.Document.ColumnWidth = contentWidth;
+
+                try
+                {
+                    // FlowDocument.PagePaddingは、このRichTextBoxに紐づいた実際のpaginatorでは
+                    // 反映されないことが確認できたため、余白はPagePaddingに頼らず、各ページの
+                    // 描画内容そのものをmarginだけずらして描画する、より低レベルで確実な
+                    // MarginDocumentPaginator（下記で定義）を使う。
+                    var innerPaginator = ((IDocumentPaginatorSource)m_editor.Document).DocumentPaginator;
+                    var pageSize = new Size(dlg.PrintableAreaWidth, dlg.PrintableAreaHeight);
+                    var marginPaginator = new MarginDocumentPaginator(innerPaginator, pageSize, margin);
+
+                    // 編集中のMarkDownファイル名から拡張子を除いたものを、書き出すPDFの既定の
+                    // ファイル名にする（例：「README.md」→「README.pdf」）。
+                    string docName = !string.IsNullOrEmpty(m_currentFilePath)
+                        ? Path.GetFileNameWithoutExtension(m_currentFilePath) : "無題";
+
+                    // 「Microsoft Print to PDF」の保存先ダイアログは、印刷ジョブの説明文字列
+                    // （下記のdocName）やXPS文書のTitleプロパティなど、アプリ側からどんな値を渡しても
+                    // 既定のファイル名としては使ってくれない仕様であることを確認済み（Microsoft自身が
+                    // 「サポートされていない」と回答している既知の制限）。次善の策として、この
+                    // ファイル名をあらかじめクリップボードにコピーしておく。保存ダイアログのファイル名欄
+                    // は空欄のままだが、Ctrl+Vで貼り付ければ済むようにするための配慮。
+                    try
+                    {
+                        Clipboard.SetText(docName + ".pdf");
+                    }
+                    catch
+                    {
+                        // クリップボードにコピーできなくても、PDFの書き出し自体には支障がないため無視する
+                    }
+
+                    dlg.PrintDocument(marginPaginator, docName);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("書き出しに失敗しました: " + ex.Message, "PDFに書き出し",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                finally
+                {
+                    m_editor.Document.ColumnWidth = originalColumnWidth;
+                    foreach (var kv in originalImageSizes)
+                    {
+                        kv.Key.Width = kv.Value.Width;
+                        kv.Key.Height = kv.Value.Height;
+                    }
+                    foreach (var swap in linkSwaps)
+                    {
+                        swap.Wrapper.Inlines.Remove(swap.OriginalRun);
+                        swap.Parent.InsertBefore(swap.Wrapper, swap.OriginalRun);
+                        swap.Parent.Remove(swap.Wrapper);
+                    }
+                }
+            });
+        }
+
+        /// <summary>文書内から、LinkInfoタグの付いたRun（mde独自のリンク表現）をすべて集める。</summary>
+        /// <param name="a_doc">対象の文書。</param>
+        /// <returns>見つかったリンクのRun一覧。</returns>
+        private IEnumerable<Run> FindAllLinkRuns(FlowDocument a_doc)
+        {
+            foreach (Block block in a_doc.Blocks)
+            {
+                foreach (var run in FindAllLinkRunsInBlock(block))
+                {
+                    yield return run;
                 }
             }
+        }
 
-            // FlowDocumentは、既定では印刷可能幅に応じて自動的に段組み（複数列）にしてしまう
-            // ことがある。ColumnWidthをページ幅そのものに設定しておくことで、画面表示と同じ
-            // 単一列のレイアウトのまま印刷されるようにする。
-            double originalColumnWidth = m_editor.Document.ColumnWidth;
-            m_editor.Document.ColumnWidth = dlg.PrintableAreaWidth;
-
-            try
+        private IEnumerable<Run> FindAllLinkRunsInBlock(Block a_block)
+        {
+            if (a_block is Paragraph p)
             {
-                var paginator = ((IDocumentPaginatorSource)m_editor.Document).DocumentPaginator;
-                paginator.PageSize = new Size(dlg.PrintableAreaWidth, dlg.PrintableAreaHeight);
-                string docName = "mde - " + (!string.IsNullOrEmpty(m_currentFilePath) ? Path.GetFileName(m_currentFilePath) : "無題");
-                dlg.PrintDocument(paginator, docName);
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("書き出しに失敗しました: " + ex.Message, "PDFに書き出し",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-            finally
-            {
-                m_editor.Document.ColumnWidth = originalColumnWidth;
-                foreach (var kv in originalImageSizes)
+                foreach (var run in FindAllLinkRunsInInlines(p.Inlines))
                 {
-                    kv.Key.Width = kv.Value.Width;
-                    kv.Key.Height = kv.Value.Height;
+                    yield return run;
                 }
             }
+            else if (a_block is Table table)
+            {
+                foreach (TableRowGroup rg in table.RowGroups)
+                {
+                    foreach (TableRow row in rg.Rows)
+                    {
+                        foreach (TableCell cell in row.Cells)
+                        {
+                            foreach (Block b in cell.Blocks)
+                            {
+                                foreach (var run in FindAllLinkRunsInBlock(b))
+                                {
+                                    yield return run;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            else if (a_block is List list)
+            {
+                foreach (ListItem li in list.ListItems)
+                {
+                    foreach (Block b in li.Blocks)
+                    {
+                        foreach (var run in FindAllLinkRunsInBlock(b))
+                        {
+                            yield return run;
+                        }
+                    }
+                }
+            }
+        }
+
+        private IEnumerable<Run> FindAllLinkRunsInInlines(InlineCollection a_inlines)
+        {
+            foreach (Inline inline in a_inlines)
+            {
+                if (inline is Run run && run.Tag is LinkInfo)
+                {
+                    yield return run;
+                }
+                else if (inline is Span span)
+                {
+                    foreach (var nestedRun in FindAllLinkRunsInInlines(span.Inlines))
+                    {
+                        yield return nestedRun;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// リンクのURLから、PDF書き出し用のHyperlink.NavigateUriを組み立てる。外部URL
+        /// （http://等）はそのまま使う。同一文書内の見出しへのアンカーリンク（#で始まる
+        /// もの）は「#アンカー名」の断片URIとして組み立てる。それ以外（他ファイルを開く
+        /// リンクなど）は、PDF内では意味を持たないため対象外とする。
+        /// </summary>
+        /// <param name="a_url">リンクの元のURL。</param>
+        /// <returns>組み立てたURI。対象外の場合はnull。</returns>
+        private Uri BuildPdfNavigateUri(string a_url)
+        {
+            if (string.IsNullOrWhiteSpace(a_url))
+            {
+                return null;
+            }
+            if (Regex.IsMatch(a_url, "^[a-zA-Z][a-zA-Z0-9+.-]*:") && !Regex.IsMatch(a_url, "^[a-zA-Z]:[\\\\/]"))
+            {
+                return Uri.TryCreate(a_url, UriKind.Absolute, out Uri external) ? external : null;
+            }
+            if (a_url.StartsWith("#"))
+            {
+                return Uri.TryCreate(a_url, UriKind.Relative, out Uri anchor) ? anchor : null;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 内部のDocumentPaginatorをラップし、各ページの描画内容を指定した余白の分だけ
+        /// ずらして描画する。FlowDocument.PagePaddingは、このRichTextBoxに紐づいた
+        /// paginator経由では反映されないことが確認できたため、より低レベルで確実な方法
+        /// として、各ページのVisualをTranslateTransformで直接ずらす方式にしている。
+        /// </summary>
+        private class MarginDocumentPaginator : DocumentPaginator
+        {
+            private readonly DocumentPaginator m_inner;
+            private readonly Size m_pageSize;
+            private readonly Thickness m_margin;
+
+            /// <summary>
+            /// ラッパーを作成する。内部のpaginatorには、余白を差し引いた「実際に使える幅・
+            /// 高さ」をページサイズとして与えておき、その中に収まるようレイアウト・改ページを
+            /// 行わせる。
+            /// </summary>
+            /// <param name="a_inner">元のpaginator。</param>
+            /// <param name="a_pageSize">用紙全体のサイズ（余白を含む）。</param>
+            /// <param name="a_margin">上下左右の余白。</param>
+            public MarginDocumentPaginator(DocumentPaginator a_inner, Size a_pageSize, Thickness a_margin)
+            {
+                m_inner = a_inner;
+                m_pageSize = a_pageSize;
+                m_margin = a_margin;
+                m_inner.PageSize = new Size(
+                    Math.Max(1, a_pageSize.Width - a_margin.Left - a_margin.Right),
+                    Math.Max(1, a_pageSize.Height - a_margin.Top - a_margin.Bottom));
+            }
+
+            public override DocumentPage GetPage(int a_pageNumber)
+            {
+                DocumentPage innerPage = m_inner.GetPage(a_pageNumber);
+                var visual = new ContainerVisual { Transform = new TranslateTransform(m_margin.Left, m_margin.Top) };
+                visual.Children.Add(innerPage.Visual);
+                var pageBounds = new Rect(new Point(0, 0), m_pageSize);
+                var contentBounds = new Rect(new Point(m_margin.Left, m_margin.Top), innerPage.Size);
+                return new DocumentPage(visual, m_pageSize, pageBounds, contentBounds);
+            }
+
+            public override bool IsPageCountValid => m_inner.IsPageCountValid;
+            public override int PageCount => m_inner.PageCount;
+            public override Size PageSize
+            {
+                get => m_pageSize;
+                set { /* 用紙全体のサイズは固定。内部paginator用のサイズはコンストラクタで設定済み */ }
+            }
+            // Sourceがm_innerのFlowDocumentをそのまま指していると、印刷の仕組みが
+            // GetPage()の出力（余白をずらして描画したVisual）を使わず、元のFlowDocumentから
+            // 直接、より効率的な方法でページを作り直してしまう「近道」をすることがある
+            // （これにより、GetPage()側でどれだけ正しく余白を描画しても反映されなかった）。
+            // nullを返すことで、この近道を防ぎ、必ずGetPage()の出力が使われるようにする。
+            public override IDocumentPaginatorSource Source => null;
         }
 
         /// <summary>現在のファイルと、保留中の編集があるすべてのファイルを保存する。</summary>
@@ -1664,6 +1998,24 @@ namespace mde
         {
             var aboutWindow = new AboutWindow { Owner = this };
             aboutWindow.ShowDialog();
+        }
+
+        /// <summary>メニュー「ファイル」→「PDFの余白を設定…」。ダイアログを開き、PDF書き出し時の
+        /// 上下左右の余白（px）を設定する。OKで確定した値を記憶し、次回起動時にも復元される
+        /// （実際にPDFへ反映されるのは、次に「PDFに書き出し」を実行した時点）。</summary>
+        /// <param name="a_sender">「PDFの余白を設定…」メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void PdfMarginBtnClick(object a_sender, RoutedEventArgs a_args)
+        {
+            var dialog = new PdfMarginDialog(m_pdfMarginTop, m_pdfMarginBottom, m_pdfMarginLeft, m_pdfMarginRight)
+                { Owner = this };
+            if (true == dialog.ShowDialog())
+            {
+                m_pdfMarginTop = dialog.MarginTop;
+                m_pdfMarginBottom = dialog.MarginBottom;
+                m_pdfMarginLeft = dialog.MarginLeft;
+                m_pdfMarginRight = dialog.MarginRight;
+            }
         }
 
         /// <summary>メニュー「表示」→「行間を設定…」。ダイアログを開き、ライブプレビュー
