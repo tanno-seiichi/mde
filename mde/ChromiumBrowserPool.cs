@@ -1,0 +1,118 @@
+// ChromiumBrowserPool.cs
+//
+// mde (MarkDown インラインエディタ) の一部。
+// ChromiumPdfExporterが使う、headless Chromiumのブラウザインスタンスを使い回すための
+// 仕組み。PuppeteerSharpでheadless Chromiumのプロセスを毎回新しく起動して終了するのは、
+// （実際に印刷する内容の量に関係なく）それ自体に数秒単位の時間がかかる重い処理のため、
+// PDFに書き出すたびに待たされる原因になっていた。
+//
+// このクラスは、ブラウザ自体はアプリの起動中ずっと1つだけ起動したままにしておき（初回の
+// PDF書き出し時、または起動直後にあらかじめ準備しておく）、書き出しのたびには軽量な
+// ページ（IPage）だけを作って使い捨てる方式にすることで、2回目以降の書き出しを大幅に
+// 高速化する。ブラウザ自体はアプリ終了時（App.xaml.csのOnExit）にまとめて終了する。
+
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using PuppeteerSharp;
+
+namespace mde
+{
+    /// <summary>アプリ全体で共有する、起動済みのheadless Chromiumインスタンスを管理する。</summary>
+    public static class ChromiumBrowserPool
+    {
+        private static readonly SemaphoreSlim s_lock = new SemaphoreSlim(1, 1);
+        private static IBrowser s_browser;
+        private static bool s_browserDownloadedFlg;
+
+        /// <summary>使い回し可能なブラウザインスタンスを取得する。まだ起動していなければ、
+        /// （必要ならChromium本体のダウンロードも含めて）ここで起動する。既に起動済みで
+        /// まだ生きていれば、それをそのまま返す。</summary>
+        public static async Task<IBrowser> GetBrowserAsync()
+        {
+            if (BrowserIsUsable(s_browser))
+            {
+                return s_browser;
+            }
+
+            await s_lock.WaitAsync();
+            try
+            {
+                // ロック待ちの間に他の呼び出しが起動を終えている場合がある。
+                if (BrowserIsUsable(s_browser))
+                {
+                    return s_browser;
+                }
+
+                if (!s_browserDownloadedFlg)
+                {
+                    var browserFetcher = new BrowserFetcher(SupportedBrowser.Chrome);
+                    await browserFetcher.DownloadAsync();
+                    s_browserDownloadedFlg = true;
+                }
+
+                s_browser = await Puppeteer.LaunchAsync(new LaunchOptions { Headless = true });
+                return s_browser;
+            }
+            finally
+            {
+                s_lock.Release();
+            }
+        }
+
+        /// <summary>アプリの起動直後などに、あらかじめバックグラウンドでブラウザを起動しておく
+        /// （実際にPDFへ書き出すまで待たず、事前に準備しておくことで、最初の書き出しも
+        /// 速くするための呼び出し）。失敗しても（オフライン環境など）ここでは何もしない。
+        /// 実際に書き出す際、GetBrowserAsync側で改めて起動を試みる。</summary>
+        public static void WarmUpInBackground()
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await GetBrowserAsync();
+                }
+                catch
+                {
+                    // 事前準備が失敗しても、実際の書き出し時に改めて起動を試みるため無視する
+                }
+            });
+        }
+
+        /// <summary>起動済みのブラウザがあれば、プロセスごと終了する。アプリ終了時に呼ぶ。</summary>
+        public static async Task ShutdownAsync()
+        {
+            IBrowser browser = s_browser;
+            s_browser = null;
+            if (null == browser)
+            {
+                return;
+            }
+
+            try
+            {
+                await browser.CloseAsync();
+            }
+            catch
+            {
+                // 終了処理での失敗は、アプリの終了自体を妨げないよう無視する
+            }
+        }
+
+        private static bool BrowserIsUsable(IBrowser a_browser)
+        {
+            if (null == a_browser)
+            {
+                return false;
+            }
+            try
+            {
+                return a_browser.IsConnected;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+}

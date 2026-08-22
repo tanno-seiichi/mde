@@ -1359,304 +1359,82 @@ namespace mde
         }
 
         /// <summary>
-        /// 現在の文書をPDFへ書き出す。追加のライブラリを使わず、Windows標準の「Microsoft Print to
-        /// PDF」仮想プリンタへ印刷する形で実現している（印刷ダイアログでこのプリンタを選ぶと、
-        /// 保存先を聞かれてPDFファイルが作成される）。
+        /// 現在の文書をPDFへ書き出す。headless Chromium（PuppeteerSharp、MITライセンス）で
+        /// 文書をHTMLとして印刷する形でPDF化している。この方式なら、保存先ダイアログの既定
+        /// ファイル名（元のMarkDownファイル名から拡張子を変えたもの）も、書き出し完了後の
+        /// 自動オープンも問題なく行える上、画面表示と同じフォント（游ゴシック UI等）が
+        /// そのまま使え、見出しへのジャンプリンクや取り消し線も本物の見た目で表現できる。
+        /// 初回実行時のみ、Chromium本体（数百MB）のダウンロードが発生するため、
+        /// インターネット接続が必要で、多少時間がかかる。
         /// </summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
-        private void ExportPdfBtnClick(object a_sender, RoutedEventArgs a_args)
+        private async void ExportPdfBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            if (m_isSourceModeFlg)
+            // 現在の内容をMarkDownテキストとして取得する（MarkDownモード・ソースモードの
+            // どちらでも動作する。以前あった「MarkDownモードでのみ利用可能」という制限は、
+            // このMarkDownテキスト経由の方式にしたことで不要になった）。
+            string md = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+
+            // 編集中のMarkDownファイル名から拡張子を除いたものを、書き出すPDFの既定の
+            // ファイル名にする（例：「README.md」→「README.pdf」）。
+            string docName = !string.IsNullOrEmpty(m_currentFilePath)
+                ? Path.GetFileNameWithoutExtension(m_currentFilePath) : "無題";
+
+            var saveDlg = new Microsoft.Win32.SaveFileDialog
             {
-                MessageBox.Show("PDFへの書き出しはMarkDownモードでのみ利用できます。", "PDFに書き出し",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                Filter = "PDFファイル (*.pdf)|*.pdf|すべてのファイル (*.*)|*.*",
+                FileName = docName + ".pdf"
+            };
+            string initialDirectory = m_currentFileDirectory ?? m_folderTreeManager.LoadedFolderRootPath;
+            if (!string.IsNullOrEmpty(initialDirectory))
+            {
+                saveDlg.InitialDirectory = initialDirectory;
+            }
+            if (true != saveDlg.ShowDialog())
+            {
                 return;
             }
 
-            var dlg = new System.Windows.Controls.PrintDialog();
-            if (true != dlg.ShowDialog())
+            Mouse.OverrideCursor = Cursors.Wait;
+            try
             {
-                return;
-            }
+                // MarkDownテキストを、書き出し専用の使い捨てFlowDocumentへ変換する。
+                // m_markdownConverter（m_originalTextTrackerを共有している）をそのまま使うと、
+                // MarkdownToDocument内部のCleanupでライブなエディタ側の「未編集ブロックは
+                // 元テキストのまま保存する」という記憶まで失われてしまうため、この書き出し専用の
+                // 変換だけは独立したOriginalTextTrackerを使う一時的なMarkdownConverterで行う。
+                var tempTracker = new OriginalTextTracker(m_editor);
+                var tempConverter = new MarkdownConverter(tempTracker, m_imageManager);
+                var tempDoc = new FlowDocument();
+                tempConverter.MarkdownToDocument(md, tempDoc);
 
-            // これ以降、書き出しのためだけにリンクの一時的な置き換え・画像サイズの一時的な
-            // 縮小・ColumnWidthの変更を行う。これらはRichTextBoxのTextChangedを発生させるため、
-            // 何もラップせずに行うと、実際には何も編集していないのに「未保存の変更がある」
-            // 扱いになってしまう。RunWithoutDirtyMarking（検索結果ハイライトの適用/解除で
-            // 使っているのと同じ仕組み）で囲むことで、ダーティフラグを立てずに済むようにする。
-            RunWithoutDirtyMarking(() =>
-            {
-                // mde内のリンクは、独自のLinkInfoタグを持つRunとして表現されており、WPF標準の
-                // Hyperlink要素ではないため、そのまま印刷してもPDF上でクリックできるリンクには
-                // ならない。書き出し中だけ、リンクを本物のHyperlink要素に一時的に置き換える。
-                // 外部URL（http://等）はそのままNavigateUriに設定する。同一文書内の見出しへの
-                // アンカーリンク（#で始まるもの）は「#アンカー名」の断片URIとして設定するが、
-                // これがPDF内のジャンプとして機能するかは、書き出し後にPDFビューアで確認が必要
-                // （XPS→PDFの変換過程で失われる場合がある）。
-                var linkSwaps = new List<(InlineCollection Parent, Run OriginalRun, Hyperlink Wrapper)>();
-                foreach (var run in FindAllLinkRuns(m_editor.Document).ToList())
-                {
-                    InlineCollection parentInlines = run.Parent switch
-                    {
-                        Paragraph parentPara => parentPara.Inlines,
-                        Span parentSpan => parentSpan.Inlines,
-                        _ => null
-                    };
-                    if (null == parentInlines)
-                    {
-                        continue;
-                    }
-                    var info = (LinkInfo)run.Tag;
-                    Uri navigateUri = BuildPdfNavigateUri(info.m_url);
-                    if (null == navigateUri)
-                    {
-                        continue;
-                    }
-                    var hyperlink = new Hyperlink { NavigateUri = navigateUri };
-                    parentInlines.InsertBefore(run, hyperlink);
-                    parentInlines.Remove(run);
-                    hyperlink.Inlines.Add(run);
-                    linkSwaps.Add((parentInlines, run, hyperlink));
-                }
+                await new ChromiumPdfExporter(m_imageManager).ExportAsync(tempDoc, saveDlg.FileName,
+                    m_pdfMarginTop, m_pdfMarginBottom, m_pdfMarginLeft, m_pdfMarginRight);
 
-                // ページの上下左右の余白は、メニュー「ファイル」→「PDFの余白を設定…」で設定した
-                // 値（m_pdfMarginTop/Bottom/Left/Right。既定は上下64px、左右80px）をそのまま使う。
-                var margin = new Thickness(m_pdfMarginLeft, m_pdfMarginTop, m_pdfMarginRight, m_pdfMarginBottom);
-
-                // 余白を差し引いた、実際に本文が使える幅（画像のサイズ調整・ColumnWidthの両方で
-                // 同じ値を使い、整合を取る）。
-                double contentWidth = Math.Max(100, dlg.PrintableAreaWidth - m_pdfMarginLeft - m_pdfMarginRight - 8);
-
-                // 画像を、この幅に収まるよう一時的に縮小する（画面上ではエディタの表示幅を基準に
-                // サイズ調整されているため、この幅がそれより狭い場合、そのままではページから
-                // はみ出して欠けてしまうことがある）。書き出し後、画面表示用のサイズに戻す。
-                var originalImageSizes = new Dictionary<Image, (double Width, double Height)>();
-                foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
-                {
-                    originalImageSizes[img] = (img.Width, img.Height);
-                    if (img.Width > contentWidth)
-                    {
-                        double scale = contentWidth / img.Width;
-                        img.Width = contentWidth;
-                        img.Height *= scale;
-                    }
-                }
-
-                // FlowDocumentは、既定では印刷可能幅に応じて自動的に段組み（複数列）にしてしまう
-                // ことがある。ColumnWidthを「余白を差し引いた実際の本文の幅」に合わせておくことで、
-                // 画面表示と同じ単一列のレイアウトのまま印刷されるようにする。
-                double originalColumnWidth = m_editor.Document.ColumnWidth;
-                m_editor.Document.ColumnWidth = contentWidth;
-
+                // 書き出したPDFを、既定の関連付けアプリで自動的に開く。
                 try
                 {
-                    // FlowDocument.PagePaddingは、このRichTextBoxに紐づいた実際のpaginatorでは
-                    // 反映されないことが確認できたため、余白はPagePaddingに頼らず、各ページの
-                    // 描画内容そのものをmarginだけずらして描画する、より低レベルで確実な
-                    // MarginDocumentPaginator（下記で定義）を使う。
-                    var innerPaginator = ((IDocumentPaginatorSource)m_editor.Document).DocumentPaginator;
-                    var pageSize = new Size(dlg.PrintableAreaWidth, dlg.PrintableAreaHeight);
-                    var marginPaginator = new MarginDocumentPaginator(innerPaginator, pageSize, margin);
-
-                    // 編集中のMarkDownファイル名から拡張子を除いたものを、書き出すPDFの既定の
-                    // ファイル名にする（例：「README.md」→「README.pdf」）。
-                    string docName = !string.IsNullOrEmpty(m_currentFilePath)
-                        ? Path.GetFileNameWithoutExtension(m_currentFilePath) : "無題";
-
-                    // 「Microsoft Print to PDF」の保存先ダイアログは、印刷ジョブの説明文字列
-                    // （下記のdocName）やXPS文書のTitleプロパティなど、アプリ側からどんな値を渡しても
-                    // 既定のファイル名としては使ってくれない仕様であることを確認済み（Microsoft自身が
-                    // 「サポートされていない」と回答している既知の制限）。次善の策として、この
-                    // ファイル名をあらかじめクリップボードにコピーしておく。保存ダイアログのファイル名欄
-                    // は空欄のままだが、Ctrl+Vで貼り付ければ済むようにするための配慮。
-                    try
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(saveDlg.FileName)
                     {
-                        Clipboard.SetText(docName + ".pdf");
-                    }
-                    catch
-                    {
-                        // クリップボードにコピーできなくても、PDFの書き出し自体には支障がないため無視する
-                    }
-
-                    dlg.PrintDocument(marginPaginator, docName);
+                        UseShellExecute = true
+                    });
                 }
-                catch (Exception ex)
+                catch
                 {
-                    MessageBox.Show("書き出しに失敗しました: " + ex.Message, "PDFに書き出し",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-                finally
-                {
-                    m_editor.Document.ColumnWidth = originalColumnWidth;
-                    foreach (var kv in originalImageSizes)
-                    {
-                        kv.Key.Width = kv.Value.Width;
-                        kv.Key.Height = kv.Value.Height;
-                    }
-                    foreach (var swap in linkSwaps)
-                    {
-                        swap.Wrapper.Inlines.Remove(swap.OriginalRun);
-                        swap.Parent.InsertBefore(swap.Wrapper, swap.OriginalRun);
-                        swap.Parent.Remove(swap.Wrapper);
-                    }
-                }
-            });
-        }
-
-        /// <summary>文書内から、LinkInfoタグの付いたRun（mde独自のリンク表現）をすべて集める。</summary>
-        /// <param name="a_doc">対象の文書。</param>
-        /// <returns>見つかったリンクのRun一覧。</returns>
-        private IEnumerable<Run> FindAllLinkRuns(FlowDocument a_doc)
-        {
-            foreach (Block block in a_doc.Blocks)
-            {
-                foreach (var run in FindAllLinkRunsInBlock(block))
-                {
-                    yield return run;
+                    // 自動で開けなくても、PDFの書き出し自体は完了しているため無視する
+                    // （関連付けアプリが無い環境などが考えられる）。
                 }
             }
-        }
-
-        private IEnumerable<Run> FindAllLinkRunsInBlock(Block a_block)
-        {
-            if (a_block is Paragraph p)
+            catch (Exception ex)
             {
-                foreach (var run in FindAllLinkRunsInInlines(p.Inlines))
-                {
-                    yield return run;
-                }
+                MessageBox.Show("書き出しに失敗しました: " + ex.Message, "PDFに書き出し",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
-            else if (a_block is Table table)
+            finally
             {
-                foreach (TableRowGroup rg in table.RowGroups)
-                {
-                    foreach (TableRow row in rg.Rows)
-                    {
-                        foreach (TableCell cell in row.Cells)
-                        {
-                            foreach (Block b in cell.Blocks)
-                            {
-                                foreach (var run in FindAllLinkRunsInBlock(b))
-                                {
-                                    yield return run;
-                                }
-                            }
-                        }
-                    }
-                }
+                Mouse.OverrideCursor = null;
             }
-            else if (a_block is List list)
-            {
-                foreach (ListItem li in list.ListItems)
-                {
-                    foreach (Block b in li.Blocks)
-                    {
-                        foreach (var run in FindAllLinkRunsInBlock(b))
-                        {
-                            yield return run;
-                        }
-                    }
-                }
-            }
-        }
-
-        private IEnumerable<Run> FindAllLinkRunsInInlines(InlineCollection a_inlines)
-        {
-            foreach (Inline inline in a_inlines)
-            {
-                if (inline is Run run && run.Tag is LinkInfo)
-                {
-                    yield return run;
-                }
-                else if (inline is Span span)
-                {
-                    foreach (var nestedRun in FindAllLinkRunsInInlines(span.Inlines))
-                    {
-                        yield return nestedRun;
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// リンクのURLから、PDF書き出し用のHyperlink.NavigateUriを組み立てる。外部URL
-        /// （http://等）はそのまま使う。同一文書内の見出しへのアンカーリンク（#で始まる
-        /// もの）は「#アンカー名」の断片URIとして組み立てる。それ以外（他ファイルを開く
-        /// リンクなど）は、PDF内では意味を持たないため対象外とする。
-        /// </summary>
-        /// <param name="a_url">リンクの元のURL。</param>
-        /// <returns>組み立てたURI。対象外の場合はnull。</returns>
-        private Uri BuildPdfNavigateUri(string a_url)
-        {
-            if (string.IsNullOrWhiteSpace(a_url))
-            {
-                return null;
-            }
-            if (Regex.IsMatch(a_url, "^[a-zA-Z][a-zA-Z0-9+.-]*:") && !Regex.IsMatch(a_url, "^[a-zA-Z]:[\\\\/]"))
-            {
-                return Uri.TryCreate(a_url, UriKind.Absolute, out Uri external) ? external : null;
-            }
-            if (a_url.StartsWith("#"))
-            {
-                return Uri.TryCreate(a_url, UriKind.Relative, out Uri anchor) ? anchor : null;
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// 内部のDocumentPaginatorをラップし、各ページの描画内容を指定した余白の分だけ
-        /// ずらして描画する。FlowDocument.PagePaddingは、このRichTextBoxに紐づいた
-        /// paginator経由では反映されないことが確認できたため、より低レベルで確実な方法
-        /// として、各ページのVisualをTranslateTransformで直接ずらす方式にしている。
-        /// </summary>
-        private class MarginDocumentPaginator : DocumentPaginator
-        {
-            private readonly DocumentPaginator m_inner;
-            private readonly Size m_pageSize;
-            private readonly Thickness m_margin;
-
-            /// <summary>
-            /// ラッパーを作成する。内部のpaginatorには、余白を差し引いた「実際に使える幅・
-            /// 高さ」をページサイズとして与えておき、その中に収まるようレイアウト・改ページを
-            /// 行わせる。
-            /// </summary>
-            /// <param name="a_inner">元のpaginator。</param>
-            /// <param name="a_pageSize">用紙全体のサイズ（余白を含む）。</param>
-            /// <param name="a_margin">上下左右の余白。</param>
-            public MarginDocumentPaginator(DocumentPaginator a_inner, Size a_pageSize, Thickness a_margin)
-            {
-                m_inner = a_inner;
-                m_pageSize = a_pageSize;
-                m_margin = a_margin;
-                m_inner.PageSize = new Size(
-                    Math.Max(1, a_pageSize.Width - a_margin.Left - a_margin.Right),
-                    Math.Max(1, a_pageSize.Height - a_margin.Top - a_margin.Bottom));
-            }
-
-            public override DocumentPage GetPage(int a_pageNumber)
-            {
-                DocumentPage innerPage = m_inner.GetPage(a_pageNumber);
-                var visual = new ContainerVisual { Transform = new TranslateTransform(m_margin.Left, m_margin.Top) };
-                visual.Children.Add(innerPage.Visual);
-                var pageBounds = new Rect(new Point(0, 0), m_pageSize);
-                var contentBounds = new Rect(new Point(m_margin.Left, m_margin.Top), innerPage.Size);
-                return new DocumentPage(visual, m_pageSize, pageBounds, contentBounds);
-            }
-
-            public override bool IsPageCountValid => m_inner.IsPageCountValid;
-            public override int PageCount => m_inner.PageCount;
-            public override Size PageSize
-            {
-                get => m_pageSize;
-                set { /* 用紙全体のサイズは固定。内部paginator用のサイズはコンストラクタで設定済み */ }
-            }
-            // Sourceがm_innerのFlowDocumentをそのまま指していると、印刷の仕組みが
-            // GetPage()の出力（余白をずらして描画したVisual）を使わず、元のFlowDocumentから
-            // 直接、より効率的な方法でページを作り直してしまう「近道」をすることがある
-            // （これにより、GetPage()側でどれだけ正しく余白を描画しても反映されなかった）。
-            // nullを返すことで、この近道を防ぎ、必ずGetPage()の出力が使われるようにする。
-            public override IDocumentPaginatorSource Source => null;
         }
 
         /// <summary>現在のファイルと、保留中の編集があるすべてのファイルを保存する。</summary>
