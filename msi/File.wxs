@@ -8,8 +8,26 @@
 		<Component Id="mde.dll.runtimeconfig.json.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="mde.runtimeconfig.json" KeyPath="yes" /></Component>
 		<Component Id="mde.dll.deps.json.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="mde.deps.json" KeyPath="yes" /></Component>
 
+		<!-- PDF書き出し（headless Chromium）用のPuppeteerSharpと、その依存DLL。
+		     Chromium本体は同梱せず、初回のPDF書き出し時にPuppeteerSharpが自動でダウンロードする
+		     （ChromiumBrowserPool.cs参照）ため、ここではmde.csprojのビルド出力に含まれる
+		     マネージドDLLのみを同梱する。 -->
+		<Component Id="PuppeteerSharp.dll.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="PuppeteerSharp.dll" KeyPath="yes" /></Component>
+		<Component Id="Microsoft.Extensions.Logging.dll.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="Microsoft.Extensions.Logging.dll" KeyPath="yes" /></Component>
+		<Component Id="Microsoft.Extensions.Logging.Abstractions.dll.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="Microsoft.Extensions.Logging.Abstractions.dll" KeyPath="yes" /></Component>
+		<Component Id="Microsoft.Extensions.DependencyInjection.dll.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="Microsoft.Extensions.DependencyInjection.dll" KeyPath="yes" /></Component>
+		<Component Id="Microsoft.Extensions.DependencyInjection.Abstractions.dll.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="Microsoft.Extensions.DependencyInjection.Abstractions.dll" KeyPath="yes" /></Component>
+		<Component Id="Microsoft.Extensions.Options.dll.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="Microsoft.Extensions.Options.dll" KeyPath="yes" /></Component>
+		<Component Id="Microsoft.Extensions.Primitives.dll.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="Microsoft.Extensions.Primitives.dll" KeyPath="yes" /></Component>
+		<Component Id="Microsoft.IO.RecyclableMemoryStream.dll.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="Microsoft.IO.RecyclableMemoryStream.dll" KeyPath="yes" /></Component>
+		<Component Id="ReactiveExtensionsSharp.dll.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="ReactiveExtensionsSharp.dll" KeyPath="yes" /></Component>
+		<Component Id="WebDriverBiDi.dll.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="WebDriverBiDi.dll" KeyPath="yes" /></Component>
+
 		<!-- License -->
 		<Component Id="License"><File Source="LICENSE.txt" /></Component>
+
+		<!-- サードパーティライブラリ（PuppeteerSharp等、上記参照）のライセンス表示 -->
+		<Component Id="ThirdPartyNotices"><File Source="THIRD-PARTY-NOTICES.txt" /></Component>
 
 		<!-- スタートメニューショートカット -->
 		<Component Id="StartMenuShortcutComponent" Directory="ProgramMenuDir" Guid="*">

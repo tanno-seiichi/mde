@@ -11,6 +11,7 @@
   <ItemGroup>
     <Content Include="License.rtf" />
     <Content Include="LICENSE.txt" />
+    <Content Include="THIRD-PARTY-NOTICES.txt" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\mde\mde.csproj" />
