@@ -22,6 +22,9 @@
     <File Path="doc/images/flow_search.png" />
     <File Path="doc/images/flow_startup.png" />
   </Folder>
+  <Folder Name="/ソリューション項目/images/">
+    <File Path="images/screen_layout.png" />
+  </Folder>
   <Project Path="mde\mde.csproj" />
   <Project Path="msi/msi.wixproj" Type="b7dd6f7e-def8-4e67-b5b7-07ef123db6f0">
     <Platform Solution="*|Any CPU" Project="x64" />
