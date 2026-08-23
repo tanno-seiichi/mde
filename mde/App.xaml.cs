@@ -18,8 +18,8 @@ namespace mde
     public partial class App : Application
     {
         /// <summary>Registers the unhandled-exception handler on startup, and starts warming up
-        /// the headless Chromium instance used for PDF export in the background so the first
-        /// export doesn't have to pay the full browser-launch cost.</summary>
+        /// the headless Chromium instance used for PDF export (ChromiumBrowserPool) in the
+        /// background so the first export doesn't have to pay the full startup cost.</summary>
         /// <param name="a_args">Startup event args.</param>
         protected override void OnStartup(StartupEventArgs a_args)
         {
@@ -28,8 +28,8 @@ namespace mde
             ChromiumBrowserPool.WarmUpInBackground();
         }
 
-        /// <summary>Shuts down the shared headless Chromium instance (if one was started) so its
-        /// process doesn't linger after the app closes.</summary>
+        /// <summary>Shuts down the shared headless Chromium instance used for PDF export (if one
+        /// was started) so its process doesn't linger after the app closes.</summary>
         /// <param name="a_args">Exit event args.</param>
         protected override void OnExit(ExitEventArgs a_args)
         {
@@ -49,6 +49,7 @@ namespace mde
             {
                 // 終了処理での失敗は、アプリの終了自体を妨げないよう無視する
             }
+
             base.OnExit(a_args);
 
             // 上記の対策後も、何らかの理由でプロセスが自然終了しないケースに備えて、

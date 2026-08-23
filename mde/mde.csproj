@@ -14,7 +14,10 @@
     <!-- PDF書き出し用（MITライセンス）。headless Chromiumで文書をHTMLとして印刷する形で
          PDF化している（ChromiumPdfExporter.cs / HtmlDocumentBuilder.cs参照）。画面表示と
          同じフォントがそのまま使え、本物の取り消し線・PDF内リンクジャンプにも対応できる。
-         初回実行時のみ、Chromium本体のダウンロードが発生するためインターネット接続が必要。 -->
+         初回実行時のみ、Chromium本体のダウンロードが発生するためインターネット接続が必要
+         （ChromiumBrowserPool.WarmUpInBackgroundにより、アプリ起動直後からバックグラウンドで
+         あらかじめダウンロード・起動しておくため、実際にPDF書き出しを行う頃には準備が
+         済んでいることが多い）。 -->
     <PackageReference Include="PuppeteerSharp" Version="25.8.0" />
   </ItemGroup>
 

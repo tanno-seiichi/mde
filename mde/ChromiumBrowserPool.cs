@@ -15,6 +15,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using PuppeteerSharp;
+using PuppeteerSharp.BrowserData;
 
 namespace mde
 {
@@ -24,6 +25,12 @@ namespace mde
         private static readonly SemaphoreSlim s_lock = new SemaphoreSlim(1, 1);
         private static IBrowser s_browser;
         private static bool s_browserDownloadedFlg;
+
+        /// <summary>ダウンロード済みブラウザの実行ファイルの実パス。LaunchAsync呼び出し時に
+        /// 明示的に渡すために保持しておく（後述のコメント参照。ExecutablePathを渡さないと、
+        /// LaunchAsync側が独自の既定バージョン解決を行ってしまい、実際にダウンロード済みの
+        /// バージョンと食い違うことがあるため）。</summary>
+        private static string s_executablePath;
 
         /// <summary>使い回し可能なブラウザインスタンスを取得する。まだ起動していなければ、
         /// （必要ならChromium本体のダウンロードも含めて）ここで起動する。既に起動済みで
@@ -47,11 +54,49 @@ namespace mde
                 if (!s_browserDownloadedFlg)
                 {
                     var browserFetcher = new BrowserFetcher(SupportedBrowser.Chrome);
-                    await browserFetcher.DownloadAsync();
+                    // 【重要・その1】引数なしのDownloadAsync()は、PuppeteerSharpのビルド時に
+                    // 固定されたバージョン文字列（例: "152.0.0977.42"）をダウンロード先として
+                    // 使う。Googleの配布元（chrome-for-testing-public）は、このピン留め
+                    // されたビルドがその後も公開され続けることを保証していないため、時間が
+                    // 経つとそのビルドが404になり「書き出しに失敗しました」というエラーに
+                    // なることがある（実際にPuppeteerSharp 25.8.0で発生を確認した。同種の
+                    // 不具合は過去にも報告されている：
+                    // https://github.com/hardkoded/puppeteer-sharp/issues/2447 ）。
+                    // BrowserTag.Stableを指定すると、呼び出し時点の「現在のChrome Stable版」
+                    // を動的に解決してからダウンロードするため、ビルド固定によるこの種の
+                    // 404を避けられる。
+                    InstalledBrowser installedBrowser;
+                    try
+                    {
+                        installedBrowser = await browserFetcher.DownloadAsync(BrowserTag.Stable);
+                    }
+                    catch
+                    {
+                        // 万一BrowserTag.Stableでの解決自体が失敗した場合（Google側の
+                        // バージョン情報エンドポイントに一時的に到達できない等）に備え、
+                        // 最後の手段として従来どおりの固定バージョンでも試みる。
+                        installedBrowser = await browserFetcher.DownloadAsync();
+                    }
+
+                    // 【重要・その2】ここで実際にダウンロードされたバージョンの実行ファイル
+                    // パスを必ず控えておき、下のLaunchAsyncへExecutablePathとして明示的に
+                    // 渡す。ExecutablePathを渡さずにLaunchAsyncを呼ぶと、LaunchAsync自身が
+                    // 独自に（DownloadAsyncとは別に）既定バージョンを決めてその場所を探しに
+                    // 行ってしまい、これもPuppeteerSharpのビルド時に固定された別のバージョン
+                    // 文字列であるため、上のBrowserTag.Stableで実際にダウンロードした
+                    // バージョンと食い違って「Browser was not found at the configured
+                    // executablePath」になることを実機で確認した。ダウンロードと起動の
+                    // バージョン解決を必ず一致させるため、DownloadAsyncの戻り値
+                    // （InstalledBrowser）が返す実パスをそのまま使う。
+                    s_executablePath = installedBrowser.GetExecutablePath();
                     s_browserDownloadedFlg = true;
                 }
 
-                s_browser = await Puppeteer.LaunchAsync(new LaunchOptions { Headless = true });
+                s_browser = await Puppeteer.LaunchAsync(new LaunchOptions
+                {
+                    Headless = true,
+                    ExecutablePath = s_executablePath,
+                });
                 return s_browser;
             }
             finally
