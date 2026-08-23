@@ -16,6 +16,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using PuppeteerSharp;
 using PuppeteerSharp.BrowserData;
+using System.IO;
 
 namespace mde
 {
@@ -53,7 +54,13 @@ namespace mde
 
                 if (!s_browserDownloadedFlg)
                 {
-                    var browserFetcher = new BrowserFetcher(SupportedBrowser.Chrome);
+                    // インストーラでProgram Filesに配置された場合など、実行ファイルフォルダへ
+                    // ダウンロードしようとするとアクセス拒否になるため、ユーザープロファイル
+                    // 配下の書き込み可能な場所をダウンロード先に明示する。
+                    string downloadDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mde", "chromium");
+                    Directory.CreateDirectory(downloadDir);
+
+                    var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions { Path = downloadDir });
                     // 【重要・その1】引数なしのDownloadAsync()は、PuppeteerSharpのビルド時に
                     // 固定されたバージョン文字列（例: "152.0.0977.42"）をダウンロード先として
                     // 使う。Googleの配布元（chrome-for-testing-public）は、このピン留め
