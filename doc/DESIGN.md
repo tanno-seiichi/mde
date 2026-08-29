@@ -34,7 +34,9 @@ Windows デスクトップアプリです。編集用ペインとプレビュー
 `FlowDocument` を直接編集対象にすることで、「入力したそばから書式が反映される」体験を実現しています。
 
 - **プラットフォーム**: .NET 8 / WPF（`net8.0-windows`）
-- **配布形態**: 自己完結型の単独 `.exe`（ランタイム別途インストール不要）
+- **配布形態**: フレームワーク依存の `.exe`（実行には .NET 8 Desktop Runtime が必要。
+  同梱はしていない。ランタイムが無い環境で起動しようとすると、.NET自体の標準機能により
+  自動的にインストール案内が表示される。詳細は13章・15章を参照）
 - **対応フォーマット**: MarkDown（`.md`）。表・画像・リンク・コードブロックを含む
 
 ## 2. 全体アーキテクチャ
@@ -79,9 +81,11 @@ mde は「MainWindow が全ての機能クラスを組み立てて delegate で�
 | `FolderTreeManager` | `FolderTreeManager.cs` | フォルダペインのツリー構築・選択・未保存マーカー |
 | `OriginalTextTracker` | `OriginalTextTracker.cs` | ブロック単位の非破壊保存のための「元テキスト」記憶 |
 | `LineEndingTracker` | `LineEndingTracker.cs` | ファイルごとの改行コード（CRLF/LF）の検出・記憶 |
+| `ImeCaretMoveHelper` | `ImeCaretMoveHelper.cs` | IME固まり対策（キー入力後のCaretPosition移動を遅延させる共通処理。状態を持たない静的クラス。） |
+| `DebugLogger` | `DebugLogger.cs` | IME固まり不具合調査用の簡易ファイルログ出力（`%LOCALAPPDATA%\mde\debug.log`）。状態を持たない静的クラス。 |
 | `FindReplaceWindow` | `FindReplaceWindow.xaml(.cs)` | 検索と置換ウィンドウの UI 状態管理（処理自体は`SearchReplaceService`に委譲） |
 | `AppSettings` | `AppSettings.cs` | ウィンドウ状態・ペイン幅・表示倍率の保存・復元（`settings.json`） |
-| `Models.cs` の各クラス | `Models.cs` | `ImageInfo` / `AnchorInfo` / `CodeBlockInfo` / `LinkInfo` / `OutlineEntry` / `FileSystemItem` といった、状態を持つ小さなデータクラス群 |
+| `Models.cs` の各クラス | `Models.cs` | `ImageInfo` / `HorizontalRuleInfo` / `AnchorInfo` / `CodeBlockInfo` / `LinkInfo` / `OutlineEntry` / `FileSystemItem` といった、状態を持つ小さなデータクラス群 |
 | その他ダイアログ | `*Dialog.xaml(.cs)`, `AboutWindow.*` | 表サイズ指定、リンク入力、バージョン情報などの単純なモーダルダイアログ |
 
 ## 5. データモデル
@@ -93,11 +97,13 @@ mde は「MainWindow が全ての機能クラスを組み立てて delegate で�
 |---|---|---|
 | `Paragraph`（見出し） | `int`（1〜6） | 見出しレベル |
 | `Paragraph`（コードブロック） | `CodeBlockInfo` | 言語名 |
+| `Paragraph`（水平線） | `HorizontalRuleInfo` | 中身（Inlines）は空のまま、見た目は罫線で表現 |
 | `Paragraph`（本文） | `null` | 通常の段落 |
-| `Run`（装飾） | `"bold"` / `"strikethrough"` / `"inline-code"` / `"escaped"` | インライン書式 |
+| `Run`（装飾） | `"bold"` / `"strikethrough"` / `"underline"` / `"highlight"` / `"inline-code"` / `"escaped"` | インライン書式。`underline`は`TextDecorations.Underline`、`highlight`は`Background`（別途プロパティ）で表現し、`Tag`自体は判別用の印 |
 | `Run`（リンク） | `LinkInfo` | リンク先URL、自動リンクかどうか |
 | `Run`（アンカー） | `AnchorInfo` | `<a id="...">` の目印 |
 | `Image` | `ImageInfo` | 元のsrc、alt、元の記法（html/md） |
+| `CheckBox`（`InlineUIContainer`経由） | `"task-checkbox"` | タスクリストのチェックボックス（`BlockStyles.CreateTaskCheckbox`で生成。） |
 
 `FileSystemItem` と `OutlineEntry`（`Models.cs`）は `INotifyPropertyChanged` を実装しており、
 フォルダペイン・アウトラインペインの表示（未保存マーカー、検索ヒットの強調表示、選択状態）を
@@ -176,14 +182,21 @@ UI 表示のみを担当し、実際の検索・置換はすべてこのクラ�
    → FlowDocumentにImage要素として挿入（ImageInfoに元情報を記録）
    → 保存する？
        いいえ → Tempのファイルは残るが実ファイルには一切影響なし
-       はい   → ImageManager.MoveTempImagesToFolder で
-                ファイルと同じフォルダのimagesへ移動（同名衝突時は連番を付与）
+       はい   → ImageManager.RelocatePendingTempImages で
+                ファイルと同じフォルダの「<ファイル名（拡張子除く）>.images」フォルダへ
+                移動（なければ作成、同名衝突時は連番を付与）
 ```
 
 ウィンドウを閉じるときに、そのウィンドウ専用の Temp サブフォルダは自動的に削除されます
 （保存済みで既に移動済みのファイルは対象外）。複数ウィンドウを同時に開いていても、
 ウィンドウごとに Temp のサブフォルダが分かれるため、無関係な画像ファイル名同士が衝突する
 ことはありません。
+
+画像パスの区切り文字は `/`・`\` のどちらでも解釈できます（Windowsの相対パスとして
+`images\foo.png` のように書かれていても、`ImageManager` 側で `\` を `Path.DirectorySeparatorChar`
+に変換してから解決します）。ただし、`![alt](パス)` のパス部分に含まれる `\` は、
+`MarkdownConverter.PreprocessEscapes` のエスケープ処理（`\*` のような記法の解釈）に
+巻き込まれないよう、リンク文字列と同様にエスケープ処理の対象外にしています。
 
 ## 11. 設定の保存
 
@@ -216,11 +229,20 @@ UI 表示のみを担当し、実際の検索・置換はすべてこのクラ�
 ## 13. ビルド・配布
 
 ```
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+dotnet publish -c Release -r win-x64 --self-contained false
 ```
 
-`bin\Release\net8.0-windows\win-x64\publish\mde.exe` に単独実行可能ファイルが生成されます。
-.NET ランタイムのインストールは不要です。
+`bin\Release\net8.0-windows\win-x64\publish\` に `mde.exe` / `mde.dll` / `mde.runtimeconfig.json` /
+`mde.deps.json` の4ファイルが生成されます（`msi\File.wxs` が実際にインストーラーへ含めている
+ファイルもこの4つで、両者は一致しています）。これは**フレームワーク依存**の配布形態で、
+実行には対象マシンに **.NET 8 Desktop Runtime** がインストールされている必要があります
+（`mde.csproj` に `SelfContained`/`PublishSingleFile` 等の指定はなく、既定値のまま）。
+
+.NET ランタイムはこのプロジェクトでは同梱していません。
+ランタイムが入っていないマシンで `mde.exe` を起動すると、mde 自身のコードとは無関係に、
+.NET の apphost（`UseAppHost` の既定値が有効なため自動生成される起動用exe）が
+「.NET をインストールしてください」という案内ダイアログを自動的に表示し、適切なダウンロードページへ誘導します。
+これは .NET SDK の標準機能であり、mde 側に実装コードは不要です。
 
 開発時は Visual Studio 2022 以降で `mde.csproj` を開いて F5、またはコマンドラインで
 `dotnet run`（.NET 8 SDK と「.NET デスクトップ開発」ワークロードが必要）。
@@ -393,6 +415,32 @@ public void HandleSelectionChanged(object a_sender, SelectionChangedEventArgs a_
 - 見出しへの変更を、箇条書き項目の中の段落に対して右クリックで行った場合、リストから完全に
   抜けずその場でスタイルだけ変わる簡易実装になっています。
 - コードブロックの言語名を、作成後に変更する UI はありません（再作成が必要）。
+- 水平線は、記号3個以上が間にスペース無しで並ぶ書き方（`---`/`***`/`___`）のみ対応です。
+  `- - -` のようにスペースを挟む書き方には対応していません（14.18節参照）。
+- リンク・画像のタイトル属性（`"title"`）は、既存のMarkDownに書かれていれば読み込み・
+  保存できますが、mde上のUI（右クリックメニュー「リンクにする…」）から新規に付与する
+  手段はまだありません（14.18節参照）。
+- 水平線・タスクリストのチェックボックスへのライブ入力変換（入力中に即座にブロックへ
+  変換される機能）は、キャレットが変換対象の段落にある間だけ働きます。他の段落を編集した
+  直後にファイルを読み込み直したり、ソースモードとMarkDownモードを切り替えたりした場合は、
+  代わりにバッチ変換（`MarkdownConverter.MarkdownToDocument`）が全体を再解釈するため、
+  結果自体は変わりません（14.19節参照）。
+- タスクリストの項目は、行頭に箇条書きマーカー（1段目「・」、2段目「○」、3段目以降「■」）と
+  チェックボックスの両方が表示されます（Typora等と異なりマーカーだけを隠す表示にはしていない。
+  マーカーを隠す対応はWPFの`List.MarkerStyle`がリスト単位でしか持てない制約により、Enterで
+  新しい項目を作った際にリスト全体が壊れて見える副作用が実機で確認されたため撤回した。
+  14.19節参照）。
+- PDF書き出しは、追加ライブラリを使わずWindows標準の「Microsoft Print to PDF」仮想プリンタへ
+  印刷する方式のため（Chromiumに依存しないビルドを求められ、v2.0.40.0でこの方式に戻した。
+  14.19節参照）、いくつか制約があります。ソースモード中は書き出せず、MarkDownモードへ
+  切り替える必要があります。保存ダイアログに既定のファイル名を自動入力することはできず
+  （Windows側の仕様上の制限）、代わりにファイル名をあらかじめクリップボードへコピーして
+  おくので、保存ダイアログでCtrl+Vにより貼り付けてください。書き出し後にPDFを自動で開く
+  機能もありません。一方、インターネット接続やChromiumのダウンロードは一切不要です。
+- mdeはフレームワーク依存の配布形態のため、実行には対象マシンに .NET 8 Desktop Runtime が
+  必要です（同梱していません）。入っていないマシンで起動した場合、.NET自体の標準機能により
+  「.NETをインストールしてください」という案内が自動的に表示されます（mde独自の実装ではなく、
+  .NETのapphostが持つ既定の挙動です。13章を参照）。
 - このコードは Windows/WPF のビルド環境上で都度コンパイル検証されているわけではないため、
   大きな変更を加えた後は必ずビルドして確認してください。
 
