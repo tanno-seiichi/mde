@@ -17,6 +17,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -41,6 +42,10 @@ namespace mde
         /// フラグ。TextChangedハンドラの自動変換ロジックが、プログラムによる変更にまで
         /// 反応してしまわないようにするためのもの。</summary>
         private bool m_isProgrammaticChangeFlg = false;
+
+        /// <summary>IME固まり不具合調査用の心拍ログタイマー（DESIGN.md 14.12 追記13参照）。
+        /// ガベージコレクションで消えないよう、フィールドとして保持しておく。</summary>
+        private System.Windows.Threading.DispatcherTimer m_imeDebugHeartbeatTimer;
 
         /// <summary>検索結果のハイライト（背景色）を適用/解除している間だけtrueにするガード
         /// フラグ。TextChangedがこれを見て、ダーティ扱いにしないようにする。</summary>
@@ -163,6 +168,7 @@ namespace mde
             m_outlineManager.HeadingSelected += ScrollOutlineListToEntry;
             m_imageManager = new ImageManager(
                 m_editor, m_originalTextTracker, () => m_isSourceModeFlg, () => m_currentFileDirectory,
+                () => m_currentFilePath,
                 RunAsProgrammaticChange, m_outlineManager.Refresh, m_instanceTempId);
             m_markdownConverter = new MarkdownConverter(m_originalTextTracker, m_imageManager);
             m_listEditor = new ListEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange);
@@ -190,6 +196,54 @@ namespace mde
             m_folderTree.ItemsSource = m_folderTreeManager.Roots;
             DataObject.AddCopyingHandler(m_editor, m_tableEditor.HandleCopying);
             DataObject.AddPastingHandler(m_editor, m_tableEditor.HandlePasting);
+            DataObject.AddPastingHandler(m_editor, EditorHandleInlineMarkdownPasting);
+
+            // 2026-08-29追記：タスクリストのチェックボックス（[ ]/[x]）のトグルを検知する。
+            // 埋め込まれた各CheckBoxに個別のハンドラを付けるのではなく、ToggleButton.
+            // CheckedEvent/UncheckedEventがルーティングイベントとしてm_editorまでバブリング
+            // してくることを利用し、m_editor自身に登録した単一のハンドラでまとめて受け取る
+            // （DESIGN.md参照）。
+            m_editor.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
+            m_editor.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
+
+            // IME固まり不具合（DESIGN.md 14.12参照）調査用のデバッグログ。フォーカスの
+            // 実際の移り変わりと、実際に入力されてくる文字（IME変換中のものも含む）の流れを
+            // 時系列で記録しておくことで、症状発生時にどちらが先に・どういう順序で起きて
+            // いるのかを、実機の動画だけに頼らず後から追えるようにする（DESIGN.md 14.12
+            // 追記12参照）。
+            m_editor.GotKeyboardFocus += (a_s, a_e) =>
+                DebugLogger.Log($"Editor.GotKeyboardFocus: Old={a_e.OldFocus} New={a_e.NewFocus}");
+            m_editor.LostKeyboardFocus += (a_s, a_e) =>
+                DebugLogger.Log($"Editor.LostKeyboardFocus: Old={a_e.OldFocus} New={a_e.NewFocus} " +
+                    $"ForegroundWindow={DebugLogger.DescribeForegroundWindow()}");
+            m_editor.PreviewTextInput += (a_s, a_e) =>
+                DebugLogger.Log(
+                    $"Editor.PreviewTextInput: Text=\"{a_e.Text}\" " +
+                    $"CompositionText=\"{a_e.TextComposition?.CompositionText}\" " +
+                    $"SystemCompositionText=\"{a_e.TextComposition?.SystemCompositionText}\" " +
+                    $"ControlText=\"{a_e.TextComposition?.ControlText}\"");
+            m_editor.TextInput += (a_s, a_e) =>
+                DebugLogger.Log(
+                    $"Editor.TextInput: Text=\"{a_e.Text}\" " +
+                    $"CompositionText=\"{a_e.TextComposition?.CompositionText}\"");
+
+            // 追記13（DESIGN.md 14.12参照）：症状発生時、何もイベントが起きない「無音」の期間が
+            // ログ上で観測されたため、イベント任せではなく、一定間隔で強制的に現在の状態
+            // （WPFの論理フォーカスと、実際のOSレベルのフォアグラウンドウィンドウの両方）を
+            // 記録する「心拍」ログを追加した。これにより、症状発生中に何も操作していない
+            // 間の状態も追える。
+            m_imeDebugHeartbeatTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(500)
+            };
+            m_imeDebugHeartbeatTimer.Tick += (a_s, a_e) =>
+                DebugLogger.Log(
+                    $"heartbeat: EditorIsFocused={m_editor.IsFocused} " +
+                    $"EditorIsKeyboardFocused={m_editor.IsKeyboardFocused} " +
+                    $"Keyboard.FocusedElement={Keyboard.FocusedElement} " +
+                    $"WindowIsActive={this.IsActive} " +
+                    $"ForegroundWindow={DebugLogger.DescribeForegroundWindow()}");
+            m_imeDebugHeartbeatTimer.Start();
 
             // 起動時引数でMarkDownファイルのパスを受け取っていれば、そちらを開く
             // （ファイルの関連付けからのダブルクリック起動などに対応するため）。
@@ -343,6 +397,60 @@ namespace mde
             m_folderTreeManager.RefreshDirtyMarkers();
         }
 
+        /// <summary>
+        /// タスクリストのチェックボックス（[ ]/[x]）が変更された段落を「編集済み」として記録し
+        /// （元テキストのままではチェック状態の変化が保存に反映されないため）、ファイルを
+        /// 未保存扱いにする。CheckBox（FrameworkElementの階層）→ InlineUIContainer
+        /// （TextElementの階層）→ Paragraph、と異なるクラス階層をまたいで親をたどる必要がある
+        /// （WPFの制約）。2026-08-29追記（DESIGN.md参照）。
+        /// </summary>
+        /// <param name="a_checkBoxOrDescendant">トグルされたCheckBox（またはその子孫の要素）。</param>
+        private void InvalidateTaskCheckboxBlock(DependencyObject a_checkBoxOrDescendant)
+        {
+            DependencyObject node = a_checkBoxOrDescendant;
+            while (null != node && !(node is Paragraph))
+            {
+                node = (node is FrameworkElement fe) ? fe.Parent : (node as TextElement)?.Parent;
+            }
+            if (node is Paragraph para)
+            {
+                m_originalTextTracker.InvalidateForBlock(para);
+                MarkDirty();
+            }
+        }
+
+        /// <summary>
+        /// タスクリストのチェックボックス（[ ]/[x]）がクリックされてチェック状態が変わった時の
+        /// 処理。埋め込まれた各CheckBoxに個別のハンドラを付けるのではなく、ToggleButton.
+        /// CheckedEvent/UncheckedEventがルーティングイベントとしてm_editorまでバブリング
+        /// してくることを利用し、コンストラクタでm_editor自身に登録した単一のハンドラで
+        /// まとめて受け取る。
+        /// 2026-08-29追記（同日中の追加修正、v2.0.34.0）：このルーティングイベント経由の
+        /// 通知だけに頼ると、チェック直後に別の操作（ソースモードへの切り替え等）を続けて行った
+        /// 場合に「元テキスト保持」の記憶破棄が間に合っていない（反映されない）ことがあると
+        /// ユーザーから報告を受けた。RichTextBoxに埋め込まれたInlineUIContainerの子要素は
+        /// マウスイベント同様、ルーティングイベントの到達も絡んで不安定になる可能性がある
+        /// （このクラスのドキュメントコメント参照）。そこで、クリックを検出する
+        /// `EditorPreviewMouseLeftButtonDown`側で`InvalidateTaskCheckboxBlock`を直接
+        /// 同期的に呼ぶように変更し、こちらはあくまで保険（キーボード操作など、将来他の経路で
+        /// IsCheckedが変わった場合の受け皿）として残してある。
+        /// 2026-08-29追記（DESIGN.md参照）。
+        /// </summary>
+        /// <param name="a_sender">イベントの発生元（トグルされたCheckBox）。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void TaskCheckboxToggled(object a_sender, RoutedEventArgs a_args)
+        {
+            if (m_isProgrammaticChangeFlg)
+            {
+                return;
+            }
+            if (!(a_sender is CheckBox cb) || "task-checkbox" != (cb.Tag as string))
+            {
+                return;
+            }
+            InvalidateTaskCheckboxBlock(cb);
+        }
+
         /// <summary>2つのパスが同一ファイルを指しているかどうかを調べる（大文字小文字を
         /// 区別せず、完全パスで比較する）。</summary>
         /// <param name="a_a">比較対象の1つ目。</param>
@@ -462,6 +570,9 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorTextChanged(object a_sender, TextChangedEventArgs a_args)
         {
+            DebugLogger.Log(
+                $"EditorTextChanged: m_isProgrammaticChangeFlg={m_isProgrammaticChangeFlg} " +
+                $"IsFocused={m_editor.IsFocused} Changes={a_args.Changes.Count}");
             // RichTextBoxはInitializeComponent中に、既定の空文書を設定する際にTextChangedを
             // 発生させることがある。その時点ではコンストラクタでの各クラスの構築がまだ
             // 完了していない可能性があるため、念のためガードしておく。
@@ -508,6 +619,25 @@ namespace mde
                 return;
             }
 
+            // 2026-08-29追記：タスクリスト（"[ ] "/"[x] "）のライブ入力変換（DESIGN.md参照）。
+            // タスクチェックボックスへの変換は、リスト項目自身の段落（トップレベルではない）に
+            // 対して行う必要があるため、直後のトップレベル限定ガードより前でチェックする。
+            if (para.Parent is ListItem && null == para.Tag)
+            {
+                // 2026-08-29追記（同日中の修正）：TextRange(para.ContentStart, para.ContentEnd).Text
+                // は、リスト項目内では行頭のマーカー記号（「•」等）まで文字列に含んでしまうことが
+                // ある（InlineStyleEditor.GetSafeRangeTextの説明を参照）。これにより正規表現の
+                // 先頭アンカー（^\[）が一致せず、チェックボックスへ変換されない不具合が実機で
+                // 確認されたため、マーカー記号を拾わない安全な取得方法に変更した。
+                string liText = m_listEditor.GetParagraphPlainText(para);
+                var taskMatch = Regex.Match(liText, "^\\[([ xX])\\][ \u00A0]$");
+                if (taskMatch.Success)
+                {
+                    m_listEditor.ConvertListItemTextToTaskCheckbox(para, " " != taskMatch.Groups[1].Value);
+                    return;
+                }
+            }
+
             if (!(para.Parent is FlowDocument))
             {
                 return; // 箇条書き/見出しへの自動変換はトップレベル段落のみ
@@ -516,7 +646,7 @@ namespace mde
             string text = new TextRange(para.ContentStart, para.ContentEnd).Text;
             text = text.TrimEnd('\r', '\n');
 
-            var bulletMatch = Regex.Match(text, "^([*-])[ \u00A0]$");
+            var bulletMatch = Regex.Match(text, "^([*+-])[ \u00A0]$");
             if (bulletMatch.Success)
             {
                 m_listEditor.ConvertParagraphToListItem(para, bulletMatch.Groups[1].Value, false);
@@ -528,10 +658,26 @@ namespace mde
                 m_listEditor.ConvertParagraphToListItem(para, null, true);
                 return;
             }
+            // \u8FFD\u8A1826\uFF08DESIGN.md 14.12\u53C2\u7167\uFF09\uFF1A\u5916\u90E8\u8ABF\u67FB\u306B\u3088\u308A\u3001\u75C7\u72B6\u306FMicrosoft\u516C\u5F0F\u306E\u65E2\u77E5\u4E0D\u5177\u5408
+            // \uFF08WPF\u30A2\u30D7\u30EA\u30B1\u30FC\u30B7\u30E7\u30F3\u3067IME\u4F7F\u7528\u6642\u306B\u767A\u751F\u3059\u308B\u30BF\u30A4\u30DF\u30F3\u30B0\u4F9D\u5B58\u306E\u4E0D\u5177\u5408\u3001Windows 11
+            // 22H2/23H2/24H2\u5BFE\u8C61\u3001KB5046732/KB5046740\u3067\u4FEE\u6B63\u6E08\u307F\uFF09\u3068\u9177\u4F3C\u3057\u3066\u3044\u308B\u3053\u3068\u304C\u5224\u660E\u3057\u305F\u3002
+            // \u898B\u51FA\u3057\u306E\u81EA\u52D5\u5909\u63DB\u51E6\u7406\u3092\u5B8C\u5168\u306B\u30BC\u30ED\u306B\u3057\u3066\u3082\u75C7\u72B6\u304C\u518D\u73FE\u3057\u305F\u3053\u3068\uFF08\u8FFD\u8A1825\uFF09\u3068\u3082\u6574\u5408\u3059\u308B
+            // \u305F\u3081\u3001\u30E6\u30FC\u30B6\u30FC\u306E\u5224\u65AD\u306B\u3088\u308A\u3001\u8FFD\u8A1824\u306E\u30AA\u30DF\u30C3\u30C8\u3092\u53D6\u308A\u3084\u3081\u3001\u898B\u51FA\u3057\u3078\u306E\u81EA\u52D5\u5909\u63DB\u3092
+            // \u5143\u3069\u304A\u308A\u6709\u52B9\u5316\u3059\u308B\uFF082.0.22\uFF09\u3002
             var m = Regex.Match(text, "^(#{1,6})[ \u00A0]$");
             if (m.Success)
             {
                 m_headingCodeBlockEditor.ConvertParagraphToHeading(para, m.Groups[1].Value.Length);
+                return;
+            }
+            // 2026-08-29追記：水平線（---/***/___）のライブ入力変換（DESIGN.md参照）。バッチ変換
+            // （MarkdownConverter）と同じ正規表現を使い、両者の判定基準を一致させている。見出しと
+            // 異なりトリガーとなる区切り文字（スペース等）が存在しないため、段落のテキストが
+            // パターンに完全一致した時点（マーカーが3文字揃った時点）で直ちに変換する。
+            var hrMatch = Regex.Match(text, "^ {0,3}([-*_])\\1{2,}\\s*$");
+            if (hrMatch.Success)
+            {
+                m_headingCodeBlockEditor.ConvertParagraphToHorizontalRule(para);
             }
         }
 
@@ -571,7 +717,7 @@ namespace mde
 
             string beforeSpace = new TextRange(para.ContentStart, para.ContentEnd).Text.TrimEnd('\r', '\n');
 
-            var bulletKeyMatch = Regex.Match(beforeSpace, "^([*-])$");
+            var bulletKeyMatch = Regex.Match(beforeSpace, "^([*+-])$");
             if (bulletKeyMatch.Success)
             {
                 a_args.Handled = true;
@@ -586,13 +732,95 @@ namespace mde
             }
         }
 
+        /// <summary>`TextPointer.Paragraph`を段落解決の一次手段として使い、nullが返った場合は
+        /// `TextPointer.Parent`から上へ辿って囲んでいるParagraphを探すフォールバックを行う。
+        /// 表のセルなど入れ子になった構造の中では`.Paragraph`が期待通りに解決しないことがある
+        /// ため（DESIGN.md 14.5参照）、その対策。</summary>
+        /// <param name="a_position">解決したい位置。</param>
+        /// <returns>囲んでいるParagraph（見つからなければnull）。</returns>
+        private static Paragraph ResolveParagraph(TextPointer a_position)
+        {
+            if (a_position?.Paragraph is Paragraph direct)
+            {
+                return direct;
+            }
+            DependencyObject node = a_position?.Parent;
+            while (null != node)
+            {
+                if (node is Paragraph p)
+                {
+                    return p;
+                }
+                node = (node as TextElement)?.Parent;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 他アプリ（他のMarkDownアプリ含む）や、Xaml/Rtf形式を伴わない生のテキストが
+        /// クリップボードから貼り付けられた時、そのテキストをMarkDownのインライン記法
+        /// （**太字**・~~取り消し線~~・&lt;u&gt;下線&lt;/u&gt;・`コード`・[リンク](url)等）として
+        /// 解釈しながら挿入する。mde自身や他のリッチテキストアプリ（Xaml/Rtf形式を伴う）からの
+        /// 貼り付けは、WPF標準のリッチテキスト貼り付けにそのまま任せる（何もしない）。
+        /// コードブロックへの貼り付けは`TableEditor.HandlePasting`が先にリテラル挿入として
+        /// 処理し`CancelCommand()`するため、ここには来ない。表としての貼り付け
+        /// （Excel等からのHTML/TSV）も同様に`TableEditor.HandlePasting`が先に処理する
+        /// （`DataObject.AddPastingHandler`は登録順にすべてのハンドラを呼ぶため、
+        /// `a_args.CommandCancelled`を確認してから処理する）。
+        /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">貼り付けイベントの引数。</param>
+        private void EditorHandleInlineMarkdownPasting(object a_sender, DataObjectPastingEventArgs a_args)
+        {
+            if (m_isSourceModeFlg ||
+                a_args.CommandCancelled)
+            {
+                return;
+            }
+            if (a_args.SourceDataObject.GetDataPresent(DataFormats.Xaml) ||
+                a_args.SourceDataObject.GetDataPresent(DataFormats.Rtf))
+            {
+                return; // リッチな形式が付いている場合はWPF標準の貼り付けに任せる
+            }
+            var para = ResolveParagraph(m_editor.CaretPosition);
+            if (null != para && para.Tag is CodeBlockInfo)
+            {
+                return; // コードブロックへの貼り付けはTableEditor.HandlePastingが処理する
+            }
+            if (!a_args.SourceDataObject.GetDataPresent(DataFormats.Text))
+            {
+                return;
+            }
+            string text = (string)a_args.SourceDataObject.GetData(DataFormats.Text);
+            if (string.IsNullOrEmpty(text))
+            {
+                return;
+            }
+            text = text.Replace("\r\n", "\n").Replace("\r", "\n");
+
+            a_args.CancelCommand();
+            m_originalTextTracker.Invalidate(m_editor.CaretPosition);
+            RunAsProgrammaticChange(() =>
+            {
+                if (!m_editor.Selection.IsEmpty)
+                {
+                    m_editor.Selection.Text = "";
+                }
+                TextPointer end = m_markdownConverter.InsertInlineMarkdownAtPosition(m_editor.CaretPosition, text);
+                m_editor.CaretPosition = end;
+                m_editor.Selection.Select(end, end);
+            });
+            m_outlineManager.Refresh();
+            MarkDirty();
+        }
+
         private void EditorPreviewKeyDown(object a_sender, KeyEventArgs a_args)
         {
             if (m_isSourceModeFlg)
             {
                 return;
             }
-            var para = m_editor.CaretPosition?.Paragraph;
+            var para = ResolveParagraph(m_editor.CaretPosition);
             if (null == para)
             {
                 return;
@@ -602,19 +830,27 @@ namespace mde
             {
                 if (m_listEditor.IsInListItem(para, out ListItem li, out List parentList))
                 {
-                    a_args.Handled = true;
                     if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
                     {
+                        a_args.Handled = true;
                         m_headingCodeBlockEditor.InsertLineBreakAtCaret();
+                        return;
                     }
-                    else
-                    {
-                        m_listEditor.HandleListEnter(li, parentList);
-                    }
+
+                    // 追記21〜25（DESIGN.md 14.12参照）：ネストしたリスト（2段目以降）でのEnter
+                    // キー処理を一旦丸ごと省略する診断を行ったが、見出しを完全にオミットしても
+                    // 症状が再現し（追記25）、外部調査でWindows側の既知不具合（追記26参照）と
+                    // 判明したため、この診断オミットは取りやめ、元どおりmde独自の処理を行う
+                    // （2.0.22）。
+
+                    a_args.Handled = true;
+                    m_listEditor.HandleListEnter(li, parentList);
                     return;
                 }
                 if (para.Tag is int level && level > 0)
                 {
+                    // 追記21〜26（DESIGN.md 14.12参照）：見出し内でのEnterキー処理も、上記と同じ
+                    // 理由でオミットを取りやめ、元どおりmde独自の処理を行う（2.0.22）。
                     a_args.Handled = true;
                     m_headingCodeBlockEditor.HandleHeadingEnter(para);
                     return;
@@ -834,10 +1070,33 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorPreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args)
         {
+            Point pos = a_args.GetPosition(m_editor);
+            var hit = VisualTreeHelper.HitTest(m_editor, pos);
+
+            // 2026-08-29追記：タスクリストのチェックボックス（[ ]/[x]）のクリックによる
+            // チェック⇔アンチェック切替（DESIGN.md参照）。このメソッドのドキュメントコメントに
+            // ある通り、RichTextBoxに埋め込まれたInlineUIContainerの子要素（CheckBox自身）の
+            // 内部クリック処理に頼るとイベントが不安定になるため、画像と同じくRichTextBox側
+            // でのヒットテストで検出し、IsCheckedを手動で反転させる。
+            // 2026-08-29追記（同日中の追加修正、v2.0.34.0）：「元テキスト保持」の記憶破棄
+            // （InvalidateTaskCheckboxBlock）は、以前はIsChecked変更で発生するToggleButton.
+            // CheckedEvent/UncheckedEventのルーティングイベントのバブリング頼みだったが、
+            // トグル直後に別操作（ソースモードへの切り替え等）を続けて行うと反映されていない
+            // ことがあると報告を受けた。埋め込み要素のイベント到達が不安定になりうる、という
+            // このメソッド自身のドキュメントコメントの教訓に従い、ここで直接・同期的に呼ぶ
+            // ように変更した（IsChecked変更にRunAsProgrammaticChangeを使わないのは変わらず
+            // 重要＝実際のユーザー操作として扱う）。
+            CheckBox cb = FindVisualAncestorOrSelf<CheckBox>(hit?.VisualHit);
+            if (null != cb && "task-checkbox" == (cb.Tag as string))
+            {
+                a_args.Handled = true;
+                cb.IsChecked = !(true == cb.IsChecked);
+                InvalidateTaskCheckboxBlock(cb);
+                return;
+            }
+
             if (a_args.ClickCount >= 2)
             {
-                Point pos = a_args.GetPosition(m_editor);
-                var hit = VisualTreeHelper.HitTest(m_editor, pos);
                 Image img = FindVisualAncestorOrSelf<Image>(hit?.VisualHit);
                 if (null != img)
                 {
@@ -1283,6 +1542,40 @@ namespace mde
             }
         }
 
+        /// <summary>
+        /// 保存時に書き出すMarkDownテキストを、一時フォルダに残ったままの画像（WYSIWYGモードで
+        /// ドラッグ&amp;ドロップ挿入した直後、まだ一度も保存していない画像）を
+        /// "&lt;ファイル名&gt;.images"フォルダへ退避・パス書き換えした上で返す。
+        /// 2026-08-29修正（DESIGN.md参照）：従来はこの退避処理（RelocatePendingTempImages）が
+        /// 「MarkDownモードの時だけ」呼ばれており、WYSIWYGモードで画像を挿入した直後にソース
+        /// モードへ切り替えてそのまま保存すると、退避が一切行われず、OSの一時フォルダを指す
+        /// 絶対パスがそのままファイルに書き出されてしまっていた（後で一時ファイルが消えると
+        /// 画像が失われ、ソースモードで開くと崩れたパスがそのまま文字として見えてしまう）。
+        /// ソースモード中の保存では、ライブな m_editor.Document・m_sourceEditor.Text の
+        /// どちらも直接いじらずに済むよう、「使い捨てのスクラッチ文書＋専用
+        /// OriginalTextTracker」パターンで処理し、書き換え後のテキストを
+        /// m_sourceEditor.Text へも反映しておく（同じ一時ファイルを次回保存時に再び探しに
+        /// 行って失敗することがないように）。
+        /// </summary>
+        /// <returns>保存すべきMarkDownテキスト。</returns>
+        private string GetMarkdownForSaveWithImageRelocation()
+        {
+            if (!m_isSourceModeFlg)
+            {
+                m_imageManager.RelocatePendingTempImages(m_editor.Document);
+                return m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+            }
+
+            var tempTracker = new OriginalTextTracker(m_editor);
+            var tempConverter = new MarkdownConverter(tempTracker, m_imageManager);
+            var tempDoc = new FlowDocument();
+            tempConverter.MarkdownToDocument(m_sourceEditor.Text, tempDoc);
+            m_imageManager.RelocatePendingTempImages(tempDoc);
+            string md = tempConverter.DocumentToMarkdown(tempDoc);
+            m_sourceEditor.Text = md;
+            return md;
+        }
+
         /// <summary>現在のファイルを保存する（未保存の新規ファイルなら名前を付けて保存へ）。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
@@ -1293,11 +1586,7 @@ namespace mde
                 SaveAs();
                 return;
             }
-            if (!m_isSourceModeFlg)
-            {
-                m_imageManager.RelocatePendingTempImages(m_editor.Document);
-            }
-            string md = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+            string md = GetMarkdownForSaveWithImageRelocation();
             File.WriteAllText(m_currentFilePath, m_lineEndingTracker.Apply(md, m_lineEndingTracker.GetFor(m_currentFilePath)), new UTF8Encoding(false));
             m_currentFileIsDirtyFlg = false;
             m_folderTreeManager.AddFileNodeIfMissing(m_currentFilePath);
@@ -1352,13 +1641,10 @@ namespace mde
                 // 保存先ファイルへ引き継がれる（新しいウィンドウで開く）ため、このウィンドウ
                 // 自体は表示中のフォルダの表示を維持したまま、その先頭のファイルへ切り替える。
                 string savedDirectoryBackup = m_currentFileDirectory;
+                string savedFilePathBackup = m_currentFilePath;
                 m_currentFileDirectory = newFileDirectory; // 画像パスの解決に一時的に必要
-                if (!m_isSourceModeFlg)
-                {
-                    m_imageManager.RelocatePendingTempImages(m_editor.Document);
-                }
-
-                string outsideMd = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+                m_currentFilePath = newFilePath; // 画像退避フォルダ名（<ファイル名>.images）の決定に一時的に必要
+                string outsideMd = GetMarkdownForSaveWithImageRelocation();
                 File.WriteAllText(newFilePath, m_lineEndingTracker.Apply(outsideMd, lineEnding), new UTF8Encoding(false));
 
                 // 古いパスの情報を破棄する（他のファイルの保留中の編集には触れない）。
@@ -1376,12 +1662,7 @@ namespace mde
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version + " - " + Path.GetFileName(newFilePath);
             AddToRecentFiles(newFilePath);
 
-            if (!m_isSourceModeFlg)
-            {
-                m_imageManager.RelocatePendingTempImages(m_editor.Document);
-            }
-
-            string md = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+            string md = GetMarkdownForSaveWithImageRelocation();
             File.WriteAllText(newFilePath, m_lineEndingTracker.Apply(md, lineEnding), new UTF8Encoding(false));
             m_currentFileIsDirtyFlg = false;
 
@@ -1503,11 +1784,7 @@ namespace mde
             {
                 try
                 {
-                    if (!m_isSourceModeFlg)
-                    {
-                        m_imageManager.RelocatePendingTempImages(m_editor.Document);
-                    }
-                    string md = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+                    string md = GetMarkdownForSaveWithImageRelocation();
                     File.WriteAllText(m_currentFilePath, m_lineEndingTracker.Apply(md, m_lineEndingTracker.GetFor(m_currentFilePath)), new UTF8Encoding(false));
                     m_pendingFileEdits.Remove(m_currentFilePath);
                     m_currentFileIsDirtyFlg = false;
@@ -1876,29 +2153,18 @@ namespace mde
             m_linkModeClickOnlyMenuItem.IsChecked = !m_requireCtrlForLinkClickFlg;
         }
 
-        /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。</summary>
-        /// <param name="a_value">設定したい行間の値。</param>
-        /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。あわせて、
-        /// 段落・リスト・表どうしの間の余白も、既定の行間（26）に対する比率を保ったまま
-        /// 連動して縮小・拡大させる（行間だけ詰めても、別々の段落・行の間の余白が広いままだと
-        /// 見た目のまとまりが悪くなるため）。</summary>
-        /// <param name="a_value">設定したい行間の値。</param>
         /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。
-        /// 段落内で行が折り返された時の間隔は LineHeight そのもので決まる一方、段落と段落の
-        /// 間の間隔は「前の段落のLineHeight」＋「段落の余白（Margin）」の合計になる。この2つを
-        /// 同じ間隔に揃えるため、段落・リスト・表どうしの間の余白は0にし、間隔をLineHeightだけで
-        /// 統一している。</summary>
-        /// <param name="a_value">設定したい行間の値。</param>
-        /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。
-        /// 段落と段落の間の余白（Margin）は、行間そのものと同じ値にする。これにより、
-        /// 元のMarkDownで段落間に空行が1行あった場合、それが「行の高さ1つ分の空白」として
-        /// 見える（プレーンテキストエディタで見た時の空行と同じ見え方になる）。また、行間の
-        /// 設定を変えても、常にこの比例関係が保たれる。</summary>
+        /// 段落内で行が折り返された時の間隔は、その段落のLineHeightそのもので決まる。もし
+        /// 段落・リスト・表どうしの間の余白（Margin）にもLineHeightと同じ値を足してしまうと、
+        /// 「折り返された行の間隔」の2倍近くになってしまい、段落間だけ不自然に間隔が
+        /// 空いて見える（実際にこの不具合が起きていたため、箇条書きの項目内の段落
+        /// （BuildNestedList参照）にならい、段落・リスト・表どうしの余白は常に0にし、
+        /// 間隔はLineHeightだけで揃えるようにしている）。</summary>
         /// <param name="a_value">設定したい行間の値。</param>
         private void ApplyEditorLineHeight(double a_value)
         {
             Resources["EditorLineHeight"] = a_value;
-            Resources["EditorBlockSpacing"] = new Thickness(0, 0, 0, a_value);
+            Resources["EditorBlockSpacing"] = new Thickness(0);
         }
 
         // ======================================================================

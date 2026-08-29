@@ -1,7 +1,7 @@
 ﻿// InlineStyleEditor.cs
 //
 // mde (MarkDown インラインエディタ) の一部。
-// 文中の太字・取り消し線・インラインコード・リンクの装飾を担当するクラス。
+// 文中の太字・取り消し線・下線・インラインコード・リンクの装飾を担当するクラス。
 // 右クリックメニューからの適用、入力中のリアルタイム変換（**a_text**などを打ち終えた瞬間に
 // 反映する）、リンクのクリック・編集・解除を扱う。
 
@@ -20,13 +20,15 @@ using System.Windows.Media;
 namespace mde
 {
     /// <summary>
-    /// インライン装飾（太字/取り消し線/インラインコード/リンク）の一式。MainWindowへの参照は
+    /// インライン装飾（太字/取り消し線/下線/インラインコード/リンク）の一式。MainWindowへの参照は
     /// 持たず、Editor本体・「元テキスト保持」の追跡役・各種delegateだけで動作する。
     /// </summary>
     public class InlineStyleEditor
     {
         private static readonly Brush LINK_BRUSH = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
         private static readonly Brush CODE_BLOCK_BACKGROUND = BlockStyles.CodeBlockBackgroundBrush;
+        // 2026-08-29追記：ハイライト（==text==）用の背景色（DESIGN.md参照）。
+        private static readonly Brush HIGHLIGHT_BACKGROUND = BlockStyles.HighlightBrush;
 
         private readonly RichTextBox m_editor;
         private readonly OriginalTextTracker m_originalTextTracker;
@@ -101,7 +103,7 @@ namespace mde
 
         /// <summary>右クリック「文字装飾」メニューの処理。"link" が選ばれた場合はURL入力
         /// ダイアログを表示し、それ以外は選択範囲へ直接スタイルを適用する。</summary>
-        /// <param name="a_style">"normal"/"code"/"bold"/"strikethrough"/"link"。</param>
+        /// <param name="a_style">"normal"/"code"/"bold"/"strikethrough"/"underline"/"link"。</param>
         /// <param name="a_ownerWindow">URL入力ダイアログの親ウィンドウ。</param>
         public void ApplyTextStyleFromMenu(string a_style, Window a_ownerWindow)
         {
@@ -211,7 +213,7 @@ namespace mde
         /// 新しいRunで置き換える。既存のRunのプロパティを個別にリセットしようとすると、
         /// WPFの仕様上（FontFamilyをnullにできない等）うまくいかないケースがあるため、
         /// 常に新しいRunを作り直す方式にしている。</summary>
-        /// <param name="a_style">"normal"、"code"、"bold"、"strikethrough"のいずれか。</param>
+        /// <param name="a_style">"normal"、"code"、"bold"、"strikethrough"、"underline"のいずれか。</param>
         private void ApplyInlineStyle(string a_style)
         {
             if (null == m_editor.Selection || m_editor.Selection.IsEmpty)
@@ -239,6 +241,12 @@ namespace mde
                         break;
                     case "strikethrough":
                         newRun = new Run(text, start) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
+                        break;
+                    case "underline":
+                        newRun = new Run(text, start) { TextDecorations = TextDecorations.Underline, Tag = "underline" };
+                        break;
+                    case "highlight":
+                        newRun = new Run(text, start) { Background = HIGHLIGHT_BACKGROUND, Tag = "highlight" };
                         break;
                     case "code":
                         newRun = new Run(text, start)
@@ -750,6 +758,68 @@ namespace mde
                     match = null;
                 }
             }
+            if (null == style &&
+                '>' == lastChar)
+            {
+                match = Regex.Match(textBefore, "<u>([^<]+)</u>$", RegexOptions.IgnoreCase);
+                if (match.Success && !IsEscapedAt(textBefore, match.Index))
+                {
+                    style = "underline";
+                }
+                else
+                {
+                    match = null;
+                }
+            }
+            if (null == style &&
+                '>' == lastChar)
+            {
+                // 2026-08-29追記：URL自動リンク（<https://...>）のライブ入力変換（DESIGN.md参照）。
+                // 元々MarkDown読み込み時のみ対応していた記法だが、ここで打ち終えた瞬間にも
+                // 変換されるようにし、メールアドレス自動リンクと挙動を揃える（追加提案）。
+                // バッチ変換（MarkdownConverter.INLINE_CONTENT_REGEX）ではURL自動リンクの
+                // 分岐がメールアドレス自動リンクより先に置かれており、<https://user@example.com>
+                // のような（メールアドレス自動リンクの正規表現にも一致し得る）URLはURLとして
+                // 解釈される。ライブ入力変換でもこの優先順位を一致させるため、URL側を先に判定する。
+                match = Regex.Match(textBefore, "<(https?://[^\\s<>]+)>$", RegexOptions.IgnoreCase);
+                if (match.Success && !IsEscapedAt(textBefore, match.Index))
+                {
+                    style = "url-autolink";
+                }
+                else
+                {
+                    match = null;
+                }
+            }
+            if (null == style &&
+                '>' == lastChar)
+            {
+                // 2026-08-29追記：メールアドレス自動リンク（<email@example.com>）のライブ入力
+                // 変換（DESIGN.md参照）。バッチ変換（MarkdownConverter）と対になる処理。
+                match = Regex.Match(textBefore, "<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>$");
+                if (match.Success && !IsEscapedAt(textBefore, match.Index))
+                {
+                    style = "email-autolink";
+                }
+                else
+                {
+                    match = null;
+                }
+            }
+            if (null == style &&
+                '=' == lastChar)
+            {
+                // 2026-08-29追記：ハイライト（==text==）（DESIGN.md参照）。
+                match = Regex.Match(textBefore, "==([^=]+)==$");
+                if (match.Success && !IsEscapedAt(textBefore, match.Index))
+                {
+                    style = "highlight";
+                }
+                else
+                {
+                    match = null;
+                }
+            }
             if (null == style)
             {
                 // 上のどの装飾トリガーにも一致しなかった場合、直前が「\ + 直前の1文字」という
@@ -800,6 +870,18 @@ namespace mde
             {
                 ReplaceTextBeforeCaretWithLinkRun(caret, start, match.Groups[1].Value, linkUrl);
             }
+            else if ("email-autolink" == style)
+            {
+                // 2026-08-29追記（DESIGN.md参照）：メールアドレス自動リンク。
+                string email = match.Groups[1].Value;
+                ReplaceTextBeforeCaretWithLinkRun(caret, start, email, "mailto:" + email, false, true);
+            }
+            else if ("url-autolink" == style)
+            {
+                // 2026-08-29追記（DESIGN.md参照）：URL自動リンク。
+                string url = match.Groups[1].Value;
+                ReplaceTextBeforeCaretWithLinkRun(caret, start, url, url, true, false);
+            }
             else
             {
                 ReplaceTextBeforeCaretWithStyledRun(caret, start, match.Groups[1].Value, style);
@@ -830,7 +912,13 @@ namespace mde
         /// <param name="a_start">範囲の開始位置。</param>
         /// <param name="a_linkText">リンクの表示文字列。</param>
         /// <param name="a_url">リンク先URL。</param>
-        private void ReplaceTextBeforeCaretWithLinkRun(TextPointer a_caret, TextPointer a_start, string a_linkText, string a_url)
+        /// <param name="a_isAutoLinkFlg">true の場合、&lt;url&gt; 形式（山括弧の自動リンク）からの
+        /// 変換であることを示す。2026-08-29追記（DESIGN.md参照）。</param>
+        /// <param name="a_isEmailAutoLinkFlg">true の場合、&lt;email@example.com&gt; 形式
+        /// （山括弧のメールアドレス自動リンク）からの変換であることを示す。
+        /// 2026-08-29追記（DESIGN.md参照）。</param>
+        private void ReplaceTextBeforeCaretWithLinkRun(TextPointer a_caret, TextPointer a_start, string a_linkText, string a_url,
+            bool a_isAutoLinkFlg = false, bool a_isEmailAutoLinkFlg = false)
         {
             m_runAsProgrammaticChange(() =>
             {
@@ -839,7 +927,7 @@ namespace mde
                 {
                     Foreground = LINK_BRUSH,
                     TextDecorations = TextDecorations.Underline,
-                    Tag = new LinkInfo { m_url = a_url, m_isAutoLinkFlg = false },
+                    Tag = new LinkInfo { m_url = a_url, m_isAutoLinkFlg = a_isAutoLinkFlg, m_isEmailAutoLinkFlg = a_isEmailAutoLinkFlg },
                     ToolTip = a_url
                 };
                 var trailingRun = new Run("\u200B", newRun.ContentEnd);
@@ -868,6 +956,14 @@ namespace mde
                 else if ("strikethrough" == a_style)
                 {
                     newRun = new Run(a_content, a_start) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
+                }
+                else if ("underline" == a_style)
+                {
+                    newRun = new Run(a_content, a_start) { TextDecorations = TextDecorations.Underline, Tag = "underline" };
+                }
+                else if ("highlight" == a_style)
+                {
+                    newRun = new Run(a_content, a_start) { Background = HIGHLIGHT_BACKGROUND, Tag = "highlight" };
                 }
                 else
                     newRun = new Run(a_content, a_start)

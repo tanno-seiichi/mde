@@ -94,6 +94,10 @@ namespace mde
             ul, ol { margin: 0 0 8pt; padding-left: 1.4em; }
             li { margin: 2pt 0; }
             img { max-width: 100%; }
+            hr { border: none; border-top: 0.75pt solid #B4B4B4; margin: 14pt 0; }
+            mark { background: #FFF38A; padding: 0 1pt; border-radius: 1pt; }
+            li.mde-task-item { list-style: none; margin-left: -1.2em; }
+            li.mde-task-item input[type=checkbox] { margin-right: 0.4em; }
         ";
 
         // ======================================================================
@@ -203,7 +207,12 @@ namespace mde
         {
             if (a_block is Paragraph p)
             {
-                if (p.Tag is CodeBlockInfo)
+                if (p.Tag is HorizontalRuleInfo)
+                {
+                    // 2026-08-29追記：水平線（DESIGN.md参照）。
+                    a_html.Append("<hr>");
+                }
+                else if (p.Tag is CodeBlockInfo)
                 {
                     AppendCodeBlock(a_html, p);
                 }
@@ -243,7 +252,12 @@ namespace mde
             a_html.Append('<').Append(tag).Append('>');
             foreach (ListItem li in a_list.ListItems)
             {
-                a_html.Append("<li>");
+                // 2026-08-29追記：タスクリスト項目は、既定の箇条書きマーカーの代わりに
+                // チェックボックスを表示するため、専用クラスを付ける（DESIGN.md参照）。
+                bool isTaskItemFlg = li.Blocks.FirstBlock is Paragraph firstPara &&
+                    firstPara.Inlines.FirstInline is InlineUIContainer firstIuc &&
+                    firstIuc.Child is CheckBox;
+                a_html.Append(isTaskItemFlg ? "<li class=\"mde-task-item\">" : "<li>");
                 bool firstBlockFlg = true;
                 foreach (Block b in li.Blocks)
                 {
@@ -303,7 +317,17 @@ namespace mde
                 string cellTag = headerRowFlg ? "th" : "td";
                 foreach (TableCell cell in rows[r].Cells)
                 {
-                    a_html.Append('<').Append(cellTag).Append('>');
+                    // 2026-08-29追記：列の文字揃え（DESIGN.md参照）。セル内の段落の
+                    // TextAlignmentを見て、既定（左揃え）以外ならCSSのtext-alignとして出力する。
+                    string alignCss = cell.Blocks.FirstBlock is Paragraph alignPara
+                        ? TextAlignmentToCssValue(alignPara.TextAlignment)
+                        : null;
+                    a_html.Append('<').Append(cellTag);
+                    if (null != alignCss)
+                    {
+                        a_html.Append(" style=\"text-align:").Append(alignCss).Append(";\"");
+                    }
+                    a_html.Append('>');
                     foreach (Block b in cell.Blocks)
                     {
                         if (b is Paragraph cp)
@@ -333,6 +357,16 @@ namespace mde
                 else if (inline is InlineUIContainer iuc && iuc.Child is Image img)
                 {
                     AppendImage(a_html, img);
+                }
+                else if (inline is InlineUIContainer cbIuc && cbIuc.Child is CheckBox cb)
+                {
+                    // 2026-08-29追記：タスクリストのチェックボックス（DESIGN.md参照）。
+                    a_html.Append("<input type=\"checkbox\" disabled");
+                    if (true == cb.IsChecked)
+                    {
+                        a_html.Append(" checked");
+                    }
+                    a_html.Append('>');
                 }
                 else if (inline is Run run)
                 {
@@ -377,9 +411,18 @@ namespace mde
             {
                 a_html.Append("<s>").Append(encoded).Append("</s>");
             }
+            else if ("underline" == styleTag)
+            {
+                a_html.Append("<u>").Append(encoded).Append("</u>");
+            }
             else if ("inline-code" == styleTag)
             {
                 a_html.Append("<code class=\"mde-inline-code\">").Append(encoded).Append("</code>");
+            }
+            else if ("highlight" == styleTag)
+            {
+                // 2026-08-29追記：ハイライト（DESIGN.md参照）。
+                a_html.Append("<mark>").Append(encoded).Append("</mark>");
             }
             else
             {
@@ -450,6 +493,22 @@ namespace mde
             catch
             {
                 a_html.Append("<i>[画像を読み込めませんでした]</i>");
+            }
+        }
+
+        /// <summary>表の列揃え（TextAlignment）をCSSのtext-align値に変換する。既定の左揃え
+        /// （Left。明示指定なしの列も含む）はnullを返し、呼び出し元でstyle属性自体を
+        /// 省略できるようにする。2026-08-29追記（DESIGN.md参照）。</summary>
+        /// <param name="a_alignment">対象のTextAlignment。</param>
+        /// <returns>CSSのtext-align値。既定（左揃え）ならnull。</returns>
+        private static string TextAlignmentToCssValue(System.Windows.TextAlignment a_alignment)
+        {
+            switch (a_alignment)
+            {
+                case System.Windows.TextAlignment.Center: return "center";
+                case System.Windows.TextAlignment.Right: return "right";
+                case System.Windows.TextAlignment.Justify: return "justify";
+                default: return null;
             }
         }
 
