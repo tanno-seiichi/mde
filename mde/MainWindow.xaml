@@ -13,7 +13,11 @@
 
     <Window.Resources>
         <sys:Double x:Key="EditorLineHeight">26</sys:Double>
-        <Thickness x:Key="EditorBlockSpacing">0,0,0,26</Thickness>
+        <!-- 段落・リスト・表どうしの間の余白は常に0（ApplyEditorLineHeight参照。段落内の
+             行間と二重に加算されて間隔が不自然に広がるのを防ぐため）。ここでの初期値も
+             それに合わせておく（実際にはMainWindowコンストラクタのApplyEditorLineHeight
+             呼び出しで、起動直後にこの値で上書きされる）。 -->
+        <Thickness x:Key="EditorBlockSpacing">0</Thickness>
         <Style TargetType="MenuItem" x:Key="CtxMenuItem">
             <Setter Property="Padding" Value="6,4"/>
         </Style>
@@ -179,7 +183,7 @@
                                  SelectionBrush="#3390FF"
                                  SelectionOpacity="0.45"
                                  VerticalScrollBarVisibility="Auto"
-                                 AcceptsTab="False"
+                                 AcceptsTab="True"
                                  SpellCheck.IsEnabled="False"
                                  TextChanged="EditorTextChanged"
                                  PreviewKeyDown="EditorPreviewKeyDown"
@@ -200,6 +204,16 @@
                             <Style TargetType="List">
                                 <Setter Property="Margin" Value="{DynamicResource EditorBlockSpacing}"/>
                                 <Setter Property="Padding" Value="32,0,0,0"/>
+                                <!-- 以前はここでMarkerStyle=Circle/Squareの時だけList.FontSizeを
+                                     小さくして、2段目以降の記号（○）をTyporaのように小さく
+                                     見せていた。しかし、あるListItemが「自分の段落」と「さらに
+                                     ネストした子List」の両方をBlocksに持つ状態になると（＝箇条書き
+                                     の項目をTabでさらに字下げできる状態にすると）、その子Listに
+                                     このFontSize縮小が効いているかどうかによって、なぜか親である
+                                     自分自身の段落の文字まで異常に小さく表示されてしまうという、
+                                     ネストの深さを問わず追いかけてくる副作用が実機で確認された
+                                     （DESIGN.md 14.13参照）。安全のため、記号の縮小は一旦撤回し、
+                                     WPF既定の大きさに戻している。 -->
                                 <Style.Triggers>
                                     <Trigger Property="MarkerStyle" Value="Decimal">
                                         <Setter Property="Padding" Value="34,0,0,0"/>
@@ -219,6 +233,8 @@
                                     <MenuItem Header="インラインコードにする" Tag="code" Click="TextStyleItemClick"/>
                                     <MenuItem Header="太字にする" Tag="bold" Click="TextStyleItemClick"/>
                                     <MenuItem Header="取り消し線にする" Tag="strikethrough" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="下線を引く" Tag="underline" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="ハイライトにする" Tag="highlight" Click="TextStyleItemClick"/>
                                     <MenuItem Header="リンクにする…" Tag="link" Click="TextStyleItemClick"/>
                                 </MenuItem>
                                 <MenuItem x:Name="m_linkMenuItem" Header="リンク" Style="{StaticResource CtxMenuItem}"

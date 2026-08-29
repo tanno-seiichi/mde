@@ -33,6 +33,7 @@ namespace mde
         private readonly OriginalTextTracker m_originalTextTracker;
         private readonly Func<bool> m_isSourceMode;
         private readonly Func<string> m_getCurrentFileDirectory;
+        private readonly Func<string> m_getCurrentFilePath;
         private readonly Action<Action> m_runAsProgrammaticChange;
         private readonly Action m_refreshOutline;
         private readonly string m_instanceTempId;
@@ -61,6 +62,8 @@ namespace mde
         /// <param name="a_originalTextTracker">「元テキスト保持」の追跡役。</param>
         /// <param name="a_isSourceMode">現在ソースモードかどうかを返すdelegate。</param>
         /// <param name="a_getCurrentFileDirectory">現在のファイルの保存先フォルダを返すdelegate（相対パス解決に使う）。</param>
+        /// <param name="a_getCurrentFilePath">現在のファイルの保存先パス（フルパス）を返すdelegate。
+        /// 画像退避フォルダ名（"&lt;ファイル名&gt;.images"）の組み立てに使う。</param>
         /// <param name="a_runAsProgrammaticChange">処理を「プログラムによる変更」として実行するdelegate。</param>
         /// <param name="a_refreshOutline">アウトラインペインの再構築を依頼するdelegate。</param>
         /// <param name="a_instanceTempId">このウィンドウ専用の一時フォルダ識別子（複数ウィンドウでの衝突防止用）。</param>
@@ -69,6 +72,7 @@ namespace mde
             OriginalTextTracker a_originalTextTracker,
             Func<bool> a_isSourceMode,
             Func<string> a_getCurrentFileDirectory,
+            Func<string> a_getCurrentFilePath,
             Action<Action> a_runAsProgrammaticChange,
             Action a_refreshOutline,
             string a_instanceTempId)
@@ -77,6 +81,7 @@ namespace mde
             this.m_originalTextTracker = a_originalTextTracker;
             this.m_isSourceMode = a_isSourceMode;
             this.m_getCurrentFileDirectory = a_getCurrentFileDirectory;
+            this.m_getCurrentFilePath = a_getCurrentFilePath;
             this.m_runAsProgrammaticChange = a_runAsProgrammaticChange;
             this.m_refreshOutline = a_refreshOutline;
             this.m_instanceTempId = a_instanceTempId;
@@ -104,20 +109,21 @@ namespace mde
             return img;
         }
 
-        /// <summary>MarkDownの ![a_alt](a_src) 記法からImage要素を組み立てる。</summary>
+        /// <summary>MarkDownの ![a_alt](a_src "a_title") 記法からImage要素を組み立てる。</summary>
         /// <param name="a_alt">代替テキスト。</param>
         /// <param name="a_src">画像のパス/URL。</param>
+        /// <param name="a_title">タイトル属性（省略時はnull）。2026-08-29追記（DESIGN.md参照）。</param>
         /// <returns>新しいImage要素。</returns>
-        public Image BuildImageFromMarkdown(string a_alt, string a_src)
+        public Image BuildImageFromMarkdown(string a_alt, string a_src, string a_title = null)
         {
             var img = new Image
             {
-                Tag = new ImageInfo { m_originalSrc = a_src, m_alt = a_alt, m_format = "md" },
+                Tag = new ImageInfo { m_originalSrc = a_src, m_alt = a_alt, m_format = "md", m_title = a_title },
                 Stretch = Stretch.Uniform,
                 Margin = new Thickness(0, 4, 0, 4)
             };
             AutomationProperties.SetName(img, a_alt ?? "");
-            img.ToolTip = a_src;
+            img.ToolTip = string.IsNullOrEmpty(a_title) ? a_src : a_title;
             SetImageSource(img, a_src);
             AttachImageDragHandlers(img);
             return img;
@@ -247,8 +253,8 @@ namespace mde
         }
 
         /// <summary>
-        /// 埋め込み画像の現在の実ファイルパスを解決する（保存済みなら images フォルダ内、
-        /// 未保存ならこのウィンドウの一時フォルダ内）。リモート画像（http/https/data）や、
+        /// 埋め込み画像の現在の実ファイルパスを解決する（保存済みなら"&lt;ファイル名&gt;.images"
+        /// フォルダ内、未保存ならこのウィンドウの一時フォルダ内）。リモート画像（http/https/data）や、
         /// 実ファイルが見つからない場合は null を返す。
         /// </summary>
         /// <param name="a_img">対象の画像。</param>
@@ -540,8 +546,8 @@ namespace mde
                 {
                     // 常にまずOSの一時フォルダに退避する（保存済みの文書であっても同様）。
                     // こうすることで、前回保存以降に追加された画像は、ユーザーが明示的に保存する
-                    // までは実際の images フォルダに一切触れない。実フォルダへの移動は
-                    // RelocatePendingTempImages が Save / Save As のたびに行う。
+                    // までは実際の"<ファイル名>.images"フォルダに一切触れない。実フォルダへの
+                    // 移動は RelocatePendingTempImages が Save / Save As のたびに行う。
                     string tempPath = CopyFileWithDedup(file, GetOrCreateTempImageFolder());
                     if (null == tempPath)
                     {
@@ -616,14 +622,26 @@ namespace mde
 
         /// <summary>
         /// 文書の保存先フォルダが判明したタイミング（初回のSave/Save As）で呼ばれる。OSの
-        /// 一時フォルダに退避されていた画像を、保存先の隣にある実際の images フォルダへ移動し、
-        /// 各画像が記憶しているパスをMarkDown書き出し用の最終的な相対パスに更新する。
+        /// 一時フォルダに退避されていた画像を、保存先の隣にある「&lt;ファイル名&gt;.images」
+        /// フォルダ（ファイルごとに専用、なければ作成する）へ移動し、各画像が記憶している
+        /// パスをMarkDown書き出し用の最終的な相対パスに更新する。
+        /// 2026-08-29追記（DESIGN.md参照）：以前はファイル名に関わらず共通の"images"フォルダを
+        /// 使っていたが、同じフォルダに複数のMarkDownファイルを保存すると、画像がすべて
+        /// 同じ"images"フォルダに混在してしまう（削除・移動時にどのファイル用か分かりにくい）
+        /// という声を受けて、ファイルごとに専用のフォルダ名（拡張子を除いたファイル名+
+        /// ".images"）を使うように変更した。
         /// </summary>
         /// <param name="a_doc">対象の文書。</param>
         public void RelocatePendingTempImages(FlowDocument a_doc)
         {
             string currentFileDirectory = m_getCurrentFileDirectory();
             if (string.IsNullOrEmpty(currentFileDirectory))
+            {
+                return;
+            }
+
+            string imagesFolderName = GetImagesFolderName();
+            if (string.IsNullOrEmpty(imagesFolderName))
             {
                 return;
             }
@@ -650,17 +668,33 @@ namespace mde
                     continue; // このウィンドウの一時ファイルではない
                 }
 
-                string destPath = CopyFileWithDedup(fullSrc, Path.Combine(currentFileDirectory, "images"));
+                string destPath = CopyFileWithDedup(fullSrc, Path.Combine(currentFileDirectory, imagesFolderName));
                 if (null == destPath)
                 {
                     continue;
                 }
 
-                info.m_originalSrc = "images/" + Path.GetFileName(destPath);
+                info.m_originalSrc = imagesFolderName + "/" + Path.GetFileName(destPath);
                 SetImageSource(img, info.m_originalSrc);
 
                 try { File.Delete(fullSrc); } catch { /* 削除できなくても致命的ではない */ }
             }
+        }
+
+        /// <summary>
+        /// 一時フォルダの画像を退避する先のフォルダ名（"&lt;ファイル名（拡張子除く）&gt;.images"）
+        /// を組み立てる。現在のファイルパスが分からない場合はnullを返す。
+        /// </summary>
+        /// <returns>フォルダ名。決定できなければnull。</returns>
+        private string GetImagesFolderName()
+        {
+            string currentFilePath = m_getCurrentFilePath?.Invoke();
+            if (string.IsNullOrEmpty(currentFilePath))
+            {
+                return null;
+            }
+            string baseName = Path.GetFileNameWithoutExtension(currentFilePath);
+            return string.IsNullOrEmpty(baseName) ? null : baseName + ".images";
         }
 
         /// <summary>2つのパスが同一ファイルを指しているかどうかを調べる（大文字小文字を区別せず、

@@ -29,12 +29,55 @@ namespace mde
         private static readonly Brush LINK_BRUSH = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
 
         /// <summary>
-        /// 文中の画像（HTML/MarkDown）、`コード`、**太字**、~~取り消し線~~、[リンク](a_url)、
-        /// &lt;自動リンク&gt; を検出する正規表現。
+        /// 表の列揃えで、「明示的な左揃え（:---）」と「揃え指定なし（---）」を区別して保存する
+        /// ために、表セルの段落（Paragraph）のTagに設定するマーカー文字列。2026-08-29追記
+        /// （DESIGN.md参照）。WPFの Paragraph.TextAlignment は Left/Center/Right/Justify の
+        /// 4値しか持てず、この2つはどちらも TextAlignment.Left になってしまい区別できないため、
+        /// 別途Tagで「明示的に左揃えだった」ことだけを覚えておく（Center/Rightは
+        /// TextAlignmentの値自体が一意に対応するので、この印は不要）。
+        /// </summary>
+        private const string ALIGN_LEFT_EXPLICIT_TAG = "align-left-explicit";
+
+        /// <summary>
+        /// 文中の画像（HTML/MarkDown）、`コード`、**太字**、~~取り消し線~~、&lt;u&gt;下線&lt;/u&gt;、
+        /// ==ハイライト==、[リンク](a_url)、&lt;https://...&gt; 自動リンク、
+        /// &lt;email@example.com&gt; メールアドレス自動リンク を検出する正規表現。
+        /// CommonMark/GFMには下線の標準的な記法がないため、下線はHTMLの&lt;u&gt;タグをそのまま
+        /// 埋め込む方式にしている（既存の&lt;a id="..."&gt;アンカー・&lt;url&gt;自動リンクと同じ
+        /// 「HTMLタグをそのまま埋め込む」という前例に倣った）。
+        /// 2026-08-29追記：グループ番号は以下の通り（ハイライト・メールアドレス自動リンクを
+        /// 追加したため、それ以前からある番号も一部詰め直している。DESIGN.md参照）。
+        /// 1:imgタグ／2,3,4:![alt](src)（alt,src)／5,6:`code`／7,8:**bold**／9,10:~~strike~~／
+        /// 11,12:&lt;u&gt;underline&lt;/u&gt;／13,14:==highlight==／15,16,17:[text](url)（text,url)／
+        /// 18,19:&lt;http(s)://url&gt;／20,21:&lt;email&gt;／22,23:&lt;a id="..."&gt;&lt;/a&gt;
         /// </summary>
         private static readonly Regex INLINE_CONTENT_REGEX = new Regex(
-            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(`([^`]+)`)|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)",
+            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(`([^`]+)`)|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|(<u>([^<]+)</u>)|(==([^=]+)==)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// [text](url "title") / ![alt](src "title") の "(...)" の中身（URLとタイトルの両方を
+        /// 含む生文字列）を、URL部分とタイトル部分（あれば）に分割する。2026-08-29追記
+        /// （DESIGN.md参照）。以前はタイトル部分を解析できず、URLの一部として誤って解釈して
+        /// しまいリンク・画像が壊れる不具合があったため対応した。
+        /// </summary>
+        /// <param name="a_raw">"(...)" の中身の生文字列。</param>
+        /// <param name="a_url">分割後のURL部分。</param>
+        /// <param name="a_title">分割後のタイトル部分（タイトルが無ければnull）。</param>
+        private static void SplitUrlAndTitle(string a_raw, out string a_url, out string a_title)
+        {
+            var m = Regex.Match(a_raw, "^(.*?)\\s+[\"']([^\"']*)[\"']\\s*$");
+            if (m.Success)
+            {
+                a_url = m.Groups[1].Value;
+                a_title = m.Groups[2].Value;
+            }
+            else
+            {
+                a_url = a_raw;
+                a_title = null;
+            }
+        }
 
         private readonly OriginalTextTracker m_originalTextTracker;
         private readonly ImageManager m_imageManager;
@@ -83,6 +126,10 @@ namespace mde
         {
             if (a_block is Paragraph p)
             {
+                if (p.Tag is HorizontalRuleInfo)
+                {
+                    return "---";
+                }
                 if (p.Tag is CodeBlockInfo codeInfo)
                 {
                     var sb = new StringBuilder();
@@ -182,8 +229,35 @@ namespace mde
                 }
                 mdRows.Add("| " + string.Join(" | ", cells) + " |");
             }
-            int colCount = rows[0].Cells.Count;
-            string sep = "| " + string.Join(" | ", Enumerable.Repeat("---", colCount)) + " |";
+            // 2026-08-29追記：ヘッダー行の各セルの段落のTextAlignmentから、区切り行の
+            // コロンを組み立てる（DESIGN.md参照）。中央揃えは":---:"、右揃えは"---:"。
+            // 左揃えは、Paragraph.Tagに付けた印（ALIGN_LEFT_EXPLICIT_TAG）を見て、
+            // 「明示的な左揃え（:---）」だったか「揃え指定なし（---）」だったかを区別する
+            // （同日中の追記：TextAlignmentだけではこの2つを区別できないため、Tagで別途
+            // 覚えておくようにした）。
+            var sepCells = new List<string>();
+            foreach (TableCell headerCell in rows[0].Cells)
+            {
+                var headerPara = headerCell.Blocks.FirstBlock as Paragraph;
+                TextAlignment alignment = headerPara?.TextAlignment ?? TextAlignment.Left;
+                if (TextAlignment.Center == alignment)
+                {
+                    sepCells.Add(":---:");
+                }
+                else if (TextAlignment.Right == alignment)
+                {
+                    sepCells.Add("---:");
+                }
+                else if (ALIGN_LEFT_EXPLICIT_TAG == (headerPara?.Tag as string))
+                {
+                    sepCells.Add(":---");
+                }
+                else
+                {
+                    sepCells.Add("---");
+                }
+            }
+            string sep = "| " + string.Join(" | ", sepCells) + " |";
 
             var result = new List<string> { mdRows[0], sep };
             result.AddRange(mdRows.Skip(1));
@@ -219,6 +293,8 @@ namespace mde
                 if (inline is Run run && run.Tag is string tag &&
                     ("bold" == tag ||
                      "strikethrough" == tag ||
+                     "underline" == tag ||
+                     "highlight" == tag ||
                      "inline-code" == tag))
                 {
                     var spanText = new StringBuilder();
@@ -242,9 +318,17 @@ namespace mde
                     {
                         a_sb.Append("**").Append(content).Append("**");
                     }
-                    else
+                    else if ("strikethrough" == tag)
                     {
                         a_sb.Append("~~").Append(content).Append("~~");
+                    }
+                    else if ("highlight" == tag)
+                    {
+                        a_sb.Append("==").Append(content).Append("==");
+                    }
+                    else
+                    {
+                        a_sb.Append("<u>").Append(content).Append("</u>");
                     }
 
                     i = j;
@@ -258,13 +342,28 @@ namespace mde
                 else if (inline is Run linkRun && linkRun.Tag is LinkInfo linkInfo)
                 {
                     string content = linkRun.Text.Replace("\u200B", "");
-                    if (linkInfo.m_isAutoLinkFlg && content == linkInfo.m_url)
+                    if (linkInfo.m_isEmailAutoLinkFlg)
+                    {
+                        // 2026-08-29\u8FFD\u8A18\uFF1A\u30E1\u30FC\u30EB\u30A2\u30C9\u30EC\u30B9\u81EA\u52D5\u30EA\u30F3\u30AF\u3002\u4FDD\u5B58\u3055\u308C\u3066\u3044\u308BURL\u306F
+                        // "mailto:"\u4ED8\u304D\u306A\u306E\u3067\u3001\u66F8\u304D\u623B\u3059\u969B\u306F\u53D6\u308A\u9664\u304F\uFF08DESIGN.md\u53C2\u7167\uFF09\u3002
+                        string email = linkInfo.m_url != null && linkInfo.m_url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)
+                            ? linkInfo.m_url.Substring("mailto:".Length)
+                            : linkInfo.m_url;
+                        a_sb.Append('<').Append(email).Append('>');
+                    }
+                    else if (linkInfo.m_isAutoLinkFlg && content == linkInfo.m_url)
                     {
                         a_sb.Append('<').Append(linkInfo.m_url).Append('>');
                     }
                     else
                     {
-                        a_sb.Append('[').Append(content).Append("](").Append(linkInfo.m_url).Append(')');
+                        a_sb.Append('[').Append(content).Append("](").Append(linkInfo.m_url);
+                        if (!string.IsNullOrEmpty(linkInfo.m_title))
+                        {
+                            // 2026-08-29\u8FFD\u8A18\uFF1A\u30BF\u30A4\u30C8\u30EB\u5C5E\u6027\uFF08DESIGN.md\u53C2\u7167\uFF09\u3002
+                            a_sb.Append(" \"").Append(linkInfo.m_title).Append('"');
+                        }
+                        a_sb.Append(')');
                     }
                 }
                 else if (inline is Run anchorRun && anchorRun.Tag is AnchorInfo anchorInfo)
@@ -282,6 +381,11 @@ namespace mde
                 else if (inline is InlineUIContainer iuc && iuc.Child is Image img)
                 {
                     a_sb.Append(ImageToMarkdownString(img));
+                }
+                else if (inline is InlineUIContainer cbIuc && cbIuc.Child is CheckBox taskCheckBox)
+                {
+                    // 2026-08-29追記：タスクリストのチェックボックス（DESIGN.md参照）。
+                    a_sb.Append(true == taskCheckBox.IsChecked ? "[x] " : "[ ] ");
                 }
                 else if (inline is Span span)
                 {
@@ -301,7 +405,14 @@ namespace mde
             string alt = info?.m_alt ?? "";
             if ("md" == info?.m_format)
             {
-                return "![" + alt + "](" + src + ")";
+                string result = "![" + alt + "](" + src;
+                if (!string.IsNullOrEmpty(info?.m_title))
+                {
+                    // 2026-08-29追記：タイトル属性（DESIGN.md参照）。
+                    result += " \"" + info.m_title + "\"";
+                }
+                result += ")";
+                return result;
             }
 
             string tag = "<img src=\"" + src + "\" alt=\"" + alt + "\"";
@@ -381,12 +492,26 @@ namespace mde
                     continue;
                 }
 
-                if (Regex.IsMatch(line, "^\\s*([*-]|\\d+\\.)\\s+"))
+                // 2026-08-29追記：水平線（---/***/___。3個以上の同じ文字が行全体を占める場合のみ。
+                // "- - -" のように間にスペースが入る書き方には対応しない。箇条書きの判定
+                // ロジック（マーカーの直後に空白が必要）と衝突しないよう、意図的にこの
+                // 「間にスペースなし」の書き方のみをサポート対象にしている（DESIGN.md参照）。
+                if (Regex.IsMatch(line, "^ {0,3}([-*_])\\1{2,}\\s*$"))
+                {
+                    var hrPara = new Paragraph();
+                    BlockStyles.ApplyHorizontalRuleStyle(hrPara);
+                    a_doc.Blocks.Add(hrPara);
+                    i++;
+                    m_originalTextTracker.Record(hrPara, lines, blockStart, i);
+                    continue;
+                }
+
+                if (Regex.IsMatch(line, "^\\s*([*+-]|\\d+\\.)\\s+"))
                 {
                     var listLines = new List<string>();
                     while (i < lines.Length)
                     {
-                        if (Regex.IsMatch(lines[i], "^\\s*([*-]|\\d+\\.)\\s+"))
+                        if (Regex.IsMatch(lines[i], "^\\s*([*+-]|\\d+\\.)\\s+"))
                         {
                             listLines.Add(lines[i]);
                             i++;
@@ -411,7 +536,7 @@ namespace mde
                             {
                                 j++;
                             }
-                            if (j < lines.Length && Regex.IsMatch(lines[j], "^\\s*([*-]|\\d+\\.)\\s+"))
+                            if (j < lines.Length && Regex.IsMatch(lines[j], "^\\s*([*+-]|\\d+\\.)\\s+"))
                             {
                                 while (i < j) { listLines.Add(lines[i]); i++; }
                                 continue;
@@ -429,6 +554,10 @@ namespace mde
                     Regex.IsMatch(lines[i + 1], "^[\\s|:-]+$") && lines[i + 1].Contains("-"))
                 {
                     var headerCells = ParseTableRow(line);
+                    // 2026-08-29追記：区切り行（|:---:|---:|...|）のコロンから列ごとの
+                    // 文字揃えを読み取る（DESIGN.md参照）。
+                    var alignSepCells = ParseTableRow(lines[i + 1]);
+                    var columnAlignments = alignSepCells.Select(ParseColumnAlignment).ToList();
                     i += 2;
                     var table = new Table();
                     foreach (var _ in headerCells)
@@ -438,7 +567,11 @@ namespace mde
                     var rg = new TableRowGroup();
                     table.RowGroups.Add(rg);
 
+                    (TextAlignment alignment, bool explicitLeftFlg) GetColumnAlignment(int a_colIndex) =>
+                        a_colIndex < columnAlignments.Count ? columnAlignments[a_colIndex] : (TextAlignment.Left, false);
+
                     var headerRow = new TableRow();
+                    int headerColIndex = 0;
                     foreach (var txt in headerCells)
                     {
                         // KeepTogether: ページの余白付近で表の行が跨ると、跨いだ先のセルは
@@ -446,7 +579,16 @@ namespace mde
                         // 続いてしまうというWPFの制約がある。セル内の段落をページ内で分割
                         // させないようにすることで、間に合わなければ行ごと次のページへ送られる
                         // ようにし、行の途中で表が壊れて見える問題を避ける。
-                        var hp = new Paragraph { Margin = new Thickness(0), KeepTogether = true };
+                        var (headerAlignment, headerExplicitLeftFlg) = GetColumnAlignment(headerColIndex);
+                        var hp = new Paragraph
+                        {
+                            Margin = new Thickness(0),
+                            KeepTogether = true,
+                            TextAlignment = headerAlignment,
+                            // 2026-08-29追記：「明示的な左揃え（:---）」を「揃え指定なし（---）」と
+                            // 区別して保存できるようにするための印（DESIGN.md参照）。
+                            Tag = headerExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null
+                        };
                         AppendInlineMarkdownToParagraph(hp, txt, false);
                         var cell = new TableCell(hp)
                         {
@@ -457,6 +599,7 @@ namespace mde
                             Padding = new Thickness(8, 6, 8, 6)
                         };
                         headerRow.Cells.Add(cell);
+                        headerColIndex++;
                     }
                     rg.Rows.Add(headerRow);
 
@@ -464,10 +607,20 @@ namespace mde
                     {
                         var cellTexts = ParseTableRow(lines[i]);
                         var row = new TableRow();
+                        int bodyColIndex = 0;
                         foreach (var txt in cellTexts)
                         {
                             // KeepTogether: 上のヘッダーセルと同じ理由（罫線が崩れる問題への対策）。
-                            var cp = new Paragraph { Margin = new Thickness(0), KeepTogether = true };
+                            var (bodyAlignment, bodyExplicitLeftFlg) = GetColumnAlignment(bodyColIndex);
+                            var cp = new Paragraph
+                            {
+                                Margin = new Thickness(0),
+                                KeepTogether = true,
+                                TextAlignment = bodyAlignment,
+                                // ヘッダーセルと同様の印（保存時に読むのはヘッダー行だけだが、
+                                // 表全体で一貫させておく）。
+                                Tag = bodyExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null
+                            };
                             AppendInlineMarkdownToParagraph(cp, txt, false);
                             var cell = new TableCell(cp)
                             {
@@ -476,6 +629,7 @@ namespace mde
                                 Padding = new Thickness(8, 6, 8, 6)
                             };
                             row.Cells.Add(cell);
+                            bodyColIndex++;
                         }
                         rg.Rows.Add(row);
                         i++;
@@ -535,11 +689,15 @@ namespace mde
             {
                 return true;
             }
-            if (Regex.IsMatch(a_line, "^\\s*([*-]|\\d+\\.)\\s+"))
+            if (Regex.IsMatch(a_line, "^\\s*([*+-]|\\d+\\.)\\s+"))
             {
                 return true;
             }
             if (a_line.TrimStart().StartsWith("|"))
+            {
+                return true;
+            }
+            if (Regex.IsMatch(a_line, "^ {0,3}([-*_])\\1{2,}\\s*$"))
             {
                 return true;
             }
@@ -591,6 +749,37 @@ namespace mde
         }
 
         /// <summary>
+        /// 表の区切り行（例: ":---:" / "---:" / ":---" / "---"）の1セル分の文字列から、
+        /// 列の文字揃えを判定する。2026-08-29追記（DESIGN.md参照。同日中に、「左寄せの明示
+        /// （:---）」と「揃え指定なし（---）」を区別できるよう改良した）。
+        /// TextAlignment自体はLeft/Center/Right/Justifyの4値しか持てず、この2つはどちらも
+        /// TextAlignment.Leftになってしまうため、区別が必要な「明示的な左揃え」だけを
+        /// 呼び出し元でParagraph.Tag（ALIGN_LEFT_EXPLICIT_TAG）に記録できるよう、
+        /// 戻り値にその旨のフラグを含める。
+        /// </summary>
+        /// <param name="a_sepCell">区切り行の1セル分の文字列。</param>
+        /// <returns>対応するTextAlignmentと、「明示的な左揃え（:---）」だったかどうか。</returns>
+        private static (TextAlignment alignment, bool explicitLeftFlg) ParseColumnAlignment(string a_sepCell)
+        {
+            string s = a_sepCell.Trim();
+            bool leftColonFlg = s.StartsWith(":");
+            bool rightColonFlg = s.EndsWith(":");
+            if (leftColonFlg && rightColonFlg)
+            {
+                return (TextAlignment.Center, false);
+            }
+            if (rightColonFlg)
+            {
+                return (TextAlignment.Right, false);
+            }
+            if (leftColonFlg)
+            {
+                return (TextAlignment.Left, true);
+            }
+            return (TextAlignment.Left, false);
+        }
+
+        /// <summary>
         /// 箇条書き項目のソース行の連なりから、（入れ子を含む）Listを組み立てる。
         /// ネストの各段で箇条書き記号か順序付き数字かを判定し、各項目の1行目と継続行を
         /// すべて結合してからインライン装飾を解析する（**太字**などが継続行をまたいでいても
@@ -608,6 +797,40 @@ namespace mde
 
             Paragraph pendingPara = null;
             var pendingTextLines = new List<string>();
+            // 2026-08-29追記：タスクリスト（[ ]/[x]）対応（DESIGN.md参照）。
+            // 直前に確定した箇条書き項目がタスク項目だったかどうか（未確定ならnull）。
+            bool? pendingTaskChecked = null;
+
+            // 保留中の項目のテキストを解析して段落へ反映し、タスク項目ならチェックボックスを
+            // 段落の先頭に挿入する。新しい項目の開始時／ループ終了後の両方から呼ばれる。
+            void FlushPendingItem()
+            {
+                if (null == pendingPara)
+                {
+                    return;
+                }
+                AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
+                if (pendingTaskChecked.HasValue)
+                {
+                    // 2026-08-29追記：チェックボックスの見た目はBlockStyles.CreateTaskCheckboxに
+                    // 一本化し、ライブ入力変換側（ListEditor.ConvertListItemTextToTaskCheckbox）と
+                    // 食い違わないようにしている（DESIGN.md参照）。
+                    var checkBox = BlockStyles.CreateTaskCheckbox(pendingTaskChecked.Value);
+                    var container = new InlineUIContainer(checkBox);
+                    if (pendingPara.Inlines.Count > 0)
+                    {
+                        pendingPara.Inlines.InsertBefore(pendingPara.Inlines.FirstInline, container);
+                    }
+                    else
+                    {
+                        pendingPara.Inlines.Add(container);
+                    }
+                    // 2026-08-29追記（同日中の追加修正、v2.0.34.0で試みたが、v2.0.35.0で撤回）：
+                    // Typora等と同様に箇条書きマーカーを非表示にする対応を一度実装したが、
+                    // ListEditor.ConvertListItemTextToTaskCheckboxと同じ理由（WPFの制約による
+                    // 実機での副作用）で撤回した（詳細はDESIGN.md参照）。
+                }
+            }
 
             foreach (var line in a_listLines)
             {
@@ -616,19 +839,25 @@ namespace mde
                     continue; // 「緩い」リストの項目間の空行
                 }
 
-                var m = Regex.Match(line, "^(\\s*)(?:([*-])|(\\d+)\\.)\\s+(.*)$");
+                var m = Regex.Match(line, "^(\\s*)(?:([*+-])|(\\d+)\\.)\\s+(.*)$");
                 if (m.Success)
                 {
-                    if (null != pendingPara)
-                    {
-                        AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
-                    }
+                    FlushPendingItem();
 
                     int indent = m.Groups[1].Value.Length;
                     bool orderedFlg = m.Groups[3].Success;
                     string bulletMarker = orderedFlg ? null : m.Groups[2].Value;
                     int level = Math.Max(0, (int)Math.Round(indent / 3.0));
                     string text = m.Groups[4].Value;
+
+                    // タスクリスト項目（"[ ] " / "[x] " / "[X] "）かどうかを判定する。
+                    bool? taskChecked = null;
+                    var taskMatch = Regex.Match(text, "^\\[([ xX])\\]\\s+(.*)$");
+                    if (taskMatch.Success)
+                    {
+                        taskChecked = " " != taskMatch.Groups[1].Value;
+                        text = taskMatch.Groups[2].Value;
+                    }
 
                     if (!rootMarkerSetFlg)
                     {
@@ -649,9 +878,17 @@ namespace mde
                         List nestedList = lastLi.Blocks.Count > 1 ? lastLi.Blocks.LastBlock as List : null;
                         if (null == nestedList)
                         {
+                            // 2026-08-29追記（同日中の追加修正、v2.0.39.0）：VSCode同様「1段目Disc・
+                            // 2段目Circle・3段目以降Box」にするため、BlockStyles.
+                            // UnorderedMarkerStyleForDepthで段数に応じたマーカーを決める
+                            // （ListEditor.IndentListItem等と同じ理由。DESIGN.md参照）。この時点で
+                            // stack.Count は「これから作る新しいnestedListの1つ手前までの段数」と
+                            // 一致するため、新しいnestedList自身の段数はstack.Count + 1になる。
                             nestedList = new List
                             {
-                                MarkerStyle = orderedFlg ? TextMarkerStyle.Decimal : TextMarkerStyle.Circle,
+                                MarkerStyle = orderedFlg
+                                    ? TextMarkerStyle.Decimal
+                                    : BlockStyles.UnorderedMarkerStyleForDepth(stack.Count + 1),
                                 Tag = orderedFlg ? null : bulletMarker
                             };
                             lastLi.Blocks.Add(nestedList);
@@ -675,6 +912,7 @@ namespace mde
 
                     pendingPara = para;
                     pendingTextLines = new List<string> { text };
+                    pendingTaskChecked = taskChecked;
                 }
                 else
                 {
@@ -685,10 +923,7 @@ namespace mde
                 }
             }
 
-            if (null != pendingPara)
-            {
-                AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
-            }
+            FlushPendingItem();
 
             // ソースがすべての項目で同じ数字を使っていた場合（例: "1." / "1." / "1."。
             // レンダラーに自動採番させる一般的なMarkDownの書き方）は、そのスタイルを維持する。
@@ -751,6 +986,15 @@ namespace mde
             // 先に洗い出しておく。
             var exemptRanges = new List<(int start, int end)>();
             foreach (Match m in Regex.Matches(a_text, "(?<!!)\\[([^\\]]*)\\]\\((?:[^()]|\\([^()]*\\))+\\)"))
+            {
+                var g = m.Groups[1];
+                exemptRanges.Add((g.Index, g.Index + g.Length));
+            }
+
+            // 画像記法 ![alt](パス) の「パス」部分（()の中身）も対象外にする。ここは表示文字
+            // ではなくファイルパス/URLであり、Windowsの画像パスは"\"区切りで書かれることも
+            // あるため、\をエスケープ文字として解釈して消してしまうとパスが壊れてしまうため。
+            foreach (Match m in Regex.Matches(a_text, "!\\[[^\\]]*\\]\\(((?:[^()]|\\([^()]*\\))+)\\)"))
             {
                 var g = m.Groups[1];
                 exemptRanges.Add((g.Index, g.Index + g.Length));
@@ -853,7 +1097,8 @@ namespace mde
                 }
                 else if (m.Groups[2].Success)
                 {
-                    a_p.Inlines.Add(new InlineUIContainer(m_imageManager.BuildImageFromMarkdown(m.Groups[3].Value, m.Groups[4].Value)));
+                    SplitUrlAndTitle(m.Groups[4].Value, out string imgSrc, out string imgTitle);
+                    a_p.Inlines.Add(new InlineUIContainer(m_imageManager.BuildImageFromMarkdown(m.Groups[3].Value, imgSrc, imgTitle)));
                 }
                 else if (m.Groups[5].Success)
                 {
@@ -869,15 +1114,30 @@ namespace mde
                 }
                 else if (m.Groups[11].Success)
                 {
-                    a_p.Inlines.Add(BuildLinkRun(RestorePlaceholders(m.Groups[12].Value), RestorePlaceholders(m.Groups[13].Value), false));
+                    AppendStyledRunsWithLineBreaks(a_p, m.Groups[12].Value, "underline");
                 }
-                else if (m.Groups[14].Success)
+                else if (m.Groups[13].Success)
                 {
-                    a_p.Inlines.Add(BuildLinkRun(RestorePlaceholders(m.Groups[15].Value), RestorePlaceholders(m.Groups[15].Value), true));
+                    AppendStyledRunsWithLineBreaks(a_p, m.Groups[14].Value, "highlight");
                 }
-                else if (m.Groups[16].Success)
+                else if (m.Groups[15].Success)
                 {
-                    a_p.Inlines.Add(new Run("") { Tag = new AnchorInfo { m_id = m.Groups[17].Value } });
+                    SplitUrlAndTitle(m.Groups[17].Value, out string linkUrlRaw, out string linkTitleRaw);
+                    string linkTitle = null == linkTitleRaw ? null : RestorePlaceholders(linkTitleRaw);
+                    a_p.Inlines.Add(BuildLinkRun(RestorePlaceholders(m.Groups[16].Value), RestorePlaceholders(linkUrlRaw), false, linkTitle));
+                }
+                else if (m.Groups[18].Success)
+                {
+                    a_p.Inlines.Add(BuildLinkRun(RestorePlaceholders(m.Groups[19].Value), RestorePlaceholders(m.Groups[19].Value), true));
+                }
+                else if (m.Groups[20].Success)
+                {
+                    string email = RestorePlaceholders(m.Groups[21].Value);
+                    a_p.Inlines.Add(BuildLinkRun(email, "mailto:" + email, false, null, true));
+                }
+                else if (m.Groups[22].Success)
+                {
+                    a_p.Inlines.Add(new Run("") { Tag = new AnchorInfo { m_id = m.Groups[23].Value } });
                 }
 
                 lastIndex = m.Index + m.Length;
@@ -892,15 +1152,25 @@ namespace mde
         /// <param name="a_linkText">表示文字。</param>
         /// <param name="a_url">リンク先URL。</param>
         /// <param name="a_isAutoLinkFlg">[a_text](a_url)ではなく&lt;a_url&gt;形式から来た場合はtrue。</param>
+        /// <param name="a_title">タイトル属性（[a_text](a_url "title")のtitle部分。省略時はnull）。
+        /// 2026-08-29追記。</param>
+        /// <param name="a_isEmailAutoLinkFlg">&lt;email@example.com&gt;形式のメールアドレス
+        /// 自動リンクから来た場合はtrue。2026-08-29追記。</param>
         /// <returns>組み立てたリンクのRun。</returns>
-        public Run BuildLinkRun(string a_linkText, string a_url, bool a_isAutoLinkFlg)
+        public Run BuildLinkRun(string a_linkText, string a_url, bool a_isAutoLinkFlg, string a_title = null, bool a_isEmailAutoLinkFlg = false)
         {
             return new Run(a_linkText)
             {
                 Foreground = LINK_BRUSH,
                 TextDecorations = TextDecorations.Underline,
-                Tag = new LinkInfo { m_url = a_url, m_isAutoLinkFlg = a_isAutoLinkFlg },
-                ToolTip = a_url
+                Tag = new LinkInfo
+                {
+                    m_url = a_url,
+                    m_isAutoLinkFlg = a_isAutoLinkFlg,
+                    m_title = a_title,
+                    m_isEmailAutoLinkFlg = a_isEmailAutoLinkFlg
+                },
+                ToolTip = string.IsNullOrEmpty(a_title) ? a_url : a_title
             };
         }
 
@@ -978,6 +1248,14 @@ namespace mde
                 {
                     run = new Run(segText) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
                 }
+                else if ("underline" == a_style)
+                {
+                    run = new Run(segText) { TextDecorations = TextDecorations.Underline, Tag = "underline" };
+                }
+                else if ("highlight" == a_style)
+                {
+                    run = new Run(segText) { Background = BlockStyles.HighlightBrush, Tag = "highlight" };
+                }
                 else
                     run = new Run(segText)
                     {
@@ -988,6 +1266,227 @@ namespace mde
                     };
                 a_p.Inlines.Add(run);
             }
+        }
+
+        // ======================================================================
+        //  生のMarkdownテキストを、任意の位置へその場で挿入する（貼り付け用）
+        // ======================================================================
+
+        /// <summary>
+        /// 他アプリ等からの生のMarkdownテキスト（**太字**・~~取り消し線~~・&lt;u&gt;下線&lt;/u&gt;・
+        /// `コード`・[リンク](url)等）を、インラインの装飾記法として解釈しながら、指定した
+        /// 位置（キャレット位置）へその場で挿入する。<see cref="AppendInlineMarkdownToParagraph"/>
+        /// と同じ正規表現・解釈ロジックを使うが、あちらが「段落の末尾へ追記する」動作なのに
+        /// 対し、こちらは段落の途中の任意の位置へ挿入できる点が異なる（貼り付け機能向け）。
+        /// 各要素は、mdeの他のインライン装飾機能（InlineStyleEditor）と同じ、TextPointerを
+        /// 直接渡すRunコンストラクタの方式で挿入する（Inlinesコレクション間でオブジェクトを
+        /// 移動させるような操作は行わない）。
+        /// </summary>
+        /// <param name="a_position">挿入する位置。</param>
+        /// <param name="a_text">解釈する生のテキスト。</param>
+        /// <returns>挿入した内容の末尾の位置（挿入後のキャレット移動先として使う）。</returns>
+        public TextPointer InsertInlineMarkdownAtPosition(TextPointer a_position, string a_text)
+        {
+            TextPointer cursor = a_position;
+            a_text = PreprocessEscapes(a_text);
+            int lastIndex = 0;
+            foreach (Match m in INLINE_CONTENT_REGEX.Matches(a_text))
+            {
+                if (m.Index > lastIndex)
+                {
+                    cursor = InsertPlainTextWithLineBreaksAt(cursor, a_text.Substring(lastIndex, m.Index - lastIndex));
+                }
+
+                if (m.Groups[1].Success)
+                {
+                    var img = new InlineUIContainer(m_imageManager.BuildImageFromHtmlTag(m.Groups[1].Value), cursor);
+                    cursor = img.ElementEnd;
+                }
+                else if (m.Groups[2].Success)
+                {
+                    SplitUrlAndTitle(m.Groups[4].Value, out string imgSrc, out string imgTitle);
+                    var img = new InlineUIContainer(m_imageManager.BuildImageFromMarkdown(m.Groups[3].Value, imgSrc, imgTitle), cursor);
+                    cursor = img.ElementEnd;
+                }
+                else if (m.Groups[5].Success)
+                {
+                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, m.Groups[6].Value, "code");
+                }
+                else if (m.Groups[7].Success)
+                {
+                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, m.Groups[8].Value, "bold");
+                }
+                else if (m.Groups[9].Success)
+                {
+                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, m.Groups[10].Value, "strikethrough");
+                }
+                else if (m.Groups[11].Success)
+                {
+                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, m.Groups[12].Value, "underline");
+                }
+                else if (m.Groups[13].Success)
+                {
+                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, m.Groups[14].Value, "highlight");
+                }
+                else if (m.Groups[15].Success)
+                {
+                    string linkText = RestorePlaceholders(m.Groups[16].Value);
+                    SplitUrlAndTitle(m.Groups[17].Value, out string urlRaw, out string titleRaw);
+                    string url = RestorePlaceholders(urlRaw);
+                    string title = null == titleRaw ? null : RestorePlaceholders(titleRaw);
+                    var run = new Run(linkText, cursor)
+                    {
+                        Foreground = LINK_BRUSH,
+                        TextDecorations = TextDecorations.Underline,
+                        Tag = new LinkInfo { m_url = url, m_isAutoLinkFlg = false, m_title = title },
+                        ToolTip = string.IsNullOrEmpty(title) ? url : title
+                    };
+                    cursor = run.ContentEnd;
+                }
+                else if (m.Groups[18].Success)
+                {
+                    string url = RestorePlaceholders(m.Groups[19].Value);
+                    var run = new Run(url, cursor)
+                    {
+                        Foreground = LINK_BRUSH,
+                        TextDecorations = TextDecorations.Underline,
+                        Tag = new LinkInfo { m_url = url, m_isAutoLinkFlg = true },
+                        ToolTip = url
+                    };
+                    cursor = run.ContentEnd;
+                }
+                else if (m.Groups[20].Success)
+                {
+                    string email = RestorePlaceholders(m.Groups[21].Value);
+                    var run = new Run(email, cursor)
+                    {
+                        Foreground = LINK_BRUSH,
+                        TextDecorations = TextDecorations.Underline,
+                        Tag = new LinkInfo { m_url = "mailto:" + email, m_isAutoLinkFlg = false, m_isEmailAutoLinkFlg = true },
+                        ToolTip = email
+                    };
+                    cursor = run.ContentEnd;
+                }
+                else if (m.Groups[22].Success)
+                {
+                    var run = new Run("", cursor) { Tag = new AnchorInfo { m_id = m.Groups[23].Value } };
+                    cursor = run.ContentEnd;
+                }
+
+                lastIndex = m.Index + m.Length;
+            }
+            if (lastIndex < a_text.Length)
+            {
+                cursor = InsertPlainTextWithLineBreaksAt(cursor, a_text.Substring(lastIndex));
+            }
+            return cursor;
+        }
+
+        /// <summary>AppendPlainTextWithLineBreaksの位置指定版。改行は本物のLineBreakとして挿入する。</summary>
+        /// <param name="a_position">挿入位置。</param>
+        /// <param name="a_text">挿入するプレーンテキスト。</param>
+        /// <returns>挿入後の末尾位置。</returns>
+        private TextPointer InsertPlainTextWithLineBreaksAt(TextPointer a_position, string a_text)
+        {
+            TextPointer cursor = a_position;
+            var segments = a_text.Split('\n');
+            for (int i = 0; i < segments.Length; i++)
+            {
+                if (i > 0)
+                {
+                    var lb = new LineBreak(cursor);
+                    cursor = lb.ElementEnd;
+                }
+                cursor = InsertPlainSegmentWithEscapeTagsAt(cursor, segments[i]);
+            }
+            return cursor;
+        }
+
+        /// <summary>AppendPlainSegmentWithEscapeTagsの位置指定版。</summary>
+        /// <param name="a_position">挿入位置。</param>
+        /// <param name="a_segment">1行分（改行を含まない）のテキスト。</param>
+        /// <returns>挿入後の末尾位置。</returns>
+        private TextPointer InsertPlainSegmentWithEscapeTagsAt(TextPointer a_position, string a_segment)
+        {
+            if (0 == a_segment.Length)
+            {
+                return a_position;
+            }
+            TextPointer cursor = a_position;
+            var plain = new StringBuilder();
+            foreach (char c in a_segment)
+            {
+                if (PLACEHOLDER_TO_CHAR.TryGetValue(c, out char real))
+                {
+                    if (plain.Length > 0)
+                    {
+                        var plainRun = new Run(plain.ToString(), cursor);
+                        cursor = plainRun.ContentEnd;
+                        plain.Clear();
+                    }
+                    var escRun = new Run(real.ToString(), cursor) { Tag = "escaped" };
+                    cursor = escRun.ContentEnd;
+                }
+                else
+                {
+                    plain.Append(c);
+                }
+            }
+            if (plain.Length > 0)
+            {
+                var plainRun = new Run(plain.ToString(), cursor);
+                cursor = plainRun.ContentEnd;
+            }
+            return cursor;
+        }
+
+        /// <summary>AppendStyledRunsWithLineBreaksの位置指定版。</summary>
+        /// <param name="a_position">挿入位置。</param>
+        /// <param name="a_content">対象の内容。</param>
+        /// <param name="a_style">適用するスタイル。</param>
+        /// <returns>挿入後の末尾位置。</returns>
+        private TextPointer InsertStyledRunsWithLineBreaksAt(TextPointer a_position, string a_content, string a_style)
+        {
+            TextPointer cursor = a_position;
+            var segments = a_content.Split('\n');
+            for (int i = 0; i < segments.Length; i++)
+            {
+                if (i > 0)
+                {
+                    var lb = new LineBreak(cursor);
+                    cursor = lb.ElementEnd;
+                }
+                string segText = RestorePlaceholders(segments[i]);
+                Run run;
+                if ("bold" == a_style)
+                {
+                    run = new Run(segText, cursor) { FontWeight = FontWeights.Bold, Tag = "bold" };
+                }
+                else if ("strikethrough" == a_style)
+                {
+                    run = new Run(segText, cursor) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
+                }
+                else if ("underline" == a_style)
+                {
+                    run = new Run(segText, cursor) { TextDecorations = TextDecorations.Underline, Tag = "underline" };
+                }
+                else if ("highlight" == a_style)
+                {
+                    run = new Run(segText, cursor) { Background = BlockStyles.HighlightBrush, Tag = "highlight" };
+                }
+                else
+                {
+                    run = new Run(segText, cursor)
+                    {
+                        FontFamily = new FontFamily("Consolas"),
+                        FontSize = 13.5,
+                        Background = BlockStyles.CodeBlockBackgroundBrush,
+                        Tag = "inline-code"
+                    };
+                }
+                cursor = run.ContentEnd;
+            }
+            return cursor;
         }
     }
 }

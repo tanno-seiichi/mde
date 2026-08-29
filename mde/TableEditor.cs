@@ -97,7 +97,10 @@ namespace mde
             return m_editor.CaretPosition.CompareTo(lastPara.ContentEnd) >= 0;
         }
 
-        /// <summary>上下キーでの行間移動。キャレットを真上/真下の行の同じ列のセルへ移す。</summary>
+        /// <summary>上下キーでの行間移動。キャレットを真上/真下の行の同じ列のセルへ移す。
+        /// 先頭行で上キー・末尾行で下キーが押された場合は、表の外（前後のブロック）へ
+        /// キャレットを移す。前後にブロックが存在しない場合は、新しい空の段落を作って
+        /// そこへ移す。</summary>
         /// <param name="a_cell">現在のセル。</param>
         /// <param name="a_dir">-1で上、+1で下。</param>
         public void MoveVertical(TableCell a_cell, int a_dir)
@@ -114,12 +117,46 @@ namespace mde
             int cIdx = row.Cells.IndexOf(a_cell);
             int targetIdx = rIdx + a_dir;
             if (targetIdx < 0 ||
-                targetIdx >= rg.Rows.Count) return;
+                targetIdx >= rg.Rows.Count)
+            {
+                MoveOutOfTable(rg, a_dir);
+                return;
+            }
             var targetRow = rg.Rows[targetIdx];
             if (cIdx < targetRow.Cells.Count && targetRow.Cells[cIdx].Blocks.LastBlock is Paragraph tp)
             {
                 m_editor.CaretPosition = tp.ContentEnd;
             }
+        }
+
+        /// <summary>表の先頭行で上キー・末尾行で下キーが押された時に、キャレットを表の外
+        /// （直前/直後のブロック）へ移す。前後にブロックが存在しない場合（表がドキュメントの
+        /// 先頭/末尾に隣接ブロックなしで存在する場合）は、新しい空の段落を作ってそこへ移す。</summary>
+        /// <param name="a_rg">現在の表の行グループ。</param>
+        /// <param name="a_dir">-1で上（表の直前へ）、+1で下（表の直後へ）。</param>
+        private void MoveOutOfTable(TableRowGroup a_rg, int a_dir)
+        {
+            if (!(a_rg.Parent is Table table))
+            {
+                return;
+            }
+            Block neighbor = a_dir < 0 ? table.PreviousBlock : table.NextBlock;
+            if (null == neighbor)
+            {
+                var newPara = new Paragraph();
+                if (a_dir < 0)
+                {
+                    m_editor.Document.Blocks.InsertBefore(table, newPara);
+                }
+                else
+                {
+                    m_editor.Document.Blocks.InsertAfter(table, newPara);
+                }
+                m_editor.CaretPosition = newPara.ContentStart;
+                m_markDirty();
+                return;
+            }
+            m_editor.CaretPosition = a_dir < 0 ? neighbor.ContentEnd : neighbor.ContentStart;
         }
 
         /// <summary>左右キーでのセル間移動。行の端では隣の行へ折り返す。</summary>
@@ -383,6 +420,12 @@ namespace mde
                 return;
             }
             rg.Rows.Remove(row);
+            // 行削除後、残ったセルの枠線が描画上消えて見えることがあるとの報告があったため、
+            // 念のためレイアウトを強制的に再計算させている。ただしコードを読んだ限りでは
+            // 枠線のプロパティ自体（BorderBrush/BorderThickness）を書き換えている箇所は
+            // 見当たらず、原因はWPFのTable描画側の再描画の問題である可能性を疑っての、
+            // 未検証の対症療法。再発する場合は再現手順を教えてほしい。
+            m_editor.UpdateLayout();
             m_markDirty();
         }
 
@@ -427,6 +470,8 @@ namespace mde
             {
                 table.Columns.RemoveAt(colIndex);
             }
+            // DeleteRow側と同じ理由（このメソッド内のコメント参照）による、未検証の対症療法。
+            m_editor.UpdateLayout();
             m_markDirty();
         }
 
@@ -814,7 +859,17 @@ namespace mde
             }
 
             // フォールバック：タブ区切りのプレーンテキスト（コピー時にHTMLを出さないアプリ向け）。
-            if (a_args.SourceDataObject.GetDataPresent(DataFormats.Text))
+            // 2026-08-29修正：Xaml/Rtf形式（mde自身や他のリッチテキストアプリからのコピー）が
+            // 付いている場合はこのフォールバックを一切試みない。理由：mdeの箇条書き項目は、
+            // WPFの既定のプレーンテキスト抽出で「マーカー\t本文」のようにタブ区切りで表現される
+            // ことがあり、見出し・段落・箇条書き・表・画像を含む文書全体をmdeの別ウィンドウへ
+            // コピー&ペーストした際、この抽出結果にタブが複数含まれることをもって文書全体を
+            // 表として誤認識し、内容が丸ごと崩れた表に化けてしまう不具合が実機で確認された。
+            // Xaml/Rtf形式があれば、WPF標準のリッチテキスト貼り付けの方が常に正確なので、
+            // そちらに任せる。
+            if (!a_args.SourceDataObject.GetDataPresent(DataFormats.Xaml) &&
+                !a_args.SourceDataObject.GetDataPresent(DataFormats.Rtf) &&
+                a_args.SourceDataObject.GetDataPresent(DataFormats.Text))
             {
                 string text = (string)a_args.SourceDataObject.GetData(DataFormats.Text);
                 if (LooksLikeTsv(text))

@@ -15,17 +15,37 @@ namespace mde
     /// </summary>
     public class ImageInfo
     {
+        // 2026-08-28修正：フィールドから自動実装プロパティへ変更（DESIGN.md 14.14参照）。
+        // WPFのクリップボードXaml形式（RichTextBox間のリッチなコピー&ペーストで使われる）は
+        // XamlWriterによるシリアライズに依存しており、これは通常「公開プロパティ」だけを
+        // 対象にする。フィールドのままだとRunのTagに持たせたこのオブジェクトの中身が
+        // コピー&ペースト時に失われる可能性があるため、他の箇所のコード（m_originalSrcなどの
+        // 参照）を一切変更せずに済む「フィールド→自動実装プロパティ」への置き換えだけを行った。
+
         /// <summary>MarkDown/HTML上に書かれていた元のsrc（相対パス・絶対パス・URLなど）。</summary>
-        public string m_originalSrc;
+        public string m_originalSrc { get; set; }
 
         /// <summary>alt属性（代替テキスト）。</summary>
-        public string m_alt;
+        public string m_alt { get; set; }
 
         /// <summary>HTML形式の場合のstyle属性。MarkDown形式では未使用。</summary>
-        public string m_style;
+        public string m_style { get; set; }
 
         /// <summary>元の記法。"html"（&lt;img&gt;タグ）または"md"（![alt](src)）。</summary>
-        public string m_format;
+        public string m_format { get; set; }
+
+        /// <summary>MarkDown形式の場合の、![alt](src "title")のタイトル部分（省略時はnull）。
+        /// 2026-08-29追記：以前はこのタイトル部分を解析できず、URLの一部として誤って
+        /// 解釈してしまい画像が壊れる不具合があったため対応した（DESIGN.md参照）。</summary>
+        public string m_title { get; set; }
+    }
+
+    /// <summary>
+    /// 水平線（&lt;hr&gt;相当）の段落（Paragraph）のTagに設定するマーカー用クラス。
+    /// 中身を持たない目印としてのみ使う。2026-08-29追記（DESIGN.md参照）。
+    /// </summary>
+    public class HorizontalRuleInfo
+    {
     }
 
     /// <summary>
@@ -35,7 +55,7 @@ namespace mde
     public class AnchorInfo
     {
         /// <summary>アンカーのid（[text](#id) からのジャンプ先として参照される）。</summary>
-        public string m_id;
+        public string m_id { get; set; }
     }
 
     /// <summary>
@@ -44,7 +64,7 @@ namespace mde
     public class CodeBlockInfo
     {
         /// <summary>```の直後に書かれた言語名（例: "csharp"）。未指定なら空文字。</summary>
-        public string m_language = "";
+        public string m_language { get; set; } = "";
     }
 
     /// <summary>
@@ -53,11 +73,20 @@ namespace mde
     /// </summary>
     public class LinkInfo
     {
-        /// <summary>リンク先URL。</summary>
-        public string m_url;
+        /// <summary>リンク先URL。メールアドレス自動リンクの場合は "mailto:" 付きで格納する。</summary>
+        public string m_url { get; set; }
 
         /// <summary>true の場合、&lt;url&gt; 形式（山括弧の自動リンク）から読み込まれたことを示す。</summary>
-        public bool m_isAutoLinkFlg;
+        public bool m_isAutoLinkFlg { get; set; }
+
+        /// <summary>MarkDown形式の場合の、[text](url "title")のタイトル部分（省略時はnull）。
+        /// 2026-08-29追記（DESIGN.md参照）。</summary>
+        public string m_title { get; set; }
+
+        /// <summary>true の場合、&lt;email@example.com&gt; 形式（山括弧のメールアドレス自動リンク）
+        /// から読み込まれたことを示す。保存時に &lt;url&gt; ではなく &lt;email@example.com&gt;
+        /// （mailto:を除いた元のアドレス）として書き戻すために使う。2026-08-29追記（DESIGN.md参照）。</summary>
+        public bool m_isEmailAutoLinkFlg { get; set; }
     }
 
     /// <summary>アウトラインペインの1行分（見出しのテキスト・レベル・対応する段落）。</summary>
