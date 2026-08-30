@@ -236,7 +236,9 @@ namespace mde
                 // KeepTogether: PDF書き出し時、ページの境目で表の行が跨ると、跨いだ先のセルは
                 // 罫線が描画されないままテキストだけが続いてしまうというWPFの制約があるため、
                 // セル内の段落をページ内で分割させない（間に合わなければ行ごと次のページへ）。
-                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), KeepTogether = true })
+                // LineHeight=double.NaN：行間設定を継承させず、常に自然な行の高さで表示する
+                // （このファイル内の他のTableCell生成箇所も同様。MarkdownConverter.cs参照）。
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
                 {
                     FontWeight = FontWeights.Bold,
                     Background = HEADER_BACKGROUND,
@@ -253,7 +255,7 @@ namespace mde
                 var row = new TableRow();
                 for (int c = 0; c < a_cols; c++)
                 {
-                    var cell = new TableCell(new Paragraph { Margin = new Thickness(0), KeepTogether = true })
+                    var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
                     {
                         BorderBrush = CELL_BORDER,
                         BorderThickness = new Thickness(1),
@@ -310,7 +312,7 @@ namespace mde
             var newRow = new TableRow();
             for (int c = 0; c < colCount; c++)
             {
-                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), KeepTogether = true })
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
                 {
                     BorderBrush = CELL_BORDER,
                     BorderThickness = new Thickness(1),
@@ -361,7 +363,7 @@ namespace mde
             for (int r = 0; r < rows.Count; r++)
             {
                 var targetRow = rows[r];
-                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), KeepTogether = true })
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
                 {
                     BorderBrush = CELL_BORDER,
                     BorderThickness = new Thickness(1),
@@ -472,6 +474,24 @@ namespace mde
             }
             // DeleteRow側と同じ理由（このメソッド内のコメント参照）による、未検証の対症療法。
             m_editor.UpdateLayout();
+            m_markDirty();
+        }
+
+        /// <summary>ContextCellが属する表全体を削除する（行・列を1つずつ削除するのではなく、
+        /// 表そのものを右クリックメニューから直接削除したい場合用）。</summary>
+        public void DeleteTable()
+        {
+            if (null == ContextCell)
+            {
+                return;
+            }
+            m_originalTextTracker.Invalidate(ContextCell.ContentStart);
+            var table = FindEnclosingTable(ContextCell);
+            if (null == table)
+            {
+                return;
+            }
+            m_editor.Document.Blocks.Remove(table);
             m_markDirty();
         }
 
@@ -776,7 +796,7 @@ namespace mde
                 for (int c = 0; c < colCount; c++)
                 {
                     string text = c < a_rows[r].Count ? a_rows[r][c] : "";
-                    var cell = new TableCell(new Paragraph(new Run(text)) { KeepTogether = true })
+                    var cell = new TableCell(new Paragraph(new Run(text)) { LineHeight = double.NaN, KeepTogether = true })
                     {
                         BorderBrush = CELL_BORDER,
                         BorderThickness = new Thickness(1),
@@ -791,6 +811,11 @@ namespace mde
                 }
                 rg.Rows.Add(row);
             }
+
+            // 2026-08-30：MarkdownConverter.csと同じ理由で一時的に無効化
+            // （BlockStyles.ApplyContentBasedColumnWidths参照。詳細はMarkdownConverter.cs側の
+            // コメント参照）。
+            // BlockStyles.ApplyContentBasedColumnWidths(table);
 
             m_runAsProgrammaticChange(() =>
             {

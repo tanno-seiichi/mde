@@ -346,6 +346,32 @@ namespace mde
             }
         }
 
+        /// <summary>右クリック「画像を削除」。ContextImageが埋め込まれているInlineUIContainerを、
+        /// それが属する段落のInlinesから取り除く（HandleDropでの挿入と対になる操作のため、
+        /// 挿入時と同様にRunAsProgrammaticChangeでくるみ、削除に伴う段落文字列の変化を
+        /// 自動整形トリガーの対象にしないようにしている）。ダーティ扱い・アウトライン再構築の
+        /// 記憶破棄は、Inlinesの変更として通常どおりEditorTextChangedが検知するため、ここで
+        /// 明示的なMarkDirty呼び出しは行っていない（HandleDropが挿入時に行っていないのと同じ
+        /// 理由）。</summary>
+        /// <param name="a_img">削除対象の画像要素（ContextImage）。</param>
+        public void DeleteImage(Image a_img)
+        {
+            if (null == a_img)
+            {
+                return;
+            }
+            if (!(a_img.Parent is InlineUIContainer iuc) || !(iuc.Parent is Paragraph p))
+            {
+                return;
+            }
+            m_originalTextTracker.Invalidate(p.ContentStart);
+            m_runAsProgrammaticChange(() =>
+            {
+                p.Inlines.Remove(iuc);
+            });
+            m_refreshOutline();
+        }
+
         /// <summary>2つの正規表現マッチのうち成功した方の値を返す。どちらも失敗なら空文字。</summary>
         /// <param name="a_a">比較対象の1つ目。</param>
         /// <param name="a_b">比較対象の2つ目。</param>

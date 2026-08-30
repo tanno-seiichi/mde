@@ -13,11 +13,16 @@
 
     <Window.Resources>
         <sys:Double x:Key="EditorLineHeight">26</sys:Double>
-        <!-- 段落・リスト・表どうしの間の余白は常に0（ApplyEditorLineHeight参照。段落内の
-             行間と二重に加算されて間隔が不自然に広がるのを防ぐため）。ここでの初期値も
+        <!-- 段落・リスト・表どうしの間の余白（ApplyEditorLineHeight参照）は、行間
+             （EditorLineHeight）の値に関わらず常にこの固定値のままにする（段落内の行間と
+             二重に加算されて、行間の設定値を上げるほど間隔が不自然に広がるのを防ぐため。
+             DESIGN.md 14.11節参照）。ゼロにはしない：見出し・コードブロック・水平線は
+             それぞれ固有のMarginを明示的に持っているのに対し、通常の段落・リスト・表は
+             この共有の値だけを頼りにしているため、ここが0だと、空行区切りのMarkDown段落
+             どうしが単純な行の折り返しと見分けが付かなくなってしまう。ここでの初期値も
              それに合わせておく（実際にはMainWindowコンストラクタのApplyEditorLineHeight
              呼び出しで、起動直後にこの値で上書きされる）。 -->
-        <Thickness x:Key="EditorBlockSpacing">0</Thickness>
+        <Thickness x:Key="EditorBlockSpacing">0,0,0,14</Thickness>
         <Style TargetType="MenuItem" x:Key="CtxMenuItem">
             <Setter Property="Padding" Value="6,4"/>
         </Style>
@@ -59,6 +64,12 @@
                               IsCheckable="True" Click="LinkModeCtrlClickChecked"/>
                     <MenuItem x:Name="m_linkModeClickOnlyMenuItem" Header="クリックのみで開く(_O)"
                               IsCheckable="True" Click="LinkModeClickOnlyChecked"/>
+                </MenuItem>
+                <MenuItem Header="段落中の改行">
+                    <MenuItem x:Name="m_lineBreakModeSourceMenuItem" Header="ソースの通りに改行する(_S)"
+                              IsCheckable="True" Click="LineBreakModeSourceChecked"/>
+                    <MenuItem x:Name="m_lineBreakModeBlankOnlyMenuItem" Header="空行が入るまで改行しない(_B)"
+                              IsCheckable="True" Click="LineBreakModeBlankOnlyChecked"/>
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="バージョン情報(_A)" Click="VersionInfoBtnClick"/>
@@ -267,12 +278,16 @@
                                           Click="DeleteRowItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_deleteColumnMenuItem" Header="この列を削除" Style="{StaticResource CtxMenuItem}"
                                           Click="DeleteColumnItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_deleteTableMenuItem" Header="表を削除" Style="{StaticResource CtxMenuItem}"
+                                          Click="DeleteTableItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_copyCodeBlockMenuItem" Header="コードブロック全体をコピー（```込み）" Style="{StaticResource CtxMenuItem}"
                                           Click="CopyCodeBlockItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_openImageMenuItem" Header="画像を開く" Style="{StaticResource CtxMenuItem}"
                                           Click="OpenImageItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_saveImageMenuItem" Header="画像を保存…" Style="{StaticResource CtxMenuItem}"
                                           Click="SaveImageItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_deleteImageMenuItem" Header="画像を削除" Style="{StaticResource CtxMenuItem}"
+                                          Click="DeleteImageItemClick" Visibility="Collapsed"/>
                                 <Separator/>
                                 <MenuItem x:Name="m_toggleModeMenuItem" Header="ソースモードに切り替え"
                                           Style="{StaticResource CtxMenuItem}" Click="ToggleModeBtnClick"/>

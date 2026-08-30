@@ -43,7 +43,7 @@ namespace mde
         /// 反応してしまわないようにするためのもの。</summary>
         private bool m_isProgrammaticChangeFlg = false;
 
-        /// <summary>IME固まり不具合調査用の心拍ログタイマー（DESIGN.md 14.12 追記13参照）。
+        /// <summary>IME固まり不具合調査用の心拍ログタイマー（DESIGN.md 14.12節・DEVELOPMENT_LOG.md参照）。
         /// ガベージコレクションで消えないよう、フィールドとして保持しておく。</summary>
         private System.Windows.Threading.DispatcherTimer m_imeDebugHeartbeatTimer;
 
@@ -71,6 +71,12 @@ namespace mde
         private double m_zoomLevel = 1.0;
         private double m_editorLineHeight = 26;
         private bool m_requireCtrlForLinkClickFlg = true;
+
+        /// <summary>段落中の途中改行（空行を伴わない、ソース上の単純な改行）を、そのまま
+        /// 見た目の改行として表示するか（true。既定値。mde/Typoraの従来動作）、それとも
+        /// 空行が入るまでは改行しない、CommonMark/VSCodeのMarkDownプレビュー標準の表示に
+        /// するか（false）。メニュー「表示」→「段落中の改行」で切り替えられる。</summary>
+        private bool m_preserveSourceLineBreaksFlg = true;
 
         /// <summary>PDF書き出し時の、上下左右の余白（px）。メニュー「PDFの余白を設定…」で
         /// 変更でき、次回起動時にも復元される。既定値はAppSettingsのものと揃えてある。</summary>
@@ -143,6 +149,7 @@ namespace mde
             m_zoomLevel = m_savedSettings.ZoomLevel;
             m_editorLineHeight = m_savedSettings.EditorLineHeight > 0 ? m_savedSettings.EditorLineHeight : 26;
             m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
+            m_preserveSourceLineBreaksFlg = m_savedSettings.PreserveSourceLineBreaksFlg;
             m_pdfMarginTop = m_savedSettings.PdfMarginTop > 0 ? m_savedSettings.PdfMarginTop : 64;
             m_pdfMarginBottom = m_savedSettings.PdfMarginBottom > 0 ? m_savedSettings.PdfMarginBottom : 64;
             m_pdfMarginLeft = m_savedSettings.PdfMarginLeft > 0 ? m_savedSettings.PdfMarginLeft : 80;
@@ -151,6 +158,7 @@ namespace mde
             RebuildRecentFilesMenu();
             ApplyEditorLineHeight(m_editorLineHeight);
             UpdateLinkModeMenuChecks();
+            UpdateLineBreakModeMenuChecks();
             m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
             m_outlinePaneVisibleFlg = m_savedSettings.OutlinePaneVisible;
             if (m_savedSettings.FolderPaneWidth > 0)
@@ -170,7 +178,7 @@ namespace mde
                 m_editor, m_originalTextTracker, () => m_isSourceModeFlg, () => m_currentFileDirectory,
                 () => m_currentFilePath,
                 RunAsProgrammaticChange, m_outlineManager.Refresh, m_instanceTempId);
-            m_markdownConverter = new MarkdownConverter(m_originalTextTracker, m_imageManager);
+            m_markdownConverter = new MarkdownConverter(m_originalTextTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg);
             m_listEditor = new ListEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange);
             m_headingCodeBlockEditor = new HeadingCodeBlockEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange);
             m_tableEditor = new TableEditor(
@@ -206,11 +214,10 @@ namespace mde
             m_editor.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
             m_editor.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
 
-            // IME固まり不具合（DESIGN.md 14.12参照）調査用のデバッグログ。フォーカスの
-            // 実際の移り変わりと、実際に入力されてくる文字（IME変換中のものも含む）の流れを
-            // 時系列で記録しておくことで、症状発生時にどちらが先に・どういう順序で起きて
-            // いるのかを、実機の動画だけに頼らず後から追えるようにする（DESIGN.md 14.12
-            // 追記12参照）。
+            // IME固まり不具合（DESIGN.md 14.12節・DEVELOPMENT_LOG.md参照）調査用のデバッグ
+            // ログ。フォーカスの実際の移り変わりと、実際に入力されてくる文字（IME変換中の
+            // ものも含む）の流れを時系列で記録しておくことで、症状発生時にどちらが先に・
+            // どういう順序で起きているのかを、実機の動画だけに頼らず後から追えるようにする。
             m_editor.GotKeyboardFocus += (a_s, a_e) =>
                 DebugLogger.Log($"Editor.GotKeyboardFocus: Old={a_e.OldFocus} New={a_e.NewFocus}");
             m_editor.LostKeyboardFocus += (a_s, a_e) =>
@@ -227,8 +234,9 @@ namespace mde
                     $"Editor.TextInput: Text=\"{a_e.Text}\" " +
                     $"CompositionText=\"{a_e.TextComposition?.CompositionText}\"");
 
-            // 追記13（DESIGN.md 14.12参照）：症状発生時、何もイベントが起きない「無音」の期間が
-            // ログ上で観測されたため、イベント任せではなく、一定間隔で強制的に現在の状態
+            // IME固まり調査時（DESIGN.md 14.12節・DEVELOPMENT_LOG.md参照）：症状発生時、何も
+            // イベントが起きない「無音」の期間がログ上で観測されたため、イベント任せではなく、
+            // 一定間隔で強制的に現在の状態
             // （WPFの論理フォーカスと、実際のOSレベルのフォアグラウンドウィンドウの両方）を
             // 記録する「心拍」ログを追加した。これにより、症状発生中に何も操作していない
             // 間の状態も追える。
@@ -355,6 +363,7 @@ namespace mde
                 ZoomLevel = m_zoomLevel,
                 EditorLineHeight = m_editorLineHeight,
                 RequireCtrlForLinkClickFlg = m_requireCtrlForLinkClickFlg,
+                PreserveSourceLineBreaksFlg = m_preserveSourceLineBreaksFlg,
                 PdfMarginTop = m_pdfMarginTop,
                 PdfMarginBottom = m_pdfMarginBottom,
                 PdfMarginLeft = m_pdfMarginLeft,
@@ -658,12 +667,12 @@ namespace mde
                 m_listEditor.ConvertParagraphToListItem(para, null, true);
                 return;
             }
-            // \u8FFD\u8A1826\uFF08DESIGN.md 14.12\u53C2\u7167\uFF09\uFF1A\u5916\u90E8\u8ABF\u67FB\u306B\u3088\u308A\u3001\u75C7\u72B6\u306FMicrosoft\u516C\u5F0F\u306E\u65E2\u77E5\u4E0D\u5177\u5408
-            // \uFF08WPF\u30A2\u30D7\u30EA\u30B1\u30FC\u30B7\u30E7\u30F3\u3067IME\u4F7F\u7528\u6642\u306B\u767A\u751F\u3059\u308B\u30BF\u30A4\u30DF\u30F3\u30B0\u4F9D\u5B58\u306E\u4E0D\u5177\u5408\u3001Windows 11
-            // 22H2/23H2/24H2\u5BFE\u8C61\u3001KB5046732/KB5046740\u3067\u4FEE\u6B63\u6E08\u307F\uFF09\u3068\u9177\u4F3C\u3057\u3066\u3044\u308B\u3053\u3068\u304C\u5224\u660E\u3057\u305F\u3002
-            // \u898B\u51FA\u3057\u306E\u81EA\u52D5\u5909\u63DB\u51E6\u7406\u3092\u5B8C\u5168\u306B\u30BC\u30ED\u306B\u3057\u3066\u3082\u75C7\u72B6\u304C\u518D\u73FE\u3057\u305F\u3053\u3068\uFF08\u8FFD\u8A1825\uFF09\u3068\u3082\u6574\u5408\u3059\u308B
-            // \u305F\u3081\u3001\u30E6\u30FC\u30B6\u30FC\u306E\u5224\u65AD\u306B\u3088\u308A\u3001\u8FFD\u8A1824\u306E\u30AA\u30DF\u30C3\u30C8\u3092\u53D6\u308A\u3084\u3081\u3001\u898B\u51FA\u3057\u3078\u306E\u81EA\u52D5\u5909\u63DB\u3092
-            // \u5143\u3069\u304A\u308A\u6709\u52B9\u5316\u3059\u308B\uFF082.0.22\uFF09\u3002
+            // 外部調査により、症状はMicrosoft公式の既知不具合（WPFアプリケーションでIME使用時に
+            // 発生するタイミング依存の不具合、Windows 11 22H2/23H2/24H2対象、
+            // KB5046732/KB5046740で修正済み）と酷似していることが判明した。見出しの自動変換
+            // 処理を完全にゼロにしても症状が再現したこととも整合するため、ユーザーの判断により、
+            // 見出しへの自動変換は元どおり有効化する（2.0.22）。詳しい経緯はDESIGN.md 14.12節・
+            // DEVELOPMENT_LOG.mdを参照。
             var m = Regex.Match(text, "^(#{1,6})[ \u00A0]$");
             if (m.Success)
             {
@@ -837,9 +846,9 @@ namespace mde
                         return;
                     }
 
-                    // 追記21〜25（DESIGN.md 14.12参照）：ネストしたリスト（2段目以降）でのEnter
-                    // キー処理を一旦丸ごと省略する診断を行ったが、見出しを完全にオミットしても
-                    // 症状が再現し（追記25）、外部調査でWindows側の既知不具合（追記26参照）と
+                    // IME固まり調査時（DESIGN.md 14.12節・DEVELOPMENT_LOG.md参照）：ネストした
+                    // リスト（2段目以降）でのEnterキー処理を一旦丸ごと省略する診断を行ったが、
+                    // 見出しを完全にオミットしても症状が再現し、外部調査でWindows側の既知不具合と
                     // 判明したため、この診断オミットは取りやめ、元どおりmde独自の処理を行う
                     // （2.0.22）。
 
@@ -849,8 +858,8 @@ namespace mde
                 }
                 if (para.Tag is int level && level > 0)
                 {
-                    // 追記21〜26（DESIGN.md 14.12参照）：見出し内でのEnterキー処理も、上記と同じ
-                    // 理由でオミットを取りやめ、元どおりmde独自の処理を行う（2.0.22）。
+                    // 見出し内でのEnterキー処理も、上記と同じ理由でオミットを取りやめ、元どおり
+                    // mde独自の処理を行う（2.0.22。DESIGN.md 14.12節・DEVELOPMENT_LOG.md参照）。
                     a_args.Handled = true;
                     m_headingCodeBlockEditor.HandleHeadingEnter(para);
                     return;
@@ -971,9 +980,11 @@ namespace mde
             m_insertColumnRightMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_deleteRowMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_deleteColumnMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_deleteTableMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_copyCodeBlockMenuItem.Visibility = inCodeBlockFlg ? Visibility.Visible : Visibility.Collapsed;
             m_openImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_saveImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
+            m_deleteImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_textStyleMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
             m_linkMenuItem.Visibility = null != m_inlineStyleEditor.ContextLinkRun ? Visibility.Visible : Visibility.Collapsed;
             m_toggleModeMenuItem.Header = m_isSourceModeFlg ? "MarkDownモードに切り替え" : "ソースモードに切り替え";
@@ -1022,6 +1033,7 @@ namespace mde
         private void InsertColumnRightItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.InsertColumn(a_leftFlg: false);
         private void DeleteRowItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteRow();
         private void DeleteColumnItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteColumn();
+        private void DeleteTableItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteTable();
 
         // ---- 画像 ----
 
@@ -1038,6 +1050,18 @@ namespace mde
         }
 
         private void SaveImageItemClick(object a_sender, RoutedEventArgs a_args) => m_imageManager.SaveImageAs(this);
+
+        /// <summary>右クリックメニュー「画像を削除」。右クリック位置の画像（ContextImage）を
+        /// ImageManager.DeleteImageで削除する。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void DeleteImageItemClick(object a_sender, RoutedEventArgs a_args)
+        {
+            if (null != m_imageManager.ContextImage)
+            {
+                m_imageManager.DeleteImage(m_imageManager.ContextImage);
+            }
+        }
 
         // ---- コードブロック ----
 
@@ -1552,8 +1576,8 @@ namespace mde
         /// 絶対パスがそのままファイルに書き出されてしまっていた（後で一時ファイルが消えると
         /// 画像が失われ、ソースモードで開くと崩れたパスがそのまま文字として見えてしまう）。
         /// ソースモード中の保存では、ライブな m_editor.Document・m_sourceEditor.Text の
-        /// どちらも直接いじらずに済むよう、「使い捨てのスクラッチ文書＋専用
-        /// OriginalTextTracker」パターンで処理し、書き換え後のテキストを
+        /// どちらも直接いじらずに済むよう、ExportPdfBtnClickと同じ「使い捨てのスクラッチ
+        /// 文書＋専用OriginalTextTracker」パターンで処理し、書き換え後のテキストを
         /// m_sourceEditor.Text へも反映しておく（同じ一時ファイルを次回保存時に再び探しに
         /// 行って失敗することがないように）。
         /// </summary>
@@ -1567,7 +1591,7 @@ namespace mde
             }
 
             var tempTracker = new OriginalTextTracker(m_editor);
-            var tempConverter = new MarkdownConverter(tempTracker, m_imageManager);
+            var tempConverter = new MarkdownConverter(tempTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg);
             var tempDoc = new FlowDocument();
             tempConverter.MarkdownToDocument(m_sourceEditor.Text, tempDoc);
             m_imageManager.RelocatePendingTempImages(tempDoc);
@@ -1725,7 +1749,7 @@ namespace mde
                 // 元テキストのまま保存する」という記憶まで失われてしまうため、この書き出し専用の
                 // 変換だけは独立したOriginalTextTrackerを使う一時的なMarkdownConverterで行う。
                 var tempTracker = new OriginalTextTracker(m_editor);
-                var tempConverter = new MarkdownConverter(tempTracker, m_imageManager);
+                var tempConverter = new MarkdownConverter(tempTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg);
                 var tempDoc = new FlowDocument();
                 tempConverter.MarkdownToDocument(md, tempDoc);
 
@@ -2153,18 +2177,76 @@ namespace mde
             m_linkModeClickOnlyMenuItem.IsChecked = !m_requireCtrlForLinkClickFlg;
         }
 
+        /// <summary>メニュー「表示」→「段落中の改行」→「ソースの通りに改行する」（mde/Typora
+        /// 従来の表示。既定値）。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void LineBreakModeSourceChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            SetPreserveSourceLineBreaksFlg(true);
+        }
+
+        /// <summary>メニュー「表示」→「段落中の改行」→「空行が入るまで改行しない」
+        /// （CommonMark/VSCodeのMarkDownプレビュー標準の表示）。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void LineBreakModeBlankOnlyChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            SetPreserveSourceLineBreaksFlg(false);
+        }
+
+        /// <summary>段落中の改行の扱いの設定を変更する。MarkDownモードで文書を表示中であれば、
+        /// 現在の内容を一旦MarkDownテキストへ書き出してから読み直すことで、新しい設定を
+        /// その場で反映させる（LoadFile等、文書を丸ごと差し替える他の処理と同じパターン）。
+        /// 文書再構築直後のキャレット位置は不定・不確実になりうる（DESIGN.md 14.5節参照）ため、
+        /// LoadFile等の既存箇所にならい、独自のキャレット位置の保持・復元は一切試みず、
+        /// 常に文書の先頭へ明示的に設定する。ソースモード中は、次にMarkDownモードへ切り替え
+        /// られた際の変換に反映されるよう、設定値を変更するだけにとどめる。</summary>
+        /// <param name="a_value">true＝ソースの通りに改行する、false＝空行が入るまで改行しない。</param>
+        private void SetPreserveSourceLineBreaksFlg(bool a_value)
+        {
+            if (m_preserveSourceLineBreaksFlg != a_value)
+            {
+                if (m_isSourceModeFlg)
+                {
+                    m_preserveSourceLineBreaksFlg = a_value;
+                }
+                else
+                {
+                    string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+                    m_preserveSourceLineBreaksFlg = a_value;
+                    RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
+                    m_outlineManager.Refresh();
+                    m_editor.CaretPosition = m_editor.Document.ContentStart;
+                }
+            }
+            UpdateLineBreakModeMenuChecks();
+        }
+
+        /// <summary>「段落中の改行」メニューの2項目を、現在の設定に合わせてラジオボタンのように
+        /// 片方だけチェック状態にする。</summary>
+        private void UpdateLineBreakModeMenuChecks()
+        {
+            m_lineBreakModeSourceMenuItem.IsChecked = m_preserveSourceLineBreaksFlg;
+            m_lineBreakModeBlankOnlyMenuItem.IsChecked = !m_preserveSourceLineBreaksFlg;
+        }
+
         /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。
         /// 段落内で行が折り返された時の間隔は、その段落のLineHeightそのもので決まる。もし
         /// 段落・リスト・表どうしの間の余白（Margin）にもLineHeightと同じ値を足してしまうと、
         /// 「折り返された行の間隔」の2倍近くになってしまい、段落間だけ不自然に間隔が
         /// 空いて見える（実際にこの不具合が起きていたため、箇条書きの項目内の段落
-        /// （BuildNestedList参照）にならい、段落・リスト・表どうしの余白は常に0にし、
-        /// 間隔はLineHeightだけで揃えるようにしている）。</summary>
+        /// （BuildNestedList参照）にならい、段落・リスト・表どうしの余白はLineHeightの値に
+        /// 関わらず常にこの固定値のままにしている）。ただし固定値をゼロにはしない：見出し・
+        /// コードブロック・水平線はそれぞれ固有のMarginを明示的に持っているのに対し、通常の
+        /// 段落・リスト・表はこの共有の値だけを頼りにしているため、ここがゼロだと、空行
+        /// 区切りのMarkDown段落どうしが単純な行の折り返しと見分けが付かなくなってしまう
+        /// （DESIGN.md 14.11節参照）。</summary>
         /// <param name="a_value">設定したい行間の値。</param>
         private void ApplyEditorLineHeight(double a_value)
         {
             Resources["EditorLineHeight"] = a_value;
-            Resources["EditorBlockSpacing"] = new Thickness(0);
+            Resources["EditorBlockSpacing"] = new Thickness(0, 0, 0, 14);
         }
 
         // ======================================================================
