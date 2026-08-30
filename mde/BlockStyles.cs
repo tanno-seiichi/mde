@@ -5,6 +5,7 @@
 // MarkDown解析（MarkdownConverter）と、右クリックでの段落種別変更（HeadingCodeBlockEditor）の
 // 両方から共有で使われるため、状態を持たない静的メソッドとして独立させている。
 
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -49,9 +50,9 @@ namespace mde
                 a_p.FontSize = 16;
                 a_p.FontWeight = FontWeights.Normal;
                 // Marginはここでは明示的に設定しない。RichTextBoxのStyle側でEditorBlockSpacing
-                // （常に0固定。MainWindow.xaml.csのApplyEditorLineHeight参照）が適用される
-                // ことで、段落と段落の間の間隔が、段落内で折り返された行同士の間隔（LineHeight）と
-                // 揃うようにしている（ここでローカル値として設定すると、そちらを
+                // （行間の値に関わらず常に固定値。MainWindow.xaml.csのApplyEditorLineHeight
+                // 参照）が適用されることで、段落と段落の間の間隔が、行間の設定を変えても
+                // 常に一定になるようにしている（ここでローカル値として設定すると、そちらを
                 // 上書きしてしまい、連動しなくなる）。
                 a_p.ClearValue(Paragraph.MarginProperty);
             }
@@ -140,6 +141,92 @@ namespace mde
                 return TextMarkerStyle.Circle;
             }
             return TextMarkerStyle.Box;
+        }
+
+        // ======================================================================
+        //  表の列幅（内容に合わせたコンパクトな列幅）
+        // ======================================================================
+
+        /// <summary>表のセルの計測に使うフォント（MainWindow.xamlのFlowDocumentの設定と
+        /// 合わせてある）。</summary>
+        private static readonly FontFamily TABLE_MEASURE_FONT_FAMILY = new FontFamily("Yu Gothic UI, Segoe UI");
+        private const double TABLE_MEASURE_FONT_SIZE = 16;
+
+        /// <summary>この幅（px）を超える内容を持つ列は、固定幅にはせず、残りの幅を分け合って
+        /// 折り返す列として扱う。</summary>
+        private const double TABLE_COLUMN_COMPACT_MAX_WIDTH = 300;
+
+        /// <summary>TableCellのPadding（左右合計）。列幅を内容ぴったりにする際、この分だけ
+        /// 上乗せする。</summary>
+        private const double TABLE_CELL_HORIZONTAL_PADDING = 16;
+
+        /// <summary>
+        /// 表の各列の幅を、実際のセル内容に合わせて設定する。WPFの既定のTable列幅
+        /// アルゴリズムは、内容量に関わらず利用可能な幅いっぱいに広がってしまうため、
+        /// GitHub等の一般的なMarkdownビューアのような「短い列は内容ぴったりにコンパクトに、
+        /// 長い説明文などの列だけが残りの幅を使って折り返す」見た目にはならない
+        /// （すべての列が均等に間延びして見える）。ここでは各列の実際のセル文字列を
+        /// FormattedTextで測定し、TABLE_COLUMN_COMPACT_MAX_WIDTH以下に収まる列は
+        /// 内容ぴったりの固定幅（Pixel）へ、収まらない列は残りの幅を分け合うStar幅へ、
+        /// それぞれ明示的に上書きする。呼び出し側は、表の行・セルをすべて組み立てた
+        /// 直後（内容が確定した後）に呼ぶこと。
+        /// 注：System.Windows.Documents.Table（FrameworkContentElement）には
+        /// HorizontalAlignmentプロパティが存在しない（FrameworkElement専用のプロパティの
+        /// ため）。そのため、表全体を左揃えにする処理はここでは行っていない。全列が
+        /// Pixel固定幅になった場合に表全体の右側に余白が残る見た目になるかどうかは
+        /// 未確認のため、実機で確認のうえ、必要であれば別途相談のこと。
+        /// </summary>
+        /// <param name="a_table">対象の表（RowGroups・Rows・Cellsまで構築済みであること）。</param>
+        public static void ApplyContentBasedColumnWidths(Table a_table)
+        {
+            int colCount = a_table.Columns.Count;
+            if (0 == colCount)
+            {
+                return;
+            }
+
+            var maxWidths = new double[colCount];
+            foreach (TableRowGroup rg in a_table.RowGroups)
+            {
+                foreach (TableRow row in rg.Rows)
+                {
+                    for (int c = 0; c < row.Cells.Count && c < colCount; c++)
+                    {
+                        TableCell cell = row.Cells[c];
+                        string text = new TextRange(cell.ContentStart, cell.ContentEnd).Text?.Trim();
+                        if (string.IsNullOrEmpty(text))
+                        {
+                            continue;
+                        }
+                        var typeface = new Typeface(
+                            TABLE_MEASURE_FONT_FAMILY, FontStyles.Normal, cell.FontWeight, FontStretches.Normal);
+                        var formatted = new FormattedText(
+                            text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface,
+                            TABLE_MEASURE_FONT_SIZE, Brushes.Black, 1.0);
+                        if (formatted.Width > maxWidths[c])
+                        {
+                            maxWidths[c] = formatted.Width;
+                        }
+                    }
+                }
+            }
+
+            for (int c = 0; c < colCount; c++)
+            {
+                if (maxWidths[c] <= 0)
+                {
+                    continue; // 空列は既定のまま（Autoに近い挙動）にしておく
+                }
+                double compactWidth = maxWidths[c] + TABLE_CELL_HORIZONTAL_PADDING;
+                if (compactWidth <= TABLE_COLUMN_COMPACT_MAX_WIDTH)
+                {
+                    a_table.Columns[c].Width = new GridLength(compactWidth, GridUnitType.Pixel);
+                }
+                else
+                {
+                    a_table.Columns[c].Width = new GridLength(1, GridUnitType.Star);
+                }
+            }
         }
     }
 }

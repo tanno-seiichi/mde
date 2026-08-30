@@ -81,16 +81,23 @@ namespace mde
 
         private readonly OriginalTextTracker m_originalTextTracker;
         private readonly ImageManager m_imageManager;
+        private readonly Func<bool> m_preserveSourceLineBreaksFlg;
 
         /// <summary>
         /// MarkdownConverterを構築する。
         /// </summary>
         /// <param name="a_originalTextTracker">「元テキスト保持」の追跡役。</param>
         /// <param name="a_imageManager">画像の生成・解決を担当するクラス。</param>
-        public MarkdownConverter(OriginalTextTracker a_originalTextTracker, ImageManager a_imageManager)
+        /// <param name="a_preserveSourceLineBreaksFlg">段落中の途中改行（空行を伴わない、ソース上の
+        /// 単純な改行）を、そのまま見た目の改行として表示するか（true。mde/Typora従来の表示）、
+        /// それとも空行が入るまでは改行しない、CommonMark/VSCodeのMarkDownプレビュー標準の表示に
+        /// するか（false）を返すデリゲート。省略時（null）はtrue（従来動作）として扱う。</param>
+        public MarkdownConverter(OriginalTextTracker a_originalTextTracker, ImageManager a_imageManager,
+            Func<bool> a_preserveSourceLineBreaksFlg = null)
         {
             this.m_originalTextTracker = a_originalTextTracker;
             this.m_imageManager = a_imageManager;
+            this.m_preserveSourceLineBreaksFlg = a_preserveSourceLineBreaksFlg;
         }
 
         // ======================================================================
@@ -298,14 +305,14 @@ namespace mde
                      "inline-code" == tag))
                 {
                     var spanText = new StringBuilder();
-                    spanText.Append(run.Text.Replace("\u200B", ""));
+                    spanText.Append(run.Text.Replace("​", ""));
                     int j = i + 1;
                     while (j + 1 < inlineList.Count &&
                            inlineList[j] is LineBreak &&
                            inlineList[j + 1] is Run nextRun &&
                            (nextRun.Tag as string) == tag)
                     {
-                        spanText.Append('\n').Append(nextRun.Text.Replace("\u200B", ""));
+                        spanText.Append('\n').Append(nextRun.Text.Replace("​", ""));
                         j += 2;
                     }
 
@@ -341,11 +348,11 @@ namespace mde
                 }
                 else if (inline is Run linkRun && linkRun.Tag is LinkInfo linkInfo)
                 {
-                    string content = linkRun.Text.Replace("\u200B", "");
+                    string content = linkRun.Text.Replace("​", "");
                     if (linkInfo.m_isEmailAutoLinkFlg)
                     {
-                        // 2026-08-29\u8FFD\u8A18\uFF1A\u30E1\u30FC\u30EB\u30A2\u30C9\u30EC\u30B9\u81EA\u52D5\u30EA\u30F3\u30AF\u3002\u4FDD\u5B58\u3055\u308C\u3066\u3044\u308BURL\u306F
-                        // "mailto:"\u4ED8\u304D\u306A\u306E\u3067\u3001\u66F8\u304D\u623B\u3059\u969B\u306F\u53D6\u308A\u9664\u304F\uFF08DESIGN.md\u53C2\u7167\uFF09\u3002
+                        // 2026-08-29追記：メールアドレス自動リンク。保存されているURLは
+                        // "mailto:"付きなので、書き戻す際は取り除く（DESIGN.md参照）。
                         string email = linkInfo.m_url != null && linkInfo.m_url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)
                             ? linkInfo.m_url.Substring("mailto:".Length)
                             : linkInfo.m_url;
@@ -360,7 +367,7 @@ namespace mde
                         a_sb.Append('[').Append(content).Append("](").Append(linkInfo.m_url);
                         if (!string.IsNullOrEmpty(linkInfo.m_title))
                         {
-                            // 2026-08-29\u8FFD\u8A18\uFF1A\u30BF\u30A4\u30C8\u30EB\u5C5E\u6027\uFF08DESIGN.md\u53C2\u7167\uFF09\u3002
+                            // 2026-08-29追記：タイトル属性（DESIGN.md参照）。
                             a_sb.Append(" \"").Append(linkInfo.m_title).Append('"');
                         }
                         a_sb.Append(')');
@@ -376,7 +383,7 @@ namespace mde
                 }
                 else if (inline is Run plainRun)
                 {
-                    a_sb.Append(plainRun.Text.Replace("\u200B", ""));
+                    a_sb.Append(plainRun.Text.Replace("​", ""));
                 }
                 else if (inline is InlineUIContainer iuc && iuc.Child is Image img)
                 {
@@ -445,7 +452,7 @@ namespace mde
             while (i < lines.Length)
             {
                 string line = lines[i];
-                if (string.IsNullOrWhiteSpace(line)) { i++; continue; }
+                if (IsEffectivelyBlankLine(line)) { i++; continue; }
 
                 int blockStart = i;
 
@@ -583,6 +590,15 @@ namespace mde
                         var hp = new Paragraph
                         {
                             Margin = new Thickness(0),
+                            // 表のセルは「行間（EditorLineHeight）」の設定値を継承させない。
+                            // Style TargetType="Paragraph"はFlowDocument内のすべての段落へ
+                            // 暗黙的に適用されるため、ここで明示的にLineHeightを上書きしない限り、
+                            // ユーザーが本文用に設定した行間がそのまま表のセルにも反映されてしまい、
+                            // 1行しかない短いセルまで縦に間延びして見える（DESIGN.md 14.11節と
+                            // 同種の「LineHeightが意図しない場所へ伝播する」問題）。double.NaNを
+                            // 指定すると、WPF標準の「未指定（フォントの自然な行の高さ）」の挙動に
+                            // 戻るため、表は常にコンパクトな行の高さで表示される。
+                            LineHeight = double.NaN,
                             KeepTogether = true,
                             TextAlignment = headerAlignment,
                             // 2026-08-29追記：「明示的な左揃え（:---）」を「揃え指定なし（---）」と
@@ -615,6 +631,10 @@ namespace mde
                             var cp = new Paragraph
                             {
                                 Margin = new Thickness(0),
+                                // ヘッダーセルと同じ理由でLineHeightを明示的に上書きする
+                                // （上のhp参照。行間設定の影響を受けず、常にコンパクトな
+                                // 行の高さで表示されるようにする）。
+                                LineHeight = double.NaN,
                                 KeepTogether = true,
                                 TextAlignment = bodyAlignment,
                                 // ヘッダーセルと同様の印（保存時に読むのはヘッダー行だけだが、
@@ -634,6 +654,14 @@ namespace mde
                         rg.Rows.Add(row);
                         i++;
                     }
+                    // 2026-08-30：列幅を内容に合わせてコンパクトにする試み
+                    // （BlockStyles.ApplyContentBasedColumnWidths）を一時的に無効化した。
+                    // Pixel幅を指定した列がかえって広く取られ、Star指定した列（内容が長い列）
+                    // が極端に狭く押しつぶされる、という意図と逆の現象が実機で確認されたため
+                    // （原因未特定。WPFのTable列幅アルゴリズムがGridと同じStar/Pixelの
+                    // 比率計算をしていない可能性がある）。原因を確認できるまで、既定の
+                    // 列幅（間延びはするが崩れない状態）に戻す。
+                    // BlockStyles.ApplyContentBasedColumnWidths(table);
                     a_doc.Blocks.Add(table);
                     m_originalTextTracker.Record(table, lines, blockStart, i);
                     continue;
@@ -652,7 +680,7 @@ namespace mde
                     i++;
                 }
                 var para = new Paragraph();
-                AppendInlineMarkdownToParagraph(para, string.Join("\n", paraLines), false);
+                AppendInlineMarkdownToParagraph(para, JoinParagraphSourceLines(paraLines), false);
                 a_doc.Blocks.Add(para);
                 m_originalTextTracker.Record(para, lines, blockStart, i);
             }
@@ -663,6 +691,52 @@ namespace mde
             }
 
             m_imageManager.ResolveImages(a_doc);
+        }
+
+        /// <summary>
+        /// 行が「実質的に空行」かどうかを判定する。単純な空白文字だけの行に加え、ゼロ幅
+        /// スペース（U+200B）など、見た目には空行にしか見えない書式文字（Unicodeの
+        /// Cfカテゴリ）のみで構成される行も空行として扱う。string.IsNullOrWhiteSpaceは
+        /// これらの文字を空白とは判定しないため、そのままでは（例えばエディタ内での
+        /// 編集時の副作用などにより）このような文字が紛れ込んだ行が、見た目上は空行なのに
+        /// 段落の区切りとして認識されない、という不具合につながりうる。
+        /// </summary>
+        /// <param name="a_line">判定したい行。</param>
+        /// <returns>実質的に空行とみなせるなら true。</returns>
+        private static bool IsEffectivelyBlankLine(string a_line)
+        {
+            if (string.IsNullOrEmpty(a_line))
+            {
+                return true;
+            }
+            string stripped = a_line
+                .Replace("​", "")
+                .Replace("‌", "")
+                .Replace("‍", "")
+                .Replace("﻿", "");
+            return string.IsNullOrWhiteSpace(stripped);
+        }
+
+        /// <summary>
+        /// 段落を組み立てている、空行を挟まない連続したソース行を、1つの文字列へ結合する。
+        /// 「表示」→「段落中の改行」の設定に応じて、結合のしかたを切り替える。設定が
+        /// 「ソースの通りに改行する」（既定）なら、行を"\n"でつなぐ（AppendInlineMarkdown
+        /// ToParagraphが後段でこれを実際のLineBreakへ変換し、mde/Typora従来通り、ソース上の
+        /// 改行がそのまま見た目の改行になる）。「空行が入るまで改行しない」なら、各行の前後の
+        /// 空白を落としたうえで単純な半角スペース1つでつなぐ（結果に"\n"が含まれなくなるため、
+        /// 後段でLineBreakは一切生成されず、CommonMark/VSCodeのMarkDownプレビューと同じく、
+        /// 空行が入るまでは改行されずに1つの段落として続けて表示される）。
+        /// </summary>
+        /// <param name="a_lines">結合対象のソース行一覧。</param>
+        /// <returns>結合した文字列。</returns>
+        private string JoinParagraphSourceLines(List<string> a_lines)
+        {
+            bool preserveFlg = null == m_preserveSourceLineBreaksFlg || m_preserveSourceLineBreaksFlg();
+            if (preserveFlg)
+            {
+                return string.Join("\n", a_lines);
+            }
+            return string.Join(" ", a_lines.Select(l => l.Trim()));
         }
 
         /// <summary>"| a | b | c |" 形式の表の行を、各セルのテキストへ分割する。</summary>
@@ -677,7 +751,7 @@ namespace mde
         /// <returns>この行より前で段落を打ち切るべきなら true。</returns>
         private bool IsBlockBoundaryLine(string a_line)
         {
-            if (string.IsNullOrWhiteSpace(a_line))
+            if (IsEffectivelyBlankLine(a_line))
             {
                 return true;
             }
@@ -809,7 +883,7 @@ namespace mde
                 {
                     return;
                 }
-                AppendInlineMarkdownToParagraph(pendingPara, string.Join("\n", pendingTextLines), false);
+                AppendInlineMarkdownToParagraph(pendingPara, JoinParagraphSourceLines(pendingTextLines), false);
                 if (pendingTaskChecked.HasValue)
                 {
                     // 2026-08-29追記：チェックボックスの見た目はBlockStyles.CreateTaskCheckboxに
@@ -950,16 +1024,16 @@ namespace mde
         // 使うプレースホルダ文字（Unicode私用領域）。マッチング後、実際の文字に戻す。
         private static readonly Dictionary<char, char> ESCAPE_PLACEHOLDERS = new Dictionary<char, char>
         {
-            ['*'] = '\uE001',
-            ['~'] = '\uE002',
-            ['`'] = '\uE003',
-            ['\\'] = '\uE004',
-            ['['] = '\uE005',
-            [']'] = '\uE006',
-            ['('] = '\uE007',
-            [')'] = '\uE008',
-            ['<'] = '\uE009',
-            ['>'] = '\uE00A',
+            ['*'] = '',
+            ['~'] = '',
+            ['`'] = '',
+            ['\\'] = '',
+            ['['] = '',
+            [']'] = '',
+            ['('] = '',
+            [')'] = '',
+            ['<'] = '',
+            ['>'] = '',
         };
         private static readonly Dictionary<char, char> PLACEHOLDER_TO_CHAR =
             ESCAPE_PLACEHOLDERS.ToDictionary(kv => kv.Value, kv => kv.Key);

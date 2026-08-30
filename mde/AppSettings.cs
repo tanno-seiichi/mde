@@ -27,6 +27,7 @@ namespace mde
         public double ZoomLevel { get; set; } = 1.0;
         public double EditorLineHeight { get; set; } = 26;
         public bool RequireCtrlForLinkClickFlg { get; set; } = true;
+        public bool PreserveSourceLineBreaksFlg { get; set; } = true;
         public double PdfMarginTop { get; set; } = 64;
         public double PdfMarginBottom { get; set; } = 64;
         public double PdfMarginLeft { get; set; } = 80;
