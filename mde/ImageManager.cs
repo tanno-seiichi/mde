@@ -112,7 +112,7 @@ namespace mde
         /// <summary>MarkDownの ![a_alt](a_src "a_title") 記法からImage要素を組み立てる。</summary>
         /// <param name="a_alt">代替テキスト。</param>
         /// <param name="a_src">画像のパス/URL。</param>
-        /// <param name="a_title">タイトル属性（省略時はnull）。2026-08-29追記（DESIGN.md参照）。</param>
+        /// <param name="a_title">タイトル属性（省略時はnull）。</param>
         /// <returns>新しいImage要素。</returns>
         public Image BuildImageFromMarkdown(string a_alt, string a_src, string a_title = null)
         {
@@ -650,12 +650,9 @@ namespace mde
         /// 文書の保存先フォルダが判明したタイミング（初回のSave/Save As）で呼ばれる。OSの
         /// 一時フォルダに退避されていた画像を、保存先の隣にある「&lt;ファイル名&gt;.images」
         /// フォルダ（ファイルごとに専用、なければ作成する）へ移動し、各画像が記憶している
-        /// パスをMarkDown書き出し用の最終的な相対パスに更新する。
-        /// 2026-08-29追記（DESIGN.md参照）：以前はファイル名に関わらず共通の"images"フォルダを
-        /// 使っていたが、同じフォルダに複数のMarkDownファイルを保存すると、画像がすべて
-        /// 同じ"images"フォルダに混在してしまう（削除・移動時にどのファイル用か分かりにくい）
-        /// という声を受けて、ファイルごとに専用のフォルダ名（拡張子を除いたファイル名+
-        /// ".images"）を使うように変更した。
+        /// パスをMarkDown書き出し用の最終的な相対パスに更新する。ファイルごとに専用の
+        /// フォルダ名（拡張子を除いたファイル名+".images"）を使うことで、同じフォルダに
+        /// 複数のMarkDownファイルを保存しても、画像が混在せず区別できるようにしている。
         /// </summary>
         /// <param name="a_doc">対象の文書。</param>
         public void RelocatePendingTempImages(FlowDocument a_doc)

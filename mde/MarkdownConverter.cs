@@ -30,11 +30,11 @@ namespace mde
 
         /// <summary>
         /// 表の列揃えで、「明示的な左揃え（:---）」と「揃え指定なし（---）」を区別して保存する
-        /// ために、表セルの段落（Paragraph）のTagに設定するマーカー文字列。2026-08-29追記
-        /// （DESIGN.md参照）。WPFの Paragraph.TextAlignment は Left/Center/Right/Justify の
-        /// 4値しか持てず、この2つはどちらも TextAlignment.Left になってしまい区別できないため、
-        /// 別途Tagで「明示的に左揃えだった」ことだけを覚えておく（Center/Rightは
-        /// TextAlignmentの値自体が一意に対応するので、この印は不要）。
+        /// ために、表セルの段落（Paragraph）のTagに設定するマーカー文字列。WPFの
+        /// Paragraph.TextAlignment は Left/Center/Right/Justify の4値しか持てず、この2つは
+        /// どちらも TextAlignment.Left になってしまい区別できないため、別途Tagで「明示的に
+        /// 左揃えだった」ことだけを覚えておく（Center/Rightは TextAlignmentの値自体が
+        /// 一意に対応するので、この印は不要）。
         /// </summary>
         private const string ALIGN_LEFT_EXPLICIT_TAG = "align-left-explicit";
 
@@ -45,8 +45,7 @@ namespace mde
         /// CommonMark/GFMには下線の標準的な記法がないため、下線はHTMLの&lt;u&gt;タグをそのまま
         /// 埋め込む方式にしている（既存の&lt;a id="..."&gt;アンカー・&lt;url&gt;自動リンクと同じ
         /// 「HTMLタグをそのまま埋め込む」という前例に倣った）。
-        /// 2026-08-29追記：グループ番号は以下の通り（ハイライト・メールアドレス自動リンクを
-        /// 追加したため、それ以前からある番号も一部詰め直している。DESIGN.md参照）。
+        /// グループ番号は以下の通り。
         /// 1:imgタグ／2,3,4:![alt](src)（alt,src)／5,6:`code`／7,8:**bold**／9,10:~~strike~~／
         /// 11,12:&lt;u&gt;underline&lt;/u&gt;／13,14:==highlight==／15,16,17:[text](url)（text,url)／
         /// 18,19:&lt;http(s)://url&gt;／20,21:&lt;email&gt;／22,23:&lt;a id="..."&gt;&lt;/a&gt;
@@ -57,9 +56,7 @@ namespace mde
 
         /// <summary>
         /// [text](url "title") / ![alt](src "title") の "(...)" の中身（URLとタイトルの両方を
-        /// 含む生文字列）を、URL部分とタイトル部分（あれば）に分割する。2026-08-29追記
-        /// （DESIGN.md参照）。以前はタイトル部分を解析できず、URLの一部として誤って解釈して
-        /// しまいリンク・画像が壊れる不具合があったため対応した。
+        /// 含む生文字列）を、URL部分とタイトル部分（あれば）に分割する。
         /// </summary>
         /// <param name="a_raw">"(...)" の中身の生文字列。</param>
         /// <param name="a_url">分割後のURL部分。</param>
@@ -236,12 +233,11 @@ namespace mde
                 }
                 mdRows.Add("| " + string.Join(" | ", cells) + " |");
             }
-            // 2026-08-29追記：ヘッダー行の各セルの段落のTextAlignmentから、区切り行の
-            // コロンを組み立てる（DESIGN.md参照）。中央揃えは":---:"、右揃えは"---:"。
-            // 左揃えは、Paragraph.Tagに付けた印（ALIGN_LEFT_EXPLICIT_TAG）を見て、
-            // 「明示的な左揃え（:---）」だったか「揃え指定なし（---）」だったかを区別する
-            // （同日中の追記：TextAlignmentだけではこの2つを区別できないため、Tagで別途
-            // 覚えておくようにした）。
+            // ヘッダー行の各セルの段落のTextAlignmentから、区切り行のコロンを組み立てる。
+            // 中央揃えは":---:"、右揃えは"---:"。左揃えは、Paragraph.Tagに付けた印
+            // （ALIGN_LEFT_EXPLICIT_TAG）を見て、「明示的な左揃え（:---）」だったか
+            // 「揃え指定なし（---）」だったかを区別する（TextAlignmentだけではこの2つを
+            // 区別できないため、Tagで別途覚えておくようにした）。
             var sepCells = new List<string>();
             foreach (TableCell headerCell in rows[0].Cells)
             {
@@ -351,8 +347,8 @@ namespace mde
                     string content = linkRun.Text.Replace("​", "");
                     if (linkInfo.m_isEmailAutoLinkFlg)
                     {
-                        // 2026-08-29追記：メールアドレス自動リンク。保存されているURLは
-                        // "mailto:"付きなので、書き戻す際は取り除く（DESIGN.md参照）。
+                        // メールアドレス自動リンク。保存されているURLは"mailto:"付きなので、
+                        // 書き戻す際は取り除く。
                         string email = linkInfo.m_url != null && linkInfo.m_url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)
                             ? linkInfo.m_url.Substring("mailto:".Length)
                             : linkInfo.m_url;
@@ -367,7 +363,7 @@ namespace mde
                         a_sb.Append('[').Append(content).Append("](").Append(linkInfo.m_url);
                         if (!string.IsNullOrEmpty(linkInfo.m_title))
                         {
-                            // 2026-08-29追記：タイトル属性（DESIGN.md参照）。
+                            // タイトル属性。
                             a_sb.Append(" \"").Append(linkInfo.m_title).Append('"');
                         }
                         a_sb.Append(')');
@@ -391,7 +387,7 @@ namespace mde
                 }
                 else if (inline is InlineUIContainer cbIuc && cbIuc.Child is CheckBox taskCheckBox)
                 {
-                    // 2026-08-29追記：タスクリストのチェックボックス（DESIGN.md参照）。
+                    // タスクリストのチェックボックス。
                     a_sb.Append(true == taskCheckBox.IsChecked ? "[x] " : "[ ] ");
                 }
                 else if (inline is Span span)
@@ -415,7 +411,7 @@ namespace mde
                 string result = "![" + alt + "](" + src;
                 if (!string.IsNullOrEmpty(info?.m_title))
                 {
-                    // 2026-08-29追記：タイトル属性（DESIGN.md参照）。
+                    // タイトル属性。
                     result += " \"" + info.m_title + "\"";
                 }
                 result += ")";
@@ -499,10 +495,10 @@ namespace mde
                     continue;
                 }
 
-                // 2026-08-29追記：水平線（---/***/___。3個以上の同じ文字が行全体を占める場合のみ。
+                // 水平線（---/***/___。3個以上の同じ文字が行全体を占める場合のみ）。
                 // "- - -" のように間にスペースが入る書き方には対応しない。箇条書きの判定
                 // ロジック（マーカーの直後に空白が必要）と衝突しないよう、意図的にこの
-                // 「間にスペースなし」の書き方のみをサポート対象にしている（DESIGN.md参照）。
+                // 「間にスペースなし」の書き方のみをサポート対象にしている。
                 if (Regex.IsMatch(line, "^ {0,3}([-*_])\\1{2,}\\s*$"))
                 {
                     var hrPara = new Paragraph();
@@ -561,8 +557,7 @@ namespace mde
                     Regex.IsMatch(lines[i + 1], "^[\\s|:-]+$") && lines[i + 1].Contains("-"))
                 {
                     var headerCells = ParseTableRow(line);
-                    // 2026-08-29追記：区切り行（|:---:|---:|...|）のコロンから列ごとの
-                    // 文字揃えを読み取る（DESIGN.md参照）。
+                    // 区切り行（|:---:|---:|...|）のコロンから列ごとの文字揃えを読み取る。
                     var alignSepCells = ParseTableRow(lines[i + 1]);
                     var columnAlignments = alignSepCells.Select(ParseColumnAlignment).ToList();
                     i += 2;
@@ -594,15 +589,14 @@ namespace mde
                             // Style TargetType="Paragraph"はFlowDocument内のすべての段落へ
                             // 暗黙的に適用されるため、ここで明示的にLineHeightを上書きしない限り、
                             // ユーザーが本文用に設定した行間がそのまま表のセルにも反映されてしまい、
-                            // 1行しかない短いセルまで縦に間延びして見える（DESIGN.md 14.11節と
-                            // 同種の「LineHeightが意図しない場所へ伝播する」問題）。double.NaNを
-                            // 指定すると、WPF標準の「未指定（フォントの自然な行の高さ）」の挙動に
-                            // 戻るため、表は常にコンパクトな行の高さで表示される。
+                            // 1行しかない短いセルまで縦に間延びして見える。double.NaNを指定すると、
+                            // WPF標準の「未指定（フォントの自然な行の高さ）」の挙動に戻るため、
+                            // 表は常にコンパクトな行の高さで表示される。
                             LineHeight = double.NaN,
                             KeepTogether = true,
                             TextAlignment = headerAlignment,
-                            // 2026-08-29追記：「明示的な左揃え（:---）」を「揃え指定なし（---）」と
-                            // 区別して保存できるようにするための印（DESIGN.md参照）。
+                            // 「明示的な左揃え（:---）」を「揃え指定なし（---）」と区別して
+                            // 保存できるようにするための印。
                             Tag = headerExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null
                         };
                         AppendInlineMarkdownToParagraph(hp, txt, false);
@@ -824,8 +818,7 @@ namespace mde
 
         /// <summary>
         /// 表の区切り行（例: ":---:" / "---:" / ":---" / "---"）の1セル分の文字列から、
-        /// 列の文字揃えを判定する。2026-08-29追記（DESIGN.md参照。同日中に、「左寄せの明示
-        /// （:---）」と「揃え指定なし（---）」を区別できるよう改良した）。
+        /// 列の文字揃えを判定する。
         /// TextAlignment自体はLeft/Center/Right/Justifyの4値しか持てず、この2つはどちらも
         /// TextAlignment.Leftになってしまうため、区別が必要な「明示的な左揃え」だけを
         /// 呼び出し元でParagraph.Tag（ALIGN_LEFT_EXPLICIT_TAG）に記録できるよう、
@@ -871,7 +864,6 @@ namespace mde
 
             Paragraph pendingPara = null;
             var pendingTextLines = new List<string>();
-            // 2026-08-29追記：タスクリスト（[ ]/[x]）対応（DESIGN.md参照）。
             // 直前に確定した箇条書き項目がタスク項目だったかどうか（未確定ならnull）。
             bool? pendingTaskChecked = null;
 
@@ -886,9 +878,9 @@ namespace mde
                 AppendInlineMarkdownToParagraph(pendingPara, JoinParagraphSourceLines(pendingTextLines), false);
                 if (pendingTaskChecked.HasValue)
                 {
-                    // 2026-08-29追記：チェックボックスの見た目はBlockStyles.CreateTaskCheckboxに
-                    // 一本化し、ライブ入力変換側（ListEditor.ConvertListItemTextToTaskCheckbox）と
-                    // 食い違わないようにしている（DESIGN.md参照）。
+                    // チェックボックスの見た目はBlockStyles.CreateTaskCheckboxに一本化し、
+                    // ライブ入力変換側（ListEditor.ConvertListItemTextToTaskCheckbox）と
+                    // 食い違わないようにしている。
                     var checkBox = BlockStyles.CreateTaskCheckbox(pendingTaskChecked.Value);
                     var container = new InlineUIContainer(checkBox);
                     if (pendingPara.Inlines.Count > 0)
@@ -899,10 +891,6 @@ namespace mde
                     {
                         pendingPara.Inlines.Add(container);
                     }
-                    // 2026-08-29追記（同日中の追加修正、v2.0.34.0で試みたが、v2.0.35.0で撤回）：
-                    // Typora等と同様に箇条書きマーカーを非表示にする対応を一度実装したが、
-                    // ListEditor.ConvertListItemTextToTaskCheckboxと同じ理由（WPFの制約による
-                    // 実機での副作用）で撤回した（詳細はDESIGN.md参照）。
                 }
             }
 
@@ -952,10 +940,9 @@ namespace mde
                         List nestedList = lastLi.Blocks.Count > 1 ? lastLi.Blocks.LastBlock as List : null;
                         if (null == nestedList)
                         {
-                            // 2026-08-29追記（同日中の追加修正、v2.0.39.0）：VSCode同様「1段目Disc・
-                            // 2段目Circle・3段目以降Box」にするため、BlockStyles.
-                            // UnorderedMarkerStyleForDepthで段数に応じたマーカーを決める
-                            // （ListEditor.IndentListItem等と同じ理由。DESIGN.md参照）。この時点で
+                            // VSCode同様「1段目Disc・2段目Circle・3段目以降Box」にするため、
+                            // BlockStyles.UnorderedMarkerStyleForDepthで段数に応じたマーカーを
+                            // 決める（ListEditor.IndentListItem等と同じ理由）。この時点で
                             // stack.Count は「これから作る新しいnestedListの1つ手前までの段数」と
                             // 一致するため、新しいnestedList自身の段数はstack.Count + 1になる。
                             nestedList = new List
@@ -1226,10 +1213,9 @@ namespace mde
         /// <param name="a_linkText">表示文字。</param>
         /// <param name="a_url">リンク先URL。</param>
         /// <param name="a_isAutoLinkFlg">[a_text](a_url)ではなく&lt;a_url&gt;形式から来た場合はtrue。</param>
-        /// <param name="a_title">タイトル属性（[a_text](a_url "title")のtitle部分。省略時はnull）。
-        /// 2026-08-29追記。</param>
+        /// <param name="a_title">タイトル属性（[a_text](a_url "title")のtitle部分。省略時はnull）。</param>
         /// <param name="a_isEmailAutoLinkFlg">&lt;email@example.com&gt;形式のメールアドレス
-        /// 自動リンクから来た場合はtrue。2026-08-29追記。</param>
+        /// 自動リンクから来た場合はtrue。</param>
         /// <returns>組み立てたリンクのRun。</returns>
         public Run BuildLinkRun(string a_linkText, string a_url, bool a_isAutoLinkFlg, string a_title = null, bool a_isEmailAutoLinkFlg = false)
         {

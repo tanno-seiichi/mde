@@ -41,21 +41,9 @@ namespace mde
         {
             DebugLogger.Log($"ConvertParagraphToHeading: 呼び出し level={a_level}");
             // 見出しへの変換直後にIME入力を始めると、箇条書きの時と同じ「変換候補ポップアップが
-            // 固まって入力できなくなる」症状が実機で確認された（DESIGN.md 14.12 追記9参照）。
-            //
-            // 追記21（DESIGN.md 14.12参照）：2.0.19での「ネストしたリストのEnter処理を丸ごと
-            // オミットする」診断の結果、ネストしたリストでは症状が出なくなった一方、
-            // ImeCaretMoveHelper（Dispatcher.BeginInvokeによる1テンポ遅延＋ClearFocus/Focus）を
-            // 依然として使っていた見出しでは、2回目の見出し作成時に症状が発生し、しかも
-            // 今回は自然には回復しなかった。この結果は、症状の引き金が「ネストしたリスト」
-            // という構造そのものではなく、ImeCaretMoveHelperの「ドキュメント書き換え・
-            // CaretPosition移動をDispatcher.BeginInvokeで1テンポ遅らせる」という処理パターン
-            // 自体にある可能性を強く示唆している。一方、1段目（ネストしていない）の箇条書きは
-            // 終始このパターンを使わず、その場（今のキー入力処理と同じ同期呼び出しの中）で
-            // ドキュメントを書き換え・UpdateLayout・ClearFocus/Focusを行っており、これまで一度も
-            // 症状が確認されていない。そこで見出しについても、ImeCaretMoveHelperによる
-            // Dispatcher.BeginInvoke経由の遅延処理をやめ、1段目の箇条書きと同じ「同期的に
-            // 書き換えてその場でUpdateLayout・ClearFocus/Focusを行う」パターンに変更する。
+            // 固まって入力できなくなる」症状が実機で確認されたことがある。ImeCaretMoveHelper
+            // （Dispatcher.BeginInvokeによる1テンポ遅延）は使わず、1段目の箇条書きと同じ
+            // 「同期的に書き換えてその場でUpdateLayout・ClearFocus/Focusを行う」パターンにする。
             m_runAsProgrammaticChange(() =>
             {
                 a_p.Inlines.Clear();
@@ -83,9 +71,8 @@ namespace mde
         public void HandleHeadingEnter(Paragraph a_headingPara)
         {
             DebugLogger.Log("HandleHeadingEnter: 呼び出し");
-            // 追記21（DESIGN.md 14.12参照）：ConvertParagraphToHeadingと同じ理由で、
-            // ImeCaretMoveHelper経由のDispatcher.BeginInvoke遅延をやめ、1段目の箇条書きと
-            // 同じ同期処理に変更した。
+            // ConvertParagraphToHeadingと同じ理由で、ImeCaretMoveHelper経由の
+            // Dispatcher.BeginInvoke遅延は使わず、1段目の箇条書きと同じ同期処理にする。
             m_runAsProgrammaticChange(() =>
             {
                 var newPara = new Paragraph();
@@ -102,8 +89,8 @@ namespace mde
         /// <param name="a_language">```の直後に書かれた言語名。</param>
         public void ConvertParagraphToCodeBlock(Paragraph a_p, string a_language = "")
         {
-            // 追記21（DESIGN.md 14.12参照）：見出しと同じ理由で、ImeCaretMoveHelper経由の
-            // Dispatcher.BeginInvoke遅延をやめ、1段目の箇条書きと同じ同期処理に変更した。
+            // 見出しと同じ理由で、ImeCaretMoveHelper経由のDispatcher.BeginInvoke遅延は使わず、
+            // 1段目の箇条書きと同じ同期処理にする。
             m_runAsProgrammaticChange(() =>
             {
                 a_p.Inlines.Clear();
@@ -121,7 +108,7 @@ namespace mde
 
         /// <summary>段落を水平線（&lt;hr&gt;相当）に変換し、その後ろに新しい通常の段落を追加する
         /// （水平線自体には文字を打てないため、キャレットは新しい段落側に置く）。
-        /// 2026-08-29追記（DESIGN.md参照）。他の変換メソッドと同じIME対策の同期処理パターンに従う。</summary>
+        /// 他の変換メソッドと同じIME対策の同期処理パターンに従う。</summary>
         /// <param name="a_p">変換する段落。</param>
         public void ConvertParagraphToHorizontalRule(Paragraph a_p)
         {
