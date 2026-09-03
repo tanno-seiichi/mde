@@ -71,6 +71,9 @@
                     <MenuItem x:Name="m_lineBreakModeBlankOnlyMenuItem" Header="空行が入るまで改行しない(_B)"
                               IsCheckable="True" Click="LineBreakModeBlankOnlyChecked"/>
                 </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="m_debugLogMenuItem" Header="デバッグログを有効にする(_D)"
+                          IsCheckable="True" Click="DebugLogMenuItemChecked"/>
             </MenuItem>
             <MenuItem Header="バージョン情報(_A)" Click="VersionInfoBtnClick"/>
         </Menu>

@@ -591,6 +591,144 @@ namespace mde
             m_editor.Focus();
         }
 
+        // ======================================================================
+        //  クリップボードからの画像貼り付け
+        // ======================================================================
+
+        /// <summary>クリップボードから貼り付けられる画像の保存先ファイル名のベース部分
+        /// （末尾に"_1"、"_2"…と連番を付けて保存する。ドラッグ&amp;ドロップと違い、
+        /// クリップボードの生データには元のファイル名が無いため）。</summary>
+        private const string PASTED_IMAGE_BASE_NAME = "clipboard_image";
+
+        /// <summary>
+        /// クリップボードに画像が入っている状態でのCtrl+V等の貼り付け（DataObject.Pasting
+        /// ルーティングイベント）を検知し、ドラッグ&amp;ドロップと同じ一時フォルダへPNGとして
+        /// 保存した上で挿入する。mde自身や他のリッチテキストアプリからの貼り付け（Xaml/Rtf
+        /// 形式を伴う。既に挿入済みの画像をコピー&amp;ペーストする場合など）は、元の相対パスや
+        /// altテキストといった情報を保ったままWPF標準の貼り付けに任せたいため、ここでは何も
+        /// しない。TableEditor.HandlePasting・EditorHandleInlineMarkdownPastingより先に登録
+        /// することで、画像を含むクリップボード内容（ブラウザ等はHTMLやテキストも同時に
+        /// 乗せてくることがある）がそれらの表・テキスト向け処理に誤って先取りされないように
+        /// している（MainWindow.xaml.csでの登録順を参照）。
+        /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">貼り付けイベントの引数。</param>
+        public void HandlePasting(object a_sender, DataObjectPastingEventArgs a_args)
+        {
+            if (m_isSourceMode())
+            {
+                return;
+            }
+            if (a_args.SourceDataObject.GetDataPresent(DataFormats.Xaml) ||
+                a_args.SourceDataObject.GetDataPresent(DataFormats.Rtf))
+            {
+                return; // mde自身や他のリッチテキストアプリからの貼り付けはWPF標準の処理に任せる
+            }
+
+            BitmapSource bmp = TryGetClipboardImage(a_args.SourceDataObject);
+            if (null == bmp)
+            {
+                return; // 画像でなければ何もしない（後続のハンドラ、または既定の貼り付けに任せる）
+            }
+
+            a_args.CancelCommand();
+
+            string destDir = GetOrCreateTempImageFolder();
+            string fileName = GenerateSequentialImageFileName(destDir, PASTED_IMAGE_BASE_NAME, ".png");
+            string destPath = Path.Combine(destDir, fileName);
+            try
+            {
+                using (var fs = new FileStream(destPath, FileMode.Create))
+                {
+                    var encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(bmp));
+                    encoder.Save(fs);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("クリップボードの画像の保存に失敗しました: " + ex.Message, "画像の貼り付け",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            m_originalTextTracker.Invalidate(m_editor.CaretPosition);
+            m_runAsProgrammaticChange(() =>
+            {
+                if (!m_editor.Selection.IsEmpty)
+                {
+                    m_editor.Selection.Text = "";
+                }
+                var img = BuildImageFromMarkdown(Path.GetFileNameWithoutExtension(fileName), destPath);
+                var container = new InlineUIContainer(img, m_editor.CaretPosition);
+                m_editor.CaretPosition = container.ElementEnd;
+            });
+
+            m_refreshOutline();
+            m_editor.Focus();
+        }
+
+        /// <summary>クリップボードの内容からBitmapSourceを取り出す。透過（アルファチャンネル）を
+        /// できるだけ保つため、まず"PNG"形式が入っていればそちらを直接デコードし、なければ
+        /// Clipboard.GetImage()（Bitmap/DIB形式からの変換）にフォールバックする。ブラウザや
+        /// Snipping Tool等からコピーした画像をClipboard.GetImage()だけで扱うと、透過が失われたり
+        /// 取得に失敗したりすることがあるための対策。</summary>
+        /// <param name="a_data">貼り付けイベントのクリップボードデータ。</param>
+        /// <returns>取得できたBitmapSource。画像が入っていなければnull。</returns>
+        private static BitmapSource TryGetClipboardImage(IDataObject a_data)
+        {
+            if (a_data.GetDataPresent("PNG"))
+            {
+                try
+                {
+                    if (a_data.GetData("PNG") is Stream pngStream)
+                    {
+                        var decoder = new PngBitmapDecoder(
+                            pngStream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+                        if (decoder.Frames.Count > 0)
+                        {
+                            return decoder.Frames[0];
+                        }
+                    }
+                }
+                catch
+                {
+                    // 壊れたPNGデータ等で失敗しても、下のフォールバックへ続ける。
+                }
+            }
+            if (a_data.GetDataPresent(DataFormats.Bitmap))
+            {
+                try
+                {
+                    return Clipboard.GetImage();
+                }
+                catch
+                {
+                    // 取得に失敗した場合は画像なしとして扱う。
+                }
+            }
+            return null;
+        }
+
+        /// <summary>指定フォルダ内で、ベース名+連番+拡張子（例："clipboard_image_1.png"）の形で
+        /// 既存ファイルと衝突しない名前を組み立てる。CopyFileWithDedupと異なり、コピー元となる
+        /// 実ファイルが存在しない（クリップボードの生データが元になる）ケース向け。</summary>
+        /// <param name="a_destDir">保存先フォルダ。</param>
+        /// <param name="a_baseName">ファイル名のベース部分（拡張子・連番を除く）。</param>
+        /// <param name="a_ext">拡張子（"."を含む）。</param>
+        /// <returns>衝突しないファイル名（フォルダ部分を含まない）。</returns>
+        private static string GenerateSequentialImageFileName(string a_destDir, string a_baseName, string a_ext)
+        {
+            int counter = 1;
+            string fileName;
+            do
+            {
+                fileName = a_baseName + "_" + counter + a_ext;
+                counter++;
+            } while (File.Exists(Path.Combine(a_destDir, fileName)));
+            return fileName;
+        }
+
         /// <summary>このウィンドウ専用の、ドラッグ挿入画像を退避する一時フォルダを取得する
         /// （なければ作成する）。</summary>
         /// <returns>一時フォルダの絶対パス。</returns>

@@ -51,6 +51,15 @@ namespace mde
         /// フラグ。TextChangedがこれを見て、ダーティ扱いにしないようにする。</summary>
         private bool m_isApplyingHighlightFlg = false;
 
+        /// <summary>アウトラインペインの再構築（ScheduleOutlineRefresh）が、まだ実行されていない
+        /// Dispatcher.BeginInvoke呼び出しとして予約済みかどうか。EditorTextChangedからの
+        /// 呼び出しだけ、このフラグで多重予約を防ぎつつDispatcher.BeginInvoke
+        /// （ApplicationIdle優先度）で1テンポ後回しにすることで、同じUIサイクル内で連続して
+        /// 発生する複数回の呼び出しを実質1回にまとめる。LoadFile・検索置換など、頻繁に連続
+        /// 発生しない他の呼び出し元は従来どおり同期的にm_outlineManager.Refresh()を直接呼んで
+        /// おり、この対象外。</summary>
+        private bool m_outlineRefreshPendingFlg = false;
+
         /// <summary>現在エディタに表示中のファイルの絶対パス。未保存なら null。</summary>
         private string m_currentFilePath = null;
 
@@ -150,6 +159,8 @@ namespace mde
             m_editorLineHeight = m_savedSettings.EditorLineHeight > 0 ? m_savedSettings.EditorLineHeight : 26;
             m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
             m_preserveSourceLineBreaksFlg = m_savedSettings.PreserveSourceLineBreaksFlg;
+            m_debugLogMenuItem.IsChecked = m_savedSettings.DebugLogEnabledFlg;
+            DebugLogger.SetEnabled(m_savedSettings.DebugLogEnabledFlg);
             m_pdfMarginTop = m_savedSettings.PdfMarginTop > 0 ? m_savedSettings.PdfMarginTop : 64;
             m_pdfMarginBottom = m_savedSettings.PdfMarginBottom > 0 ? m_savedSettings.PdfMarginBottom : 64;
             m_pdfMarginLeft = m_savedSettings.PdfMarginLeft > 0 ? m_savedSettings.PdfMarginLeft : 80;
@@ -203,6 +214,11 @@ namespace mde
             m_outlineList.ItemsSource = m_outlineManager.Items;
             m_folderTree.ItemsSource = m_folderTreeManager.Roots;
             DataObject.AddCopyingHandler(m_editor, m_tableEditor.HandleCopying);
+            // クリップボードの画像貼り付け対応。ブラウザ等からコピーした画像はHTML/テキストも
+            // 同時に乗せてくることがあるため、表・テキスト向けの後続のハンドラより先に登録し、
+            // 画像であればそちらへ渡る前に処理してしまう（詳しい登録順の理由は
+            // EditorHandleInlineMarkdownPastingのコメント参照）。
+            DataObject.AddPastingHandler(m_editor, m_imageManager.HandlePasting);
             DataObject.AddPastingHandler(m_editor, m_tableEditor.HandlePasting);
             DataObject.AddPastingHandler(m_editor, EditorHandleInlineMarkdownPasting);
 
@@ -361,6 +377,7 @@ namespace mde
                 EditorLineHeight = m_editorLineHeight,
                 RequireCtrlForLinkClickFlg = m_requireCtrlForLinkClickFlg,
                 PreserveSourceLineBreaksFlg = m_preserveSourceLineBreaksFlg,
+                DebugLogEnabledFlg = DebugLogger.IsEnabled,
                 PdfMarginTop = m_pdfMarginTop,
                 PdfMarginBottom = m_pdfMarginBottom,
                 PdfMarginLeft = m_pdfMarginLeft,
@@ -593,7 +610,7 @@ namespace mde
                 return;
             }
 
-            m_outlineManager.Refresh();
+            ScheduleOutlineRefresh();
 
             m_currentFileIsDirtyFlg = true;
             m_folderTreeManager.RefreshDirtyMarkers();
@@ -672,6 +689,28 @@ namespace mde
             {
                 m_headingCodeBlockEditor.ConvertParagraphToHorizontalRule(para);
             }
+        }
+
+        /// <summary>
+        /// アウトラインペインの再構築（m_outlineManager.Refresh()）を、直後の
+        /// Dispatcher.BeginInvoke（ApplicationIdle優先度）へ1回だけ予約する。EditorTextChanged
+        /// は文字入力のたびに呼ばれるが、Refresh()自体は文書全体を走査して一覧
+        /// （ObservableCollection）を丸ごと作り直す処理のため、1文字ごとに毎回同期実行すると
+        /// 入力全体が重くなる。m_outlineRefreshPendingFlgで多重予約を防ぐことで、同じUI
+        /// サイクル内で連続して発生する呼び出しを実質1回にまとめる。
+        /// </summary>
+        private void ScheduleOutlineRefresh()
+        {
+            if (m_outlineRefreshPendingFlg)
+            {
+                return;
+            }
+            m_outlineRefreshPendingFlg = true;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                m_outlineRefreshPendingFlg = false;
+                m_outlineManager.Refresh();
+            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         }
 
         // ======================================================================
@@ -754,7 +793,9 @@ namespace mde
         /// 処理し`CancelCommand()`するため、ここには来ない。表としての貼り付け
         /// （Excel等からのHTML/TSV）も同様に`TableEditor.HandlePasting`が先に処理する
         /// （`DataObject.AddPastingHandler`は登録順にすべてのハンドラを呼ぶため、
-        /// `a_args.CommandCancelled`を確認してから処理する）。
+        /// `a_args.CommandCancelled`を確認してから処理する）。クリップボードに画像が入っている
+        /// 場合は、さらに先に登録された`ImageManager.HandlePasting`が処理して`CancelCommand()`
+        /// するため、これらのどちらにも来ない。
         /// </summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">貼り付けイベントの引数。</param>
@@ -2143,6 +2184,14 @@ namespace mde
         {
             m_linkModeCtrlClickMenuItem.IsChecked = m_requireCtrlForLinkClickFlg;
             m_linkModeClickOnlyMenuItem.IsChecked = !m_requireCtrlForLinkClickFlg;
+        }
+
+        /// <summary>メニュー「表示」→「デバッグログを有効にする」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void DebugLogMenuItemChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            DebugLogger.SetEnabled(m_debugLogMenuItem.IsChecked);
         }
 
         /// <summary>メニュー「表示」→「段落中の改行」→「ソースの通りに改行する」（mde/Typora
