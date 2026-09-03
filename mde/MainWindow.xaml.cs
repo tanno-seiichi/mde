@@ -43,8 +43,8 @@ namespace mde
         /// 反応してしまわないようにするためのもの。</summary>
         private bool m_isProgrammaticChangeFlg = false;
 
-        /// <summary>IME固まり不具合調査用の心拍ログタイマー（DESIGN.md 14.12節・DEVELOPMENT_LOG.md参照）。
-        /// ガベージコレクションで消えないよう、フィールドとして保持しておく。</summary>
+        /// <summary>IME固まり不具合調査用の心拍ログタイマー。ガベージコレクションで消えないよう、
+        /// フィールドとして保持しておく。</summary>
         private System.Windows.Threading.DispatcherTimer m_imeDebugHeartbeatTimer;
 
         /// <summary>検索結果のハイライト（背景色）を適用/解除している間だけtrueにするガード
@@ -206,19 +206,17 @@ namespace mde
             DataObject.AddPastingHandler(m_editor, m_tableEditor.HandlePasting);
             DataObject.AddPastingHandler(m_editor, EditorHandleInlineMarkdownPasting);
 
-            // 2026-08-29追記：タスクリストのチェックボックス（[ ]/[x]）のトグルを検知する。
-            // 埋め込まれた各CheckBoxに個別のハンドラを付けるのではなく、ToggleButton.
-            // CheckedEvent/UncheckedEventがルーティングイベントとしてm_editorまでバブリング
-            // してくることを利用し、m_editor自身に登録した単一のハンドラでまとめて受け取る
-            // （DESIGN.md参照）。
+            // タスクリストのチェックボックス（[ ]/[x]）のトグルを検知する。埋め込まれた各
+            // CheckBoxに個別のハンドラを付けるのではなく、ToggleButton.CheckedEvent/
+            // UncheckedEventがルーティングイベントとしてm_editorまでバブリングしてくることを
+            // 利用し、m_editor自身に登録した単一のハンドラでまとめて受け取る。
             m_editor.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
             m_editor.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
 
-            // IME固まり不具合（DESIGN.md 14.12参照）調査用のデバッグログ。フォーカスの
-            // 実際の移り変わりと、実際に入力されてくる文字（IME変換中のものも含む）の流れを
-            // 時系列で記録しておくことで、症状発生時にどちらが先に・どういう順序で起きて
-            // いるのかを、実機の動画だけに頼らず後から追えるようにする（DESIGN.md 14.12
-            // 追記12参照）。
+            // IME固まり不具合調査用のデバッグログ。フォーカスの実際の移り変わりと、実際に
+            // 入力されてくる文字（IME変換中のものも含む）の流れを時系列で記録しておくことで、
+            // 症状発生時にどちらが先に・どういう順序で起きているのかを、実機の動画だけに
+            // 頼らず後から追えるようにする。
             m_editor.GotKeyboardFocus += (a_s, a_e) =>
                 DebugLogger.Log($"Editor.GotKeyboardFocus: Old={a_e.OldFocus} New={a_e.NewFocus}");
             m_editor.LostKeyboardFocus += (a_s, a_e) =>
@@ -235,12 +233,10 @@ namespace mde
                     $"Editor.TextInput: Text=\"{a_e.Text}\" " +
                     $"CompositionText=\"{a_e.TextComposition?.CompositionText}\"");
 
-            // IME固まり調査時（DESIGN.md 14.12節・DEVELOPMENT_LOG.md参照）：症状発生時、何も
-            // イベントが起きない「無音」の期間がログ上で観測されたため、イベント任せではなく、
-            // 一定間隔で強制的に現在の状態
-            // （WPFの論理フォーカスと、実際のOSレベルのフォアグラウンドウィンドウの両方）を
-            // 記録する「心拍」ログを追加した。これにより、症状発生中に何も操作していない
-            // 間の状態も追える。
+            // IME固まり調査用：症状発生時、何もイベントが起きない「無音」の期間が観測される
+            // ことがあるため、イベント任せではなく、一定間隔で強制的に現在の状態（WPFの論理
+            // フォーカスと、実際のOSレベルのフォアグラウンドウィンドウの両方）を記録する
+            // 「心拍」ログも合わせて出す。
             m_imeDebugHeartbeatTimer = new System.Windows.Threading.DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(500)
@@ -412,7 +408,7 @@ namespace mde
         /// （元テキストのままではチェック状態の変化が保存に反映されないため）、ファイルを
         /// 未保存扱いにする。CheckBox（FrameworkElementの階層）→ InlineUIContainer
         /// （TextElementの階層）→ Paragraph、と異なるクラス階層をまたいで親をたどる必要がある
-        /// （WPFの制約）。2026-08-29追記（DESIGN.md参照）。
+        /// （WPFの制約）。
         /// </summary>
         /// <param name="a_checkBoxOrDescendant">トグルされたCheckBox（またはその子孫の要素）。</param>
         private void InvalidateTaskCheckboxBlock(DependencyObject a_checkBoxOrDescendant)
@@ -435,16 +431,10 @@ namespace mde
         /// CheckedEvent/UncheckedEventがルーティングイベントとしてm_editorまでバブリング
         /// してくることを利用し、コンストラクタでm_editor自身に登録した単一のハンドラで
         /// まとめて受け取る。
-        /// 2026-08-29追記（同日中の追加修正、v2.0.34.0）：このルーティングイベント経由の
-        /// 通知だけに頼ると、チェック直後に別の操作（ソースモードへの切り替え等）を続けて行った
-        /// 場合に「元テキスト保持」の記憶破棄が間に合っていない（反映されない）ことがあると
-        /// ユーザーから報告を受けた。RichTextBoxに埋め込まれたInlineUIContainerの子要素は
-        /// マウスイベント同様、ルーティングイベントの到達も絡んで不安定になる可能性がある
-        /// （このクラスのドキュメントコメント参照）。そこで、クリックを検出する
-        /// `EditorPreviewMouseLeftButtonDown`側で`InvalidateTaskCheckboxBlock`を直接
-        /// 同期的に呼ぶように変更し、こちらはあくまで保険（キーボード操作など、将来他の経路で
-        /// IsCheckedが変わった場合の受け皿）として残してある。
-        /// 2026-08-29追記（DESIGN.md参照）。
+        /// 実際の「元テキスト保持」の記憶破棄（InvalidateTaskCheckboxBlock）は、クリックを
+        /// 検出する`EditorPreviewMouseLeftButtonDown`側で既に同期的に呼んでいるため、この
+        /// ハンドラは保険（キーボード操作など、将来他の経路でIsCheckedが変わった場合の
+        /// 受け皿）として残してある。
         /// </summary>
         /// <param name="a_sender">イベントの発生元（トグルされたCheckBox）。</param>
         /// <param name="a_args">イベントの引数。</param>
@@ -629,16 +619,15 @@ namespace mde
                 return;
             }
 
-            // 2026-08-29追記：タスクリスト（"[ ] "/"[x] "）のライブ入力変換（DESIGN.md参照）。
-            // タスクチェックボックスへの変換は、リスト項目自身の段落（トップレベルではない）に
-            // 対して行う必要があるため、直後のトップレベル限定ガードより前でチェックする。
+            // タスクリスト（"[ ] "/"[x] "）のライブ入力変換。タスクチェックボックスへの変換は、
+            // リスト項目自身の段落（トップレベルではない）に対して行う必要があるため、直後の
+            // トップレベル限定ガードより前でチェックする。
             if (para.Parent is ListItem && null == para.Tag)
             {
-                // 2026-08-29追記（同日中の修正）：TextRange(para.ContentStart, para.ContentEnd).Text
-                // は、リスト項目内では行頭のマーカー記号（「•」等）まで文字列に含んでしまうことが
-                // ある（InlineStyleEditor.GetSafeRangeTextの説明を参照）。これにより正規表現の
-                // 先頭アンカー（^\[）が一致せず、チェックボックスへ変換されない不具合が実機で
-                // 確認されたため、マーカー記号を拾わない安全な取得方法に変更した。
+                // TextRange(para.ContentStart, para.ContentEnd).Textは、リスト項目内では行頭の
+                // マーカー記号（「•」等）まで文字列に含んでしまうことがある
+                // （InlineStyleEditor.GetSafeRangeTextの説明を参照）ため、マーカー記号を
+                // 拾わない安全な取得方法を使う。
                 string liText = m_listEditor.GetParagraphPlainText(para);
                 var taskMatch = Regex.Match(liText, "^\\[([ xX])\\][ \u00A0]$");
                 if (taskMatch.Success)
@@ -668,22 +657,16 @@ namespace mde
                 m_listEditor.ConvertParagraphToListItem(para, null, true);
                 return;
             }
-            // 外部調査により、症状はMicrosoft公式の既知不具合（WPFアプリケーションでIME使用時に
-            // 発生するタイミング依存の不具合、Windows 11 22H2/23H2/24H2対象、
-            // KB5046732/KB5046740で修正済み）と酷似していることが判明した。見出しの自動変換
-            // 処理を完全にゼロにしても症状が再現したこととも整合するため、ユーザーの判断により、
-            // 見出しへの自動変換は元どおり有効化する（2.0.22）。詳しい経緯はDESIGN.md 14.12節・
-            // DEVELOPMENT_LOG.mdを参照。
             var m = Regex.Match(text, "^(#{1,6})[ \u00A0]$");
             if (m.Success)
             {
                 m_headingCodeBlockEditor.ConvertParagraphToHeading(para, m.Groups[1].Value.Length);
                 return;
             }
-            // 2026-08-29追記：水平線（---/***/___）のライブ入力変換（DESIGN.md参照）。バッチ変換
-            // （MarkdownConverter）と同じ正規表現を使い、両者の判定基準を一致させている。見出しと
-            // 異なりトリガーとなる区切り文字（スペース等）が存在しないため、段落のテキストが
-            // パターンに完全一致した時点（マーカーが3文字揃った時点）で直ちに変換する。
+            // 水平線（---/***/___）のライブ入力変換。バッチ変換（MarkdownConverter）と同じ
+            // 正規表現を使い、両者の判定基準を一致させている。見出しと異なりトリガーとなる
+            // 区切り文字（スペース等）が存在しないため、段落のテキストがパターンに完全一致
+            // した時点（マーカーが3文字揃った時点）で直ちに変換する。
             var hrMatch = Regex.Match(text, "^ {0,3}([-*_])\\1{2,}\\s*$");
             if (hrMatch.Success)
             {
@@ -695,11 +678,6 @@ namespace mde
         //  キー入力の振り分け（Tab / Enter / 表内の矢印キー）
         // ======================================================================
 
-        /// <summary>
-        /// キー入力の中心的な振り分け役。箇条書き項目・見出し・コードブロック・表セルの
-        /// いずれにキャレットがあるかに応じて、Tab/Shift+Tab/Enter/矢印キーの処理を
-        /// 対応するクラスへ委譲する。
-        /// </summary>
         /// <summary>
         /// 箇条書き/順序付きリストへの変換の入口（スペースキー）。印字可能な文字（スペースを含む）は
         /// WPFではPreviewKeyDownではなくPreviewTextInputを通じて挿入されるため、PreviewKeyDownで
@@ -745,7 +723,7 @@ namespace mde
         /// <summary>`TextPointer.Paragraph`を段落解決の一次手段として使い、nullが返った場合は
         /// `TextPointer.Parent`から上へ辿って囲んでいるParagraphを探すフォールバックを行う。
         /// 表のセルなど入れ子になった構造の中では`.Paragraph`が期待通りに解決しないことがある
-        /// ため（DESIGN.md 14.5参照）、その対策。</summary>
+        /// ため、その対策。</summary>
         /// <param name="a_position">解決したい位置。</param>
         /// <returns>囲んでいるParagraph（見つからなければnull）。</returns>
         private static Paragraph ResolveParagraph(TextPointer a_position)
@@ -824,6 +802,13 @@ namespace mde
             MarkDirty();
         }
 
+        /// <summary>
+        /// キー入力の中心的な振り分け役。箇条書き項目・見出し・コードブロック・表セルの
+        /// いずれにキャレットがあるかに応じて、Tab/Shift+Tab/Enter/矢印キーの処理を
+        /// 対応するクラスへ委譲する。
+        /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
         private void EditorPreviewKeyDown(object a_sender, KeyEventArgs a_args)
         {
             if (m_isSourceModeFlg)
@@ -847,20 +832,12 @@ namespace mde
                         return;
                     }
 
-                    // IME固まり調査時（DESIGN.md 14.12節・DEVELOPMENT_LOG.md参照）：ネストした
-                    // リスト（2段目以降）でのEnterキー処理を一旦丸ごと省略する診断を行ったが、
-                    // 見出しを完全にオミットしても症状が再現し、外部調査でWindows側の既知不具合と
-                    // 判明したため、この診断オミットは取りやめ、元どおりmde独自の処理を行う
-                    // （2.0.22）。
-
                     a_args.Handled = true;
                     m_listEditor.HandleListEnter(li, parentList);
                     return;
                 }
                 if (para.Tag is int level && level > 0)
                 {
-                    // 見出し内でのEnterキー処理も、上記と同じ理由でオミットを取りやめ、元どおり
-                    // mde独自の処理を行う（2.0.22。DESIGN.md 14.12節・DEVELOPMENT_LOG.md参照）。
                     a_args.Handled = true;
                     m_headingCodeBlockEditor.HandleHeadingEnter(para);
                     return;
@@ -1098,19 +1075,13 @@ namespace mde
             Point pos = a_args.GetPosition(m_editor);
             var hit = VisualTreeHelper.HitTest(m_editor, pos);
 
-            // 2026-08-29追記：タスクリストのチェックボックス（[ ]/[x]）のクリックによる
-            // チェック⇔アンチェック切替（DESIGN.md参照）。このメソッドのドキュメントコメントに
-            // ある通り、RichTextBoxに埋め込まれたInlineUIContainerの子要素（CheckBox自身）の
-            // 内部クリック処理に頼るとイベントが不安定になるため、画像と同じくRichTextBox側
-            // でのヒットテストで検出し、IsCheckedを手動で反転させる。
-            // 2026-08-29追記（同日中の追加修正、v2.0.34.0）：「元テキスト保持」の記憶破棄
-            // （InvalidateTaskCheckboxBlock）は、以前はIsChecked変更で発生するToggleButton.
-            // CheckedEvent/UncheckedEventのルーティングイベントのバブリング頼みだったが、
-            // トグル直後に別操作（ソースモードへの切り替え等）を続けて行うと反映されていない
-            // ことがあると報告を受けた。埋め込み要素のイベント到達が不安定になりうる、という
-            // このメソッド自身のドキュメントコメントの教訓に従い、ここで直接・同期的に呼ぶ
-            // ように変更した（IsChecked変更にRunAsProgrammaticChangeを使わないのは変わらず
-            // 重要＝実際のユーザー操作として扱う）。
+            // タスクリストのチェックボックス（[ ]/[x]）のクリックによるチェック⇔アンチェック
+            // 切替。このメソッドのドキュメントコメントにある通り、RichTextBoxに埋め込まれた
+            // InlineUIContainerの子要素（CheckBox自身）の内部クリック処理に頼るとイベントが
+            // 不安定になるため、画像と同じくRichTextBox側でのヒットテストで検出し、IsChecked
+            // を手動で反転させたうえで、「元テキスト保持」の記憶破棄もここで直接・同期的に
+            // 呼ぶ（IsChecked変更にRunAsProgrammaticChangeを使わないのは、実際のユーザー
+            // 操作として扱うために重要）。
             CheckBox cb = FindVisualAncestorOrSelf<CheckBox>(hit?.VisualHit);
             if (null != cb && "task-checkbox" == (cb.Tag as string))
             {
@@ -1570,20 +1541,13 @@ namespace mde
         /// <summary>
         /// 保存時に書き出すMarkDownテキストを、一時フォルダに残ったままの画像（WYSIWYGモードで
         /// ドラッグ&amp;ドロップ挿入した直後、まだ一度も保存していない画像）を
-        /// "&lt;ファイル名&gt;.images"フォルダへ退避・パス書き換えした上で返す。
-        /// 2026-08-29修正（DESIGN.md参照）：従来はこの退避処理（RelocatePendingTempImages）が
-        /// 「MarkDownモードの時だけ」呼ばれており、WYSIWYGモードで画像を挿入した直後にソース
-        /// モードへ切り替えてそのまま保存すると、退避が一切行われず、OSの一時フォルダを指す
-        /// 絶対パスがそのままファイルに書き出されてしまっていた（後で一時ファイルが消えると
-        /// 画像が失われ、ソースモードで開くと崩れたパスがそのまま文字として見えてしまう）。
-        /// ソースモード中の保存では、ライブな m_editor.Document・m_sourceEditor.Text の
-        /// どちらも直接いじらずに済むよう、「使い捨てのスクラッチ文書＋専用
-        /// OriginalTextTracker」パターンで処理し、書き換え後のテキストを
-        /// m_sourceEditor.Text へも反映しておく（同じ一時ファイルを次回保存時に再び探しに
-        /// 行って失敗することがないように）。2026-08-29追記（同日中の追加修正、v2.0.40.0）：
-        /// 以前はこのコメントでExportPdfBtnClickも同じパターンを使っている例として挙げていたが、
-        /// Chromiumなしビルドへの変更でExportPdfBtnClick側はこのパターンを使わなくなった
-        /// （DESIGN.md参照）ため、その言及を削除した。
+        /// "&lt;ファイル名&gt;.images"フォルダへ退避・パス書き換えした上で返す。WYSIWYGモードで
+        /// 画像を挿入した直後にソースモードへ切り替えてそのまま保存した場合も退避が必要なため、
+        /// モードを問わず常にこの退避処理を行う。ソースモード中の保存では、ライブな
+        /// m_editor.Document・m_sourceEditor.Text のどちらも直接いじらずに済むよう、
+        /// 「使い捨てのスクラッチ文書＋専用OriginalTextTracker」パターンで処理し、
+        /// 書き換え後のテキストを m_sourceEditor.Text へも反映しておく（同じ一時ファイルを
+        /// 次回保存時に再び探しに行って失敗することがないように）。
         /// </summary>
         /// <returns>保存すべきMarkDownテキスト。</returns>
         private string GetMarkdownForSaveWithImageRelocation()
@@ -1707,22 +1671,14 @@ namespace mde
         }
 
         /// <summary>
-        /// 現在の文書をPDFへ書き出す。追加のライブラリを使わず、Windows標準の「Microsoft Print to
-        /// PDF」仮想プリンタへ印刷する形で実現している（印刷ダイアログでこのプリンタを選ぶと、
-        /// 保存先を聞かれてPDFファイルが作成される）。
-        /// 2026-08-29追記（同日中の追加修正、v2.0.40.0。DESIGN.md参照）：職場の環境でChromium
-        /// （PuppeteerSharp、PDF書き出し専用の依存関係）の承認がまだ下りていないとのことで、
-        /// Chromiumに依存しないビルドを求められた。PDF書き出し機能はこのアプリで唯一Chromiumに
-        /// 依存していた部分だったため、一時期（v2.0.30.0前後〜v2.0.39.0）採用していたheadless
-        /// Chromium方式をやめ、旧バージョン（v1.4.5）で使っていたこの「Microsoft Print to PDF」
-        /// 方式に戻した（ユーザーが保管していたv1.4.5のソースから、このメソッドと下記の
-        /// FindAllLinkRuns/BuildPdfNavigateUri/MarginDocumentPaginatorをそのまま移植）。
-        /// Chromium方式には「ソースモードでも書き出せる」「保存ダイアログに既定のファイル名を
-        /// 設定できる」「書き出し後に自動でPDFを開ける」という利点があったが、この方式には
-        /// それらが無い（下記参照）。一方、この方式はWPFの印刷パイプラインで文書のVisualを
-        /// そのまま描画するため、チェックボックスやハイライトなど、この機能をやめた後に
-        /// 追加された表示要素も、HtmlDocumentBuilder側のような個別対応を書き足すことなく
-        /// そのまま書き出せる。
+        /// 現在の文書をPDFへ書き出す（Chromiumなし版）。追加のライブラリを使わず、Windows標準の
+        /// 「Microsoft Print to PDF」仮想プリンタへ印刷する形で実現している（印刷ダイアログで
+        /// このプリンタを選ぶと、保存先を聞かれてPDFファイルが作成される）。Chromiumを使う版
+        /// （headless Chromiumでの書き出し。「ソースモードでも書き出せる」「保存ダイアログに
+        /// 既定のファイル名を設定できる」「書き出し後に自動でPDFを開ける」という利点がある）を
+        /// 使えない環境向けの、追加の依存関係を持たない代替実装。WPFの印刷パイプラインで
+        /// 文書のVisualをそのまま描画するため、チェックボックスやハイライト等の表示要素も、
+        /// 個別対応を書き足すことなくそのまま書き出せる。
         /// </summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
@@ -2437,8 +2393,8 @@ namespace mde
         /// <summary>段落中の改行の扱いの設定を変更する。MarkDownモードで文書を表示中であれば、
         /// 現在の内容を一旦MarkDownテキストへ書き出してから読み直すことで、新しい設定を
         /// その場で反映させる（LoadFile等、文書を丸ごと差し替える他の処理と同じパターン）。
-        /// 文書再構築直後のキャレット位置は不定・不確実になりうる（DESIGN.md 14.5節参照）ため、
-        /// LoadFile等の既存箇所にならい、独自のキャレット位置の保持・復元は一切試みず、
+        /// 文書再構築直後のキャレット位置は不定・不確実になりうるため、LoadFile等の既存箇所に
+        /// ならい、独自のキャレット位置の保持・復元は一切試みず、
         /// 常に文書の先頭へ明示的に設定する。ソースモード中は、次にMarkDownモードへ切り替え
         /// られた際の変換に反映されるよう、設定値を変更するだけにとどめる。</summary>
         /// <param name="a_value">true＝ソースの通りに改行する、false＝空行が入るまで改行しない。</param>
@@ -2479,8 +2435,7 @@ namespace mde
         /// 関わらず常にこの固定値のままにしている）。ただし固定値をゼロにはしない：見出し・
         /// コードブロック・水平線はそれぞれ固有のMarginを明示的に持っているのに対し、通常の
         /// 段落・リスト・表はこの共有の値だけを頼りにしているため、ここがゼロだと、空行
-        /// 区切りのMarkDown段落どうしが単純な行の折り返しと見分けが付かなくなってしまう
-        /// （DESIGN.md 14.11節参照）。</summary>
+        /// 区切りのMarkDown段落どうしが単純な行の折り返しと見分けが付かなくなってしまう。</summary>
         /// <param name="a_value">設定したい行間の値。</param>
         private void ApplyEditorLineHeight(double a_value)
         {

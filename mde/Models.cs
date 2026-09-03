@@ -15,12 +15,10 @@ namespace mde
     /// </summary>
     public class ImageInfo
     {
-        // 2026-08-28修正：フィールドから自動実装プロパティへ変更（DESIGN.md 14.14参照）。
         // WPFのクリップボードXaml形式（RichTextBox間のリッチなコピー&ペーストで使われる）は
         // XamlWriterによるシリアライズに依存しており、これは通常「公開プロパティ」だけを
         // 対象にする。フィールドのままだとRunのTagに持たせたこのオブジェクトの中身が
-        // コピー&ペースト時に失われる可能性があるため、他の箇所のコード（m_originalSrcなどの
-        // 参照）を一切変更せずに済む「フィールド→自動実装プロパティ」への置き換えだけを行った。
+        // コピー&ペースト時に失われる可能性があるため、自動実装プロパティにしている。
 
         /// <summary>MarkDown/HTML上に書かれていた元のsrc（相対パス・絶対パス・URLなど）。</summary>
         public string m_originalSrc { get; set; }
@@ -34,15 +32,13 @@ namespace mde
         /// <summary>元の記法。"html"（&lt;img&gt;タグ）または"md"（![alt](src)）。</summary>
         public string m_format { get; set; }
 
-        /// <summary>MarkDown形式の場合の、![alt](src "title")のタイトル部分（省略時はnull）。
-        /// 2026-08-29追記：以前はこのタイトル部分を解析できず、URLの一部として誤って
-        /// 解釈してしまい画像が壊れる不具合があったため対応した（DESIGN.md参照）。</summary>
+        /// <summary>MarkDown形式の場合の、![alt](src "title")のタイトル部分（省略時はnull）。</summary>
         public string m_title { get; set; }
     }
 
     /// <summary>
     /// 水平線（&lt;hr&gt;相当）の段落（Paragraph）のTagに設定するマーカー用クラス。
-    /// 中身を持たない目印としてのみ使う。2026-08-29追記（DESIGN.md参照）。
+    /// 中身を持たない目印としてのみ使う。
     /// </summary>
     public class HorizontalRuleInfo
     {
@@ -79,13 +75,12 @@ namespace mde
         /// <summary>true の場合、&lt;url&gt; 形式（山括弧の自動リンク）から読み込まれたことを示す。</summary>
         public bool m_isAutoLinkFlg { get; set; }
 
-        /// <summary>MarkDown形式の場合の、[text](url "title")のタイトル部分（省略時はnull）。
-        /// 2026-08-29追記（DESIGN.md参照）。</summary>
+        /// <summary>MarkDown形式の場合の、[text](url "title")のタイトル部分（省略時はnull）。</summary>
         public string m_title { get; set; }
 
         /// <summary>true の場合、&lt;email@example.com&gt; 形式（山括弧のメールアドレス自動リンク）
         /// から読み込まれたことを示す。保存時に &lt;url&gt; ではなく &lt;email@example.com&gt;
-        /// （mailto:を除いた元のアドレス）として書き戻すために使う。2026-08-29追記（DESIGN.md参照）。</summary>
+        /// （mailto:を除いた元のアドレス）として書き戻すために使う。</summary>
         public bool m_isEmailAutoLinkFlg { get; set; }
     }
 

@@ -27,7 +27,7 @@ namespace mde
     {
         private static readonly Brush LINK_BRUSH = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
         private static readonly Brush CODE_BLOCK_BACKGROUND = BlockStyles.CodeBlockBackgroundBrush;
-        // 2026-08-29追記：ハイライト（==text==）用の背景色（DESIGN.md参照）。
+        // ハイライト（==text==）用の背景色。
         private static readonly Brush HIGHLIGHT_BACKGROUND = BlockStyles.HighlightBrush;
 
         private readonly RichTextBox m_editor;
@@ -774,11 +774,9 @@ namespace mde
             if (null == style &&
                 '>' == lastChar)
             {
-                // 2026-08-29追記：URL自動リンク（<https://...>）のライブ入力変換（DESIGN.md参照）。
-                // 元々MarkDown読み込み時のみ対応していた記法だが、ここで打ち終えた瞬間にも
-                // 変換されるようにし、メールアドレス自動リンクと挙動を揃える（追加提案）。
-                // バッチ変換（MarkdownConverter.INLINE_CONTENT_REGEX）ではURL自動リンクの
-                // 分岐がメールアドレス自動リンクより先に置かれており、<https://user@example.com>
+                // URL自動リンク（<https://...>）のライブ入力変換。バッチ変換
+                // （MarkdownConverter.INLINE_CONTENT_REGEX）ではURL自動リンクの分岐が
+                // メールアドレス自動リンクより先に置かれており、<https://user@example.com>
                 // のような（メールアドレス自動リンクの正規表現にも一致し得る）URLはURLとして
                 // 解釈される。ライブ入力変換でもこの優先順位を一致させるため、URL側を先に判定する。
                 match = Regex.Match(textBefore, "<(https?://[^\\s<>]+)>$", RegexOptions.IgnoreCase);
@@ -794,8 +792,8 @@ namespace mde
             if (null == style &&
                 '>' == lastChar)
             {
-                // 2026-08-29追記：メールアドレス自動リンク（<email@example.com>）のライブ入力
-                // 変換（DESIGN.md参照）。バッチ変換（MarkdownConverter）と対になる処理。
+                // メールアドレス自動リンク（<email@example.com>）のライブ入力変換。
+                // バッチ変換（MarkdownConverter）と対になる処理。
                 match = Regex.Match(textBefore, "<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>$");
                 if (match.Success && !IsEscapedAt(textBefore, match.Index))
                 {
@@ -809,7 +807,7 @@ namespace mde
             if (null == style &&
                 '=' == lastChar)
             {
-                // 2026-08-29追記：ハイライト（==text==）（DESIGN.md参照）。
+                // ハイライト（==text==）のライブ入力変換。
                 match = Regex.Match(textBefore, "==([^=]+)==$");
                 if (match.Success && !IsEscapedAt(textBefore, match.Index))
                 {
@@ -872,13 +870,13 @@ namespace mde
             }
             else if ("email-autolink" == style)
             {
-                // 2026-08-29追記（DESIGN.md参照）：メールアドレス自動リンク。
+                // メールアドレス自動リンク。
                 string email = match.Groups[1].Value;
                 ReplaceTextBeforeCaretWithLinkRun(caret, start, email, "mailto:" + email, false, true);
             }
             else if ("url-autolink" == style)
             {
-                // 2026-08-29追記（DESIGN.md参照）：URL自動リンク。
+                // URL自動リンク。
                 string url = match.Groups[1].Value;
                 ReplaceTextBeforeCaretWithLinkRun(caret, start, url, url, true, false);
             }
@@ -913,10 +911,9 @@ namespace mde
         /// <param name="a_linkText">リンクの表示文字列。</param>
         /// <param name="a_url">リンク先URL。</param>
         /// <param name="a_isAutoLinkFlg">true の場合、&lt;url&gt; 形式（山括弧の自動リンク）からの
-        /// 変換であることを示す。2026-08-29追記（DESIGN.md参照）。</param>
+        /// 変換であることを示す。</param>
         /// <param name="a_isEmailAutoLinkFlg">true の場合、&lt;email@example.com&gt; 形式
-        /// （山括弧のメールアドレス自動リンク）からの変換であることを示す。
-        /// 2026-08-29追記（DESIGN.md参照）。</param>
+        /// （山括弧のメールアドレス自動リンク）からの変換であることを示す。</param>
         private void ReplaceTextBeforeCaretWithLinkRun(TextPointer a_caret, TextPointer a_start, string a_linkText, string a_url,
             bool a_isAutoLinkFlg = false, bool a_isEmailAutoLinkFlg = false)
         {

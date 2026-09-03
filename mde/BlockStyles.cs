@@ -18,7 +18,7 @@ namespace mde
     {
         private static readonly Brush CELL_BORDER = new SolidColorBrush(Color.FromRgb(0xB4, 0xB4, 0xB4));
         private static readonly Brush CODE_BLOCK_BACKGROUND = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
-        // 2026-08-29追記：ハイライト（==text==）の背景色。DESIGN.md参照。
+        // ハイライト（==text==）の背景色。
         private static readonly Brush HIGHLIGHT_BACKGROUND = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0x8A));
 
         /// <summary>コードブロックの背景色（他クラスからも参照できるよう公開）。</summary>
@@ -93,8 +93,7 @@ namespace mde
             ToolTipService.SetToolTip(a_p, string.IsNullOrEmpty(a_language) ? "コードブロック" : "コードブロック (" + a_language + ")");
         }
 
-        /// <summary>段落に水平線（&lt;hr&gt;相当）スタイルを適用する。
-        /// 2026-08-29追記（DESIGN.md参照）。</summary>
+        /// <summary>段落に水平線（&lt;hr&gt;相当）スタイルを適用する。</summary>
         /// <param name="a_p">対象の段落。中身（Inlines）は空のままにする想定。</param>
         public static void ApplyHorizontalRuleStyle(Paragraph a_p)
         {
@@ -109,8 +108,7 @@ namespace mde
 
         /// <summary>タスクリスト用チェックボックスを生成する。
         /// MarkdownConverter（バッチ変換）とListEditor（ライブ入力変換）の両方から共有で使い、
-        /// 見た目のプロパティ（IsChecked以外）が食い違わないようにするための共通ヘルパー。
-        /// 2026-08-29追記（DESIGN.md参照）。</summary>
+        /// 見た目のプロパティ（IsChecked以外）が食い違わないようにするための共通ヘルパー。</summary>
         /// <param name="a_checked">チェック済み状態（[x]）かどうか。</param>
         public static CheckBox CreateTaskCheckbox(bool a_checked)
         {
@@ -126,8 +124,7 @@ namespace mde
         /// <summary>不順序リスト（箇条書き）のマーカー種別を、ネストの段数（1始まり）から決める。
         /// VSCode等と同様、1段目はDisc（・）、2段目はCircle（輪郭だけの丸）、3段目以降は
         /// Box（塗りつぶしの四角）にする。MarkdownConverter（バッチ変換）とListEditor
-        /// （ライブ編集でのTab字下げ・字下げ解除）の両方から共有で使う。2026-08-29追記
-        /// （同日中の追加修正、v2.0.39.0。DESIGN.md参照）。</summary>
+        /// （ライブ編集でのTab字下げ・字下げ解除）の両方から共有で使う。</summary>
         /// <param name="a_depth">ネストの段数（1始まり）。</param>
         /// <returns>対応するTextMarkerStyle。</returns>
         public static TextMarkerStyle UnorderedMarkerStyleForDepth(int a_depth)
@@ -172,9 +169,7 @@ namespace mde
         /// 直後（内容が確定した後）に呼ぶこと。
         /// 注：System.Windows.Documents.Table（FrameworkContentElement）には
         /// HorizontalAlignmentプロパティが存在しない（FrameworkElement専用のプロパティの
-        /// ため）。そのため、表全体を左揃えにする処理はここでは行っていない。全列が
-        /// Pixel固定幅になった場合に表全体の右側に余白が残る見た目になるかどうかは
-        /// 未確認のため、実機で確認のうえ、必要であれば別途相談のこと。
+        /// ため）。そのため、表全体を左揃えにする処理はここでは行っていない。
         /// </summary>
         /// <param name="a_table">対象の表（RowGroups・Rows・Cellsまで構築済みであること）。</param>
         public static void ApplyContentBasedColumnWidths(Table a_table)

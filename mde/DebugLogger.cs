@@ -1,10 +1,9 @@
 // DebugLogger.cs
 //
 // mde (MarkDown インラインエディタ) の一部。
-// IME固まり不具合（DESIGN.md 14.12参照）の調査用に追加した、簡易なデバッグログ出力。
-// この不具合は開発側の環境（Windows/WPFの実行環境）では再現手順を試せず、実機での
-// 動画に頼った調査を10回以上重ねても原因を特定できなかったため、実際に何が・いつ
-// 起きているかを時系列でファイルに書き出し、後から読めるようにする。
+// IME固まり不具合の調査用に追加した、簡易なデバッグログ出力。この不具合は開発側の環境
+// （Windows/WPFの実行環境）では再現手順を試せないため、実際に何が・いつ起きているかを
+// 時系列でファイルに書き出し、後から読めるようにする。
 //
 // 【使い方】症状を再現させた後、%LOCALAPPDATA%\mde\debug.log を開いて内容を共有してください
 // （ファイルはアプリを起動するたびに新しく作り直されるので、1回の再現につき1回分の記録に
@@ -30,13 +29,11 @@ namespace mde
         private static readonly string s_logPath;
         private static readonly Stopwatch s_stopwatch = Stopwatch.StartNew();
 
-        // 追記13（DESIGN.md 14.12参照）：WPF自身のIsKeyboardFocused/FocusedElementは、
-        // あくまでWPFプロセス内部の「論理的な」フォーカス管理の状態であり、実際に今どの
-        // ウィンドウ（プロセス）がWindows全体のフォアグラウンド（＝実際にキー入力を受け取る
-        // 先）になっているかとは、理屈の上では食い違いうる。IME/予測変換候補のポップアップが
-        // 独立した別ウィンドウ（別プロセス）として実装されている可能性を疑い、GetForegroundWindow
-        // をP/Invokeで直接呼んで、実際のフォアグラウンドウィンドウがどのプロセスに属しているかを
-        // 確認できるようにした。
+        // WPF自身のIsKeyboardFocused/FocusedElementは、あくまでWPFプロセス内部の「論理的な」
+        // フォーカス管理の状態であり、実際に今どのウィンドウ（プロセス）がWindows全体の
+        // フォアグラウンド（＝実際にキー入力を受け取る先）になっているかとは、理屈の上では
+        // 食い違いうる。GetForegroundWindowをP/Invokeで直接呼んで、実際のフォアグラウンド
+        // ウィンドウがどのプロセスに属しているかを確認できるようにする。
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
