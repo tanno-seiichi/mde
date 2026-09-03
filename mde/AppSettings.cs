@@ -33,6 +33,9 @@ namespace mde
         public double PdfMarginLeft { get; set; } = 80;
         public double PdfMarginRight { get; set; } = 80;
 
+        /// <summary>メニュー「表示」→「デバッグログを有効にする」のチェック状態。既定は無効。</summary>
+        public bool DebugLogEnabledFlg { get; set; } = false;
+
         /// <summary>メニュー「ファイル」→「最近使ったファイル」に表示する、最近開いた/保存した
         /// ファイルの絶対パス一覧（先頭が最新）。</summary>
         public List<string> RecentFiles { get; set; } = new List<string>();

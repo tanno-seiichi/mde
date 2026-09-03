@@ -5,12 +5,14 @@
 // （Windows/WPFの実行環境）では再現手順を試せないため、実際に何が・いつ起きているかを
 // 時系列でファイルに書き出し、後から読めるようにする。
 //
-// 【使い方】症状を再現させた後、%LOCALAPPDATA%\mde\debug.log を開いて内容を共有してください
-// （ファイルはアプリを起動するたびに新しく作り直されるので、1回の再現につき1回分の記録に
-// なります）。
+// 【使い方】メニュー「表示」→「デバッグログを有効にする」で有効化してから症状を再現させ、
+// デスクトップの mdelog フォルダに書き出される mde_v<バージョン>.log を開いて内容を
+// 共有してください（有効化するたびに新しく書き出し直されるので、1回の再現につき1回分の
+// 記録になります）。既定では無効で、この設定は次回起動時にも復元される（AppSettings参照）。
 //
 // 通常の動作に影響を与えないよう、ファイルへの書き込みはすべてtry/catchで囲んであり、
-// 書き込みに失敗してもアプリの動作は継続する。
+// 書き込みに失敗してもアプリの動作は継続する。無効時はLog()が即returnするだけの、
+// ほぼ無コストな早期returnになる（文字入力のたびに呼ばれても、ディスクI/Oは一切発生しない）。
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -21,13 +23,38 @@ using System.Threading;
 namespace mde
 {
     /// <summary>
-    /// 時刻付きの1行ログをファイルに追記するだけの、状態を持つ簡易ロガー。
+    /// 時刻付きの1行ログをファイルに追記するだけの、状態を持つ簡易ロガー。有効/無効は
+    /// メニュー「表示」→「デバッグログを有効にする」から切り替えられる。
     /// </summary>
     public static class DebugLogger
     {
         private static readonly object s_lock = new object();
-        private static readonly string s_logPath;
+        private static readonly string s_logPath = BuildLogPath();
         private static readonly Stopwatch s_stopwatch = Stopwatch.StartNew();
+        private static bool s_enabledFlg = false;
+
+        /// <summary>現在デバッグログが有効かどうか。</summary>
+        public static bool IsEnabled => s_enabledFlg;
+
+        /// <summary>ログの保存先（デスクトップの mdelog フォルダ内、
+        /// mde_v&lt;バージョン&gt;.log）を組み立てる。フォルダが無ければ作成する。
+        /// 失敗した場合はnullを返し、以後Log()は常に何もしない。</summary>
+        private static string BuildLogPath()
+        {
+            try
+            {
+                string dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "mdelog");
+                Directory.CreateDirectory(dir);
+                var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+                string fileName = $"mde_v{version.Major}.{version.Minor}.{version.Build}.log";
+                return Path.Combine(dir, fileName);
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
         // WPF自身のIsKeyboardFocused/FocusedElementは、あくまでWPFプロセス内部の「論理的な」
         // フォーカス管理の状態であり、実際に今どのウィンドウ（プロセス）がWindows全体の
@@ -84,31 +111,40 @@ namespace mde
             }
         }
 
-        static DebugLogger()
+        /// <summary>デバッグログの有効/無効を切り替える。有効化した瞬間にログファイルを
+        /// 新しく書き出し直す（起動時の設定復元・メニューからの切り替え、どちらの場合でも、
+        /// 有効化のたびにその時点からの新しい記録として扱えるようにするため）。</summary>
+        /// <param name="a_enabledFlg">true＝有効化、false＝無効化。</param>
+        public static void SetEnabled(bool a_enabledFlg)
         {
+            s_enabledFlg = a_enabledFlg;
+            if (!a_enabledFlg || null == s_logPath)
+            {
+                return;
+            }
             try
             {
-                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mde");
-                Directory.CreateDirectory(dir);
-                s_logPath = Path.Combine(dir, "debug.log");
-                // 起動のたびに新しいログにする（古いログと混ざって読みにくくなるのを防ぐ）。
-                File.WriteAllText(s_logPath,
-                    $"=== mde debug log started {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} " +
-                    $"(v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version}) ===\r\n");
+                lock (s_lock)
+                {
+                    File.WriteAllText(s_logPath,
+                        $"=== mde debug log started {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} " +
+                        $"(v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version}) ===\r\n");
+                }
             }
             catch
             {
-                s_logPath = null;
+                // 書き込みに失敗しても致命的ではない（次回のLog()呼び出しも同様に無視される）。
             }
         }
 
         /// <summary>
-        /// 1行、経過時間・スレッドID付きでログファイルに追記する。失敗しても何もしない。
+        /// 1行、経過時間・スレッドID付きでログファイルに追記する。無効時、または書き込みに
+        /// 失敗した場合は何もしない。
         /// </summary>
         /// <param name="a_message">記録するメッセージ。</param>
         public static void Log(string a_message)
         {
-            if (null == s_logPath)
+            if (!s_enabledFlg || null == s_logPath)
             {
                 return;
             }
