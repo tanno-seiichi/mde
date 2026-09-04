@@ -797,9 +797,33 @@ namespace mde
                 return;
             }
 
+            // タスクチェックボックスを含む段落は、チェックボックスの後ろに実際の文字を持つ
+            // Inline（空文字列でよいのでRunが1つ）が常に存在することを前提にしている
+            // （ConvertListItemTextToTaskCheckbox等でチェックボックスを挿入する際、空の
+            // Runを一緒に添えているのはこのため。理由はBlockStyles.CreateTaskCheckboxの
+            // コメントを参照：段落の中身がチェックボックスだけになると、行の高さの計算基準が
+            // チェックボックス自身の大きさになってしまい、「・」の位置が箇条書きより上に
+            // ずれて見える）。ところが、入力済みの文字をBackSpace/Deleteで最後の1文字まで
+            // 消すと、WPF標準の削除処理が、空になったRunを内部的に取り除いてしまうことが
+            // あり、この前提が崩れてしまう。ここで、チェックボックスの直後に実際にInlineが
+            // 存在するかを毎回確認し、なければ空のRunを補い直すことで、常にこの前提を保つ。
+            if (para.Parent is ListItem &&
+                para.Inlines.FirstInline is InlineUIContainer existingTaskIuc &&
+                existingTaskIuc.Child is CheckBox existingTaskCb &&
+                "task-checkbox" == (existingTaskCb.Tag as string) &&
+                null == existingTaskIuc.NextInline)
+            {
+                RunAsProgrammaticChange(() =>
+                {
+                    para.Inlines.Add(new Run(""));
+                });
+            }
+
             // タスクリスト（"[ ] "/"[x] "）のライブ入力変換。タスクチェックボックスへの変換は、
             // リスト項目自身の段落（トップレベルではない）に対して行う必要があるため、直後の
-            // トップレベル限定ガードより前でチェックする。
+            // トップレベル限定ガードより前でチェックする。見出し・箇条書き・順序付きリストの
+            // 記号変換と同様、行の先頭に既に文字列がある状態で後から"[ ] "/"[x] "を書き足した
+            // 場合にも変換できるよう、末尾（$）ではなく先頭一致のみで判定する。
             if (para.Parent is ListItem && null == para.Tag)
             {
                 // TextRange(para.ContentStart, para.ContentEnd).Textは、リスト項目内では行頭の
@@ -807,10 +831,11 @@ namespace mde
                 // （InlineStyleEditor.GetSafeRangeTextの説明を参照）ため、マーカー記号を
                 // 拾わない安全な取得方法を使う。
                 string liText = m_listEditor.GetParagraphPlainText(para);
-                var taskMatch = Regex.Match(liText, "^\\[([ xX])\\][ \u00A0]$");
+                var taskMatch = Regex.Match(liText, "^\\[([ xX])\\][ \u00A0]");
                 if (taskMatch.Success)
                 {
-                    m_listEditor.ConvertListItemTextToTaskCheckbox(para, " " != taskMatch.Groups[1].Value);
+                    m_listEditor.ConvertListItemTextToTaskCheckbox(
+                        para, " " != taskMatch.Groups[1].Value, taskMatch.Value.Length);
                     return;
                 }
             }
@@ -1085,6 +1110,56 @@ namespace mde
                     }
                 }
                 return; // 通常の段落: WPF標準の動作（新しい段落の作成）に任せる
+            }
+
+            // 見出し段落の中身をBackSpaceで空にした後、もう一度BackSpaceが押された場合、
+            // 見出しの書式だけを本文へ戻す（箇条書きのListItemは同じ状況でWPF標準の動作の
+            // ままリストから抜けられるが、見出しはただのParagraphに書式を適用しているだけ
+            // なので、標準動作では書式が外れずに残ってしまうため）。
+            // v1.5.5.2では空判定に`0 == para.ContentStart.CompareTo(para.ContentEnd)`を
+            // 使っていたが、v1.5.5.3の調査用ログにより、見た目には文字が残っていない状態でも
+            // これがfalseのままになる（TextRange.Text=""で空にした段落に、0文字のRunなど
+            // 見えない構造が残り、TextPointer同士の比較では「空」と判定されない）ことが
+            // わかった。ListEditor.CreateOrExitListItemが空判定に生のTextPointer比較ではなく
+            // 実際に取り出したテキストの長さを使っているのと同じ考え方に合わせ、こちらも
+            // TextRangeで取り出した文字列の長さで判定するようにする。あわせて、キャレット位置の
+            // 生のTextPointer比較（同じ理由で信頼できない）もやめ、選択範囲が空であることの
+            // 確認に置き換える（paraはキャレット位置から解決しているため、段落が空である以上、
+            // キャレットはその中のどこにあっても実質的に「先頭」と同じ）。
+            //
+            // さらに、v1.5.5.4適用後の調査用ログにより、見出しが完全に空になる「前」の段階、
+            // つまり段落末尾で（残り1文字などの状態で）BackSpaceを押した際、WPF標準の
+            // BackSpaceコマンド自体が（このアプリのコードとは無関係に）何も削除せず反応しない
+            // ことがある（EditorTextChangedイベントすら発生しない）という、WPF側の不具合が
+            // 新たに判明した。IME合成の内部的な部分確定の繰り返しにより段落内のRun（区画）が
+            // 細かく分かれた状態が残ることが原因と推測される。この症状は段落「末尾」
+            // （キャレットの後ろに実際の文字が残っていない位置）でのみ確認されており、
+            // 段落途中でのBackSpaceはこれまで通り正しく動作しているため、影響範囲を
+            // 段落末尾でのBackSpaceに限定し、そこだけ標準動作に頼らず自前で最後の1文字を
+            // 削除するようにする（キャレットが段落末尾かどうかも、同じ理由で生のTextPointer
+            // 比較ではなく、キャレットから段落末尾までの実際の文字数で判定する）。
+            if (a_args.Key == Key.Back &&
+                para.Tag is int headingLevel && headingLevel > 0)
+            {
+                bool isEmptyFlg = 0 == new TextRange(para.ContentStart, para.ContentEnd).Text.TrimEnd('\r', '\n').Length;
+                bool isSelectionEmptyFlg = m_editor.Selection.IsEmpty;
+                bool isCaretAtEndFlg = isSelectionEmptyFlg &&
+                    0 == new TextRange(m_editor.Selection.Start, para.ContentEnd).Text.Length;
+                DebugLogger.Log(
+                    $"HeadingBackspaceCheck: level={headingLevel} isEmpty={isEmptyFlg} " +
+                    $"isSelectionEmpty={isSelectionEmptyFlg} isCaretAtEnd={isCaretAtEndFlg}");
+                if (isEmptyFlg && isSelectionEmptyFlg)
+                {
+                    a_args.Handled = true;
+                    m_headingCodeBlockEditor.RevertEmptyHeadingOnBackspace(para);
+                    return;
+                }
+                if (!isEmptyFlg && isCaretAtEndFlg)
+                {
+                    a_args.Handled = true;
+                    m_headingCodeBlockEditor.DeleteLastCharInHeading(para);
+                    return;
+                }
             }
 
             if (a_args.Key == Key.Tab && m_listEditor.IsInListItem(para, out ListItem tabLi, out List tabList))

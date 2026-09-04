@@ -108,16 +108,48 @@ namespace mde
 
         /// <summary>タスクリスト用チェックボックスを生成する。
         /// MarkdownConverter（バッチ変換）とListEditor（ライブ入力変換）の両方から共有で使い、
-        /// 見た目のプロパティ（IsChecked以外）が食い違わないようにするための共通ヘルパー。</summary>
+        /// 見た目のプロパティ（IsChecked以外）が食い違わないようにするための共通ヘルパー。
+        /// 幅・高さを明示的に固定している：既定のCheckBoxはOSのテーマ等によって実際の描画
+        /// サイズがわずかに変わることがあり、これがRichTextBox内でタスク項目の行の高さだけ
+        /// 不安定に見える一因になっていた（Paragraph.LineHeightは行の「最低限」の高さでしか
+        /// なく、埋め込んだUIElement側がそれより大きいと行全体がその分だけ伸びてしまうため）。
+        /// サイズを固定することで、チェックボックスを含む行の高さが常に一定になるようにする。
+        /// Marginの上側にわずかな余白（4px）を付けているのは、行頭のマーカー（「・」）に対して
+        /// チェックボックスの位置を見た目でもう少しだけ下げるための微調整（当初2pxだったが、
+        /// 利用者からの追加要望により4pxに変更）。CheckBoxというUI部品自身の見た目上の余白で
+        /// しかなく、段落の文字位置・TextPointer・IME関連の処理には一切関わらない。
+        /// </summary>
         /// <param name="a_checked">チェック済み状態（[x]）かどうか。</param>
         public static CheckBox CreateTaskCheckbox(bool a_checked)
         {
             return new CheckBox
             {
                 IsChecked = a_checked,
+                Width = 15,
+                Height = 15,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 4, -1),
+                VerticalContentAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 4, 4, 0),
                 Tag = "task-checkbox"
+            };
+        }
+
+        /// <summary>CreateTaskCheckboxで生成したチェックボックスを、行頭の箇条書きマーカー
+        /// （「・」等）に対して縦方向中央に揃えた状態でInlineUIContainerに包んで返す。
+        /// InlineUIContainer（Inlineの一種）の既定のBaselineAlignmentは"Baseline"であり、
+        /// これは埋め込んだ要素の下端をテキストのベースラインに合わせる指定のため、正方形の
+        /// チェックボックスの大部分が文字の上側にはみ出す形になり、行頭のマーカーよりも
+        /// 高い位置にずれて表示されていた。BaselineAlignmentを"Center"にすることで、
+        /// チェックボックス自体の縦方向中央を行の中央（マーカーがおおよそ描画される位置）へ
+        /// 揃える。チェックボックスを段落へ挿入する箇所（ListEditor・MarkdownConverter）は
+        /// すべてこのヘルパー経由にし、直接InlineUIContainerを組み立てることで見た目が
+        /// 食い違うことのないようにする。</summary>
+        /// <param name="a_checked">チェック済み状態（[x]）かどうか。</param>
+        public static InlineUIContainer CreateTaskCheckboxContainer(bool a_checked)
+        {
+            return new InlineUIContainer(CreateTaskCheckbox(a_checked))
+            {
+                BaselineAlignment = BaselineAlignment.Center
             };
         }
 

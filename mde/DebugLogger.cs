@@ -6,9 +6,11 @@
 // 時系列でファイルに書き出し、後から読めるようにする。
 //
 // 【使い方】メニュー「表示」→「デバッグログを有効にする」で有効化してから症状を再現させ、
-// デスクトップの mdelog フォルダに書き出される mde_v<バージョン>.log を開いて内容を
-// 共有してください（有効化するたびに新しく書き出し直されるので、1回の再現につき1回分の
-// 記録になります）。既定では無効で、この設定は次回起動時にも復元される（AppSettings参照）。
+// デスクトップの mdelog フォルダに書き出される mde_v<バージョン>_pid<プロセスID>.log を
+// 開いて内容を共有してください（有効化するたびに新しく書き出し直されるので、1回の再現に
+// つき1回分の記録になります。ファイル名にプロセスIDが入っているのは、mdeを同時に複数
+// 起動して比較する場合に、それぞれのログが同じファイルへ混ざって書き込まれないように
+// するため）。既定では無効で、この設定は次回起動時にも復元される（AppSettings参照）。
 //
 // 通常の動作に影響を与えないよう、ファイルへの書き込みはすべてtry/catchで囲んであり、
 // 書き込みに失敗してもアプリの動作は継続する。無効時はLog()が即returnするだけの、
@@ -37,12 +39,21 @@ namespace mde
         public static bool IsEnabled => s_enabledFlg;
 
         /// <summary>ログの保存先（デスクトップの mdelog フォルダ内、
-        /// mde_v&lt;バージョン&gt;.log）のパス文字列を組み立てる。ここではまだmdelogフォルダを
-        /// 作成しない（「デバッグログを有効にする」がオフのままの利用者の環境に、使われない
-        /// mdelogフォルダを作ってしまわないようにするため）。このメソッドはアプリ起動時、
-        /// DebugLoggerの静的フィールド初期化のタイミングで、有効/無効に関わらず必ず一度
-        /// 実行される。実際のフォルダ作成はSetEnabled(true)の中まで遅延する。
-        /// 失敗した場合はnullを返し、以後Log()は常に何もしない。</summary>
+        /// mde_v&lt;バージョン&gt;_pid&lt;プロセスID&gt;.log）のパス文字列を組み立てる。
+        /// ファイル名にプロセスIDを含めているのは、mdeを同時に複数起動して比較する場合
+        /// （バージョン情報を見比べる、修正前後の挙動を見比べる等）に、それぞれの
+        /// プロセスが同じログファイルへ同時に書き込んでしまうのを避けるため。以前は
+        /// バージョン番号だけをファイル名にしていたため、2つのプロセスで同時にログを
+        /// 有効にすると、両方が同じファイルへ交互に書き込み、記録内容が互いに混ざって
+        /// しまい、どちらのプロセスの記録か判別できなくなる・書き込みが重なった瞬間に
+        /// 失敗する、といった問題があった（書き込み自体はtry/catchで保護されているため
+        /// アプリの動作に影響はないが、ログの中身が信用できなくなってしまう）。
+        /// ここではまだmdelogフォルダを作成しない（「デバッグログを有効にする」がオフの
+        /// ままの利用者の環境に、使われないmdelogフォルダを作ってしまわないようにする
+        /// ため）。このメソッドはアプリ起動時、DebugLoggerの静的フィールド初期化の
+        /// タイミングで、有効/無効に関わらず必ず一度実行される。実際のフォルダ作成は
+        /// SetEnabled(true)の中まで遅延する。失敗した場合はnullを返し、以後Log()は
+        /// 常に何もしない。</summary>
         private static string BuildLogPath()
         {
             try
@@ -50,7 +61,8 @@ namespace mde
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "mdelog");
                 var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-                string fileName = $"mde_v{version.Major}.{version.Minor}.{version.Build}.log";
+                int pid = Process.GetCurrentProcess().Id;
+                string fileName = $"mde_v{version.Major}.{version.Minor}.{version.Build}_pid{pid}.log";
                 return Path.Combine(dir, fileName);
             }
             catch
