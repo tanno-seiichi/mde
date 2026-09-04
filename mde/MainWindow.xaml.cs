@@ -263,7 +263,10 @@ namespace mde
                     $"EditorIsKeyboardFocused={m_editor.IsKeyboardFocused} " +
                     $"Keyboard.FocusedElement={Keyboard.FocusedElement} " +
                     $"WindowIsActive={this.IsActive} " +
-                    $"ForegroundWindow={DebugLogger.DescribeForegroundWindow()}");
+                    $"ForegroundWindow={DebugLogger.DescribeForegroundWindow()} " +
+                    $"IsInputMethodEnabled={InputMethod.GetIsInputMethodEnabled(m_editor)} " +
+                    $"CurrentInputLanguage={InputLanguageManager.Current?.CurrentInputLanguage?.Name} " +
+                    $"CanUndo={m_editor.CanUndo} CanRedo={m_editor.CanRedo}");
             m_imeDebugHeartbeatTimer.Start();
 
             // 起動時引数でMarkDownファイルのパスを受け取っていれば、そちらを開く
@@ -587,9 +590,17 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorTextChanged(object a_sender, TextChangedEventArgs a_args)
         {
+            // IME固まり調査用：Changesの件数だけでなく、各変更が「追加」なのか「削除」なのか
+            // （挿入文字数／削除文字数）も記録する。ユーザーの明示的なキー入力ログ
+            // （Editor.PreviewTextInput／Editor.PreviewKeyDown）と対応する変更が見当たらない
+            // 場合、何らかの理由でアプリの外側（IME側やUndoスタックなど）から文書が
+            // 書き換えられていることを疑う手がかりにする。
+            string changesDetail = string.Join(",",
+                a_args.Changes.Select(c => $"[Off={c.Offset} Add={c.AddedLength} Rem={c.RemovedLength}]"));
             DebugLogger.Log(
                 $"EditorTextChanged: m_isProgrammaticChangeFlg={m_isProgrammaticChangeFlg} " +
-                $"IsFocused={m_editor.IsFocused} Changes={a_args.Changes.Count}");
+                $"IsFocused={m_editor.IsFocused} Changes={a_args.Changes.Count} {changesDetail} " +
+                $"CanUndo={m_editor.CanUndo} CanRedo={m_editor.CanRedo}");
             // RichTextBoxはInitializeComponent中に、既定の空文書を設定する際にTextChangedを
             // 発生させることがある。その時点ではコンストラクタでの各クラスの構築がまだ
             // 完了していない可能性があるため、念のためガードしておく。
@@ -852,6 +863,14 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorPreviewKeyDown(object a_sender, KeyEventArgs a_args)
         {
+            // IME固まり調査用：これまでEditor.PreviewTextInputだけを記録しており、Backspace・
+            // Delete・矢印キー・Ctrl+Z（元に戻す）等の「文字を生成しないキー」がログに一切
+            // 残らなかった。ソースモードかどうかや変換処理の判定より前、関数の一番最初で記録
+            // することで、実際に押されたキーを漏れなく時系列に残す。
+            DebugLogger.Log(
+                $"Editor.PreviewKeyDown: Key={a_args.Key} SystemKey={a_args.SystemKey} " +
+                $"Modifiers={Keyboard.Modifiers} IsRepeat={a_args.IsRepeat}");
+
             if (m_isSourceModeFlg)
             {
                 return;
