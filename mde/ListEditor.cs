@@ -55,22 +55,48 @@ namespace mde
         }
 
         /// <summary>段落をリスト項目（新規または既存リストへの追加）に変換する。</summary>
-        /// <param name="a_p">変換する段落（そのテキストが最初の項目のテキストになる）。</param>
+        /// <param name="a_p">変換する段落。先頭の記号（+スペース）部分だけを取り除き、それ以降に
+        /// 既にあった内容（記述済みの行の先頭に後から記号を書き足した場合など）はそのまま
+        /// リスト項目の内容として引き継ぐ。</param>
         /// <param name="a_marker">箇条書き記号（"*"または"-"）。順序付きリストの場合はnull。</param>
         /// <param name="a_orderedFlg">順序付きリストなら true、箇条書きなら false。</param>
-        public void ConvertParagraphToListItem(Paragraph a_p, string a_marker, bool a_orderedFlg)
+        /// <param name="a_markerTextLength">段落先頭から取り除く記号部分の文字数（箇条書きなら
+        /// 記号1文字＋スペース1文字で2、順序付きリストなら「数字＋ピリオド＋スペース」の
+        /// 文字数）。</param>
+        public void ConvertParagraphToListItem(Paragraph a_p, string a_marker, bool a_orderedFlg, int a_markerTextLength)
         {
             m_runAsProgrammaticChange(() =>
             {
                 Block prev = a_p.PreviousBlock;
-                var newLiPara = new Paragraph { Margin = new Thickness(0) };
-                var newLi = new ListItem(newLiPara);
+                Block next = a_p.NextBlock;
+
+                // 変換のきっかけとなった記号部分だけを段落の先頭から取り除く。それ以降に
+                // 既にあった内容（記述済みの行の先頭に後から記号を書き足した場合の、続きの
+                // 文字列）は、書式ごとそのまま残る。
+                TextPointer markerEnd = a_p.ContentStart.GetPositionAtOffset(a_markerTextLength) ?? a_p.ContentEnd;
+                new TextRange(a_p.ContentStart, markerEnd).Text = "";
+
+                // フォーカス・キャレットのある「生きた」Paragraphオブジェクトを、文書構造から
+                // 一度外して別の親（ListItem）へそのまま付け替えると、IMEの内部状態と結び付いて
+                // 壊れる可能性がある（このバグの切り分けで確認済み）ため、a_p自身を再利用する
+                // のではなく、新しくParagraphを作り、a_pの中身（Inline、書式ごと）だけをそちらへ
+                // 移し替える。a_p自体は文書へ一度も戻さず、ここで完全に破棄する。
+                var newP = new Paragraph();
+                BlockStyles.ApplyHeadingStyle(newP, 0);
+                newP.Margin = new Thickness(0);
+                foreach (var inline in a_p.Inlines.ToList())
+                {
+                    a_p.Inlines.Remove(inline);
+                    newP.Inlines.Add(inline);
+                }
+
+                m_editor.Document.Blocks.Remove(a_p);
+                var newLi = new ListItem(newP);
 
                 if (prev is List prevList &&
                     (prevList.MarkerStyle == TextMarkerStyle.Decimal) == a_orderedFlg)
                 {
                     prevList.ListItems.Add(newLi);
-                    m_editor.Document.Blocks.Remove(a_p);
                 }
                 else
                 {
@@ -80,10 +106,20 @@ namespace mde
                         Tag = a_orderedFlg ? null : a_marker
                     };
                     list.ListItems.Add(newLi);
-                    m_editor.Document.Blocks.InsertBefore(a_p, list);
-                    m_editor.Document.Blocks.Remove(a_p);
+                    if (null != next)
+                    {
+                        m_editor.Document.Blocks.InsertBefore(next, list);
+                    }
+                    else if (null != prev)
+                    {
+                        m_editor.Document.Blocks.InsertAfter(prev, list);
+                    }
+                    else
+                    {
+                        m_editor.Document.Blocks.Add(list);
+                    }
                 }
-                m_editor.CaretPosition = newLiPara.ContentStart;
+                m_editor.CaretPosition = newP.ContentStart;
             });
             FinishCaretMoveToNewParagraph();
         }
