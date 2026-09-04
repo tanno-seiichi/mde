@@ -37,7 +37,11 @@ namespace mde
         public static bool IsEnabled => s_enabledFlg;
 
         /// <summary>ログの保存先（デスクトップの mdelog フォルダ内、
-        /// mde_v&lt;バージョン&gt;.log）を組み立てる。フォルダが無ければ作成する。
+        /// mde_v&lt;バージョン&gt;.log）のパス文字列を組み立てる。ここではまだmdelogフォルダを
+        /// 作成しない（「デバッグログを有効にする」がオフのままの利用者の環境に、使われない
+        /// mdelogフォルダを作ってしまわないようにするため）。このメソッドはアプリ起動時、
+        /// DebugLoggerの静的フィールド初期化のタイミングで、有効/無効に関わらず必ず一度
+        /// 実行される。実際のフォルダ作成はSetEnabled(true)の中まで遅延する。
         /// 失敗した場合はnullを返し、以後Log()は常に何もしない。</summary>
         private static string BuildLogPath()
         {
@@ -45,7 +49,6 @@ namespace mde
             {
                 string dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "mdelog");
-                Directory.CreateDirectory(dir);
                 var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
                 string fileName = $"mde_v{version.Major}.{version.Minor}.{version.Build}.log";
                 return Path.Combine(dir, fileName);
@@ -126,6 +129,10 @@ namespace mde
             {
                 lock (s_lock)
                 {
+                    // 「デバッグログを有効にする」がオフのままならmdelogフォルダ自体を
+                    // 作らずに済ませるため、フォルダの作成は実際に有効化された、この時点まで
+                    // 遅延している（BuildLogPathの説明も参照）。
+                    Directory.CreateDirectory(Path.GetDirectoryName(s_logPath));
                     File.WriteAllText(s_logPath,
                         $"=== mde debug log started {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} " +
                         $"(v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version}) ===\r\n");
