@@ -878,18 +878,21 @@ namespace mde
                 AppendInlineMarkdownToParagraph(pendingPara, JoinParagraphSourceLines(pendingTextLines), false);
                 if (pendingTaskChecked.HasValue)
                 {
-                    // チェックボックスの見た目はBlockStyles.CreateTaskCheckboxに一本化し、
-                    // ライブ入力変換側（ListEditor.ConvertListItemTextToTaskCheckbox）と
-                    // 食い違わないようにしている。
-                    var checkBox = BlockStyles.CreateTaskCheckbox(pendingTaskChecked.Value);
-                    var container = new InlineUIContainer(checkBox);
+                    // チェックボックスの見た目はBlockStyles.CreateTaskCheckboxContainerに
+                    // 一本化し、ライブ入力変換側（ListEditor.ConvertListItemTextToTaskCheckbox）
+                    // と食い違わないようにしている。
+                    var container = BlockStyles.CreateTaskCheckboxContainer(pendingTaskChecked.Value);
                     if (pendingPara.Inlines.Count > 0)
                     {
                         pendingPara.Inlines.InsertBefore(pendingPara.Inlines.FirstInline, container);
                     }
                     else
                     {
+                        // 空のRunも一緒に入れる理由はListEditor.ConvertListItemTextToTaskCheckbox
+                        // の説明を参照（段落の中身がチェックボックスだけだと、行の高さが本文と
+                        // 違う基準で計算されてしまうため）。
                         pendingPara.Inlines.Add(container);
+                        pendingPara.Inlines.Add(new Run(""));
                     }
                 }
             }
