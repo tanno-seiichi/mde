@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -155,6 +156,9 @@ namespace mde
             }
             this.Width = m_savedSettings.WindowWidth;
             this.Height = m_savedSettings.WindowHeight;
+
+            AdjustWindowPosition ();
+
             m_zoomLevel = m_savedSettings.ZoomLevel;
             m_editorLineHeight = m_savedSettings.EditorLineHeight > 0 ? m_savedSettings.EditorLineHeight : 26;
             m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
@@ -285,6 +289,152 @@ namespace mde
             {
                 this.WindowState = WindowState.Maximized;
             }
+        }
+
+        /// <summary>
+        /// メインウインドウの表示座標が無効ならx=0/y=0に移動します
+        /// この処理は、マルチウインドウ環境でサブディスプレイを切断した状態で
+        /// アプリを起動した場合ウインドウが表示できなくなる問題に対処するものです
+        /// </summary>
+        private void AdjustWindowPosition()
+        {
+            bool isMainWindowVisibleFlg = false;
+
+            System.Diagnostics.Debug.WriteLine($"AdjustWindowPosition: Current Window Position = L:{this.Left}, T:{this.Top}");
+
+            foreach (var workingArea in GetDisplayWorkingAreas())
+            {
+                double windowX = this.Left;
+                double windowY = this.Top;
+
+                // ウィンドウの左上座標がワーキングエリア内にあるかチェック
+                if (windowX >= workingArea.Left && windowX < workingArea.Right &&
+                    windowY >= workingArea.Top && windowY < workingArea.Bottom)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Window position is valid in area: L:{workingArea.Left}, T:{workingArea.Top}, R:{workingArea.Right}, B:{workingArea.Bottom}");
+                    isMainWindowVisibleFlg = true;
+                    break;
+                }
+            }
+
+            if (!isMainWindowVisibleFlg)
+            {
+                System.Diagnostics.Debug.WriteLine("Window position is invalid, moving to (0, 0)");
+                this.Top = 0;
+                this.Left = 0;
+            }
+        }
+
+        /// <summary>
+        /// Win32 P/Invoke を使用して、各ディスプレイのワーキングエリアを取得します。
+        /// System.Windows.Forms に依存せずにマルチモニター情報を列挙します。
+        /// </summary>
+        /// <returns>各モニターのワーキングエリア (Rect) を含むリスト。</returns>
+        private List<Rect> GetDisplayWorkingAreas()
+        {
+            var workingAreas = new List<Rect>();
+
+            bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref Rect32 lprcMonitor, IntPtr dwData)
+            {
+                var monitorInfo = new MonitorInfo { m_cbSize = Marshal.SizeOf<MonitorInfo>() };
+                if (GetMonitorInfo(hMonitor, ref monitorInfo))
+                {
+                    // Rect32 (int型) を WPF の Rect (double型) に変換
+                    var workingArea = new Rect(
+                        monitorInfo.m_rcWork.m_left,
+                        monitorInfo.m_rcWork.m_top,
+                        monitorInfo.m_rcWork.m_right - monitorInfo.m_rcWork.m_left,
+                        monitorInfo.m_rcWork.m_bottom - monitorInfo.m_rcWork.m_top
+                    );
+                    workingAreas.Add(workingArea);
+                    System.Diagnostics.Debug.WriteLine($"Monitor: rcWork=[L:{monitorInfo.m_rcWork.m_left}, T:{monitorInfo.m_rcWork.m_top}, R:{monitorInfo.m_rcWork.m_right}, B:{monitorInfo.m_rcWork.m_bottom}]");
+                }
+                return true;
+            }
+
+            EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, MonitorEnumProc, IntPtr.Zero);
+            return workingAreas;
+        }
+
+        /// <summary>
+        /// Win32 API EnumDisplayMonitors をラップする P/Invoke 宣言。
+        /// すべてのディスプレイモニターにつき、コールバック関数を呼び出します。
+        /// </summary>
+        /// <param name="a_hdc">デバイスコンテキスト (通常は IntPtr.Zero)。</param>
+        /// <param name="a_lprcClip">クリップ矩形への ポインタ (通常は IntPtr.Zero)。</param>
+        /// <param name="a_lpfnEnum">各モニターに対して呼び出されるコールバック関数。</param>
+        /// <param name="a_dwData">コールバック関数に渡されるアプリケーション定義データ。</param>
+        /// <returns>列挙が完了したら true を返します。</returns>
+        [DllImport("user32.dll")]
+        private static extern bool EnumDisplayMonitors(IntPtr a_hdc, IntPtr a_lprcClip, MonitorEnumDelegate a_lpfnEnum, IntPtr a_dwData);
+
+        /// <summary>
+        /// EnumDisplayMonitors のコールバック関数の署名を定義します。
+        /// モニターごとに呼び出され、モニター情報を処理します。
+        /// </summary>
+        /// <param name="a_hMonitor">モニターのハンドル。</param>
+        /// <param name="a_hdcMonitor">モニターのデバイスコンテキスト。</param>
+        /// <param name="a_lprcMonitor">モニターの画面座標を示す矩形への参照。</param>
+        /// <param name="a_dwData">アプリケーション定義データ (EnumDisplayMonitors に渡されたもの)。</param>
+        /// <returns>列挙を継続する場合は true、停止する場合は false を返します。</returns>
+        private delegate bool MonitorEnumDelegate(IntPtr a_hMonitor, IntPtr a_hdcMonitor, ref Rect32 a_lprcMonitor, IntPtr a_dwData);
+
+        /// <summary>
+        /// Win32 API GetMonitorInfo をラップする P/Invoke 宣言。
+        /// モニターハンドルから詳細なモニター情報を取得します。
+        /// </summary>
+        /// <param name="a_hMonitor">モニターのハンドル。</param>
+        /// <param name="a_lpmi">MONITORINFO 構造体への参照。</param>
+        /// <returns>関数が成功した場合は true、失敗した場合は false を返します。</returns>
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern bool GetMonitorInfo(IntPtr a_hMonitor, ref MonitorInfo a_lpmi);
+
+        /// <summary>
+        /// Windows RECT 構造体 (P/Invoke 用)。
+        /// int 型のメンバでメモリレイアウトを正確に表現します。
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct Rect32
+        {
+            /// <summary>矩形の左座標。</summary>
+            public int m_left;
+            /// <summary>矩形の上座標。</summary>
+            public int m_top;
+            /// <summary>矩形の右座標。</summary>
+            public int m_right;
+            /// <summary>矩形の下座標。</summary>
+            public int m_bottom;
+        }
+
+        /// <summary>
+        /// Windows MONITORINFO 構造体 (P/Invoke 用)。
+        /// モニターの画面座標、ワーキングエリア、およびフラグ情報を保持します。
+        /// </summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MonitorInfo
+        {
+            /// <summary>
+            /// 構造体のサイズ (バイト単位)。
+            /// GetMonitorInfo 呼び出し前に Marshal.SizeOf&lt;MonitorInfo&gt;() で初期化する必要があります。
+            /// </summary>
+            public int m_cbSize;
+
+            /// <summary>
+            /// モニターの画面座標を示す矩形 (仮想スクリーン座標系)。
+            /// </summary>
+            public Rect32 m_rcMonitor;
+
+            /// <summary>
+            /// モニターのワーキングエリア (タスクバーなどを除いた領域) を示す矩形。
+            /// ウィンドウの有効表示範囲を判定する際に使用されます。
+            /// </summary>
+            public Rect32 m_rcWork;
+
+            /// <summary>
+            /// モニターフラグ。
+            /// 0x1 (MONITORINFOF_PRIMARY) の場合、プライマリディスプレイです。
+            /// </summary>
+            public uint m_dwFlags;
         }
 
         /// <summary>ウィンドウを閉じようとした時、未保存の変更があれば確認する。</summary>
