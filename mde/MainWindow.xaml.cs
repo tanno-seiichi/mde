@@ -685,7 +685,11 @@ namespace mde
                 m_listEditor.ConvertParagraphToListItem(para, null, true);
                 return;
             }
-            var m = Regex.Match(text, "^(#{1,6})[ \u00A0]$");
+            // 切り分け用ビルド②：見出しへの変換（A2のうち、ConvertParagraphToHeading側の
+            // TextRangeベースの書き換えのみ）だけを、末尾の$アンカーを外した「段落の先頭が
+            // マーカーで始まっているか」判定にする。箇条書き（bulletMatch/orderedMatch）と
+            // ConvertParagraphToListItem自体はv1.5.2のまま（変更なし）。
+            var m = Regex.Match(text, "^(#{1,6})[ \u00A0]");
             if (m.Success)
             {
                 m_headingCodeBlockEditor.ConvertParagraphToHeading(para, m.Groups[1].Value.Length);

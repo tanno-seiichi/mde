@@ -35,7 +35,9 @@ namespace mde
         }
 
         /// <summary>段落を見出しに変換する。</summary>
-        /// <param name="a_p">変換する段落。</param>
+        /// <param name="a_p">変換する段落。先頭の"#"（1〜6個）＋半角スペース1つだけを取り除き、
+        /// それ以降に既にあった内容（記述済みの行の先頭に後から"#"を書き足した場合など）は
+        /// そのまま見出しの内容として引き継ぐ。</param>
         /// <param name="a_level">見出しレベル（1〜6）。</param>
         public void ConvertParagraphToHeading(Paragraph a_p, int a_level)
         {
@@ -46,7 +48,11 @@ namespace mde
             // 「同期的に書き換えてその場でUpdateLayout・ClearFocus/Focusを行う」パターンにする。
             m_runAsProgrammaticChange(() =>
             {
-                a_p.Inlines.Clear();
+                // 変換のきっかけとなった"#"（a_level個）＋半角スペース1つの部分だけを段落の
+                // 先頭から取り除く。それ以降に既にあった内容（記述済みの行の先頭に後から"#"を
+                // 書き足した場合の、続きの文字列）は、書式ごとそのまま残る。
+                TextPointer markerEnd = a_p.ContentStart.GetPositionAtOffset(a_level + 1) ?? a_p.ContentEnd;
+                new TextRange(a_p.ContentStart, markerEnd).Text = "";
                 BlockStyles.ApplyHeadingStyle(a_p, a_level);
                 m_editor.CaretPosition = a_p.ContentStart;
             });
