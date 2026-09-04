@@ -673,22 +673,24 @@ namespace mde
             string text = new TextRange(para.ContentStart, para.ContentEnd).Text;
             text = text.TrimEnd('\r', '\n');
 
-            var bulletMatch = Regex.Match(text, "^([*+-])[ \u00A0]$");
+            // 行の先頭に既に文字列がある状態で後から記号（*/-/1.等）を書き足した
+            // 場合にも変換できるよう、末尾（$）ではなく先頭一致のみで判定する。
+            // マーカー部分の文字数（bulletMatch.Value.Length等）は、記号の後ろに
+            // 続く既存の内容には触れず、記号部分だけを取り除くために使う。
+            var bulletMatch = Regex.Match(text, "^([*+-])[ \u00A0]");
             if (bulletMatch.Success)
             {
-                m_listEditor.ConvertParagraphToListItem(para, bulletMatch.Groups[1].Value, false);
+                m_listEditor.ConvertParagraphToListItem(para, bulletMatch.Groups[1].Value, false, bulletMatch.Value.Length);
                 return;
             }
-            var orderedMatch = Regex.Match(text, "^\\d+\\.[ \u00A0]$");
+            var orderedMatch = Regex.Match(text, "^\\d+\\.[ \u00A0]");
             if (orderedMatch.Success)
             {
-                m_listEditor.ConvertParagraphToListItem(para, null, true);
+                m_listEditor.ConvertParagraphToListItem(para, null, true, orderedMatch.Value.Length);
                 return;
             }
-            // 切り分け用ビルド②：見出しへの変換（A2のうち、ConvertParagraphToHeading側の
-            // TextRangeベースの書き換えのみ）だけを、末尾の$アンカーを外した「段落の先頭が
-            // マーカーで始まっているか」判定にする。箇条書き（bulletMatch/orderedMatch）と
-            // ConvertParagraphToListItem自体はv1.5.2のまま（変更なし）。
+            // 行の先頭に既に文字列がある状態で後から"#"を書き足した場合にも変換できるよう、
+            // 末尾（$）ではなく先頭一致のみで判定する。
             var m = Regex.Match(text, "^(#{1,6})[ \u00A0]");
             if (m.Success)
             {
@@ -759,18 +761,21 @@ namespace mde
 
             string beforeSpace = new TextRange(para.ContentStart, para.ContentEnd).Text.TrimEnd('\r', '\n');
 
+            // この時点ではスペース文字自体はまだ段落に挿入されていない（a_args.Handled=trueで
+            // 挿入を止めるため）ので、取り除く文字数は記号部分（bulletKeyMatch.Value.Length等）
+            // のみでよい。
             var bulletKeyMatch = Regex.Match(beforeSpace, "^([*+-])$");
             if (bulletKeyMatch.Success)
             {
                 a_args.Handled = true;
-                m_listEditor.ConvertParagraphToListItem(para, bulletKeyMatch.Groups[1].Value, false);
+                m_listEditor.ConvertParagraphToListItem(para, bulletKeyMatch.Groups[1].Value, false, bulletKeyMatch.Value.Length);
                 return;
             }
             var orderedKeyMatch = Regex.Match(beforeSpace, "^\\d+\\.$");
             if (orderedKeyMatch.Success)
             {
                 a_args.Handled = true;
-                m_listEditor.ConvertParagraphToListItem(para, null, true);
+                m_listEditor.ConvertParagraphToListItem(para, null, true, orderedKeyMatch.Value.Length);
             }
         }
 
