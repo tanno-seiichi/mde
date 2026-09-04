@@ -48,5 +48,5 @@ using System.Windows;
 //      ビルド番号
 //      リビジョン
 //
-[assembly: AssemblyVersion( "2.1.2.3" )]
-[assembly: AssemblyFileVersion( "2.1.2.3" )]
+[assembly: AssemblyVersion( "2.1.3.0" )]
+[assembly: AssemblyFileVersion( "2.1.3.0" )]
