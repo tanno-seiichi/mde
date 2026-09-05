@@ -87,8 +87,7 @@
                     <Button x:Name="m_toggleOutlinePaneBtn" Content="アウトラインを隠す" Style="{StaticResource ToolbarButton}" Click="ToggleOutlinePaneBtnClick"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button x:Name="m_toggleModeBtn" Content="MarkDownモード" Style="{StaticResource ToolbarButton}" Click="ToggleModeBtnClick"
-                            Background="{StaticResource AccentSoftBrush}" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontSize="11"/>
+                    <Button x:Name="m_toggleModeBtn" Content="ソース表示に切替" Style="{StaticResource ToolbarButton}" Click="ToggleModeBtnClick"/>
 
                     <Grid Width="30" />
 
