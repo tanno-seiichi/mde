@@ -80,23 +80,20 @@
 
         <!-- ===================== Status bar (panes / zoom / mode) ===================== -->
         <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource ThinBorderBrush}" BorderThickness="0,1,0,0"
-                Padding="4,4,2,4">
+                Padding="4,1,2,1">
             <Grid>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                     <Button x:Name="m_toggleFolderPaneBtn" Content="フォルダを隠す" Style="{StaticResource ToolbarButton}" Click="ToggleFolderPaneBtnClick"/>
                     <Button x:Name="m_toggleOutlinePaneBtn" Content="アウトラインを隠す" Style="{StaticResource ToolbarButton}" Click="ToggleOutlinePaneBtnClick"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="ソース ⇄ MarkDown" Style="{StaticResource ToolbarButton}" Click="ToggleModeBtnClick"/>
-                    <Border Background="{StaticResource AccentSoftBrush}" CornerRadius="12" Padding="10,5" Margin="0,0,0,0">
-                        <TextBlock x:Name="m_modeIndicator" Text="MarkDownモード" FontSize="11" VerticalAlignment="Center"
-                                       Foreground="{StaticResource AccentBrush}" FontFamily="Consolas"/>
-                    </Border>
+                    <Button x:Name="m_toggleModeBtn" Content="MarkDownモード" Style="{StaticResource ToolbarButton}" Click="ToggleModeBtnClick"
+                            Background="{StaticResource AccentSoftBrush}" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontSize="11"/>
 
                     <Grid Width="30" />
 
                     <Button Content="－" Style="{StaticResource ZoomButton}" Click="ZoomOutClick"/>
-                    <Button x:Name="m_zoomLabelBtn" Content="100%" Width="52" Style="{StaticResource ToolbarButton}"
+                    <Button x:Name="m_zoomLabelBtn" Content="100%" Width="Auto" Style="{StaticResource ToolbarButton}"
                             Click="ZoomResetClick"/>
                     <Button Content="＋" Style="{StaticResource ZoomButton}" Click="ZoomInClick"/>
                 </StackPanel>

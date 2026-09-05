@@ -1436,7 +1436,7 @@ namespace mde
                 m_editor.Visibility = Visibility.Collapsed;
                 m_sourceEditor.Visibility = Visibility.Visible;
                 m_isSourceModeFlg = true;
-                m_modeIndicator.Text = "ソースモード";
+                m_toggleModeBtn.Content = "ソースモード";
                 m_sourceEditor.Focus();
             }
             else
@@ -1445,7 +1445,7 @@ namespace mde
                 m_sourceEditor.Visibility = Visibility.Collapsed;
                 m_editor.Visibility = Visibility.Visible;
                 m_isSourceModeFlg = false;
-                m_modeIndicator.Text = "MarkDownモード";
+                m_toggleModeBtn.Content = "MarkDownモード";
                 m_outlineManager.Refresh();
                 m_editor.Focus();
             }
