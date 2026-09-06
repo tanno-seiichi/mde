@@ -11,6 +11,16 @@
 		<!-- License -->
 		<Component Id="License"><File Source="LICENSE.txt" /></Component>
 
+		<!-- Readme（ヘルプ→「Readmeを開く」で開く。mde.csprojのビルド設定により、ビルド出力
+		     フォルダ（mde.exe等と同じ場所）へコピーされたものをそのまま同梱する）。 -->
+		<Component Id="Readme.md.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="README.md" /></Component>
+
+		<!-- Readmeが参照する画像（imagesフォルダ、中身ごと）。mde.csproj側は"images\**"で
+		     フォルダごとまとめてコピーする設定になっているが、MSI側は１ファイルずつ明示的に
+		     列挙する必要があるため、imagesフォルダに新しい画像を追加した場合はここにも
+		     対応するComponentの追加が必要。 -->
+		<Component Id="Images.ScreenLayout.png.Component" Directory="ImagesFolder" Guid="*"><File Source="images\screen_layout.png" /></Component>
+
 		<!-- スタートメニューショートカット -->
 		<Component Id="StartMenuShortcutComponent" Directory="ProgramMenuDir" Guid="*">
 			<Shortcut Id="StartMenuShortcut" Name="mde" Target="[INSTALLFOLDER]mde.exe" WorkingDirectory="INSTALLFOLDER" >

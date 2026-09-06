@@ -1,7 +1,10 @@
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+﻿<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 	<Fragment>
 		<StandardDirectory Id="ProgramFiles6432Folder">
-			<Directory Id="INSTALLFOLDER" Name="!(bind.Property.ProductName)" />
+			<Directory Id="INSTALLFOLDER" Name="!(bind.Property.ProductName)">
+				<!-- Readmeが参照する画像（screen_layout.png等）の格納先。File.wxs参照。 -->
+				<Directory Id="ImagesFolder" Name="images" />
+			</Directory>
 		</StandardDirectory>
 		<StandardDirectory Id="ProgramMenuFolder">
 			<Directory Id="ProgramMenuDir" Name="!(bind.Property.ProductName)" />

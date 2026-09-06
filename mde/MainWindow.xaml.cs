@@ -2616,6 +2616,35 @@ namespace mde
             m_openFindReplaceWindow.Show();
         }
 
+        /// <summary>メニュー「ヘルプ」→「Readmeを開く」。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void OpenReadmeBtnClick(object a_sender, RoutedEventArgs a_args)
+        {
+            OpenReadme();
+        }
+
+        /// <summary>ビルド時に実行フォルダへコピーされるREADME.mdを、新しいウインドウで開く
+        /// （現在表示中のファイルの内容には触れない）。README.mdの読み込み自体は、新しく開いた
+        /// ウインドウへ、通常の「ファイルを開く」と同じ経路（LoadFile）で行う。メニュー
+        /// 「ヘルプ」→「Readmeを開く」のほか、F1キーのグローバルショートカット
+        /// （App.xaml.csのGlobalPreviewKeyDown参照）からも、このウインドウに対して
+        /// 呼び出される。</summary>
+        public void OpenReadme()
+        {
+            string readmePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "README.md");
+            if (!File.Exists(readmePath))
+            {
+                MessageBox.Show("README.mdが見つかりませんでした：" + readmePath, "Readmeを開く",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var readmeWindow = new MainWindow();
+            readmeWindow.Show();
+            readmeWindow.LoadFile(readmePath);
+        }
+
         /// <summary>「バージョン情報」ボタン。アプリ名とバージョン番号を表示する。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
