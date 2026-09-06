@@ -75,7 +75,11 @@
                 <MenuItem x:Name="m_debugLogMenuItem" Header="デバッグログを有効にする(_D)"
                           IsCheckable="True" Click="DebugLogMenuItemChecked"/>
             </MenuItem>
-            <MenuItem Header="バージョン情報(_A)" Click="VersionInfoBtnClick"/>
+            <MenuItem Header="ヘルプ(_H)">
+                <MenuItem Header="Readmeを開く(_R)" Click="OpenReadmeBtnClick"/>
+                <Separator/>
+                <MenuItem Header="バージョン情報(_A)" Click="VersionInfoBtnClick"/>
+            </MenuItem>
         </Menu>
 
         <!-- ===================== Status bar (panes / zoom / mode) ===================== -->

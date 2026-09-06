@@ -33,4 +33,12 @@
     <Resource Include="images\mde.png" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- ヘルプ→「Readmeを開く」用に、ソリューション直下のREADME.mdと、そこから参照している
+         imagesフォルダ（screen_layout.png等、中身ごと）を、ビルド時に実行フォルダへコピーする。
+         MainWindow.xaml.csのOpenReadmeBtnClickは、この実行フォルダ側のREADME.mdを開く。 -->
+    <Content Include="..\README.md" Link="README.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\images\**" Link="images\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
