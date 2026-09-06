@@ -1260,6 +1260,24 @@ namespace mde
             m_textStyleMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
             m_linkMenuItem.Visibility = null != m_inlineStyleEditor.ContextLinkRun ? Visibility.Visible : Visibility.Collapsed;
             m_toggleModeMenuItem.Header = m_isSourceModeFlg ? "MarkDownモードに切り替え" : "ソースモードに切り替え";
+            UpdateHeadingMenuState();
+        }
+
+        /// <summary>右クリックメニューの「見出し」項目に、現在カーソルがある段落の見出し
+        /// レベルを反映する。トップレベルの表示（見出し部分の見出しレベル）を"見出しN"
+        /// （本文の場合は"見出し"のまま）に更新し、サブメニュー側は現在のレベルに一致する
+        /// 項目だけにチェックを付ける（他はチェックを外す）。段落のTagは、見出しレベルが
+        /// 1以上ならint、本文ならnull、コードブロックならCodeBlockInfoが入っている
+        /// （BlockStyles.ApplyHeadingStyle参照）ため、int以外はすべて「本文（レベル0）」
+        /// として扱う。</summary>
+        private void UpdateHeadingMenuState()
+        {
+            int headingLevel = m_ctxParagraph?.Tag is int lvl ? lvl : 0;
+            m_headingMenuItem.Header = 0 == headingLevel ? "見出し" : "見出し" + headingLevel;
+            foreach (var item in m_headingMenuItem.Items.OfType<MenuItem>())
+            {
+                item.IsChecked = (string)item.Tag == headingLevel.ToString();
+            }
         }
 
         /// <summary>ソースモードの右クリックメニュー。カット/コピー/貼り付けのみで、独自の
@@ -1436,7 +1454,7 @@ namespace mde
                 m_editor.Visibility = Visibility.Collapsed;
                 m_sourceEditor.Visibility = Visibility.Visible;
                 m_isSourceModeFlg = true;
-                m_toggleModeBtn.Content = "Markdownモードに切替";
+                m_toggleModeBtn.Content = "ソースモード";
                 m_sourceEditor.Focus();
             }
             else
@@ -1445,7 +1463,7 @@ namespace mde
                 m_sourceEditor.Visibility = Visibility.Collapsed;
                 m_editor.Visibility = Visibility.Visible;
                 m_isSourceModeFlg = false;
-                m_toggleModeBtn.Content = "ソース表示に切替";
+                m_toggleModeBtn.Content = "MarkDownモード";
                 m_outlineManager.Refresh();
                 m_editor.Focus();
             }

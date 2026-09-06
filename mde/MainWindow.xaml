@@ -87,7 +87,8 @@
                     <Button x:Name="m_toggleOutlinePaneBtn" Content="アウトラインを隠す" Style="{StaticResource ToolbarButton}" Click="ToggleOutlinePaneBtnClick"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button x:Name="m_toggleModeBtn" Content="ソース表示に切替" Style="{StaticResource ToolbarButton}" Click="ToggleModeBtnClick"/>
+                    <Button x:Name="m_toggleModeBtn" Content="MarkDownモード" Style="{StaticResource ToolbarButton}" Click="ToggleModeBtnClick"
+                            Background="{StaticResource AccentSoftBrush}" Foreground="{StaticResource AccentBrush}" FontFamily="Consolas" FontSize="11"/>
 
                     <Grid Width="30" />
 
@@ -255,13 +256,13 @@
                                     <MenuItem Header="リンクを解除" Click="LinkRemoveClick"/>
                                 </MenuItem>
                                 <MenuItem x:Name="m_headingMenuItem" Header="見出し" Style="{StaticResource CtxMenuItem}">
-                                    <MenuItem Header="本文（見出しなし）" Tag="0" Click="HeadingItemClick"/>
-                                    <MenuItem Header="# 見出し1" Tag="1" Click="HeadingItemClick"/>
-                                    <MenuItem Header="## 見出し2" Tag="2" Click="HeadingItemClick"/>
-                                    <MenuItem Header="### 見出し3" Tag="3" Click="HeadingItemClick"/>
-                                    <MenuItem Header="#### 見出し4" Tag="4" Click="HeadingItemClick"/>
-                                    <MenuItem Header="##### 見出し5" Tag="5" Click="HeadingItemClick"/>
-                                    <MenuItem Header="###### 見出し6" Tag="6" Click="HeadingItemClick"/>
+                                    <MenuItem Header="本文（見出しなし）" Tag="0" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="# 見出し1" Tag="1" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="## 見出し2" Tag="2" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="### 見出し3" Tag="3" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="#### 見出し4" Tag="4" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="##### 見出し5" Tag="5" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="###### 見出し6" Tag="6" IsCheckable="True" Click="HeadingItemClick"/>
                                 </MenuItem>
                                 <MenuItem x:Name="m_insertTableMenuItem" Header="表を挿入" Style="{StaticResource CtxMenuItem}"
                                           Click="InsertTableItemClick"/>
