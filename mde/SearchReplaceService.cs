@@ -42,11 +42,25 @@ namespace mde
         private static readonly System.Windows.Media.Brush MATCH_HIGHLIGHT_BRUSH =
             new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xE1, 0x66));
 
+        /// <summary>「現在」の一致箇所（次を検索/前を検索でキャレットが移動した先、または
+        /// フォルダ全体検索・結果一覧からジャンプした先）専用の強調表示色。「すべて検索」で
+        /// 一括強調表示された他の一致箇所（MATCH_HIGHLIGHT_BRUSH、黄色）と見分けられるよう、
+        /// 別の色にしている。</summary>
+        private static readonly System.Windows.Media.Brush CURRENT_MATCH_HIGHLIGHT_BRUSH =
+            new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xA5, 0x4D));
+
         /// <summary>直前に強調表示した一致箇所（フォーカスの有無に関わらず見えるよう、選択
         /// ハイライトではなくRunの背景色を直接変更する方式にしている）。次に検索する前、または
         /// 見えなくなる前にこの背景色を消しておく必要がある。「すべて検索」では複数件を
         /// 同時に強調表示するため、単一ではなく一覧として保持する。</summary>
         private readonly List<TextRange> m_currentHighlights = new List<TextRange>();
+
+        /// <summary>今「現在の一致箇所」としてCURRENT_MATCH_HIGHLIGHT_BRUSHで強調表示している
+        /// 範囲（あれば）。次にキャレットが別の一致箇所へ移動した際、この範囲の背景色を通常の
+        /// MATCH_HIGHLIGHT_BRUSHへ戻すために保持している。m_currentHighlightsの一覧から除外
+        /// されたり、ClearHighlight()/OnDocumentReplaced()で文書ごと無効化された場合は、
+        /// 古い（存在しない、または別文書の）範囲を誤って触らないようnullに戻す。</summary>
+        private TextRange m_currentMatchRange;
 
         /// <summary>直前にFindNext/FindPreviousInCurrentFileで見つかった一致箇所。次を検索/前を
         /// 検索の検索開始位置の基準にする（CaretPosition/Selectionだけに頼ると、検索方向を
@@ -280,6 +294,7 @@ namespace mde
             }
             m_currentHighlights.Clear();
             m_lastHighlightAllTerm = null;
+            m_currentMatchRange = null;
         }
 
         /// <summary>
@@ -294,6 +309,7 @@ namespace mde
             m_currentHighlights.Clear();
             m_lastHighlightAllTerm = null;
             m_lastFoundMatch = null;
+            m_currentMatchRange = null;
         }
 
         /// <summary>
@@ -326,12 +342,43 @@ namespace mde
             m_currentHighlights.Add(a_range);
         }
 
-        /// <summary>1件だけを強調表示する（既存のハイライトはクリアする）。</summary>
+        /// <summary>1件だけを強調表示する（既存のハイライトはクリアする）。この1件は、他に
+        /// 見分ける対象がなくても「現在の一致箇所」として扱い、MarkCurrentMatchで専用の色に
+        /// する（「すべて検索」の後で同じ検索語のまま次を検索/前を検索に切り替わっても、
+        /// 見た目が一貫するようにするため）。</summary>
         /// <param name="a_range">対象の範囲。</param>
         private void ApplyHighlight(TextRange a_range)
         {
             ClearHighlight();
             AddHighlight(a_range);
+            MarkCurrentMatch(a_range);
+        }
+
+        /// <summary>
+        /// 「現在の一致箇所」を切り替える。直前に「現在」として専用色（CURRENT_MATCH_HIGHLIGHT_
+        /// BRUSH）で強調表示していた範囲があれば、通常の一致箇所と同じ色（MATCH_HIGHLIGHT_BRUSH）
+        /// へ戻し、新しい範囲に専用色を適用する。範囲がすでに文書上に存在しない場合は、
+        /// ApplyPropertyValueが例外を投げることがあるため、それぞれ個別にtry/catchしている。
+        /// </summary>
+        /// <param name="a_range">新たに「現在の一致箇所」とする範囲。nullなら単に前回分を
+        /// 通常色へ戻すだけになる。</param>
+        private void MarkCurrentMatch(TextRange a_range)
+        {
+            TextRange previous = m_currentMatchRange;
+            m_currentMatchRange = a_range;
+            m_runWithoutDirtyMarking(() =>
+            {
+                if (null != previous && !ReferenceEquals(previous, a_range))
+                {
+                    try { previous.ApplyPropertyValue(TextElement.BackgroundProperty, MATCH_HIGHLIGHT_BRUSH); }
+                    catch { /* 対象がすでに存在しなくなっていても問題ない */ }
+                }
+                if (null != a_range)
+                {
+                    try { a_range.ApplyPropertyValue(TextElement.BackgroundProperty, CURRENT_MATCH_HIGHLIGHT_BRUSH); }
+                    catch { /* 対象がすでに存在しなくなっていても問題ない */ }
+                }
+            });
         }
 
         /// <summary>
@@ -384,12 +431,15 @@ namespace mde
             return results;
         }
 
-        /// <summary>指定範囲を選択・スクロール表示する（結果一覧の項目クリックでのジャンプに使う）。</summary>
+        /// <summary>指定範囲を選択・スクロール表示する（結果一覧の項目クリックや、フォルダ全体
+        /// 検索での次を検索/前を検索でのジャンプに使う）。ジャンプ先は「現在の一致箇所」として
+        /// 専用色で強調表示する。</summary>
         /// <param name="a_range">対象の範囲。</param>
         public void SelectAndScrollTo(TextRange a_range)
         {
             // 選択そのものは即座に行っておく（見た目の反応を早くするため）。
             m_editor.Selection.Select(a_range.Start, a_range.End);
+            MarkCurrentMatch(a_range);
 
             // ファイルを切り替えた直後（LoadFileで文書を丸ごと再構築した直後）は、その文書再構築に
             // 伴うキャレット位置の確定処理が非同期に行われ、ここで即座にCaretPositionを設定しても
@@ -431,6 +481,12 @@ namespace mde
             if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg))
             {
                 ApplyHighlight(found);
+            }
+            else
+            {
+                // 「すべて検索」による一括ハイライトを維持したまま、この一致箇所だけを
+                // 「現在の一致箇所」として区別できる色に変える。
+                MarkCurrentMatch(found);
             }
             m_lastFoundMatch = found;
 
@@ -475,6 +531,12 @@ namespace mde
             if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg))
             {
                 ApplyHighlight(found);
+            }
+            else
+            {
+                // 「すべて検索」による一括ハイライトを維持したまま、この一致箇所だけを
+                // 「現在の一致箇所」として区別できる色に変える。
+                MarkCurrentMatch(found);
             }
             m_editor.Dispatcher.BeginInvoke(new Action(() =>
             {
@@ -620,6 +682,12 @@ namespace mde
             {
                 ApplyHighlight(found);
             }
+            else
+            {
+                // 「すべて検索」による一括ハイライトを維持したまま、この一致箇所だけを
+                // 「現在の一致箇所」として区別できる色に変える。
+                MarkCurrentMatch(found);
+            }
             m_lastFoundMatch = found;
 
             // ファイルを開いた直後など、文書の再構築に伴うキャレット位置の確定処理が非同期に
@@ -661,6 +729,12 @@ namespace mde
             if (!ShouldPreserveAllHighlights(a_term, a_caseSensitiveFlg, a_useRegexFlg))
             {
                 ApplyHighlight(found);
+            }
+            else
+            {
+                // 「すべて検索」による一括ハイライトを維持したまま、この一致箇所だけを
+                // 「現在の一致箇所」として区別できる色に変える。
+                MarkCurrentMatch(found);
             }
             m_editor.Dispatcher.BeginInvoke(new Action(() =>
             {
