@@ -132,6 +132,12 @@
                                 <EventSetter Event="Expanded" Handler="TreeViewItemExpanded"/>
                                 <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
                                 <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                                <!-- アウトラインペイン（下のm_outlineTree）と同じ理由・同じ対策。
+                                     ファイル名が短い場合はずれ幅が目立たないだけで、選択・フォーカスの
+                                     たびに既定の横スクロールが発生する仕組み自体は同じであることが、
+                                     実機での確認で分かったため、こちらにも対策を入れている（詳しい
+                                     理由はFolderTreeItemRequestBringIntoViewのコメント参照）。 -->
+                                <EventSetter Event="RequestBringIntoView" Handler="FolderTreeItemRequestBringIntoView"/>
                             </Style>
                         </TreeView.Resources>
                         <TreeView.ItemTemplate>
