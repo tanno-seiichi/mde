@@ -1253,6 +1253,7 @@ namespace mde
             m_deleteRowMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_deleteColumnMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_deleteTableMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_copyTableMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_copyCodeBlockMenuItem.Visibility = inCodeBlockFlg ? Visibility.Visible : Visibility.Collapsed;
             m_openImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_saveImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
@@ -1324,6 +1325,7 @@ namespace mde
         private void DeleteRowItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteRow();
         private void DeleteColumnItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteColumn();
         private void DeleteTableItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteTable();
+        private void CopyTableItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.CopyTable();
 
         // ---- 画像 ----
 

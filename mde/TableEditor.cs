@@ -495,6 +495,30 @@ namespace mde
             m_markDirty();
         }
 
+        /// <summary>ContextCellが属する表全体を、現在の選択状態とは関係なく、Excelとの連携
+        /// （HandleCopying）で使っているのと同じ形式（タブ区切りテキスト＋罫線付きHTML）で
+        /// クリップボードへコピーする（右クリックメニュー「表をコピー」用）。表内をクリック
+        /// しただけで選択範囲が無い状態でも、確実に表全体をコピーできるようにするための、
+        /// Copyingイベント（選択範囲が必要）に頼らない明示的な手段。</summary>
+        public void CopyTable()
+        {
+            if (null == ContextCell)
+            {
+                return;
+            }
+            var table = FindEnclosingTable(ContextCell);
+            if (null == table)
+            {
+                return;
+            }
+            string tsv = TableToTsv(table);
+            string htmlFragment = TableToHtmlFragment(table);
+            var data = new DataObject();
+            data.SetData(DataFormats.Text, tsv);
+            data.SetData(DataFormats.Html, BuildHtmlClipboardFragment(htmlFragment));
+            Clipboard.SetDataObject(data);
+        }
+
         // ---------------- Excelとのコピー&ペースト連携 ----------------
 
         private List<TableRow> GetTableRows(Table a_table)
