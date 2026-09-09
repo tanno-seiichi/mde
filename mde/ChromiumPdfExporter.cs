@@ -1,6 +1,6 @@
 // ChromiumPdfExporter.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // PuppeteerSharp（MITライセンス）でheadless Chromiumを起動し、HTMLとして組み立てた文書を
 // 「印刷してPDF化」する。以前はMigraDoc（PDFsharp）で直接PDFを生成する方式を使っていたが、
 // 実際のChromiumのレンダリングエンジンを使うこの方式には次の利点があり、比較検証の結果、

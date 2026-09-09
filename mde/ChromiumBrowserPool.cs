@@ -1,6 +1,6 @@
 // ChromiumBrowserPool.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // ChromiumPdfExporterが使う、headless Chromiumのブラウザインスタンスを使い回すための
 // 仕組み。PuppeteerSharpでheadless Chromiumのプロセスを毎回新しく起動して終了するのは、
 // （実際に印刷する内容の量に関係なく）それ自体に数秒単位の時間がかかる重い処理のため、

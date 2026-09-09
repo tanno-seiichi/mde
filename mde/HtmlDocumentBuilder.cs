@@ -1,6 +1,6 @@
 // HtmlDocumentBuilder.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // ChromiumPdfExporter（headless ChromeでのPDF書き出し）が使う、FlowDocumentからHTML文書
 // （文字列）を組み立てる処理。実際のブラウザのCSSエンジンでレンダリングするため、取り消し線は
 // 本物のtext-decoration:line-throughで表現でき、フォントも画面表示と同じ游ゴシック UIを

@@ -1,6 +1,6 @@
 ﻿// LinkInputDialog.xaml.cs
 //
-// Part of mde (MarkDown インラインエディタ).
+// Part of mde (Markdown インラインエディタ).
 // A small modal dialog for entering/editing a hyperlink's URL, shown from the m_editor's right-click
 // "文字装飾 → リンクにする…" menu item and the "リンクを編集…" link context menu item.
 

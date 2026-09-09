@@ -1,6 +1,6 @@
 ﻿// App.xaml.cs
 //
-// Part of mde (MarkDown インラインエディタ).
+// Part of mde (Markdown インラインエディタ).
 // Application entry point: sets up a top-level exception handler so an unexpected error shows a
 // message box instead of silently crashing the app. Also registers a Window-wide class handler so
 // F1 opens README.md from anywhere in the application (see GlobalPreviewKeyDown below).
@@ -99,7 +99,7 @@ namespace mde
         {
             MessageBox.Show(
                 "予期しないエラーが発生しました:\n\n" + a_args.Exception,
-                "MarkDown インラインエディタ - エラー",
+                "Markdown インラインエディタ - エラー",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             a_args.Handled = true;

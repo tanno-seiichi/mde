@@ -18,7 +18,7 @@
              二重に加算されて、行間の設定値を上げるほど間隔が不自然に広がるのを防ぐため。
              DESIGN.md 14.11節参照）。ゼロにはしない：見出し・コードブロック・水平線は
              それぞれ固有のMarginを明示的に持っているのに対し、通常の段落・リスト・表は
-             この共有の値だけを頼りにしているため、ここが0だと、空行区切りのMarkDown段落
+             この共有の値だけを頼りにしているため、ここが0だと、空行区切りのMarkdown段落
              どうしが単純な行の折り返しと見分けが付かなくなってしまう。ここでの初期値も
              それに合わせておく（実際にはMainWindowコンストラクタのApplyEditorLineHeight
              呼び出しで、起動直後にこの値で上書きされる）。 -->
@@ -360,7 +360,7 @@
                              TextChanged="SourceEditorTextChanged">
                         <TextBox.ContextMenu>
                             <ContextMenu>
-                                <MenuItem Header="MarkDownモードに切り替え" Click="ToggleModeBtnClick"/>
+                                <MenuItem Header="Markdownモードに切り替え" Click="ToggleModeBtnClick"/>
                             </ContextMenu>
                         </TextBox.ContextMenu>
                     </TextBox>

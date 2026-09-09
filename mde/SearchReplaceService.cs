@@ -1,6 +1,6 @@
 ﻿// SearchReplaceService.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // 検索・置換を担当するクラス。FindReplaceWindow から呼び出される公開APIとして、
 // 現在のファイル内でのライブ検索・置換、フォルダ全体を対象にした検索・置換、
 // 1件ずつ確認しながら進める置換セッションを提供する。
@@ -76,9 +76,9 @@ namespace mde
         /// <summary>
         /// SearchReplaceServiceを構築する。
         /// </summary>
-        /// <param name="a_editor">MarkDownモードのRichTextBox。</param>
+        /// <param name="a_editor">MarkdownモードのRichTextBox。</param>
         /// <param name="a_sourceEditor">ソースモードのTextBox。</param>
-        /// <param name="a_converter">MarkDown⇔内部構造の変換クラス。</param>
+        /// <param name="a_converter">Markdown⇔内部構造の変換クラス。</param>
         /// <param name="a_originalTextTracker">「元テキスト保持」の追跡役。</param>
         /// <param name="a_lineEndingTracker">改行コードの検出・記憶役。</param>
         /// <param name="a_isSourceMode">現在ソースモードかどうかを返すdelegate。</param>
@@ -841,7 +841,7 @@ namespace mde
             return count;
         }
 
-        /// <summary>現在のファイル内のすべての一致箇所を一度に置換する（MarkDownへ書き出してから
+        /// <summary>現在のファイル内のすべての一致箇所を一度に置換する（Markdownへ書き出してから
         /// 置換し、再度解析し直す方式）。</summary>
         /// <param name="a_term">検索する文字列。</param>
         /// <param name="a_replacement">置換後の文字列。</param>
@@ -903,7 +903,7 @@ namespace mde
             return result;
         }
 
-        /// <summary>読み込んでいるフォルダ内のすべてのMarkDownファイルを対象に、一致箇所を探す。</summary>
+        /// <summary>読み込んでいるフォルダ内のすべてのMarkdownファイルを対象に、一致箇所を探す。</summary>
         /// <param name="a_term">検索する文字列。</param>
         /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
         /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
@@ -931,7 +931,7 @@ namespace mde
             return results;
         }
 
-        /// <summary>読み込んでいるフォルダ内のすべてのMarkDownファイルを対象に、一括で置換する
+        /// <summary>読み込んでいるフォルダ内のすべてのMarkdownファイルを対象に、一括で置換する
         /// （変更されたファイルは保留中の編集として記憶され、保存するまでディスクには
         /// 書き出されない）。</summary>
         /// <param name="a_term">検索する文字列。</param>
@@ -993,8 +993,8 @@ namespace mde
 
         // ---- 1件ずつ確認する置換セッションで使う基本操作 ----
 
-        /// <summary>現在のファイルのライブなMarkDown内容を取得する（FindReplaceWindow用）。</summary>
-        /// <returns>現在のファイルのライブなMarkDown内容。</returns>
+        /// <summary>現在のファイルのライブなMarkdown内容を取得する（FindReplaceWindow用）。</summary>
+        /// <returns>現在のファイルのライブなMarkdown内容。</returns>
         public string GetCurrentFileContent()
         {
             return m_isSourceMode() ? m_sourceEditor.Text : m_converter.DocumentToMarkdown(m_editor.Document);
@@ -1016,9 +1016,9 @@ namespace mde
             }
         }
 
-        /// <summary>読み込んでいるフォルダ内のMarkDownファイル一覧を取得する（FindReplaceWindowの
+        /// <summary>読み込んでいるフォルダ内のMarkdownファイル一覧を取得する（FindReplaceWindowの
         /// フォルダ範囲検索用）。</summary>
-        /// <returns>フォルダ内のMarkDownファイルの一覧。</returns>
+        /// <returns>フォルダ内のMarkdownファイルの一覧。</returns>
         public List<string> GetFolderFiles()
         {
             return GetAllMarkdownFilesInRoot();

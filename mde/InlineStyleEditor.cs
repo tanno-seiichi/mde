@@ -1,6 +1,6 @@
 ﻿// InlineStyleEditor.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // 文中の太字・取り消し線・下線・インラインコード・リンクの装飾を担当するクラス。
 // 右クリックメニューからの適用、入力中のリアルタイム変換（**a_text**などを打ち終えた瞬間に
 // 反映する）、リンクのクリック・編集・解除を扱う。
@@ -51,7 +51,7 @@ namespace mde
         /// <param name="runAsProgrammaticChange">処理を「プログラムによる変更」として実行するdelegate。</param>
         /// <param name="markDirty">ファイルが変更されたことを通知するdelegate。</param>
         /// <param name="refreshOutline">アウトラインペインの再構築を依頼するdelegate。</param>
-        /// <param name="blockToMarkdown">ブロックをMarkDownテキストへ変換するdelegate（コードブロックのコピーに使う）。</param>
+        /// <param name="blockToMarkdown">ブロックをMarkdownテキストへ変換するdelegate（コードブロックのコピーに使う）。</param>
         private readonly Func<string> m_getCurrentFileDirectory;
         private readonly Action<string> m_loadFile;
         private readonly Func<string, bool> m_isWithinLoadedFolder;
@@ -66,7 +66,7 @@ namespace mde
         /// <param name="a_runAsProgrammaticChange">処理を「プログラムによる変更」として実行するdelegate。</param>
         /// <param name="a_markDirty">ファイルが変更されたことを通知するdelegate。</param>
         /// <param name="a_refreshOutline">アウトラインペインの再構築を依頼するdelegate。</param>
-        /// <param name="a_blockToMarkdown">ブロックをMarkDownテキストへ変換するdelegate（コードブロックのコピーに使う）。</param>
+        /// <param name="a_blockToMarkdown">ブロックをMarkdownテキストへ変換するdelegate（コードブロックのコピーに使う）。</param>
         /// <param name="a_getCurrentFileDirectory">現在のファイルの保存先フォルダを返すdelegate（ファイルリンクの相対パス解決に使う）。</param>
         /// <param name="a_loadFile">同じウィンドウでファイルを開くdelegate。</param>
         /// <param name="a_isWithinLoadedFolder">指定フォルダが、現在フォルダペインに表示されているフォルダの範囲内かどうかを判定するdelegate。</param>
@@ -330,7 +330,7 @@ namespace mde
 
         /// <summary>
         /// コードブロック全体を、```フェンスと言語タグを含む、そのまま貼り付け可能な
-        /// MarkDownとしてコピーする。選択テキストの通常のCtrl+Cとは異なり、コード内容だけでなく
+        /// Markdownとしてコピーする。選択テキストの通常のCtrl+Cとは異なり、コード内容だけでなく
         /// フェンス自体もコピーされる。
         /// </summary>
         public void CopyCodeBlockAsMarkdown()
@@ -619,7 +619,7 @@ namespace mde
 
         /// <summary>
         /// 直前に入力した文字が、キャレット位置で `コード`、**太字**、~~取り消し線~~、
-        /// または[リンク](a_url)の記法を閉じたかどうかを調べ、そうであればそのMarkDown記法を
+        /// または[リンク](a_url)の記法を閉じたかどうかを調べ、そうであればそのMarkdown記法を
         /// スタイル付きのRunへ即座に置き換える。1つのRunの中のテキストだけでなく、
         /// 後ろ向きに複数のRunをまたいでたどるため、段落中のどこでも（箇条書き項目の中でも）
         /// 確実に動作する。

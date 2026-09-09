@@ -1,6 +1,6 @@
 ﻿// LineEndingTracker.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // 各ファイルの改行コード（CRLF/LF）を検出・記憶し、保存時に元の改行コードを維持するための
 // クラス。SearchReplaceService（ファイル読み込み時）とMainWindow（保存時）の両方から
 // 共有される協力オブジェクトとして使う。
@@ -88,7 +88,7 @@ namespace mde
             m_lineEndings[a_path] = a_lineEnding;
         }
 
-        /// <summary>内部的に常に "\n" を使っているMarkDown文字列を、指定した改行コードに
+        /// <summary>内部的に常に "\n" を使っているMarkdown文字列を、指定した改行コードに
         /// 変換する（ファイル書き込み直前に使う）。</summary>
         /// <param name="a_text">"\n" 区切りのテキスト。</param>
         /// <param name="a_lineEnding">適用する改行コード。</param>

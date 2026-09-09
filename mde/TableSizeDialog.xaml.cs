@@ -1,6 +1,6 @@
 ﻿// TableSizeDialog.xaml.cs
 //
-// Part of mde (MarkDown インラインエディタ).
+// Part of mde (Markdown インラインエディタ).
 // A small modal dialog for choosing a new m_table's row/column count, shown from the m_editor's
 // right-click "表を挿入" (insert m_table) menu item.
 

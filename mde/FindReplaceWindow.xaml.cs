@@ -1,6 +1,6 @@
 ﻿// FindReplaceWindow.xaml.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // 検索と置換ウィンドウ。対象範囲（現在のファイル／読み込んでいるフォルダ全体）と、
 // 動作モード（一度にすべて検索・置換する／1件ずつ確認しながら進めるセッション）の
 // 2軸に対応する。実際の検索・置換処理はすべて m_owner.SearchReplace（SearchReplaceService）
