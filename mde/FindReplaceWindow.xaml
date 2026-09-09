@@ -32,9 +32,9 @@
         </StackPanel>
 
         <WrapPanel>
-            <Button Content="前を検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindPreviousClick"/>
-            <Button Content="次を検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindNextClick"/>
-            <Button Content="すべて検索" Width="86" Style="{StaticResource ToolbarButton}" Click="FindAllClick" IsDefault="True"/>
+            <Button Content="前を検索" Width="86" Style="{StaticResource DialogButton}" Click="FindPreviousClick"/>
+            <Button Content="次を検索" Width="86" Style="{StaticResource DialogButton}" Click="FindNextClick"/>
+            <Button Content="すべて検索" Width="86" Style="{StaticResource DialogButton}" Click="FindAllClick" IsDefault="True"/>
             <Button x:Name="m_stepReplaceButton" Content="1件ずつ置換…" Width="100" Style="{StaticResource ToolbarButton}"
                     Click="StepReplaceClick" Visibility="Collapsed"/>
             <Button x:Name="m_replaceAllButton" Content="すべて置換" Width="86" Style="{StaticResource ToolbarButton}"
