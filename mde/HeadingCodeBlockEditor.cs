@@ -188,19 +188,49 @@ namespace mde
                 new TextRange(a_p.ContentStart, a_p.ContentEnd).Text.Replace(" ", "[SP]").Replace("\u00A0", "[NBSP]").Replace("\r", "[CR]").Replace("\n", "[LF]") + "]");
         }
 
-        /// <summary>見出し内でのEnterキー処理。見出しの続きにはならず、その後ろに新しい通常の
-        /// 段落を作ってそちらへキャレットを移す。</summary>
+        /// <summary>見出し内でのEnterキー処理。見出しの文字列の先頭（1文字目より左）に
+        /// キャレットがある場合は、見出し自体には触れず、見出し行の「上」に新しい空行を
+        /// 挿入する（一般的なエディタで行頭でEnterを押した時の挙動と同じ）。それ以外の位置
+        /// （見出しの途中・末尾）でEnterを押した場合は、これまで通り見出しの続きにはならず、
+        /// その後ろに新しい通常の段落を作ってそちらへキャレットを移す（見出し自体を分割する
+        /// ことはしない）。</summary>
         /// <param name="a_headingPara">現在の見出し段落。</param>
         public void HandleHeadingEnter(Paragraph a_headingPara)
         {
             DebugLogger.Log("HandleHeadingEnter: 呼び出し");
+
+            // 見出しは（箇条書きのListItemとは異なり）行頭にマーカー記号を持たないため、
+            // ListEditor側で問題になっている「TextRangeがマーカー記号を巻き込んでしまう」
+            // 不具合の対象にならない。既存のBackSpace末尾判定（isCaretAtEndFlg。上の
+            // MainWindow.EditorPreviewKeyDown参照）と同じ、a_headingPara.ContentStart起点の
+            // TextRangeによる判定で問題ない。
+            bool isCaretAtStartFlg = m_editor.Selection.IsEmpty &&
+                0 == new TextRange(a_headingPara.ContentStart, m_editor.CaretPosition).Text.Length;
+            DebugLogger.Log($"HandleHeadingEnter: isCaretAtStartFlg={isCaretAtStartFlg}");
+
             // ConvertParagraphToHeadingと同じ理由で、ImeCaretMoveHelper経由の
             // Dispatcher.BeginInvoke遅延は使わず、1段目の箇条書きと同じ同期処理にする。
             m_runAsProgrammaticChange(() =>
             {
-                var newPara = new Paragraph();
-                m_editor.Document.Blocks.InsertAfter(a_headingPara, newPara);
-                m_editor.CaretPosition = newPara.ContentStart;
+                if (isCaretAtStartFlg)
+                {
+                    // 見出し自身のInlines・書式には一切触れず、新しい空段落を見出しの「前」に
+                    // 挿入するだけにする。キャレットは見出し自身の先頭に置いたままにする
+                    // （見出し行が1行分下にずれるだけで、見出しの内容・キャレットの相対位置は
+                    // 変わらない）。キャレットの移動先が、既にレイアウト済みの見出し段落
+                    // （新しく作った段落ではない）であるため、IME対策のImeCaretMoveHelperは
+                    // 不要（新しく作った未レイアウトの段落へキャレットを合わせた直後にIME入力を
+                    // 始めた場合の不具合が、そもそも起こり得ない状況のため）。
+                    var newPara = new Paragraph();
+                    m_editor.Document.Blocks.InsertBefore(a_headingPara, newPara);
+                    m_editor.CaretPosition = a_headingPara.ContentStart;
+                }
+                else
+                {
+                    var newPara = new Paragraph();
+                    m_editor.Document.Blocks.InsertAfter(a_headingPara, newPara);
+                    m_editor.CaretPosition = newPara.ContentStart;
+                }
             });
             m_editor.UpdateLayout();
             Keyboard.ClearFocus();

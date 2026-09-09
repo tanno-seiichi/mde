@@ -5,6 +5,7 @@
 // Enterキーでの項目追加/リスト脱出、Tab/Shift+Tabでの字下げ・字下げ解除を扱う。
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Windows;
@@ -484,7 +485,8 @@ namespace mde
         }
 
         /// <summary>リスト項目内でのEnterキー処理。項目が空ならリストを抜けて新しい通常の段落を
-        /// 作り、空でなければ新しい項目を後ろに追加する。</summary>
+        /// 作り、空でなければ新しい項目を後ろに追加する（キャレットが項目の文字列の途中に
+        /// あった場合は、キャレットより後ろの文字列を新しい項目へ移す）。</summary>
         /// <param name="a_li">現在の項目。</param>
         /// <param name="a_parentList">現在の項目を含むList。</param>
         public void HandleListEnter(ListItem a_li, List a_parentList)
@@ -534,13 +536,21 @@ namespace mde
         /// <returns>合わせるべきTextPointer。</returns>
         private TextPointer GetCaretPositionForNewListParagraph(Paragraph a_para)
         {
-            return (a_para.Inlines.FirstInline is InlineUIContainer) ? a_para.ContentEnd : a_para.ContentStart;
+            // 新しい項目の先頭がタスクチェックボックス（InlineUIContainer）の場合、キャレットは
+            // その直後（＝チェックボックスの右隣。分割で持ち越された文字列があれば、その手前）に
+            // 置く。段落全体のContentEndだと、キャレット分割で文字列を持ち越した場合に、
+            // チェックボックスの直後ではなく持ち越した文字列の末尾まで飛んでしまうため、
+            // チェックボックス自身のElementEndを使う（ConvertListItemTextToTaskCheckboxで
+            // 同じ理由からcontainer.ElementEndを使っているのと同じ考え方）。
+            return (a_para.Inlines.FirstInline is InlineUIContainer iuc) ? iuc.ElementEnd : a_para.ContentStart;
         }
 
         /// <summary>
-        /// HandleListEnterの本体：項目が空ならリストを抜けて新しい通常の段落を作り、
-        /// 空でなければ新しい項目を後ろに追加する。呼び出し元（同期／
-        /// ImeCaretMoveHelper経由の遅延の両方）から共通で使う。
+        /// HandleListEnterの本体：項目が空ならリストを抜けて新しい通常の段落を作り、空でなければ
+        /// 新しい項目を後ろに追加する。項目の文字列の途中にキャレットがある場合は、キャレットより
+        /// 後ろの内容（書式ごと）を新しい項目へ移す（キャレットが項目の末尾にあった場合は、
+        /// これまで通り新しい項目は空になる）。呼び出し元（同期／ImeCaretMoveHelper経由の
+        /// 遅延の両方）から共通で使う。
         /// </summary>
         /// <param name="a_li">現在の項目。</param>
         /// <param name="a_parentList">現在の項目を含むList。</param>
@@ -577,19 +587,172 @@ namespace mde
                 // 項目1つをa_liの直後に挿入するだけで済み、既存の項目には触れない（Clear()して
                 // 全項目を作り直す必要はない）。
                 var newPara = new Paragraph { Margin = new Thickness(0) };
+                bool taskCheckboxFlg = IsTaskCheckboxItem(a_li);
+
                 // Enterを押す前の項目がタスクチェックボックス項目だった場合、新しい項目にも
-                // 未チェックのチェックボックスをあらかじめ入れておく。空のRunも一緒に入れる
-                // 理由はConvertListItemTextToTaskCheckboxの説明を参照（段落の中身が
-                // チェックボックスだけだと、行の高さが本文と違う基準で計算されてしまうため）。
-                if (IsTaskCheckboxItem(a_li))
+                // 未チェックのチェックボックスをあらかじめ入れておく（文字列を分割で持ち越す
+                // 場合も、持ち越さない場合も、新しい項目自体はタスク項目として続ける）。
+                if (taskCheckboxFlg)
                 {
                     newPara.Inlines.Add(BlockStyles.CreateTaskCheckboxContainer(false));
+                }
+
+                // 項目自身の段落（入れ子のサブリストがある場合は対象外。サブリストごと丸ごと
+                // 動かすのは複雑になりすぎるため、これまで通り新しい項目は空のままにする）の
+                // 中で、キャレットより後ろにある内容を新しい項目へ移す。
+                if (!hasNestedListFlg && a_li.Blocks.FirstBlock is Paragraph ownPara)
+                {
+                    TextPointer caret = m_editor.CaretPosition;
+                    if (0 <= caret.CompareTo(ownPara.ContentStart) && 0 <= ownPara.ContentEnd.CompareTo(caret))
+                    {
+                        foreach (Inline movedInline in SplitInlinesAtCaret(ownPara.Inlines, caret))
+                        {
+                            newPara.Inlines.Add(movedInline);
+                        }
+                    }
+                }
+
+                if (taskCheckboxFlg && 1 == newPara.Inlines.Count)
+                {
+                    // 持ち越された文字列が無かった場合（キャレットが項目の末尾にあった場合など）は、
+                    // これまで通り空のRunも一緒に入れておく（理由はConvertListItemTextToTask
+                    // Checkboxの説明を参照。段落の中身がチェックボックスだけだと、行の高さが
+                    // 本文と違う基準で計算されてしまうため）。
                     newPara.Inlines.Add(new Run(""));
                 }
+
                 var newLi = new ListItem(newPara);
                 a_parentList.ListItems.InsertAfter(a_li, newLi);
                 return newPara;
             }
+        }
+
+        /// <summary>指定したInlineCollection（項目自身の段落、または入れ子のSpanの中身）から、
+        /// キャレット位置より後ろにある内容（書式・Tag・ツールチップ等も含めて丸ごと）だけを
+        /// 取り除き、切り出した内容を返す（呼び出し元は、これを新しく作った項目のInlinesへ
+        /// そのまま追加する想定）。キャレットがちょうどRunの途中にある場合は、そのRunだけを
+        /// 前後半に分割する（前半は元のRunをそのまま段落に残し、後半だけを新しいRunとして
+        /// 切り出す）。
+        /// TextPointerのオフセット計算やTextRange.Textでの範囲取得（a_p.ContentStartを起点に
+        /// するもの）は、リスト項目の段落では行頭のマーカー記号を巻き込んでしまう既知の不具合
+        /// （GetOwnListItemText・ConvertListItemTextToTaskCheckboxの説明を参照）があるため
+        /// 一切使わない。代わりに、キャレット自身を起点とするTextPointer.GetTextInRunと、
+        /// Inline同士のTextPointer比較（CompareTo）だけで判定する（この2つは
+        /// InlineStyleEditor.GetSafeRangeText／CheckInlineFormatTriggerで実績のある、
+        /// リスト項目内でも安全な方法）。</summary>
+        /// <param name="a_inlines">分割対象のInlineCollection。</param>
+        /// <param name="a_caret">分割の境目とするキャレット位置。</param>
+        /// <returns>キャレットより後ろの内容として取り除かれた、新しいInlineのリスト（元の順序のまま）。</returns>
+        private List<Inline> SplitInlinesAtCaret(InlineCollection a_inlines, TextPointer a_caret)
+        {
+            var moved = new List<Inline>();
+            foreach (Inline inline in a_inlines.ToList())
+            {
+                if (a_caret.CompareTo(inline.ContentStart) <= 0)
+                {
+                    // キャレットはこのInlineより前（またはちょうど先頭）：丸ごと後ろ側へ移す
+                    a_inlines.Remove(inline);
+                    moved.Add(inline);
+                }
+                else if (a_caret.CompareTo(inline.ContentEnd) >= 0)
+                {
+                    // キャレットはこのInlineより後ろ（またはちょうど末尾）：このInlineには触れない
+                }
+                else if (inline is Run run)
+                {
+                    // キャレットはこのRunの途中：GetTextInRunで実際に取り出した文字列の「長さ」
+                    // だけを頼りに、run.Text自身（安全に読める、確定済みの生データ）を後ろから
+                    // 切り出す。GetTextInRunが返す文字列の中身そのものではなく長さだけを使う
+                    // ことで、万一の取得誤差があっても、少なくとも文字の重複・欠落は起きない
+                    // ようにしている。
+                    string afterText = a_caret.GetTextInRun(LogicalDirection.Forward);
+                    int afterLen = string.IsNullOrEmpty(afterText) ? 0 : Math.Min(afterText.Length, run.Text.Length);
+                    if (afterLen > 0 && afterLen < run.Text.Length)
+                    {
+                        string moveText = run.Text.Substring(run.Text.Length - afterLen);
+                        run.Text = run.Text.Substring(0, run.Text.Length - afterLen);
+                        moved.Add(CloneRunForSplit(run, moveText));
+                    }
+                    else if (afterLen >= run.Text.Length && run.Text.Length > 0)
+                    {
+                        a_inlines.Remove(run);
+                        moved.Add(run);
+                    }
+                    // afterLen == 0の場合：このRunには実質手を触れない
+                }
+                else if (inline is Span span)
+                {
+                    List<Inline> innerMoved = SplitInlinesAtCaret(span.Inlines, a_caret);
+                    if (innerMoved.Count > 0)
+                    {
+                        var newSpan = new Span
+                        {
+                            FontWeight = span.FontWeight,
+                            FontStyle = span.FontStyle,
+                            TextDecorations = span.TextDecorations,
+                            Foreground = span.Foreground,
+                            Background = span.Background,
+                            FontFamily = span.FontFamily,
+                            FontSize = span.FontSize
+                        };
+                        foreach (Inline m in innerMoved)
+                        {
+                            newSpan.Inlines.Add(m);
+                        }
+                        moved.Add(newSpan);
+                    }
+                    if (0 == span.Inlines.Count)
+                    {
+                        a_inlines.Remove(span);
+                    }
+                }
+                else
+                {
+                    // Run・Span以外（InlineUIContainer等）は、キャレットがその内部に入り込むこと
+                    // は通常ないはずだが、念のため丸ごと後ろ側へ移す。
+                    a_inlines.Remove(inline);
+                    moved.Add(inline);
+                }
+            }
+            return moved;
+        }
+
+        /// <summary>SplitInlinesAtCaretで、Runの途中をキャレット位置で分割する際、後半用に
+        /// 新しく作るRunへ、元のRunの書式・Tag・ツールチップを引き継ぐ。TagがLinkInfo
+        /// （リンクのメタデータ）の場合は、前後半が同じインスタンスを共有すると、右クリック
+        /// メニューの「リンクを編集」が片方のURLだけを書き換えたつもりで両方に反映されてしまう
+        /// （InlineStyleEditor.EditContextLinkはLinkInfoを直接書き換えるため）ので、別インスタンス
+        /// として複製する。それ以外のTag（"bold"等の文字列やAnchorInfo）はイミュータブルか、
+        /// そもそも分割対象になり得ない（AnchorInfoは常に空文字のRunに付くため、キャレットが
+        /// 内部に入り込むことがなく、途中で分割されることがない）ため、そのまま共有してよい。</summary>
+        /// <param name="a_original">分割元のRun（前半として残る）。</param>
+        /// <param name="a_text">後半として新しいRunに持たせるテキスト。</param>
+        /// <returns>書式を引き継いだ、後半用の新しいRun。</returns>
+        private static Run CloneRunForSplit(Run a_original, string a_text)
+        {
+            object tag = a_original.Tag;
+            if (tag is LinkInfo li)
+            {
+                tag = new LinkInfo
+                {
+                    m_url = li.m_url,
+                    m_isAutoLinkFlg = li.m_isAutoLinkFlg,
+                    m_title = li.m_title,
+                    m_isEmailAutoLinkFlg = li.m_isEmailAutoLinkFlg
+                };
+            }
+            return new Run(a_text)
+            {
+                FontWeight = a_original.FontWeight,
+                FontStyle = a_original.FontStyle,
+                TextDecorations = a_original.TextDecorations,
+                Foreground = a_original.Foreground,
+                Background = a_original.Background,
+                FontFamily = a_original.FontFamily,
+                FontSize = a_original.FontSize,
+                Tag = tag,
+                ToolTip = a_original.ToolTip
+            };
         }
 
         /// <summary>指定した項目自身の段落が、タスクリストのチェックボックスで始まっているかを
