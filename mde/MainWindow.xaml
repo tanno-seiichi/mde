@@ -335,6 +335,8 @@
                                           Click="DeleteColumnItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_deleteTableMenuItem" Header="表を削除" Style="{StaticResource CtxMenuItem}"
                                           Click="DeleteTableItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_copyTableMenuItem" Header="表をコピー" Style="{StaticResource CtxMenuItem}"
+                                          Click="CopyTableItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_copyCodeBlockMenuItem" Header="コードブロック全体をコピー（```込み）" Style="{StaticResource CtxMenuItem}"
                                           Click="CopyCodeBlockItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_openImageMenuItem" Header="画像を開く" Style="{StaticResource CtxMenuItem}"
