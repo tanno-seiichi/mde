@@ -3146,5 +3146,41 @@ namespace mde
                 }
             }
         }
+
+        /// <summary>
+        /// フォルダペインのTreeViewItemに対する、OutlineTreeItemRequestBringIntoViewと全く同じ
+        /// 対策。当初は「フォルダペインはファイル名が短いので、この既定動作によるずれ幅が
+        /// ほとんど無いために目立たないだけ」と考えて対策を見送っていたが、実機での確認で、
+        /// ファイル名が長く実際に横幅が見切れる場合でもフォルダペインでは症状が出ない、という
+        /// 逆の結果が得られたため、この推測は誤りだったことが判明した。その後、アウトライン側の
+        /// 対策（TargetRect.Emptyを専用の再入ガードフラグへ置き換える修正）を先に確定させ、
+        /// 実機で「アウトラインの横スクロールのちらつきが直った」ことを確認できた上で、
+        /// 改めてフォルダペインにも同じ対策を追加する。実装内容・再入ガードの考え方は
+        /// OutlineTreeItemRequestBringIntoViewと同一で、対象のTreeViewとフラグだけが異なる。
+        /// </summary>
+        /// <param name="a_sender">イベントの発生元（対象のTreeViewItem）。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private bool m_suppressFolderBringIntoViewFixupFlg;
+
+        private void FolderTreeItemRequestBringIntoView(object a_sender, RequestBringIntoViewEventArgs a_args)
+        {
+            if (m_suppressFolderBringIntoViewFixupFlg)
+            {
+                return; // このメソッド自身が下で発行した再要求。無限ループを避けるため何もしない。
+            }
+            if (a_sender is FrameworkElement fe)
+            {
+                a_args.Handled = true;
+                m_suppressFolderBringIntoViewFixupFlg = true;
+                try
+                {
+                    fe.BringIntoView(new Rect(0, 0, 0, fe.ActualHeight));
+                }
+                finally
+                {
+                    m_suppressFolderBringIntoViewFixupFlg = false;
+                }
+            }
+        }
     }
 }
