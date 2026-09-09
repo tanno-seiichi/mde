@@ -122,6 +122,46 @@ namespace mde
             return string.Join("\n\n", lines);
         }
 
+        /// <summary>
+        /// DocumentToMarkdownが生成する文字列の中で、指定したトップレベルブロックの内容が
+        /// 開始する文字位置を求める。モード切替時（Markdownモード→ソースモード）のカーソル
+        /// 位置復元のために使う。DocumentToMarkdownと全く同じ規則（空白のみのブロックは
+        /// 出力されない、ブロック間は"\n\n"で連結）に従って計算するが、DocumentToMarkdown
+        /// 自体は変更しない（既存の呼び出し箇所への影響を避けるため）。
+        /// </summary>
+        /// <param name="a_doc">対象の文書。</param>
+        /// <param name="a_targetBlock">位置を求めたいトップレベルブロック。</param>
+        /// <returns>該当ブロックの開始文字位置。対象ブロックが見つからない、または
+        /// （空白のみで）出力されない場合は -1。</returns>
+        public int GetMarkdownOffsetForBlock(FlowDocument a_doc, Block a_targetBlock)
+        {
+            int offset = 0;
+            bool firstFlg = true;
+            foreach (Block block in a_doc.Blocks)
+            {
+                string s = m_originalTextTracker.TryGetOriginal(block, out var original) ? original : BlockToMarkdown(block);
+                if (string.IsNullOrWhiteSpace(s))
+                {
+                    if (ReferenceEquals(block, a_targetBlock))
+                    {
+                        return -1;
+                    }
+                    continue;
+                }
+                if (!firstFlg)
+                {
+                    offset += 2; // 区切りの "\n\n"
+                }
+                if (ReferenceEquals(block, a_targetBlock))
+                {
+                    return offset;
+                }
+                offset += s.Length;
+                firstFlg = false;
+            }
+            return -1;
+        }
+
         /// <summary>1つのトップレベルブロックを、種類（見出し/段落・コードブロック・箇条書き・表）に
         /// 応じて適切な変換関数へ振り分ける。コードブロック丸ごとコピー機能からも利用される。</summary>
         /// <param name="a_block">対象のブロック。</param>
@@ -685,6 +725,50 @@ namespace mde
             }
 
             m_imageManager.ResolveImages(a_doc);
+        }
+
+        /// <summary>
+        /// ソースモードのテキスト中の指定行番号（0始まり）が、直前のMarkdownToDocument呼び
+        /// 出しで生成されたどのトップレベルブロックに対応するかを、ブロックのインデックス
+        /// （0始まり）で返す。モード切替時（ソースモード→Markdownモード）のカーソル位置
+        /// 復元のために使う。MarkdownToDocumentが各ブロックについて記憶する元テキスト
+        /// （OriginalTextTracker）を使って、変換後の行範囲を逆算する仕組みのため、
+        /// MarkdownToDocument呼び出し直後（まだ何も編集されていない状態）でのみ正しく
+        /// 動作する。
+        /// </summary>
+        /// <param name="a_doc">MarkdownToDocumentの呼び出し直後のFlowDocument。</param>
+        /// <param name="a_md">MarkdownToDocumentに渡したのと同じソーステキスト。</param>
+        /// <param name="a_targetLine">カーソルがあった行番号（0始まり）。</param>
+        /// <returns>対応するトップレベルブロックのインデックス。ブロックが1つもなければ -1。</returns>
+        public int FindBlockIndexForSourceLine(FlowDocument a_doc, string a_md, int a_targetLine)
+        {
+            var lines = a_md.Replace("\r\n", "\n").Split('\n');
+            int cursor = 0;
+            int idx = 0;
+            int lastIdx = -1;
+            foreach (Block block in a_doc.Blocks)
+            {
+                while (cursor < lines.Length && IsEffectivelyBlankLine(lines[cursor]))
+                {
+                    cursor++;
+                }
+                if (!m_originalTextTracker.TryGetOriginal(block, out var original))
+                {
+                    idx++;
+                    continue;
+                }
+                var blockLines = original.Replace("\r\n", "\n").Split('\n');
+                int start = cursor;
+                int end = start + blockLines.Length;
+                if (a_targetLine < end)
+                {
+                    return idx;
+                }
+                cursor = end;
+                lastIdx = idx;
+                idx++;
+            }
+            return lastIdx;
         }
 
         /// <summary>

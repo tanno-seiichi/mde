@@ -1452,21 +1452,71 @@ namespace mde
 
             if (!m_isSourceModeFlg)
             {
+                // モード切替の前後でカーソル位置が大きくずれないよう、切替前にカーソルが
+                // あったトップレベルブロック（段落・見出し・箇条書き・表など）を覚えておき、
+                // 変換後のMarkdown文字列の中で、そのブロックに対応する開始位置へキャレットを
+                // 移動する。文字単位の完全な位置ではなく、ブロック単位での近似的な復元だが、
+                // 「切り替えるたびに必ず先頭へ戻ってしまう」問題は解消できる。
+                Block caretBlock = m_originalTextTracker.GetTopLevelBlock(m_editor.CaretPosition);
+
                 m_sourceEditor.Text = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
                 m_editor.Visibility = Visibility.Collapsed;
                 m_sourceEditor.Visibility = Visibility.Visible;
                 m_isSourceModeFlg = true;
                 m_toggleModeBtn.Content = "Markdownモードに切替";
                 m_sourceEditor.Focus();
+
+                if (null != caretBlock)
+                {
+                    int offset = m_markdownConverter.GetMarkdownOffsetForBlock(m_editor.Document, caretBlock);
+                    if (offset >= 0 && offset <= m_sourceEditor.Text.Length)
+                    {
+                        m_sourceEditor.CaretIndex = offset;
+                        int line = m_sourceEditor.GetLineIndexFromCharacterIndex(offset);
+                        if (line >= 0)
+                        {
+                            // ScrollToLineは「見えていなければ最小限だけスクロールする」仕様のため、
+                            // 既に見えている行だと一番上への移動が起きないことがある。他のスクロール
+                            // 処理（RestoreEditorScrollAnchor等）と同じ対策で、先に一旦先頭へ
+                            // スクロール位置をリセットしてから改めて対象行へスクロールする。
+                            m_sourceEditor.ScrollToLine(0);
+                            m_sourceEditor.ScrollToLine(line);
+                        }
+                    }
+                }
             }
             else
             {
-                RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(m_sourceEditor.Text, m_editor.Document));
+                // 逆方向も同様に、ソースモードでのカーソル位置（行番号）から、Markdownモードへ
+                // 戻した後の対応するトップレベルブロックを特定し、変換完了後にそのブロックの
+                // 先頭へキャレットを移動する。
+                string sourceText = m_sourceEditor.Text;
+                int caretLine = m_sourceEditor.GetLineIndexFromCharacterIndex(m_sourceEditor.CaretIndex);
+
+                RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(sourceText, m_editor.Document));
                 m_sourceEditor.Visibility = Visibility.Collapsed;
                 m_editor.Visibility = Visibility.Visible;
                 m_isSourceModeFlg = false;
                 m_toggleModeBtn.Content = "ソースモードに切替";
                 m_outlineManager.Refresh();
+
+                int blockIndex = caretLine >= 0
+                    ? m_markdownConverter.FindBlockIndexForSourceLine(m_editor.Document, sourceText, caretLine)
+                    : -1;
+                Block targetBlock = (blockIndex >= 0 && blockIndex < m_editor.Document.Blocks.Count)
+                    ? m_editor.Document.Blocks.ElementAt(blockIndex)
+                    : null;
+                if (null != targetBlock)
+                {
+                    m_editor.CaretPosition = targetBlock.ContentStart;
+                    targetBlock.BringIntoView();
+                }
+                else
+                {
+                    // 対応するブロックが見つからない場合は、既存の（＝このカーソル位置復元機能を
+                    // 追加する前からの）挙動と同じく、文書の先頭へ設定する。
+                    m_editor.CaretPosition = m_editor.Document.ContentStart;
+                }
                 m_editor.Focus();
             }
 
