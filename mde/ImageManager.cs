@@ -1,6 +1,6 @@
 ﻿// ImageManager.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // 埋め込み画像を担当するクラス。画像ソースの解決・サイズ調整、エクスプローラーからの
 // ドラッグ&ドロップでの挿入、画像をエクスプローラーへドラッグして書き出す機能、
 // 保存前の一時フォルダへの退避などを扱う。
@@ -109,7 +109,7 @@ namespace mde
             return img;
         }
 
-        /// <summary>MarkDownの ![a_alt](a_src "a_title") 記法からImage要素を組み立てる。</summary>
+        /// <summary>Markdownの ![a_alt](a_src "a_title") 記法からImage要素を組み立てる。</summary>
         /// <param name="a_alt">代替テキスト。</param>
         /// <param name="a_src">画像のパス/URL。</param>
         /// <param name="a_title">タイトル属性（省略時はnull）。</param>
@@ -391,7 +391,7 @@ namespace mde
 
         /// <summary>画像のsrc（絶対パス・http(s) URL・現在のファイルからの相対パス）を解決して読み込む。</summary>
         /// <param name="a_img">対象の画像要素。</param>
-        /// <param name="a_src">MarkDownに書かれていたパス/URL。</param>
+        /// <param name="a_src">Markdownに書かれていたパス/URL。</param>
         public void SetImageSource(Image a_img, string a_src)
         {
             if (string.IsNullOrWhiteSpace(a_src))
@@ -788,9 +788,9 @@ namespace mde
         /// 文書の保存先フォルダが判明したタイミング（初回のSave/Save As）で呼ばれる。OSの
         /// 一時フォルダに退避されていた画像を、保存先の隣にある「&lt;ファイル名&gt;.images」
         /// フォルダ（ファイルごとに専用、なければ作成する）へ移動し、各画像が記憶している
-        /// パスをMarkDown書き出し用の最終的な相対パスに更新する。ファイルごとに専用の
+        /// パスをMarkdown書き出し用の最終的な相対パスに更新する。ファイルごとに専用の
         /// フォルダ名（拡張子を除いたファイル名+".images"）を使うことで、同じフォルダに
-        /// 複数のMarkDownファイルを保存しても、画像が混在せず区別できるようにしている。
+        /// 複数のMarkdownファイルを保存しても、画像が混在せず区別できるようにしている。
         /// </summary>
         /// <param name="a_doc">対象の文書。</param>
         public void RelocatePendingTempImages(FlowDocument a_doc)

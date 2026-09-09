@@ -1,8 +1,8 @@
 ﻿// BlockStyles.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // 見出し・コードブロックの見た目（フォントサイズ・余白・枠線など）を適用する静的ヘルパー。
-// MarkDown解析（MarkdownConverter）と、右クリックでの段落種別変更（HeadingCodeBlockEditor）の
+// Markdown解析（MarkdownConverter）と、右クリックでの段落種別変更（HeadingCodeBlockEditor）の
 // 両方から共有で使われるため、状態を持たない静的メソッドとして独立させている。
 
 using System.Globalization;

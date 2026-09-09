@@ -1,6 +1,6 @@
 ﻿// MainWindow.xaml.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // アプリのメインウィンドウ。ここでは各機能クラス（MarkdownConverter、TableEditor、
 // ListEditor、HeadingCodeBlockEditor、InlineStyleEditor、ImageManager、SearchReplaceService、
 // OutlineManager、FolderTreeManager）をすべて構築し、コンストラクタで必要なdelegateを配線する。
@@ -26,9 +26,9 @@ using System.Windows.Media;
 namespace mde
 {
     /// <summary>
-    /// mdeの唯一のメインウィンドウ。1つのRichTextBox（MarkDownモード）と1つのプレーンな
+    /// mdeの唯一のメインウィンドウ。1つのRichTextBox（Markdownモード）と1つのプレーンな
     /// TextBox（ソースモード）を中心に、フォルダペイン・アウトラインペインを備えたWYSIWYG
-    /// MarkDownエディタ。実際の編集ロジックは役割ごとに独立したクラスへ委譲している。
+    /// Markdownエディタ。実際の編集ロジックは役割ごとに独立したクラスへ委譲している。
     /// </summary>
     public partial class MainWindow : Window
     {
@@ -70,7 +70,7 @@ namespace mde
 
         /// <summary>まだディスクに書き出されていない、メモリ上だけの編集内容（フォルダ全体の
         /// 置換、または編集中のファイルから離れた際に発生する）。キー=絶対パス、値=そのファイルの
-        /// 現在のMarkDown内容。</summary>
+        /// 現在のMarkdown内容。</summary>
         private readonly Dictionary<string, string> m_pendingFileEdits =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -84,7 +84,7 @@ namespace mde
 
         /// <summary>段落中の途中改行（空行を伴わない、ソース上の単純な改行）を、そのまま
         /// 見た目の改行として表示するか（true。既定値。mde/Typoraの従来動作）、それとも
-        /// 空行が入るまでは改行しない、CommonMark/VSCodeのMarkDownプレビュー標準の表示に
+        /// 空行が入るまでは改行しない、CommonMark/VSCodeのMarkdownプレビュー標準の表示に
         /// するか（false）。メニュー「表示」→「段落中の改行」で切り替えられる。</summary>
         private bool m_preserveSourceLineBreaksFlg = true;
 
@@ -273,7 +273,7 @@ namespace mde
                     $"CanUndo={m_editor.CanUndo} CanRedo={m_editor.CanRedo}");
             m_imeDebugHeartbeatTimer.Start();
 
-            // 起動時引数でMarkDownファイルのパスを受け取っていれば、そちらを開く
+            // 起動時引数でMarkdownファイルのパスを受け取っていれば、そちらを開く
             // （ファイルの関連付けからのダブルクリック起動などに対応するため）。
             string startupFilePath = ResolveStartupFilePath();
             if (!string.IsNullOrEmpty(startupFilePath) && File.Exists(startupFilePath))
@@ -455,7 +455,7 @@ namespace mde
         }
 
         /// <summary>
-        /// 起動時のコマンドライン引数からMarkDownファイルのパスを取り出す。ファイルの関連付けで
+        /// 起動時のコマンドライン引数からMarkdownファイルのパスを取り出す。ファイルの関連付けで
         /// 「プログラムから開く」を使った場合や、コマンドプロンプトから直接パスを指定して
         /// 起動した場合などに対応するためのもの。引数が無ければnullを返す。
         /// </summary>
@@ -731,7 +731,7 @@ namespace mde
         // ======================================================================
 
         /// <summary>
-        /// MarkDownモードのメイン変更ハンドラ：ファイルをダーティにし、アウトラインを再構築し、
+        /// Markdownモードのメイン変更ハンドラ：ファイルをダーティにし、アウトラインを再構築し、
         /// 触れたブロックの「元テキスト保持」の記憶を破棄する。実際のユーザー入力によるものだけ
         /// （プログラムによる変更でなければ）、インライン装飾・箇条書き/見出しへの自動変換の
         /// トリガーもチェックする。
@@ -979,8 +979,8 @@ namespace mde
         }
 
         /// <summary>
-        /// 他アプリ（他のMarkDownアプリ含む）や、Xaml/Rtf形式を伴わない生のテキストが
-        /// クリップボードから貼り付けられた時、そのテキストをMarkDownのインライン記法
+        /// 他アプリ（他のMarkdownアプリ含む）や、Xaml/Rtf形式を伴わない生のテキストが
+        /// クリップボードから貼り付けられた時、そのテキストをMarkdownのインライン記法
         /// （**太字**・~~取り消し線~~・&lt;u&gt;下線&lt;/u&gt;・`コード`・[リンク](url)等）として
         /// 解釈しながら挿入する。mde自身や他のリッチテキストアプリ（Xaml/Rtf形式を伴う）からの
         /// 貼り付けは、WPF標準のリッチテキスト貼り付けにそのまま任せる（何もしない）。
@@ -1259,7 +1259,7 @@ namespace mde
             m_deleteImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_textStyleMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
             m_linkMenuItem.Visibility = null != m_inlineStyleEditor.ContextLinkRun ? Visibility.Visible : Visibility.Collapsed;
-            m_toggleModeMenuItem.Header = m_isSourceModeFlg ? "MarkDownモードに切り替え" : "ソースモードに切り替え";
+            m_toggleModeMenuItem.Header = m_isSourceModeFlg ? "Markdownモードに切り替え" : "ソースモードに切り替え";
             UpdateHeadingMenuState();
         }
 
@@ -1438,10 +1438,10 @@ namespace mde
         }
 
         // ======================================================================
-        //  モード切り替え（MarkDown ⇔ ソース）
+        //  モード切り替え（Markdown ⇔ ソース）
         // ======================================================================
 
-        /// <summary>MarkDownモード（WYSIWYG）とソースモード（生テキスト）を切り替える。</summary>
+        /// <summary>Markdownモード（WYSIWYG）とソースモード（生テキスト）を切り替える。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         private void ToggleModeBtnClick(object a_sender, RoutedEventArgs a_args)
@@ -1851,7 +1851,7 @@ namespace mde
         }
 
         /// <summary>
-        /// 保存時に書き出すMarkDownテキストを、一時フォルダに残ったままの画像（WYSIWYGモードで
+        /// 保存時に書き出すMarkdownテキストを、一時フォルダに残ったままの画像（WYSIWYGモードで
         /// ドラッグ&amp;ドロップ挿入した直後、まだ一度も保存していない画像）を
         /// "&lt;ファイル名&gt;.images"フォルダへ退避・パス書き換えした上で返す。WYSIWYGモードで
         /// 画像を挿入した直後にソースモードへ切り替えてそのまま保存した場合も退避が必要なため、
@@ -1861,7 +1861,7 @@ namespace mde
         /// 書き換え後のテキストを m_sourceEditor.Text へも反映しておく（同じ一時ファイルを
         /// 次回保存時に再び探しに行って失敗することがないように）。
         /// </summary>
-        /// <returns>保存すべきMarkDownテキスト。</returns>
+        /// <returns>保存すべきMarkdownテキスト。</returns>
         private string GetMarkdownForSaveWithImageRelocation()
         {
             if (!m_isSourceModeFlg)
@@ -1998,7 +1998,7 @@ namespace mde
         {
             if (m_isSourceModeFlg)
             {
-                MessageBox.Show("PDFへの書き出しはMarkDownモードでのみ利用できます。", "PDFに書き出し",
+                MessageBox.Show("PDFへの書き出しはMarkdownモードでのみ利用できます。", "PDFに書き出し",
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -2088,7 +2088,7 @@ namespace mde
                     var pageSize = new Size(dlg.PrintableAreaWidth, dlg.PrintableAreaHeight);
                     var marginPaginator = new MarginDocumentPaginator(innerPaginator, pageSize, margin);
 
-                    // 編集中のMarkDownファイル名から拡張子を除いたものを、書き出すPDFの既定の
+                    // 編集中のMarkdownファイル名から拡張子を除いたものを、書き出すPDFの既定の
                     // ファイル名にする（例：「README.md」→「README.pdf」）。
                     string docName = !string.IsNullOrEmpty(m_currentFilePath)
                         ? Path.GetFileNameWithoutExtension(m_currentFilePath) : "無題";
@@ -2731,7 +2731,7 @@ namespace mde
         }
 
         /// <summary>メニュー「表示」→「段落中の改行」→「空行が入るまで改行しない」
-        /// （CommonMark/VSCodeのMarkDownプレビュー標準の表示）。</summary>
+        /// （CommonMark/VSCodeのMarkdownプレビュー標準の表示）。</summary>
         /// <param name="a_sender">メニュー項目。</param>
         /// <param name="a_args">Click event.</param>
         private void LineBreakModeBlankOnlyChecked(object a_sender, RoutedEventArgs a_args)
@@ -2739,12 +2739,12 @@ namespace mde
             SetPreserveSourceLineBreaksFlg(false);
         }
 
-        /// <summary>段落中の改行の扱いの設定を変更する。MarkDownモードで文書を表示中であれば、
-        /// 現在の内容を一旦MarkDownテキストへ書き出してから読み直すことで、新しい設定を
+        /// <summary>段落中の改行の扱いの設定を変更する。Markdownモードで文書を表示中であれば、
+        /// 現在の内容を一旦Markdownテキストへ書き出してから読み直すことで、新しい設定を
         /// その場で反映させる（LoadFile等、文書を丸ごと差し替える他の処理と同じパターン）。
         /// 文書再構築直後のキャレット位置は不定・不確実になりうるため、LoadFile等の既存箇所に
         /// ならい、独自のキャレット位置の保持・復元は一切試みず、
-        /// 常に文書の先頭へ明示的に設定する。ソースモード中は、次にMarkDownモードへ切り替え
+        /// 常に文書の先頭へ明示的に設定する。ソースモード中は、次にMarkdownモードへ切り替え
         /// られた際の変換に反映されるよう、設定値を変更するだけにとどめる。</summary>
         /// <param name="a_value">true＝ソースの通りに改行する、false＝空行が入るまで改行しない。</param>
         private void SetPreserveSourceLineBreaksFlg(bool a_value)
@@ -2784,7 +2784,7 @@ namespace mde
         /// 関わらず常にこの固定値のままにしている）。ただし固定値をゼロにはしない：見出し・
         /// コードブロック・水平線はそれぞれ固有のMarginを明示的に持っているのに対し、通常の
         /// 段落・リスト・表はこの共有の値だけを頼りにしているため、ここがゼロだと、空行
-        /// 区切りのMarkDown段落どうしが単純な行の折り返しと見分けが付かなくなってしまう。</summary>
+        /// 区切りのMarkdown段落どうしが単純な行の折り返しと見分けが付かなくなってしまう。</summary>
         /// <param name="a_value">設定したい行間の値。</param>
         private void ApplyEditorLineHeight(double a_value)
         {
@@ -2884,7 +2884,7 @@ namespace mde
         /// スクロール位置保持に使う）。RestoreEditorScrollAnchorで初回使用時に取得する。</summary>
         private ScrollViewer m_editorScrollViewer;
 
-        /// <summary>CaptureEditorScrollAnchorが覚えておく、MarkDownモード時のスクロール位置。
+        /// <summary>CaptureEditorScrollAnchorが覚えておく、Markdownモード時のスクロール位置。
         /// 「左上端に見えている段落」そのものと、その段落のどのくらいの割合が上端より上に
         /// スクロールされているか（0=段落の先頭が見えている、1に近いほど段落の末尾近くまで
         /// スクロール済み）を保持する。ピクセル量ではなく段落に対する割合で覚えておくのは、
@@ -2904,7 +2904,7 @@ namespace mde
         /// スクロール量（ピクセル位置）をそのまま維持するだけでは全く違う場所が表示されて
         /// しまう。そこで、幅変更後にRestoreEditorScrollAnchorで同じ場所へスクロールし直す
         /// ための情報をここで集めておく。</summary>
-        /// <returns>MarkDownモードならEditorScrollAnchor、ソースモードなら一番上に見えている
+        /// <returns>MarkdownモードならEditorScrollAnchor、ソースモードなら一番上に見えている
         /// 行の先頭文字インデックス（int）。復元できる情報が無ければnull。</returns>
         private object CaptureEditorScrollAnchor()
         {

@@ -1,7 +1,7 @@
 ﻿// MarkdownConverter.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
-// MarkDownテキストとFlowDocument（画面表示用の内部構造）を相互に変換するクラス。
+// mde (Markdown インラインエディタ) の一部。
+// MarkdownテキストとFlowDocument（画面表示用の内部構造）を相互に変換するクラス。
 // 画像の生成・解決にはImageManagerを、「編集していないブロックは元テキストのまま保存」の
 // 仕組みにはOriginalTextTrackerを、それぞれ協力オブジェクトとして利用する。
 
@@ -18,7 +18,7 @@ using System.Windows.Media;
 namespace mde
 {
     /// <summary>
-    /// MarkDown文字列 ⇔ FlowDocument の相互変換一式。見出し・段落・箇条書き（入れ子・順序付き
+    /// Markdown文字列 ⇔ FlowDocument の相互変換一式。見出し・段落・箇条書き（入れ子・順序付き
     /// 含む）・表・コードブロック・インライン装飾（太字/取り消し線/インラインコード/リンク/画像）
     /// に対応する。
     /// </summary>
@@ -39,7 +39,7 @@ namespace mde
         private const string ALIGN_LEFT_EXPLICIT_TAG = "align-left-explicit";
 
         /// <summary>
-        /// 文中の画像（HTML/MarkDown）、`コード`、**太字**、~~取り消し線~~、&lt;u&gt;下線&lt;/u&gt;、
+        /// 文中の画像（HTML/Markdown）、`コード`、**太字**、~~取り消し線~~、&lt;u&gt;下線&lt;/u&gt;、
         /// ==ハイライト==、[リンク](a_url)、&lt;https://...&gt; 自動リンク、
         /// &lt;email@example.com&gt; メールアドレス自動リンク を検出する正規表現。
         /// CommonMark/GFMには下線の標準的な記法がないため、下線はHTMLの&lt;u&gt;タグをそのまま
@@ -87,7 +87,7 @@ namespace mde
         /// <param name="a_imageManager">画像の生成・解決を担当するクラス。</param>
         /// <param name="a_preserveSourceLineBreaksFlg">段落中の途中改行（空行を伴わない、ソース上の
         /// 単純な改行）を、そのまま見た目の改行として表示するか（true。mde/Typora従来の表示）、
-        /// それとも空行が入るまでは改行しない、CommonMark/VSCodeのMarkDownプレビュー標準の表示に
+        /// それとも空行が入るまでは改行しない、CommonMark/VSCodeのMarkdownプレビュー標準の表示に
         /// するか（false）を返すデリゲート。省略時（null）はtrue（従来動作）として扱う。</param>
         public MarkdownConverter(OriginalTextTracker a_originalTextTracker, ImageManager a_imageManager,
             Func<bool> a_preserveSourceLineBreaksFlg = null)
@@ -98,16 +98,16 @@ namespace mde
         }
 
         // ======================================================================
-        //  FlowDocument → MarkDown
+        //  FlowDocument → Markdown
         // ======================================================================
 
         /// <summary>
-        /// FlowDocumentをMarkDown文字列へ書き出す。編集されていないブロックは元テキストを
+        /// FlowDocumentをMarkdown文字列へ書き出す。編集されていないブロックは元テキストを
         /// そのまま使い（OriginalTextTracker参照）、編集済み・新規のブロックは現在の構造から
         /// 新しく組み立て直す。
         /// </summary>
         /// <param name="a_doc">対象の文書。</param>
-        /// <returns>改行はすべて "\n" のMarkDownテキスト（実ファイルへの改行コード変換は保存時に行う）。</returns>
+        /// <returns>改行はすべて "\n" のMarkdownテキスト（実ファイルへの改行コード変換は保存時に行う）。</returns>
         public string DocumentToMarkdown(FlowDocument a_doc)
         {
             var lines = new List<string>();
@@ -125,7 +125,7 @@ namespace mde
         /// <summary>1つのトップレベルブロックを、種類（見出し/段落・コードブロック・箇条書き・表）に
         /// 応じて適切な変換関数へ振り分ける。コードブロック丸ごとコピー機能からも利用される。</summary>
         /// <param name="a_block">対象のブロック。</param>
-        /// <returns>変換後のMarkDown文字列。</returns>
+        /// <returns>変換後のMarkdown文字列。</returns>
         public string BlockToMarkdown(Block a_block)
         {
             if (a_block is Paragraph p)
@@ -157,13 +157,13 @@ namespace mde
         }
 
         /// <summary>
-        /// 箇条書き（入れ子含む）をMarkDownへ書き出す。順序付きリストは連番で書き出すが、
+        /// 箇条書き（入れ子含む）をMarkdownへ書き出す。順序付きリストは連番で書き出すが、
         /// リストが「常に同じ数字を使う」スタイル（Tag=="const"）としてマークされている場合は
         /// すべての項目を "1." として書き出す。
         /// </summary>
         /// <param name="a_list">対象のリスト。</param>
         /// <param name="a_level">見出しレベル。</param>
-        /// <returns>変換後のMarkDown文字列。</returns>
+        /// <returns>変換後のMarkdown文字列。</returns>
         private string ListToMarkdown(List a_list, int a_level)
         {
             string indent = new string(' ', a_level * 3);
@@ -197,9 +197,9 @@ namespace mde
             return string.Join("\n", lines);
         }
 
-        /// <summary>表をGitHub-flavored MarkDown形式の表構文へ書き出す。</summary>
+        /// <summary>表をGitHub-flavored Markdown形式の表構文へ書き出す。</summary>
         /// <param name="a_table">対象の表。</param>
-        /// <returns>変換後のMarkDown文字列。</returns>
+        /// <returns>変換後のMarkdown文字列。</returns>
         private string TableToMarkdown(Table a_table)
         {
             var rows = new List<TableRow>();
@@ -267,10 +267,10 @@ namespace mde
             return string.Join("\n", result);
         }
 
-        /// <summary>段落のInlinesをMarkDownテキストへ書き出す（見出し・段落・箇条書き項目・
+        /// <summary>段落のInlinesをMarkdownテキストへ書き出す（見出し・段落・箇条書き項目・
         /// 表セルの内容で共通して使う）。</summary>
         /// <param name="a_p">対象の段落。</param>
-        /// <returns>変換後のMarkDown文字列。</returns>
+        /// <returns>変換後のMarkdown文字列。</returns>
         private string ParagraphInlineToMarkdown(Paragraph a_p)
         {
             var sb = new StringBuilder();
@@ -398,9 +398,9 @@ namespace mde
             }
         }
 
-        /// <summary>埋め込み画像を、元の記法（MarkDownの![]()、またはHTMLの&lt;a_img&gt;）に戻す。</summary>
+        /// <summary>埋め込み画像を、元の記法（Markdownの![]()、またはHTMLの&lt;a_img&gt;）に戻す。</summary>
         /// <param name="a_img">対象の画像。</param>
-        /// <returns>変換後のMarkDown文字列（画像の記法）。</returns>
+        /// <returns>変換後のMarkdown文字列（画像の記法）。</returns>
         private string ImageToMarkdownString(Image a_img)
         {
             var info = a_img.Tag as ImageInfo;
@@ -428,16 +428,16 @@ namespace mde
         }
 
         // ======================================================================
-        //  MarkDown → FlowDocument
+        //  Markdown → FlowDocument
         // ======================================================================
 
         /// <summary>
-        /// MarkDown文字列全体を解析し、FlowDocumentへ反映する。見出し・フェンス付き
+        /// Markdown文字列全体を解析し、FlowDocumentへ反映する。見出し・フェンス付き
         /// コードブロック・箇条書き（入れ子・「緩い」リストの空行含む）・順序付きリスト・表・
         /// 通常の段落に対応する。各ブロックの元のソーステキストも記憶し、
         /// あとで無編集のまま保存する場合にそのまま使えるようにする。
         /// </summary>
-        /// <param name="a_md">解析するMarkDownソース。</param>
+        /// <param name="a_md">解析するMarkdownソース。</param>
         /// <param name="a_doc">反映先の文書（最初にクリアされる）。</param>
         public void MarkdownToDocument(string a_md, FlowDocument a_doc)
         {
@@ -532,7 +532,7 @@ namespace mde
                         if (string.IsNullOrWhiteSpace(lines[i]))
                         {
                             // 空行だけでリストが終わるのは、その後に非リスト行が続く場合のみ。
-                            // 空行の先にもリスト項目が続くなら（標準MarkDownの「緩いリスト」）、
+                            // 空行の先にもリスト項目が続くなら（標準Markdownの「緩いリスト」）、
                             // 同じリストとして扱い続ける。
                             int j = i;
                             while (j < lines.Length && string.IsNullOrWhiteSpace(lines[j]))
@@ -718,7 +718,7 @@ namespace mde
         /// ToParagraphが後段でこれを実際のLineBreakへ変換し、mde/Typora従来通り、ソース上の
         /// 改行がそのまま見た目の改行になる）。「空行が入るまで改行しない」なら、各行の前後の
         /// 空白を落としたうえで単純な半角スペース1つでつなぐ（結果に"\n"が含まれなくなるため、
-        /// 後段でLineBreakは一切生成されず、CommonMark/VSCodeのMarkDownプレビューと同じく、
+        /// 後段でLineBreakは一切生成されず、CommonMark/VSCodeのMarkdownプレビューと同じく、
         /// 空行が入るまでは改行されずに1つの段落として続けて表示される）。
         /// </summary>
         /// <param name="a_lines">結合対象のソース行一覧。</param>
@@ -990,7 +990,7 @@ namespace mde
             FlushPendingItem();
 
             // ソースがすべての項目で同じ数字を使っていた場合（例: "1." / "1." / "1."。
-            // レンダラーに自動採番させる一般的なMarkDownの書き方）は、そのスタイルを維持する。
+            // レンダラーに自動採番させる一般的なMarkdownの書き方）は、そのスタイルを維持する。
             // ListToMarkdown は連番ではなく常に "1." で書き出すようになる。
             foreach (var kv in numbersByList)
             {

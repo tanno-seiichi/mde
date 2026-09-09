@@ -1,6 +1,6 @@
 ﻿// TableEditor.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // 表(Table)の編集を担当するクラス。行・列の挿入/削除、セル間の矢印キー移動、
 // Excelとのコピー&ペースト連携(TSV/HTML形式)を扱う。
 // MainWindow本体への参照は持たず、必要な操作はコンストラクタで渡されたdelegate経由で行う。

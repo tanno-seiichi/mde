@@ -1,6 +1,6 @@
 ﻿// Models.cs
 //
-// mde (MarkDown インラインエディタ) の一部。
+// mde (Markdown インラインエディタ) の一部。
 // 複数のクラスで共有される、状態を持たない小さなデータ保持用クラス群。
 
 using System.ComponentModel;
@@ -20,19 +20,19 @@ namespace mde
         // 対象にする。フィールドのままだとRunのTagに持たせたこのオブジェクトの中身が
         // コピー&ペースト時に失われる可能性があるため、自動実装プロパティにしている。
 
-        /// <summary>MarkDown/HTML上に書かれていた元のsrc（相対パス・絶対パス・URLなど）。</summary>
+        /// <summary>Markdown/HTML上に書かれていた元のsrc（相対パス・絶対パス・URLなど）。</summary>
         public string m_originalSrc { get; set; }
 
         /// <summary>alt属性（代替テキスト）。</summary>
         public string m_alt { get; set; }
 
-        /// <summary>HTML形式の場合のstyle属性。MarkDown形式では未使用。</summary>
+        /// <summary>HTML形式の場合のstyle属性。Markdown形式では未使用。</summary>
         public string m_style { get; set; }
 
         /// <summary>元の記法。"html"（&lt;img&gt;タグ）または"md"（![alt](src)）。</summary>
         public string m_format { get; set; }
 
-        /// <summary>MarkDown形式の場合の、![alt](src "title")のタイトル部分（省略時はnull）。</summary>
+        /// <summary>Markdown形式の場合の、![alt](src "title")のタイトル部分（省略時はnull）。</summary>
         public string m_title { get; set; }
     }
 
@@ -75,7 +75,7 @@ namespace mde
         /// <summary>true の場合、&lt;url&gt; 形式（山括弧の自動リンク）から読み込まれたことを示す。</summary>
         public bool m_isAutoLinkFlg { get; set; }
 
-        /// <summary>MarkDown形式の場合の、[text](url "title")のタイトル部分（省略時はnull）。</summary>
+        /// <summary>Markdown形式の場合の、[text](url "title")のタイトル部分（省略時はnull）。</summary>
         public string m_title { get; set; }
 
         /// <summary>true の場合、&lt;email@example.com&gt; 形式（山括弧のメールアドレス自動リンク）
