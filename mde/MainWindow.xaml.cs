@@ -188,7 +188,7 @@ namespace mde
             m_originalTextTracker = new OriginalTextTracker(m_editor);
             m_lineEndingTracker = new LineEndingTracker(PathsReferToSameFile);
             m_outlineManager = new OutlineManager(m_editor);
-            m_outlineManager.HeadingSelected += ScrollOutlineListToEntry;
+            m_outlineManager.HeadingSelected += ScrollOutlineTreeToEntry;
             m_imageManager = new ImageManager(
                 m_editor, m_originalTextTracker, () => m_isSourceModeFlg, () => m_currentFileDirectory,
                 () => m_currentFilePath,
@@ -215,7 +215,7 @@ namespace mde
                 m_outlineManager.SelectHeadingForPosition);
 
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version;
-            m_outlineList.ItemsSource = m_outlineManager.Items;
+            m_outlineTree.ItemsSource = m_outlineManager.Items;
             m_folderTree.ItemsSource = m_folderTreeManager.Roots;
             DataObject.AddCopyingHandler(m_editor, m_tableEditor.HandleCopying);
             // クリップボードの画像貼り付け対応。ブラウザ等からコピーした画像はHTML/テキストも
@@ -3066,25 +3066,117 @@ namespace mde
             m_folderTreeScrollViewer = FindVisualChild<ScrollViewer>(m_folderTree);
         }
 
+        /// <summary>アウトラインペイン内部のScrollViewerへの参照（選択項目切り替え後の横スクロール
+        /// リセットに使う。フォルダペインのm_folderTreeScrollViewerと同じ考え方）。</summary>
+        private ScrollViewer m_outlineTreeScrollViewer;
+
+        private void OutlineTreeLoaded(object a_sender, RoutedEventArgs a_args)
+        {
+            m_outlineTreeScrollViewer = FindVisualChild<ScrollViewer>(m_outlineTree);
+        }
+
         /// <summary>
         /// アウトラインペインで、指定した見出し項目を選択状態にし、見えていなければ見える位置まで
-        /// スクロールする。ListBoxは標準でScrollIntoViewを持っているため、フォルダペインの
-        /// TreeViewのような複雑なコンテナ探索は不要。エディタ側の処理と干渉しないよう、
-        /// アプリケーションが完全にアイドル状態（ApplicationIdle優先度）になってから実行する。
+        /// スクロールする。フォルダペインのScrollFolderTreeToNodeと同じ考え方：TreeView.
+        /// SelectedItemは読み取り専用のため、データ側のIsSelectedを立てたうえで、対応する
+        /// TreeViewItem（表示上のコンテナ）をルートから順にたどって探し、BringIntoViewする。
+        /// エディタ側の処理と干渉しないよう、アプリケーションが完全にアイドル状態
+        /// （ApplicationIdle優先度）になってから実行する。
         /// </summary>
         /// <param name="a_entry">選択したい見出し項目。</param>
-        private void ScrollOutlineListToEntry(OutlineEntry a_entry)
+        private void ScrollOutlineTreeToEntry(OutlineEntry a_entry)
         {
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                // SelectedItemを変更すると、ユーザーが手でクリックした時と同じ
-                // SelectionChangedイベントが発生し、エディタのキャレットが見出しの先頭へ
-                // 動いてしまう。ここではあくまで「今どこにいるか」を表示に反映したいだけ
-                // なので、そのナビゲーションを抑止しておく。
+                var path = FindOutlinePathToItem(m_outlineManager.Items, a_entry);
+                if (null == path)
+                {
+                    return;
+                }
+                // 対象の見出しが、折りたたまれた祖先見出しの中にある場合、隠れて見えなくならない
+                // よう、経路上の祖先をすべて展開状態にする（フォルダペインのSelectFileNodeRecursive
+                // が経路上のフォルダをIsExpanded=trueにするのと同じ考え方）。
+                for (int i = 0; i < path.Count - 1; i++)
+                {
+                    path[i].IsExpanded = true;
+                }
+                // IsSelectedを立てると、ユーザーが手でクリックした時と同じSelectedItemChanged
+                // イベントが発生し、エディタのキャレットが見出しの先頭へ動いてしまう。ここでは
+                // あくまで「今どこにいるか」を表示に反映したいだけなので、そのナビゲーションを
+                // 抑止しておく。
                 m_outlineManager.SuppressNextSelectionNavigation();
-                m_outlineList.SelectedItem = a_entry;
-                m_outlineList.ScrollIntoView(a_entry);
+                a_entry.IsSelected = true;
+                NavigateToOutlineTreeViewItem(m_outlineTree, path, 0, 0);
             }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
+        /// <summary>アウトラインペインのTreeViewで、ルートから対象までの経路を1階層ずつたどりながら、
+        /// 対応するTreeViewItem（表示上のコンテナ）を探す。フォルダペインのNavigateToTreeViewItemと
+        /// 同じ考え方（展開直後はまだコンテナが生成されていないことがあるため、生成されるまで
+        /// 待って再試行する）。</summary>
+        /// <param name="a_current">現在の階層のItemsControl（TreeViewまたはTreeViewItem）。</param>
+        /// <param name="a_path">ルートから対象までの経路。</param>
+        /// <param name="a_index">現在探している経路上のインデックス。</param>
+        /// <param name="a_retryCount">この階層での再試行回数（無限ループ防止用）。</param>
+        private void NavigateToOutlineTreeViewItem(ItemsControl a_current, List<OutlineEntry> a_path, int a_index, int a_retryCount)
+        {
+            if (a_retryCount > 20)
+            {
+                return; // 想定外の状況が続く場合は諦める（無限ループ防止）
+            }
+
+            var container = a_current.ItemContainerGenerator.ContainerFromItem(a_path[a_index]) as TreeViewItem;
+            if (null == container)
+            {
+                // まだこの階層のコンテナが生成されていない。少し待って再試行する。
+                Dispatcher.BeginInvoke(new Action(() =>
+                    NavigateToOutlineTreeViewItem(a_current, a_path, a_index, a_retryCount + 1)),
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                return;
+            }
+
+            if (a_index == a_path.Count - 1)
+            {
+                container.BringIntoView();
+                // BringIntoViewが対象を横方向にも完全に見せようとして、横スクロールバーを
+                // 右へずらしてしまうことがあるため、その後に横スクロールだけを0へ戻す
+                // （フォルダペインのNavigateToTreeViewItemと同じ対策）。
+                if (null != m_outlineTreeScrollViewer)
+                {
+                    Dispatcher.BeginInvoke(new Action(() =>
+                        m_outlineTreeScrollViewer.ScrollToHorizontalOffset(0)),
+                        System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                }
+                return;
+            }
+
+            // 次の階層（この項目の子）が展開・生成されるのを待ってから進む。
+            Dispatcher.BeginInvoke(new Action(() =>
+                NavigateToOutlineTreeViewItem(container, a_path, a_index + 1, 0)),
+                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
+        /// <summary>アウトラインのツリーで、ルートから対象のデータ項目までの経路（祖先を含む
+        /// 一覧）を探す。フォルダペインのFindPathToItemと同じ考え方。</summary>
+        /// <param name="a_items">探索対象の一覧（このレベルの兄弟項目）。</param>
+        /// <param name="a_target">探したいデータ項目。</param>
+        /// <returns>ルートから対象までの経路。見つからなければnull。</returns>
+        private List<OutlineEntry> FindOutlinePathToItem(IEnumerable<OutlineEntry> a_items, OutlineEntry a_target)
+        {
+            foreach (var item in a_items)
+            {
+                if (item == a_target)
+                {
+                    return new List<OutlineEntry> { item };
+                }
+                var subPath = FindOutlinePathToItem(item.Children, a_target);
+                if (null != subPath)
+                {
+                    subPath.Insert(0, item);
+                    return subPath;
+                }
+            }
+            return null;
         }
 
         /// <summary>
@@ -3211,7 +3303,75 @@ namespace mde
         //  アウトラインペイン
         // ======================================================================
 
-        private void OutlineListSelectionChanged(object a_sender, SelectionChangedEventArgs a_args) =>
+        /// <summary>
+        /// アウトラインペインの選択項目が切り替わると、WPF標準の動作でその項目を横方向にも
+        /// 完全に見えるようスクロールしてしまい、見出しが長い場合に横スクロールバーが右へ
+        /// ずれてしまう。これを防ぐため、選択項目が切り替わるたびに横スクロール位置を強制的に
+        /// 0へ戻す（フォルダペインのFolderTreeSelectedItemChangedと同じ対策）。
+        /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void OutlineTreeSelectedItemChanged(object a_sender, RoutedPropertyChangedEventArgs<object> a_args)
+        {
             m_outlineManager.HandleSelectionChanged(a_sender, a_args);
+
+            if (null != m_outlineTreeScrollViewer)
+            {
+                Dispatcher.BeginInvoke(new Action(() => m_outlineTreeScrollViewer.ScrollToHorizontalOffset(0)),
+                    System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+        }
+
+        /// <summary>
+        /// アウトラインのTreeViewItemは、選択されたりキーボードフォーカスを受け取ったりする
+        /// たびに、既定の動作として自分自身を（横方向も含めて）完全に見えるようスクロール
+        /// しようとする（RequestBringIntoViewイベント）。見出しのテキストは省略せず横スクロール
+        /// で読む作り（フォルダペインの長いファイル名と同じ）にしているため、見出しが長いと、
+        /// 選択するたびにこの既定動作でWPFが見出し全体を見せようと横スクロールバーを右へ
+        /// 動かしてしまう。
+        ///
+        /// フォルダペインでは項目名（ファイル名）が短く、この既定動作によるずれ幅がほとんど
+        /// 無いために目立たないだけで、根本的な原因は同じだと考えられる。対策として、この
+        /// 既定の横スクロールをそもそも起こさせないようにする。要求された範囲（TargetRect）を
+        /// 「幅0（＝項目の左端）・高さは項目の高さのまま」の矩形に置き換えて、改めて
+        /// BringIntoViewし直すことで、縦方向の可視化（一覧を上下にスクロールして選択項目を
+        /// 見えるようにする、という必要な動作）はそのまま保ちつつ、横スクロール位置には
+        /// 一切手を触れさせないようにする。
+        ///
+        /// 【修正履歴】当初、「置き換え済みの要求かどうか」をTargetRect.Widthが0以下かどうかで
+        /// 判定していたが、これは誤りだった。TreeViewItemが選択・フォーカスを受け取った際に
+        /// WPF内部が呼ぶ既定のBringIntoView()（引数なし）は、TargetRectとしてRect.Empty
+        /// （Width・HeightがともにNegativeInfinity）を渡してくる。Rect.Emptyの場合もWidthは
+        /// 0以下と判定されてしまうため、まさに一番防ぎたかった「既定の・引数なしのBringIntoView」
+        /// をこの判定でスキップしてしまい、対策が効かないまま素通りしていた（長い見出し、特に
+        /// 階層の深い見出しを選択した際に、横スクロールが数百ミリ秒にわたって右へずれたまま
+        /// になる形で発覚）。TargetRectの中身で判定するのではなく、「今まさにこのメソッド自身が
+        /// 発行した再要求の処理中かどうか」を示す専用のフラグ（無限ループ防止のための再入
+        /// ガード）で判定するように修正した。
+        /// </summary>
+        /// <param name="a_sender">イベントの発生元（対象のTreeViewItem）。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private bool m_suppressOutlineBringIntoViewFixupFlg;
+
+        private void OutlineTreeItemRequestBringIntoView(object a_sender, RequestBringIntoViewEventArgs a_args)
+        {
+            if (m_suppressOutlineBringIntoViewFixupFlg)
+            {
+                return; // このメソッド自身が下で発行した再要求。無限ループを避けるため何もしない。
+            }
+            if (a_sender is FrameworkElement fe)
+            {
+                a_args.Handled = true;
+                m_suppressOutlineBringIntoViewFixupFlg = true;
+                try
+                {
+                    fe.BringIntoView(new Rect(0, 0, 0, fe.ActualHeight));
+                }
+                finally
+                {
+                    m_suppressOutlineBringIntoViewFixupFlg = false;
+                }
+            }
+        }
     }
 }

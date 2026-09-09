@@ -141,14 +141,27 @@
                                     <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{StaticResource InkBrush}"/>
                                 </Border>
                                 <HierarchicalDataTemplate.Triggers>
-                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
-                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#CBE8F6"/>
-                                        <Setter TargetName="m_matchHighlightBorder" Property="BorderBrush" Value="#26A0DA"/>
-                                        <Setter TargetName="m_matchHighlightBorder" Property="CornerRadius" Value="0"/>
-                                    </DataTrigger>
+                                    <!-- 選択中(IsSelected)・検索一致(IsSearchMatch)は同時に成立しうる
+                                         組み合わせで、どちらもBackgroundを取り合うと片方の情報が
+                                         見えなくなる（DEVELOPMENT_LOG.md 14.7参照）。選択は枠線
+                                         （BorderBrush）、検索一致は背景色（Background）と、別々の
+                                         プロパティで表現することで両立させる。「選択中だが検索一致
+                                         ではない」場合だけ、従来どおりの塗りつぶし背景も付ける
+                                         （単なる選択だけでも見やすいように）。 -->
                                     <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
                                         <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#FFE166"/>
                                     </DataTrigger>
+                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
+                                        <Setter TargetName="m_matchHighlightBorder" Property="BorderBrush" Value="#26A0DA"/>
+                                        <Setter TargetName="m_matchHighlightBorder" Property="CornerRadius" Value="0"/>
+                                    </DataTrigger>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True"/>
+                                            <Condition Binding="{Binding IsSearchMatch}" Value="False"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#CBE8F6"/>
+                                    </MultiDataTrigger>
                                 </HierarchicalDataTemplate.Triggers>
                             </HierarchicalDataTemplate>
                         </TreeView.ItemTemplate>
@@ -164,22 +177,55 @@
                 <DockPanel Margin="0,0,0,0">
                     <TextBlock DockPanel.Dock="Top" Text="アウトライン" FontWeight="Bold" FontSize="12"
                                Margin="8,8,8,6" Foreground="{StaticResource InkBrush}"/>
-                    <ListBox x:Name="m_outlineList" BorderThickness="0" Background="Transparent"
-                             SelectionChanged="OutlineListSelectionChanged">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Border x:Name="m_matchHighlightBorder" Margin="{Binding Indent}" CornerRadius="3" Padding="3,1">
-                                    <TextBlock Text="{Binding Text}" FontSize="{Binding FontSizeValue}"
-                                               TextTrimming="CharacterEllipsis" Foreground="{StaticResource InkBrush}"/>
+                    <!-- フォルダペイン（上のm_folderTree）と同じ構成のTreeView。横スクロールバーの
+                         見た目・挙動（TextTrimmingを付けない、BringIntoView後に横スクロールだけ
+                         0へ戻す等）もフォルダペインに合わせている。以前、アウトラインだけ
+                         TextTrimming="CharacterEllipsis"を付けていた際に、長い見出しを選択した
+                         瞬間だけ表示が一瞬崩れる不具合があったため（DEVELOPMENT_LOG.md参照）。 -->
+                    <TreeView x:Name="m_outlineTree" BorderThickness="0" Background="Transparent"
+                              Loaded="OutlineTreeLoaded"
+                              SelectedItemChanged="OutlineTreeSelectedItemChanged">
+                        <TreeView.Resources>
+                            <Style TargetType="TreeViewItem">
+                                <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                                <!-- 選択・フォーカスが変わるたびにWPF標準の動作で項目を横方向にも
+                                     完全に見せようとスクロールしてしまう（見出しが長い場合、選択の
+                                     たびに横スクロールバーが一瞬右へずれて戻る「ちらつき」の原因）。
+                                     RequestBringIntoViewを横方向だけ無効化することで、そもそも
+                                     この自動スクロールを起こさせないようにする（詳しい理由は
+                                     OutlineTreeItemRequestBringIntoViewのコメント参照）。 -->
+                                <EventSetter Event="RequestBringIntoView" Handler="OutlineTreeItemRequestBringIntoView"/>
+                            </Style>
+                        </TreeView.Resources>
+                        <TreeView.ItemTemplate>
+                            <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                <Border x:Name="m_matchHighlightBorder" CornerRadius="3" Padding="3,1"
+                                        BorderThickness="1,1,1,1" BorderBrush="Transparent" Margin="-1,0,0,0">
+                                    <TextBlock Text="{Binding Text}" FontSize="{Binding FontSizeValue}" Foreground="{StaticResource InkBrush}"/>
                                 </Border>
-                                <DataTemplate.Triggers>
+                                <HierarchicalDataTemplate.Triggers>
+                                    <!-- フォルダペインと同じ理由・同じ対策（DEVELOPMENT_LOG.md 14.7、
+                                         MainWindow.xamlのm_folderTree側のコメント参照）。選択は
+                                         枠線、検索一致は背景色と別プロパティにして両立させる。 -->
                                     <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
                                         <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#FFE166"/>
                                     </DataTrigger>
-                                </DataTemplate.Triggers>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
+                                        <Setter TargetName="m_matchHighlightBorder" Property="BorderBrush" Value="#26A0DA"/>
+                                        <Setter TargetName="m_matchHighlightBorder" Property="CornerRadius" Value="0"/>
+                                    </DataTrigger>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True"/>
+                                            <Condition Binding="{Binding IsSearchMatch}" Value="False"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#CBE8F6"/>
+                                    </MultiDataTrigger>
+                                </HierarchicalDataTemplate.Triggers>
+                            </HierarchicalDataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
                 </DockPanel>
             </Border>
 

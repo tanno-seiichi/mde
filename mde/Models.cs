@@ -84,7 +84,9 @@ namespace mde
         public bool m_isEmailAutoLinkFlg { get; set; }
     }
 
-    /// <summary>アウトラインペインの1行分（見出しのテキスト・レベル・対応する段落）。</summary>
+    /// <summary>アウトラインペインの1項目（見出し1つ分）。フォルダツリーペインのFileSystemItemと
+    /// 同じ考え方で、折りたたみ可能なツリー構造として扱えるよう、子見出し一覧・展開状態・
+    /// 選択状態を持つ（フォルダビューを参考にした実装。DEVELOPMENT_LOG.md参照）。</summary>
     public class OutlineEntry : INotifyPropertyChanged
     {
         public event PropertyChangedEventHandler PropertyChanged;
@@ -98,17 +100,57 @@ namespace mde
         /// <summary>この見出しが属する段落（クリック時にスクロール先として使う）。</summary>
         public Paragraph Target { get; set; }
 
-        /// <summary>アウトラインの表示上のインデント幅（レベルに応じて広がる。XAML側でMarginに
-        /// バインドされる）。</summary>
-        public Thickness Indent => new Thickness((Level - 1) * 14, 0, 0, 0);
-
-        /// <summary>アウトラインの表示上のフォントサイズ（レベル1〜2は少し大きめ）。</summary>
+        /// <summary>アウトラインの表示上のフォントサイズ（レベル1〜2は少し大きめ）。インデント幅は
+        /// TreeViewの入れ子構造から自動的に決まるため、フォルダビューと違って個別には持たない。</summary>
         public double FontSizeValue => Level <= 2 ? 13 : 12;
+
+        private bool m_isExpandedFlg = true;
+
+        /// <summary>TreeViewの展開状態（バインディング用）。既定はtrue（新しくできた見出しは
+        /// 展開された状態で表示する）。OutlineManager.Refreshで一覧を作り直す際、同じ見出し
+        /// （同じParagraph）については、作り直す前の状態をそのまま引き継ぐ。</summary>
+        public bool IsExpanded
+        {
+            get => m_isExpandedFlg;
+            set
+            {
+                if (m_isExpandedFlg == value)
+                {
+                    return;
+                }
+                m_isExpandedFlg = value;
+                OnPropertyChanged(nameof(IsExpanded));
+            }
+        }
+
+        private bool m_isSelectedFlg;
+
+        /// <summary>TreeViewの選択状態（バインディング用）。</summary>
+        public bool IsSelected
+        {
+            get => m_isSelectedFlg;
+            set
+            {
+                if (m_isSelectedFlg == value)
+                {
+                    return;
+                }
+                m_isSelectedFlg = value;
+                OnPropertyChanged(nameof(IsSelected));
+            }
+        }
+
+        /// <summary>
+        /// 子見出し一覧。自分より深いレベルの見出しのうち、次に自分と同じか浅いレベルの見出しが
+        /// 現れるまでの区間にあるものが子として入る（OutlineManager.Refresh参照）。
+        /// </summary>
+        public System.Collections.ObjectModel.ObservableCollection<OutlineEntry> Children { get; }
+            = new System.Collections.ObjectModel.ObservableCollection<OutlineEntry>();
 
         private bool m_isSearchMatchFlg;
 
-        /// <summary>「すべて検索」の結果、この見出しの区間に一致箇所があるかどうか。
-        /// アウトラインペインでの強調表示に使う。</summary>
+        /// <summary>「すべて検索」の結果、この見出しの区間（または、折りたたまれている場合は
+        /// その子孫の見出しの区間）に一致箇所があるかどうか。アウトラインペインでの強調表示に使う。</summary>
         public bool IsSearchMatch
         {
             get => m_isSearchMatchFlg;
@@ -119,9 +161,12 @@ namespace mde
                     return;
                 }
                 m_isSearchMatchFlg = value;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSearchMatch)));
+                OnPropertyChanged(nameof(IsSearchMatch));
             }
         }
+
+        private void OnPropertyChanged(string a_propertyName) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(a_propertyName));
     }
 
     /// <summary>
