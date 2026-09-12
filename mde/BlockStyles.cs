@@ -18,6 +18,11 @@ namespace mde
     {
         private static readonly Brush CELL_BORDER = new SolidColorBrush(Color.FromRgb(0xB4, 0xB4, 0xB4));
         private static readonly Brush CODE_BLOCK_BACKGROUND = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
+        // 表のヘッダー行だけ、セル間の縦の区切り線（右辺）をこの太さにする。本文行の1に対して
+        // わずかに太くすることで、印刷（PDF出力）時にヘッダー行の縦罫線だけが描画されずに
+        // 消えてしまう現象を避ける（実機での複数バージョン比較検証により、色を変える案では
+        // 効果が無く、太さを変えるこの案で解消することを確認済み）。
+        private const double HEADER_VERTICAL_BORDER_THICKNESS = 1.75;
         // ハイライト（==text==）の背景色。
         private static readonly Brush HIGHLIGHT_BACKGROUND = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0x8A));
 
@@ -170,6 +175,74 @@ namespace mde
                 return TextMarkerStyle.Circle;
             }
             return TextMarkerStyle.Box;
+        }
+
+        // ======================================================================
+        //  表の罫線（境界線の単線化）
+        // ======================================================================
+
+        /// <summary>
+        /// 表の全セルに、隣接セルと境界線が二重に重ならないよう調整した罫線を設定する。
+        /// WPFの<see cref="Table"/>/<see cref="TableCell"/>には、CSSの
+        /// <c>border-collapse: collapse</c>に相当する「隣接セルの境界線を1本にまとめる」
+        /// 機能が無い。単純に全セルへ4辺とも罫線を付けると、隣り合うセルの境界に2本の
+        /// 罫線が重なって描画され、非整数DPI（125%/150%等の画面拡大率）や印刷（PDF出力）
+        /// では2本の位置が微妙にずれてぼやけたり、太い二重線に見えたり、あるいは片方だけが
+        /// 消えて見えたりする。
+        /// 【設計（第2版）】当初は「最上段の行だけ上辺、最左列だけ左辺を追加で描く」という
+        /// 行・列の位置によってセルごとにThicknessの形が異なる方式にしていたが、これは
+        /// ヘッダー行と本文行とでセルのThicknessの形（上辺の有無）が異なることになり、
+        /// 実機でのPDF出力テストで「ヘッダー行だけ縦の罫線が消える」という不具合が発生した
+        /// （原因はWPFの印刷パイプライン側の挙動と見られ詳細は不明だが、セルごとに異なる
+        /// Thicknessの組み合わせを使うこと自体を避けるのが確実な対策となる、という考え方
+        /// だった）。そこで第2版では、<see cref="Table"/>自身が<see cref="Block"/>を継承
+        /// しており、<see cref="TableCell"/>とは独立した自前のBorderBrush/BorderThickness
+        /// を持てることを利用し、「全セルは例外なく同一のThickness（右辺・下辺のみ）を持ち、
+        /// 表の外周の上辺・左辺は表自身が1回だけ描く」という形に変更した。
+        /// 【第3版・太さ調整版（採用）】第2版を実機のPDF出力で確認したところ、Chromium
+        /// あり版（HTML/ChromiumでPDF化する版）では罫線消失は発生しないが、Chromiumなし版
+        /// （WPFの「Microsoft Print to PDF」印刷パイプラインでそのままPDF化する版）では、
+        /// 依然としてヘッダー行の縦の罫線が印刷時に消えてしまう現象が残っていた。これは
+        /// Thicknessの形の違いが原因ではなく、WPFの印刷パイプラインが極端に細い罫線（1px
+        /// 相当）を特定の条件下でラスタライズし損ねる、という別の要因によるものと見られる。
+        /// 対策として「ヘッダー行のセルの右辺（セル間の縦の区切り線）だけ本文行より少し
+        /// 太くする」案と「ヘッダー行の罫線の色を見出しレベル1の下線と同じ色に変える」案の
+        /// 2通りを試作し、実機で比較検証した結果、太くする案（本版）では罫線消失が解消し、
+        /// 色を変える案では効果が見られなかったため、太さを変える案を正式に採用した。
+        /// ヘッダー行（最上段の行）のセルの右辺だけ、本文行より少し太く
+        /// （<see cref="HEADER_VERTICAL_BORDER_THICKNESS"/>）描くようにしている。WYSIWYG
+        /// （Markdown）モードでの見た目にはほとんど影響しない程度の差にとどめてある。
+        /// 呼び出し側は、行・列の挿入や削除など表の構造を変えた直後に、表全体に対して
+        /// 毎回呼び直すこと（個々の操作ごとに罫線の付け外しを個別に追いかけるのではなく、
+        /// 常にこの関数で表全体を作り直す方が、境界線が消える・重なるといった不具合を
+        /// 防ぎやすい）。
+        /// </summary>
+        /// <param name="a_table">対象の表（RowGroups・Rows・Cellsまで構築済みであること）。</param>
+        /// <param name="a_borderBrush">罫線の色（呼び出し側が使っているCELL_BORDER定数を渡す）。</param>
+        public static void ApplyTableCellBorders(Table a_table, Brush a_borderBrush)
+        {
+            // 表自身の外周（上辺・左辺）を1回だけ描く。TableはBlockを継承しており、
+            // TableCellとは独立したBorderBrush/BorderThicknessを持てる。
+            a_table.BorderBrush = a_borderBrush;
+            a_table.BorderThickness = new Thickness(1, 1, 0, 0);
+
+            // 全セルの右辺・下辺に罫線を描く。ヘッダー行（最上段の行）の右辺（セル間の
+            // 縦の区切り線）だけは、印刷時の消失対策としてわずかに太くする
+            // （HEADER_VERTICAL_BORDER_THICKNESS。それ以外は本文行と完全に同じ太さ）。
+            int rowIndex = 0;
+            foreach (TableRowGroup rg in a_table.RowGroups)
+            {
+                foreach (TableRow row in rg.Rows)
+                {
+                    double right = (0 == rowIndex) ? HEADER_VERTICAL_BORDER_THICKNESS : 1;
+                    foreach (TableCell cell in row.Cells)
+                    {
+                        cell.BorderBrush = a_borderBrush;
+                        cell.BorderThickness = new Thickness(0, 0, right, 1);
+                    }
+                    rowIndex++;
+                }
+            }
         }
 
         // ======================================================================
