@@ -644,8 +644,9 @@ namespace mde
                         {
                             FontWeight = FontWeights.Bold,
                             Background = HEADER_BACKGROUND,
-                            BorderBrush = CELL_BORDER,
-                            BorderThickness = new Thickness(1),
+                            // 罫線（BorderBrush/BorderThickness）は、表全体を組み立て終えた後に
+                            // BlockStyles.ApplyTableCellBordersでまとめて設定する（隣接セルとの
+                            // 境界線が二重に重ならないようにするため。詳細は同メソッド参照）。
                             Padding = new Thickness(8, 6, 8, 6)
                         };
                         headerRow.Cells.Add(cell);
@@ -678,8 +679,8 @@ namespace mde
                             AppendInlineMarkdownToParagraph(cp, txt, false);
                             var cell = new TableCell(cp)
                             {
-                                BorderBrush = CELL_BORDER,
-                                BorderThickness = new Thickness(1),
+                                // 罫線は表全体の組み立て後にBlockStyles.ApplyTableCellBordersで
+                                // まとめて設定する（ヘッダーセルと同じ理由）。
                                 Padding = new Thickness(8, 6, 8, 6)
                             };
                             row.Cells.Add(cell);
@@ -696,6 +697,9 @@ namespace mde
                     // 比率計算をしていない可能性がある）。原因を確認できるまで、既定の
                     // 列幅（間延びはするが崩れない状態）に戻す。
                     // BlockStyles.ApplyContentBasedColumnWidths(table);
+                    // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて
+                    // 設定する（詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
+                    BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
                     a_doc.Blocks.Add(table);
                     m_originalTextTracker.Record(table, lines, blockStart, i);
                     continue;

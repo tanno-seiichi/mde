@@ -242,8 +242,7 @@ namespace mde
                 {
                     FontWeight = FontWeights.Bold,
                     Background = HEADER_BACKGROUND,
-                    BorderBrush = CELL_BORDER,
-                    BorderThickness = new Thickness(1),
+                    // 罫線は、表を組み立て終えた後にApplyTableCellBordersでまとめて設定する。
                     Padding = new Thickness(8, 6, 8, 6)
                 };
                 headerRow.Cells.Add(cell);
@@ -257,14 +256,17 @@ namespace mde
                 {
                     var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
                     {
-                        BorderBrush = CELL_BORDER,
-                        BorderThickness = new Thickness(1),
+                        // 罫線は、表を組み立て終えた後にApplyTableCellBordersでまとめて設定する。
                         Padding = new Thickness(8, 6, 8, 6)
                     };
                     row.Cells.Add(cell);
                 }
                 rg.Rows.Add(row);
             }
+
+            // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて設定する
+            // （詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
+            BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
 
             var trailingPara = new Paragraph();
 
@@ -314,8 +316,9 @@ namespace mde
             {
                 var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
                 {
-                    BorderBrush = CELL_BORDER,
-                    BorderThickness = new Thickness(1),
+                    // 罫線は、挿入後に表全体へApplyTableCellBordersでまとめて設定し直す
+                    // （最上段より上に行を挿入した場合、新しい行が最上段になり、上辺の
+                    // 罫線を持つべきセルが変わるため）。
                     Padding = new Thickness(8, 6, 8, 6)
                 };
                 newRow.Cells.Add(cell);
@@ -324,6 +327,14 @@ namespace mde
             int idx = rg.Rows.IndexOf(row);
             int insertIdx = a_aboveFlg ? idx : idx + 1;
             rg.Rows.Insert(insertIdx, newRow);
+
+            // 表全体に対して罫線をまとめて設定し直す（詳細はBlockStyles.ApplyTableCellBorders
+            // のコメント参照。行削除後に罫線が消えて見えることがあるという未解決の不具合
+            // （下のDeleteRow参照）とも近い領域のため、ここで毎回明示的に設定し直しておく）。
+            if (rg.Parent is Table refreshTable)
+            {
+                BlockStyles.ApplyTableCellBorders(refreshTable, CELL_BORDER);
+            }
 
             if (newRow.Cells.Count > 0 && newRow.Cells[0].Blocks.FirstBlock is Paragraph np)
             {
@@ -365,8 +376,9 @@ namespace mde
                 var targetRow = rows[r];
                 var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
                 {
-                    BorderBrush = CELL_BORDER,
-                    BorderThickness = new Thickness(1),
+                    // 罫線は、挿入後に表全体へApplyTableCellBordersでまとめて設定し直す
+                    // （最左列より左に列を挿入した場合、新しい列が最左列になり、左辺の
+                    // 罫線を持つべきセルが変わるため）。
                     Padding = new Thickness(8, 6, 8, 6)
                 };
                 if (0 == r)
@@ -386,6 +398,10 @@ namespace mde
             var newColumn = new TableColumn();
             int colInsertIdx = Math.Min(insertIdx, table.Columns.Count);
             table.Columns.Insert(colInsertIdx, newColumn);
+
+            // 表全体に対して罫線をまとめて設定し直す（詳細はBlockStyles.ApplyTableCellBorders
+            // のコメント参照）。
+            BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
 
             if (firstNewCell?.Blocks.FirstBlock is Paragraph np)
             {
@@ -422,11 +438,16 @@ namespace mde
                 return;
             }
             rg.Rows.Remove(row);
+            // 削除した行が最上段だった場合、繰り上がった新しい最上段のセルに上辺の罫線が
+            // 必要になるため、表全体に対して罫線をまとめて設定し直す（詳細は
+            // BlockStyles.ApplyTableCellBordersのコメント参照）。
+            if (rg.Parent is Table refreshTable)
+            {
+                BlockStyles.ApplyTableCellBorders(refreshTable, CELL_BORDER);
+            }
             // 行削除後、残ったセルの枠線が描画上消えて見えることがあるとの報告があったため、
-            // 念のためレイアウトを強制的に再計算させている。ただしコードを読んだ限りでは
-            // 枠線のプロパティ自体（BorderBrush/BorderThickness）を書き換えている箇所は
-            // 見当たらず、原因はWPFのTable描画側の再描画の問題である可能性を疑っての、
-            // 未検証の対症療法。再発する場合は再現手順を教えてほしい。
+            // 念のためレイアウトを強制的に再計算させている（上の罫線の明示的な設定し直しで
+            // 解消する可能性もあるが、実機で未確認のため、念のためこちらも残してある）。
             m_editor.UpdateLayout();
             m_markDirty();
         }
@@ -472,6 +493,10 @@ namespace mde
             {
                 table.Columns.RemoveAt(colIndex);
             }
+            // 削除した列が最左列だった場合、繰り上がった新しい最左列のセルに左辺の罫線が
+            // 必要になるため、表全体に対して罫線をまとめて設定し直す（DeleteRow側と同じ理由。
+            // BlockStyles.ApplyTableCellBordersのコメント参照）。
+            BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
             // DeleteRow側と同じ理由（このメソッド内のコメント参照）による、未検証の対症療法。
             m_editor.UpdateLayout();
             m_markDirty();
@@ -822,8 +847,7 @@ namespace mde
                     string text = c < a_rows[r].Count ? a_rows[r][c] : "";
                     var cell = new TableCell(new Paragraph(new Run(text)) { LineHeight = double.NaN, KeepTogether = true })
                     {
-                        BorderBrush = CELL_BORDER,
-                        BorderThickness = new Thickness(1),
+                        // 罫線は、表を組み立て終えた後にApplyTableCellBordersでまとめて設定する。
                         Padding = new Thickness(8, 6, 8, 6)
                     };
                     if (0 == r)
@@ -835,6 +859,10 @@ namespace mde
                 }
                 rg.Rows.Add(row);
             }
+
+            // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて設定する
+            // （詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
+            BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
 
             // 2026-08-30：MarkdownConverter.csと同じ理由で一時的に無効化
             // （BlockStyles.ApplyContentBasedColumnWidths参照。詳細はMarkdownConverter.cs側の
