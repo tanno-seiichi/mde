@@ -79,6 +79,8 @@ namespace mde
         private readonly OriginalTextTracker m_originalTextTracker;
         private readonly ImageManager m_imageManager;
         private readonly Func<bool> m_preserveSourceLineBreaksFlg;
+        private readonly Func<bool> m_correctColumnWidthsFlg;
+        private readonly Func<double> m_availableTableWidthFunc;
 
         /// <summary>
         /// MarkdownConverterを構築する。
@@ -89,12 +91,25 @@ namespace mde
         /// 単純な改行）を、そのまま見た目の改行として表示するか（true。mde/Typora従来の表示）、
         /// それとも空行が入るまでは改行しない、CommonMark/VSCodeのMarkdownプレビュー標準の表示に
         /// するか（false）を返すデリゲート。省略時（null）はtrue（従来動作）として扱う。</param>
+        /// <param name="a_correctColumnWidthsFlg">メニュー「表示」→「列幅を補正する」の現在の
+        /// 状態を返すデリゲート。省略時（null）はtrue（列幅調整ダイアログでの調整・未調整の表への
+        /// 自動計算比率のどちらも有効）として扱う。詳細はBlockStyles.ApplyEffectiveColumnWidths
+        /// 参照。</param>
+        /// <param name="a_availableTableWidthFunc">未調整（自動計算）の表を、コンパクトな固定幅
+        /// （Pixel）にできるかどうかの判断に使う、表を表示できる実際の幅（px）を返すデリゲート。
+        /// 省略時（null）は常にnullとして扱われ（実際の表示幅が分からないため）、常にこれまでと
+        /// 同じStar比率になる（保存専用の使い捨て文書やPDF書き出し用の一時文書に対する変換など、
+        /// 実際の表示幅を持たない・見た目が結果に影響しない呼び出し側向け）。詳細はBlockStyles.
+        /// ApplyAutoCalculatedColumnWidthsのコメント参照。</param>
         public MarkdownConverter(OriginalTextTracker a_originalTextTracker, ImageManager a_imageManager,
-            Func<bool> a_preserveSourceLineBreaksFlg = null)
+            Func<bool> a_preserveSourceLineBreaksFlg = null, Func<bool> a_correctColumnWidthsFlg = null,
+            Func<double> a_availableTableWidthFunc = null)
         {
             this.m_originalTextTracker = a_originalTextTracker;
             this.m_imageManager = a_imageManager;
             this.m_preserveSourceLineBreaksFlg = a_preserveSourceLineBreaksFlg;
+            this.m_correctColumnWidthsFlg = a_correctColumnWidthsFlg;
+            this.m_availableTableWidthFunc = a_availableTableWidthFunc;
         }
 
         // ======================================================================
@@ -278,33 +293,68 @@ namespace mde
             // （ALIGN_LEFT_EXPLICIT_TAG）を見て、「明示的な左揃え（:---）」だったか
             // 「揃え指定なし（---）」だったかを区別する（TextAlignmentだけではこの2つを
             // 区別できないため、Tagで別途覚えておくようにした）。
+            // ダッシュの数（3個が既定）は、列幅調整ダイアログ（ステップ2）で明示的に幅が
+            // 設定されている列については、その値をそのままダッシュ数として書き出す。
+            // ここで参照するBlockStyles.GetSourceDashCountsは、区切り行のダッシュ数
+            // （＝実際に保存されるべき値）を、表示用の列幅（TableColumn.Width）とは独立して
+            // 記録している値である（詳細は同メソッドのコメント参照）。表示用の列幅だけを見て
+            // 判断しないのは、メニュー「列幅を補正する」がオフの間は表示が常に既定の均等幅
+            // （Auto）に戻るため、それだけを見ると調整済みの表の情報がオフの間の保存で失われて
+            // しまうから（トグルは見た目だけのはずなのに、保存内容まで書き換えてしまう不具合に
+            // なる）。まだ一度もSetSourceDashCountsが呼ばれていない表（GetSourceDashCountsが
+            // null。挿入直後でまだ未調整の表など）は、これまでと同じ既定の3個のまま。
+            var sourceDashCounts = BlockStyles.GetSourceDashCounts(a_table);
             var sepCells = new List<string>();
+            int sepColIndex = 0;
             foreach (TableCell headerCell in rows[0].Cells)
             {
                 var headerPara = headerCell.Blocks.FirstBlock as Paragraph;
                 TextAlignment alignment = headerPara?.TextAlignment ?? TextAlignment.Left;
-                if (TextAlignment.Center == alignment)
+                bool explicitLeftFlg = ALIGN_LEFT_EXPLICIT_TAG == (headerPara?.Tag as string);
+
+                int dashCount = BlockStyles.TABLE_COLUMN_DEFAULT_DASH_COUNT;
+                if (null != sourceDashCounts && sepColIndex < sourceDashCounts.Count)
                 {
-                    sepCells.Add(":---:");
+                    dashCount = BlockStyles.ClampDashCount(sourceDashCounts[sepColIndex]);
                 }
-                else if (TextAlignment.Right == alignment)
-                {
-                    sepCells.Add("---:");
-                }
-                else if (ALIGN_LEFT_EXPLICIT_TAG == (headerPara?.Tag as string))
-                {
-                    sepCells.Add(":---");
-                }
-                else
-                {
-                    sepCells.Add("---");
-                }
+                sepCells.Add(BuildTableSeparatorCell(alignment, explicitLeftFlg, dashCount));
+                sepColIndex++;
             }
             string sep = "| " + string.Join(" | ", sepCells) + " |";
 
             var result = new List<string> { mdRows[0], sep };
             result.AddRange(mdRows.Skip(1));
             return string.Join("\n", result);
+        }
+
+        /// <summary>
+        /// 表の区切り行の1セル分の文字列を組み立てる。ダッシュの数（<paramref name="a_dashCount"/>、
+        /// 3未満にはならない）はそのまま出力し、コロンは文字揃えに応じて前後に追加するだけ
+        /// （ダッシュの数からは差し引かない）。例：中央揃え・ダッシュ3個なら":---:"、
+        /// 揃え指定なし・ダッシュ10個なら"----------"。これにより、揃え指定の有無に関わらず、
+        /// 「ダッシュの数＝ParseColumnDashCountで読み取れる値」という対応が常に保たれる
+        /// （ParseColumnAlignment・ParseColumnDashCountと対になる書き出し処理）。
+        /// </summary>
+        /// <param name="a_alignment">列の文字揃え。</param>
+        /// <param name="a_explicitLeftFlg">「明示的な左揃え（:---）」だったかどうか。</param>
+        /// <param name="a_dashCount">ダッシュの数（列幅調整・ステップ2で使う単位）。</param>
+        private static string BuildTableSeparatorCell(TextAlignment a_alignment, bool a_explicitLeftFlg, int a_dashCount)
+        {
+            int n = a_dashCount < 3 ? 3 : a_dashCount;
+            string dashes = new string('-', n);
+            if (TextAlignment.Center == a_alignment)
+            {
+                return ":" + dashes + ":";
+            }
+            if (TextAlignment.Right == a_alignment)
+            {
+                return dashes + ":";
+            }
+            if (a_explicitLeftFlg)
+            {
+                return ":" + dashes;
+            }
+            return dashes;
         }
 
         /// <summary>段落のInlinesをMarkdownテキストへ書き出す（見出し・段落・箇条書き項目・
@@ -600,6 +650,9 @@ namespace mde
                     // 区切り行（|:---:|---:|...|）のコロンから列ごとの文字揃えを読み取る。
                     var alignSepCells = ParseTableRow(lines[i + 1]);
                     var columnAlignments = alignSepCells.Select(ParseColumnAlignment).ToList();
+                    // 同じ区切り行のダッシュの数から、列幅調整・ステップ2で保存した列幅を
+                    // 読み取る（詳細はParseColumnDashCount・BuildTableSeparatorCell参照）。
+                    var columnDashCounts = alignSepCells.Select(ParseColumnDashCount).ToList();
                     i += 2;
                     var table = new Table();
                     foreach (var _ in headerCells)
@@ -697,6 +750,29 @@ namespace mde
                     // 比率計算をしていない可能性がある）。原因を確認できるまで、既定の
                     // 列幅（間延びはするが崩れない状態）に戻す。
                     // BlockStyles.ApplyContentBasedColumnWidths(table);
+                    // 列幅調整ダイアログ（ステップ2）で明示的に幅が調整された表か、あるいは
+                    // メニュー「表示」→「列幅を補正する」がオンの場合に、区切り行のダッシュ数と
+                    // トグルの状態から実際の列幅を決定する（詳細はBlockStyles.
+                    // ApplyEffectiveColumnWidthsのコメント参照）。区切り行の列数と実際の列数が
+                    // 一致しない異常な入力の場合は、これまで通り列幅を一切設定しない
+                    // （Autoのまま。挙動に変化なし）。
+                    if (columnDashCounts.Count == table.Columns.Count)
+                    {
+                        // 区切り行から読み取ったダッシュ数（＝Markdownソースに実際に保存されて
+                        // いる、保存されるべき「本当の値」）を記録しておく。これは表示上の
+                        // 列幅（この直後に適用するApplyEffectiveColumnWidths）とは独立していて、
+                        // 「列幅を補正する」がオフで見た目が均等幅に戻っている間も保持され続け、
+                        // TableToMarkdownでの書き出し時に参照される（詳細はBlockStyles.
+                        // SetSourceDashCountsのコメント参照。オフの間に保存しても調整済みの
+                        // 表の情報が失われないようにするための対策）。
+                        BlockStyles.SetSourceDashCounts(table, columnDashCounts);
+                        bool correctColumnWidthsFlg = m_correctColumnWidthsFlg?.Invoke() ?? true;
+                        // 表示できる幅が分からない呼び出し側（保存専用の一時変換・PDF書き出し用の
+                        // 一時変換など）ではデリゲートを渡していないため、null（＝常にStar比率。
+                        // 詳細はBlockStyles.ApplyAutoCalculatedColumnWidthsのコメント参照）になる。
+                        double? availableTableWidthPx = m_availableTableWidthFunc?.Invoke();
+                        BlockStyles.ApplyEffectiveColumnWidths(table, columnDashCounts, correctColumnWidthsFlg, availableTableWidthPx);
+                    }
                     // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて
                     // 設定する（詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
                     BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
@@ -932,6 +1008,28 @@ namespace mde
                 return (TextAlignment.Left, true);
             }
             return (TextAlignment.Left, false);
+        }
+
+        /// <summary>
+        /// 表の区切り行の1セル分の文字列から、ダッシュ（-）の数を数える（列幅調整・
+        /// ステップ2で使う単位。BuildTableSeparatorCellと対になる読み取り処理）。
+        /// コロンは数えず、ダッシュだけを数える。区切り行として意味を持つ最小値（3）未満
+        /// だった場合は3に読み替える（手で書いたMarkdownで"|--|"のようにダッシュが2個
+        /// しかない場合等への配慮）。
+        /// </summary>
+        /// <param name="a_sepCell">区切り行の1セル分の文字列。</param>
+        /// <returns>ダッシュの数（3以上）。</returns>
+        private static int ParseColumnDashCount(string a_sepCell)
+        {
+            int count = 0;
+            foreach (char ch in a_sepCell)
+            {
+                if ('-' == ch)
+                {
+                    count++;
+                }
+            }
+            return count < BlockStyles.TABLE_COLUMN_MIN_DASH_COUNT ? BlockStyles.TABLE_COLUMN_MIN_DASH_COUNT : count;
         }
 
         /// <summary>

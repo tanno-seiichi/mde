@@ -88,6 +88,12 @@ namespace mde
         /// するか（false）。メニュー「表示」→「段落中の改行」で切り替えられる。</summary>
         private bool m_preserveSourceLineBreaksFlg = true;
 
+        /// <summary>メニュー「表示」→「列幅を補正する」の状態。オンなら、列幅調整ダイアログで
+        /// 明示的に調整済みの表はその比率で、未調整（|---|）の表は内容量に応じて自動計算した
+        /// 比率で表示する。オフなら、両方とも既定の均等幅（Auto）で表示する（表全体の列幅機能の
+        /// マスタースイッチ）。既定値はtrue。詳細はBlockStyles.ApplyEffectiveColumnWidths参照。</summary>
+        private bool m_correctColumnWidthsFlg = true;
+
         /// <summary>PDF書き出し時の、上下左右の余白（px）。メニュー「PDFの余白を設定…」で
         /// 変更でき、次回起動時にも復元される。既定値はAppSettingsのものと揃えてある。</summary>
         private double m_pdfMarginTop = 64;
@@ -163,6 +169,8 @@ namespace mde
             m_editorLineHeight = m_savedSettings.EditorLineHeight > 0 ? m_savedSettings.EditorLineHeight : 26;
             m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
             m_preserveSourceLineBreaksFlg = m_savedSettings.PreserveSourceLineBreaksFlg;
+            m_correctColumnWidthsFlg = m_savedSettings.CorrectColumnWidthsFlg;
+            m_correctColumnWidthsMenuItem.IsChecked = m_correctColumnWidthsFlg;
             m_debugLogMenuItem.IsChecked = m_savedSettings.DebugLogEnabledFlg;
             DebugLogger.SetEnabled(m_savedSettings.DebugLogEnabledFlg);
             m_pdfMarginTop = m_savedSettings.PdfMarginTop > 0 ? m_savedSettings.PdfMarginTop : 64;
@@ -193,12 +201,17 @@ namespace mde
                 m_editor, m_originalTextTracker, () => m_isSourceModeFlg, () => m_currentFileDirectory,
                 () => m_currentFilePath,
                 RunAsProgrammaticChange, m_outlineManager.Refresh, m_instanceTempId);
-            m_markdownConverter = new MarkdownConverter(m_originalTextTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg);
+            // 表を表示できる幅（() => m_tableEditor.GetAvailableTableWidth()）は、m_tableEditorが
+            // このすぐ後で組み立てられるが、これはクロージャであり実際に呼ばれるのは組み立てが
+            // 完了した後（表の解析・再描画のタイミング）のため、この順序で問題ない。
+            m_markdownConverter = new MarkdownConverter(
+                m_originalTextTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg,
+                () => m_correctColumnWidthsFlg, () => m_tableEditor.GetAvailableTableWidth());
             m_listEditor = new ListEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange);
             m_headingCodeBlockEditor = new HeadingCodeBlockEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange);
             m_tableEditor = new TableEditor(
                 m_editor, m_originalTextTracker, MarkDirty, RunAsProgrammaticChange, () => m_isSourceModeFlg,
-                m_outlineManager.Refresh, InsertPlainTextWithLineBreaksForCodeBlock);
+                m_outlineManager.Refresh, InsertPlainTextWithLineBreaksForCodeBlock, () => m_correctColumnWidthsFlg);
             m_folderTreeManager = new FolderTreeManager(
                 LoadFile, () => m_currentFilePath, () => m_currentFileIsDirtyFlg,
                 () => m_pendingFileEdits.Keys, PathsReferToSameFile);
@@ -530,6 +543,7 @@ namespace mde
                 EditorLineHeight = m_editorLineHeight,
                 RequireCtrlForLinkClickFlg = m_requireCtrlForLinkClickFlg,
                 PreserveSourceLineBreaksFlg = m_preserveSourceLineBreaksFlg,
+                CorrectColumnWidthsFlg = m_correctColumnWidthsFlg,
                 DebugLogEnabledFlg = DebugLogger.IsEnabled,
                 PdfMarginTop = m_pdfMarginTop,
                 PdfMarginBottom = m_pdfMarginBottom,
@@ -1250,6 +1264,7 @@ namespace mde
             m_insertRowBelowMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_insertColumnLeftMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_insertColumnRightMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_adjustColumnWidthsMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_deleteRowMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_deleteColumnMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_deleteTableMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
@@ -1322,6 +1337,27 @@ namespace mde
         private void InsertRowBelowItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.InsertRow(a_aboveFlg: false);
         private void InsertColumnLeftItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.InsertColumn(a_leftFlg: true);
         private void InsertColumnRightItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.InsertColumn(a_leftFlg: false);
+
+        /// <summary>右クリックメニュー「列幅を調整…」。ContextCellが属する表の列ごとの
+        /// ラベル・現在の幅をTableEditorから取得してダイアログを開き、OKが押されたら
+        /// TableEditorへ適用させる（表を挿入する際のInsertTableItemClickと同じ、ダイアログは
+        /// MainWindow側で開き、実際の適用処理はTableEditorに委譲するパターン）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void AdjustColumnWidthsItemClick(object a_sender, RoutedEventArgs a_args)
+        {
+            var info = m_tableEditor.GetColumnWidthDialogInfo();
+            if (null == info.Labels)
+            {
+                return;
+            }
+            var dlg = new ColumnWidthDialog(info.Labels, info.DashCounts, info.IsAutoCalculated) { Owner = this };
+            if (true == dlg.ShowDialog())
+            {
+                m_tableEditor.ApplyColumnWidths(dlg.DashCounts);
+            }
+        }
+
         private void DeleteRowItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteRow();
         private void DeleteColumnItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteColumn();
         private void DeleteTableItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteTable();
@@ -1641,12 +1677,24 @@ namespace mde
                     m_editor.CaretPosition = m_editor.Document.ContentStart;
                     ClearEditorUndoHistory();
                 }
+                // このブランチは「同じファイルを、保存済みの内容で開き直す」場合であり、別の
+                // ファイルへの切り替えではないため、スクロール位置には触れない（今どこを見て
+                // いたかがそのまま保たれる方が、保存し忘れた変更を破棄して開き直すという
+                // 操作の性質上、自然な挙動になる）。
                 m_searchReplaceService.OnDocumentReplaced();
                 m_openFindReplaceWindow?.ReapplyHighlightForCurrentFile();
 
                 m_currentFileIsDirtyFlg = false;
                 m_folderTreeManager.RefreshDirtyMarkers();
                 return;
+            }
+
+            // ファイルを切り替える前に、今表示している内容のスクロール位置を、あとで
+            // このファイルへ戻ってきた時のために覚えておく（起動直後などm_currentFilePathが
+            // まだ無い場合は、覚えておく対象が無いため何もしない）。
+            if (!string.IsNullOrEmpty(m_currentFilePath))
+            {
+                RememberCurrentScrollPosition(m_currentFilePath);
             }
 
             SnapshotCurrentFileIfDirty();
@@ -1685,6 +1733,9 @@ namespace mde
                 m_editor.CaretPosition = m_editor.Document.ContentStart;
                 ClearEditorUndoHistory();
             }
+            // このファイルを以前この session 内で開いたことがあり、スクロール位置を覚えて
+            // いれば、そこへ戻す（無ければ先頭へ）。
+            RestoreOrResetScrollPosition(a_path);
             m_searchReplaceService.OnDocumentReplaced();
             m_openFindReplaceWindow?.ReapplyHighlightForCurrentFile();
 
@@ -1923,7 +1974,7 @@ namespace mde
             }
 
             var tempTracker = new OriginalTextTracker(m_editor);
-            var tempConverter = new MarkdownConverter(tempTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg);
+            var tempConverter = new MarkdownConverter(tempTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg, () => m_correctColumnWidthsFlg);
             var tempDoc = new FlowDocument();
             tempConverter.MarkdownToDocument(m_sourceEditor.Text, tempDoc);
             m_imageManager.RelocatePendingTempImages(tempDoc);
@@ -2081,7 +2132,7 @@ namespace mde
                 // 元テキストのまま保存する」という記憶まで失われてしまうため、この書き出し専用の
                 // 変換だけは独立したOriginalTextTrackerを使う一時的なMarkdownConverterで行う。
                 var tempTracker = new OriginalTextTracker(m_editor);
-                var tempConverter = new MarkdownConverter(tempTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg);
+                var tempConverter = new MarkdownConverter(tempTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg, () => m_correctColumnWidthsFlg);
                 var tempDoc = new FlowDocument();
                 tempConverter.MarkdownToDocument(md, tempDoc);
 
@@ -2278,7 +2329,8 @@ namespace mde
             m_folderTreeManager.RefreshDirtyMarkers();
         }
 
-        /// <summary>エディタの幅が変わったら、画像のサイズ調整をやり直す。</summary>
+        /// <summary>エディタの幅が変わったら、画像のサイズ調整と、未調整（自動計算）の表の
+        /// 列幅の再計算をやり直す。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         private void EditorSizeChanged(object a_sender, SizeChangedEventArgs a_args)
@@ -2295,6 +2347,10 @@ namespace mde
             {
                 m_imageManager.ApplyImageSizing(img);
             }
+            // 列幅の変更はRichTextBox.TextChangedを発生させるため（ChromiumPdfExporter呼び出し側の
+            // 既存コメント参照）、ウインドウのリサイズだけでファイルがダーティ扱いになってしまわない
+            // よう、RunWithoutDirtyMarkingでラップする。
+            RunWithoutDirtyMarking(() => m_tableEditor.RefreshAutoCalculatedColumnWidthsForResize());
         }
 
         // ======================================================================
@@ -2600,6 +2656,43 @@ namespace mde
             m_lineBreakModeBlankOnlyMenuItem.IsChecked = !m_preserveSourceLineBreaksFlg;
         }
 
+        /// <summary>メニュー「表示」→「列幅を補正する」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void CorrectColumnWidthsMenuItemChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            SetCorrectColumnWidthsFlg(m_correctColumnWidthsMenuItem.IsChecked);
+        }
+
+        /// <summary>メニュー「表示」→「列幅を補正する」の状態を変更する。列幅調整ダイアログで
+        /// 明示的に調整済みの表・自動計算による比率のどちらも含めた、表全体の列幅表示の
+        /// マスタースイッチである。オフにすると、調整済みの表も含めてすべての表が既定の
+        /// 均等幅（Auto）で表示される（ダッシュ数はMarkdownソース側にそのまま残るため、
+        /// オンに戻せば元の比率が復元され、情報が失われることはない）。
+        /// SetPreserveSourceLineBreaksFlgと同じ理由・同じ方法（現在の文書をいったんMarkdownへ
+        /// 変換し、フラグを切り替えた上で再度解析し直す）で、開いている文書全体に即座に反映する。</summary>
+        /// <param name="a_value">true＝列幅の調整・自動計算比率を反映する（既定）、false＝
+        /// すべての表を均等幅で表示する。</param>
+        private void SetCorrectColumnWidthsFlg(bool a_value)
+        {
+            if (m_correctColumnWidthsFlg != a_value)
+            {
+                if (m_isSourceModeFlg)
+                {
+                    m_correctColumnWidthsFlg = a_value;
+                }
+                else
+                {
+                    string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+                    m_correctColumnWidthsFlg = a_value;
+                    RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
+                    m_outlineManager.Refresh();
+                    m_editor.CaretPosition = m_editor.Document.ContentStart;
+                }
+            }
+            m_correctColumnWidthsMenuItem.IsChecked = m_correctColumnWidthsFlg;
+        }
+
         /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。
         /// 段落内で行が折り返された時の間隔は、その段落のLineHeightそのもので決まる。もし
         /// 段落・リスト・表どうしの間の余白（Margin）にもLineHeightと同じ値を足してしまうと、
@@ -2708,6 +2801,160 @@ namespace mde
         /// <summary>エディタ内部のScrollViewerへの参照（フォルダ/アウトラインペイン切り替え時の
         /// スクロール位置保持に使う）。RestoreEditorScrollAnchorで初回使用時に取得する。</summary>
         private ScrollViewer m_editorScrollViewer;
+
+        /// <summary>ソースモードのエディタ（m_sourceEditor）内部のScrollViewerへの参照。
+        /// ScrollEditorToTopで初回使用時に取得する。</summary>
+        private ScrollViewer m_sourceEditorScrollViewer;
+
+        /// <summary>現在表示中のエディタ（Markdownモードならm_editor、ソースモードなら
+        /// m_sourceEditor）のスクロール位置を、無条件に一番上（左上端）へ戻す。LoadFileで
+        /// 文書・テキストを丸ごと差し替えた直後に呼び出す。
+        ///
+        /// RichTextBox・TextBoxは、Document.Blocks.Clear()＋作り直しやText差し替えで内容を
+        /// 丸ごと入れ替えても、同じ内部ScrollViewerを使い回すため、スクロール位置
+        /// （VerticalOffset）が古いファイルを表示していた時の値のまま残ってしまう。これに
+        /// 気づかず、CaretPositionやCaretIndexを先頭へ設定するだけで満足すると、明らかに
+        /// 初めて開くファイルなのに、その古いスクロール位置にたまたま来た新しい文書の内容
+        /// （中ほどや末尾など）が表示されたままになってしまう（新しい文書がその位置まで
+        /// 十分な長さを持つ場合。短い文書なら末尾に張り付いた状態で表示される）。
+        /// キャレット位置の変更は、プログラムからの変更では自動的な表示範囲へのスクロールを
+        /// 伴わないため（ユーザーの操作によるキャレット移動とは異なる）、ここでScrollViewerへ
+        /// 直接オフセット0への移動を指示している。ScrollToLine等の「見えていなければ最小限
+        /// だけスクロールする」系のメソッドでは、たまたま新しい文書の先頭付近が既に見えて
+        /// いる状態だと何も起こらないことがあるため使わない（他のスクロール処理
+        /// （RestoreEditorScrollAnchor等）で同種の問題への対策として使っている、ScrollViewerを
+        /// 直接操作する方法と同じ考え方）。</summary>
+        private void ScrollEditorToTop()
+        {
+            if (m_isSourceModeFlg)
+            {
+                if (null == m_sourceEditorScrollViewer)
+                {
+                    m_sourceEditorScrollViewer = FindVisualChild<ScrollViewer>(m_sourceEditor);
+                }
+                m_sourceEditorScrollViewer?.ScrollToVerticalOffset(0);
+                m_sourceEditorScrollViewer?.ScrollToHorizontalOffset(0);
+            }
+            else
+            {
+                if (null == m_editorScrollViewer)
+                {
+                    m_editorScrollViewer = FindVisualChild<ScrollViewer>(m_editor);
+                }
+                m_editorScrollViewer?.ScrollToVerticalOffset(0);
+                m_editorScrollViewer?.ScrollToHorizontalOffset(0);
+            }
+        }
+
+        /// <summary>ファイルパスごとに覚えておく、直前にそのファイルを表示していた時のおおまかな
+        /// スクロール位置（0〜1の割合。Markdownモードなら文書全体の高さに対する縦スクロール量の
+        /// 割合、ソースモードなら一番上に見えている行が全体の行数に対して何割目かを表す）。
+        /// 別のファイルを開いてから、またこのファイルへ戻ってきた時に、大まかに同じ場所を
+        /// 再現するために使う。ピクセル量や行番号そのものではなく割合で覚えておくのは、その間に
+        /// ウインドウ幅の変更や編集で折り返し位置・行数が変わっていても、それなりに近い場所へ
+        /// 戻れるようにするため（正確な位置の完全な復元は狙わない）。</summary>
+        private readonly Dictionary<string, double> m_rememberedScrollFractions =
+            new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>ファイルを切り替える直前に呼び出し、今表示している内容のスクロール位置を、
+        /// 切り替え前のファイル（a_path）に対して覚えておく。LoadFileから、別のファイルへ
+        /// 切り替える場合にのみ呼ばれる（同じファイルを開き直すだけの場合や、初回起動時は
+        /// 呼ばれない）。</summary>
+        /// <param name="a_path">今表示している内容の、切り替え前のファイルパス。</param>
+        private void RememberCurrentScrollPosition(string a_path)
+        {
+            double fraction = 0;
+            if (m_isSourceModeFlg)
+            {
+                if (m_sourceEditor.IsLoaded && m_sourceEditor.LineCount > 0)
+                {
+                    int firstVisibleLine = m_sourceEditor.GetFirstVisibleLineIndex();
+                    if (firstVisibleLine > 0)
+                    {
+                        fraction = Clamp01((double)firstVisibleLine / m_sourceEditor.LineCount);
+                    }
+                }
+            }
+            else if (m_editor.IsLoaded)
+            {
+                if (null == m_editorScrollViewer)
+                {
+                    m_editorScrollViewer = FindVisualChild<ScrollViewer>(m_editor);
+                }
+                if (null != m_editorScrollViewer && m_editorScrollViewer.ExtentHeight > 0)
+                {
+                    fraction = Clamp01(m_editorScrollViewer.VerticalOffset / m_editorScrollViewer.ExtentHeight);
+                }
+            }
+
+            if (fraction > 0)
+            {
+                m_rememberedScrollFractions[a_path] = fraction;
+            }
+            else
+            {
+                // 先頭付近を見ていた場合は、あえて覚えておく必要が無い（覚えている情報が
+                // 無ければ、呼び出し側であるRestoreOrResetScrollPositionが先頭へスクロール
+                // するため、結果は同じになる）。辞書を無駄に肥大化させないために削除しておく。
+                m_rememberedScrollFractions.Remove(a_path);
+            }
+        }
+
+        /// <summary>ファイルを開いた（切り替えた）直後にLoadFileから呼び出す。a_pathについて
+        /// RememberCurrentScrollPositionで覚えているスクロール位置があればそこへ、無ければ
+        /// 文書の先頭へスクロールする。
+        ///
+        /// 新しい文書のレイアウト（高さ・行数）は、文書を差し替えた直後にはまだ確定していない
+        /// ことがある（SelectAndScrollTo等、他の箇所でDispatcherPriority.Loadedまで処理を
+        /// 遅らせている理由と同じ）。そのため、まず即座に先頭へ戻しておき（0を指定するだけ
+        /// なのでレイアウト未確定でも安全）、レイアウトが一段落したタイミングで、覚えている
+        /// 位置があれば改めてそこへスクロールし直す、という2段階の処理にしている。</summary>
+        /// <param name="a_path">これから表示する内容のファイルパス。</param>
+        private void RestoreOrResetScrollPosition(string a_path)
+        {
+            ScrollEditorToTop();
+
+            if (!m_rememberedScrollFractions.TryGetValue(a_path, out double fraction))
+            {
+                return;
+            }
+
+            bool sourceModeAtScheduleTimeFlg = m_isSourceModeFlg;
+            m_editor.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                // 復元を待っている間に表示モード（Markdown/ソース）が切り替わっていた場合は、
+                // 対象が変わってしまっているため何もしない。
+                if (m_isSourceModeFlg != sourceModeAtScheduleTimeFlg)
+                {
+                    return;
+                }
+
+                if (m_isSourceModeFlg)
+                {
+                    if (m_sourceEditor.LineCount > 0)
+                    {
+                        int targetLine = (int)(fraction * m_sourceEditor.LineCount);
+                        // ScrollToLineは「見えていなければ最小限だけスクロールする」仕様のため、
+                        // 既に見えている行だと一番上への移動が起きないことがある（他のスクロール
+                        // 処理と同じ対策で、先に一旦先頭へリセットしてから改めて対象行へ
+                        // スクロールする）。
+                        m_sourceEditor.ScrollToLine(0);
+                        m_sourceEditor.ScrollToLine(targetLine);
+                    }
+                }
+                else
+                {
+                    if (null == m_editorScrollViewer)
+                    {
+                        m_editorScrollViewer = FindVisualChild<ScrollViewer>(m_editor);
+                    }
+                    if (null != m_editorScrollViewer)
+                    {
+                        m_editorScrollViewer.ScrollToVerticalOffset(fraction * m_editorScrollViewer.ExtentHeight);
+                    }
+                }
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
 
         /// <summary>CaptureEditorScrollAnchorが覚えておく、Markdownモード時のスクロール位置。
         /// 「左上端に見えている段落」そのものと、その段落のどのくらいの割合が上端より上に
