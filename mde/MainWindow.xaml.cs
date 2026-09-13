@@ -195,7 +195,13 @@ namespace mde
 
             m_originalTextTracker = new OriginalTextTracker(m_editor);
             m_lineEndingTracker = new LineEndingTracker(PathsReferToSameFile);
-            m_outlineManager = new OutlineManager(m_editor);
+            // ソースモード中に見出しをクリックした場合にソースエディタ側へジャンプできるよう、
+            // GetMarkdownOffsetForBlockはクロージャで渡す。m_markdownConverterはこの数行後に
+            // 構築されるが、実際に呼ばれるのは構築が完了した後（見出しクリック時）のため、
+            // この順序で問題ない（m_tableEditorを使う直後のクロージャと同じ理由）。
+            m_outlineManager = new OutlineManager(
+                m_editor, m_sourceEditor, () => m_isSourceModeFlg,
+                (doc, block) => m_markdownConverter.GetMarkdownOffsetForBlock(doc, block));
             m_outlineManager.HeadingSelected += ScrollOutlineTreeToEntry;
             m_imageManager = new ImageManager(
                 m_editor, m_originalTextTracker, () => m_isSourceModeFlg, () => m_currentFileDirectory,
@@ -1500,34 +1506,96 @@ namespace mde
                 m_sourceEditor.Visibility = Visibility.Visible;
                 m_isSourceModeFlg = true;
                 m_toggleModeBtn.Content = "Markdownモードに切替";
-                m_sourceEditor.Focus();
 
+                // 診断用ログの解析の結果、offset／lineの計算値そのものは繰り返し操作しても
+                // 毎回正しいことが確認できた（textLenに対する比率が常に一定）。そのため、
+                // 疑いの中心は計算ロジックから、実際に画面へ反映する処理（Focus・スクロール）
+                // 側に移っている。
+                //
+                // 以前はここでFocus()を呼んでからCaretIndex・スクロール位置を設定していたが、
+                // これだとTextBoxが「フォーカスを受け取った時に、その時点のCaretIndex（まだ
+                // 更新前の値）を基準に自動的にスクロールしようとする」内部処理と競合する
+                // 可能性があるため、Focus()は下のCaretIndex・スクロール位置の設定が終わった
+                // 後に呼ぶよう順序を入れ替えた。
                 if (null != caretBlock)
                 {
                     int offset = m_markdownConverter.GetMarkdownOffsetForBlock(m_editor.Document, caretBlock);
+                    DebugLogger.Log($"ToggleModeBtnClick(→Source): offset={offset} textLen={m_sourceEditor.Text.Length}");
                     if (offset >= 0 && offset <= m_sourceEditor.Text.Length)
                     {
+                        // CaretIndexを先に確定させてから、レイアウトを確定させる（UpdateLayout）。
+                        // 逆の順序（先にUpdateLayoutしてから後でCaretIndexを変える）だと、
+                        // m_sourceEditorはそれまでVisibility.Collapsedだった（レイアウトの対象外
+                        // だった）ため、Visibleにした直後・かつ古い（または既定の0のままの）
+                        // CaretIndexを基準にレイアウトの内部情報が検証されてしまう可能性がある。
                         m_sourceEditor.CaretIndex = offset;
+                        m_sourceEditor.UpdateLayout();
                         int line = m_sourceEditor.GetLineIndexFromCharacterIndex(offset);
+                        DebugLogger.Log($"ToggleModeBtnClick(→Source): line={line} caretIndex={m_sourceEditor.CaretIndex}");
                         if (line >= 0)
                         {
                             // ScrollToLineは「見えていなければ最小限だけスクロールする」仕様のため、
                             // 既に見えている行だと一番上への移動が起きないことがある。他のスクロール
                             // 処理（RestoreEditorScrollAnchor等）と同じ対策で、先に一旦先頭へ
                             // スクロール位置をリセットしてから改めて対象行へスクロールする。
+                            //
+                            // ただし、この2つの呼び出しの間にレイアウトを確定させる処理が
+                            // 入っていないと、WPF内部で「一番上へのスクロール」がまだ実際には
+                            // 反映されていない状態のまま、続けて「対象行へのスクロール」の判定
+                            // （＝対象行が見えているかどうかのチェック）が行われてしまい、
+                            // その判定に使われる情報が古いままになる可能性がある。1回目の
+                            // 呼び出しでは問題が起きにくいのに2回目以降でおかしくなる、という
+                            // report のパターンとも矛盾しないため、念のため間にUpdateLayout()を
+                            // 挟み、「一番上へのスクロール」を確実に反映させてから対象行へ
+                            // スクロールするようにした。
                             m_sourceEditor.ScrollToLine(0);
+                            m_sourceEditor.UpdateLayout();
                             m_sourceEditor.ScrollToLine(line);
                         }
                     }
                 }
+
+                m_sourceEditor.Focus();
             }
             else
             {
-                // 逆方向も同様に、ソースモードでのカーソル位置（行番号）から、Markdownモードへ
-                // 戻した後の対応するトップレベルブロックを特定し、変換完了後にそのブロックの
-                // 先頭へキャレットを移動する。
+                // 逆方向（ソース→Markdown）は、以下の2つを別々に扱う。
+                //  (a) キャレット（カーソル）の位置：ソース側でのキャレット位置に対応する
+                //      Markdown側のブロックへ、そのままキャレットを移動する（そのまま編集を
+                //      続けられるようにするため）。
+                //  (b) 画面に表示する位置（スクロール）：ソース側で実際に画面の一番上に見えて
+                //      いた行に対応するMarkdown側のブロックを、切替後も画面の一番上に表示する
+                //      （見ていた内容をそのまま見せ続けるため）。
+                //
+                // 【今回判明した根本原因】m_sourceEditorはTextWrapping="Wrap"（折り返し表示）の
+                // TextBoxである。WPFのTextBoxでは、GetLineIndexFromCharacterIndex・
+                // GetFirstVisibleLineIndex・ScrollToLine等の「行」は、いずれも折り返し後の
+                // 見た目上の行（表示行）を指しており、Markdownソースの実際の改行（\n）で区切った
+                // 論理行とは一致しない。一方、FindBlockIndexForSourceLineは、Markdown文字列を
+                // \nで分割した「論理行」の配列に対するインデックスを引数として期待している。
+                // 長い箇条書きなど、折り返しで2行以上になる行が手前に1つでもあると、そこから
+                // 後ろのすべての行で「表示行番号」と「論理行番号」がずれてしまい、そのずれた
+                // 表示行番号をそのままFindBlockIndexForSourceLineに渡していたため、意図した
+                // 段落より後ろの段落が選ばれてしまっていた（これまでの一連の「近いが微妙に
+                // ずれる」報告の、実は一番の原因だったと考えられる）。
+                //
+                // 対策として、キャレット位置は文字インデックス（CaretIndex、折り返しに影響
+                // されない）から直接、画面の一番上に見えている位置はGetCharacterIndexFromLineIndex
+                // で一旦「表示行→文字インデックス」に変換してから、それぞれ文字インデックスを
+                // 基準に論理行番号を数え直すことで、折り返しの影響を受けない正しい論理行番号を
+                // 得るようにした。
                 string sourceText = m_sourceEditor.Text;
-                int caretLine = m_sourceEditor.GetLineIndexFromCharacterIndex(m_sourceEditor.CaretIndex);
+                int caretIndexAtToggle = m_sourceEditor.CaretIndex;
+                int caretLine = GetLogicalLineIndexForCharacterOffset(sourceText, caretIndexAtToggle);
+
+                int firstVisibleDisplayLine = m_sourceEditor.GetFirstVisibleLineIndex();
+                int scrollAnchorCharIndex = (firstVisibleDisplayLine >= 0)
+                    ? m_sourceEditor.GetCharacterIndexFromLineIndex(firstVisibleDisplayLine)
+                    : -1;
+                int scrollAnchorLine = (scrollAnchorCharIndex >= 0)
+                    ? GetLogicalLineIndexForCharacterOffset(sourceText, scrollAnchorCharIndex)
+                    : -1;
+                DebugLogger.Log($"ToggleModeBtnClick(→Markdown): caretIndex={caretIndexAtToggle} caretLine={caretLine} firstVisibleDisplayLine={firstVisibleDisplayLine} scrollAnchorCharIndex={scrollAnchorCharIndex} scrollAnchorLine={scrollAnchorLine}");
 
                 RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(sourceText, m_editor.Document));
                 m_sourceEditor.Visibility = Visibility.Collapsed;
@@ -1536,23 +1604,68 @@ namespace mde
                 m_toggleModeBtn.Content = "ソースモードに切替";
                 m_outlineManager.Refresh();
 
-                int blockIndex = caretLine >= 0
+                int caretBlockIndex = caretLine >= 0
                     ? m_markdownConverter.FindBlockIndexForSourceLine(m_editor.Document, sourceText, caretLine)
                     : -1;
-                Block targetBlock = (blockIndex >= 0 && blockIndex < m_editor.Document.Blocks.Count)
-                    ? m_editor.Document.Blocks.ElementAt(blockIndex)
+                int scrollAnchorBlockIndex = scrollAnchorLine >= 0
+                    ? m_markdownConverter.FindBlockIndexForSourceLine(m_editor.Document, sourceText, scrollAnchorLine)
+                    : -1;
+                DebugLogger.Log($"ToggleModeBtnClick(→Markdown): caretBlockIndex={caretBlockIndex} scrollAnchorBlockIndex={scrollAnchorBlockIndex} blocksCount={m_editor.Document.Blocks.Count}");
+
+                Block caretBlock = (caretBlockIndex >= 0 && caretBlockIndex < m_editor.Document.Blocks.Count)
+                    ? m_editor.Document.Blocks.ElementAt(caretBlockIndex)
                     : null;
-                if (null != targetBlock)
+                Block scrollAnchorBlock = (scrollAnchorBlockIndex >= 0 && scrollAnchorBlockIndex < m_editor.Document.Blocks.Count)
+                    ? m_editor.Document.Blocks.ElementAt(scrollAnchorBlockIndex)
+                    : null;
+
+                // (a) キャレットの移動。対応するブロックが見つからない場合は、既存の（＝この
+                // カーソル位置復元機能を追加する前からの）挙動と同じく、文書の先頭へ設定する。
+                m_editor.CaretPosition = (null != caretBlock) ? caretBlock.ContentStart : m_editor.Document.ContentStart;
+
+                // (b) 画面のスクロール。m_editorはVisibility.Collapsed→Visibleに変わった
+                // ばかりでレイアウトが確定していない可能性があるため、先にUpdateLayout()で
+                // 確定させ、一旦スクロール位置を先頭へリセットしてから（他のスクロール処理と
+                // 同じ「既に見えていれば何も起きない」問題への対策）、改めてスクロール先の
+                // 段落を一番上へ表示する。
+                m_editor.UpdateLayout();
+                if (null == m_editorScrollViewer)
                 {
-                    m_editor.CaretPosition = targetBlock.ContentStart;
-                    targetBlock.BringIntoView();
+                    m_editorScrollViewer = FindVisualChild<ScrollViewer>(m_editor);
                 }
-                else
+                m_editorScrollViewer?.ScrollToVerticalOffset(0);
+                m_editor.UpdateLayout();
+                // BringIntoViewは「見えるようにするための最小限のスクロール」しか行わない
+                // ため、対象の段落が必ず画面の一番上に来るとは限らない可能性を考慮し、
+                // RestoreEditorScrollAnchor（フォルダ/アウトラインペイン切替時のスクロール
+                // 位置復元）と同じ考え方で、実際にその段落の先頭が画面の何ピクセル目に来て
+                // いるか（GetCharacterRectはビューポート基準の相対座標を返す）を確認する。
+                //
+                // 【前回の誤り】m_editorにはPadding="20,20,4,0"が設定されており、内容が
+                // 画面の一番上に来ている状態でも、GetCharacterRectのTopは0ではなく常に
+                // このPadding分（上端の場合20）を示す。これは折り返しや装飾のためのアプリ内
+                // 固有の余白であり、スクロール位置のずれではない。前回の対策では0との比較で
+                // 判定していたため、正しく一番上に来ている状態からさらに20px分だけ余計に
+                // スクロールしてしまい、文書の一番先頭を見た時とは異なる（余白の無い）
+                // 見え方になってしまっていた。今回、比較対象をm_editor.Padding.Topへ修正した。
+                Block scrollTargetBlock = scrollAnchorBlock ?? caretBlock;
+                if (null != scrollTargetBlock)
                 {
-                    // 対応するブロックが見つからない場合は、既存の（＝このカーソル位置復元機能を
-                    // 追加する前からの）挙動と同じく、文書の先頭へ設定する。
-                    m_editor.CaretPosition = m_editor.Document.ContentStart;
+                    scrollTargetBlock.BringIntoView();
+                    m_editor.UpdateLayout();
+                    if (null != m_editorScrollViewer)
+                    {
+                        Rect startRect = scrollTargetBlock.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+                        double naturalTopRestingPosition = m_editor.Padding.Top;
+                        DebugLogger.Log($"ToggleModeBtnClick(→Markdown): afterBringIntoView verticalOffset={m_editorScrollViewer.VerticalOffset} startRectTop={startRect.Top} naturalTopRestingPosition={naturalTopRestingPosition}");
+                        double delta = startRect.Top - naturalTopRestingPosition;
+                        if (0 != delta)
+                        {
+                            m_editorScrollViewer.ScrollToVerticalOffset(m_editorScrollViewer.VerticalOffset + delta);
+                        }
+                    }
                 }
+
                 m_editor.Focus();
             }
 
@@ -3027,6 +3140,38 @@ namespace mde
 
         /// <summary>0〜1の範囲に収める。</summary>
         private static double Clamp01(double a_value) => a_value < 0 ? 0 : (a_value > 1 ? 1 : a_value);
+
+        /// <summary>文字インデックス（a_charIndex）が、テキスト（a_text）中の何番目の論理行
+        /// （\nで区切った行。MarkdownConverter.FindBlockIndexForSourceLine等が期待する行番号と
+        /// 同じ数え方）にあるかを返す。
+        ///
+        /// m_sourceEditorはTextWrapping="Wrap"のため、TextBox標準のGetLineIndexFromCharacterIndex
+        /// やGetFirstVisibleLineIndexが返す「行」は、折り返し後の表示上の行であり、Markdown
+        /// ソースの実際の改行で区切った論理行とは一致しない（長い箇条書き等、折り返しで2行以上に
+        /// なる行が手前にあると、その分だけ表示行番号のほうが論理行番号より大きくなる）。
+        /// FindBlockIndexForSourceLineに渡す行番号は論理行番号である必要があるため、文字
+        /// インデックス（折り返しの影響を受けない）から、改行の数を直接数えて求める。</summary>
+        /// <param name="a_text">対象のテキスト全体。</param>
+        /// <param name="a_charIndex">論理行番号を知りたい位置の文字インデックス。</param>
+        /// <returns>0始まりの論理行番号。</returns>
+        private static int GetLogicalLineIndexForCharacterOffset(string a_text, int a_charIndex)
+        {
+            if (string.IsNullOrEmpty(a_text) || a_charIndex <= 0)
+            {
+                return 0;
+            }
+            int clampedIndex = Math.Min(a_charIndex, a_text.Length);
+            string prefix = a_text.Substring(0, clampedIndex).Replace("\r\n", "\n");
+            int lineCount = 0;
+            foreach (char c in prefix)
+            {
+                if ('\n' == c)
+                {
+                    lineCount++;
+                }
+            }
+            return lineCount;
+        }
 
         /// <summary>CaptureEditorScrollAnchorで覚えておいた位置が、再びエディタペインの左上端に
         /// 来るようスクロール位置を復元する。ペインの表示・非表示によるレイアウト変更
