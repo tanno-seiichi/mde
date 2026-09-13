@@ -4219,6 +4219,83 @@ FindBlockIndexForSourceLine`は、Markdown文字列を`\n`で分割した論理�
 - 引き続き問題が残る場合は、お手数だが、可能であれば今回のように操作時の画面録画とログを
   合わせて共有いただけると、原因の特定に大変役立つ。
 
+### 14.45 ユーザー側で加えられた修正（バージョンをv1.5.12/v2.1.12へ、列幅調整ダイアログの
+ボタンのスタイル変更、命名規約違反の修正）を反映。あわせて命名変更に伴う古いコメントの
+残存を発見し修正
+
+ユーザーより、ユーザー側で直接編集した最新のソース一式が共有され、こちら側のソースへの
+反映を依頼された。あわせて、加えた修正の中に問題がないか確認するよう依頼された。
+
+**反映した内容**：
+- バージョン番号をv1.5.7/1.5.7.0からv1.5.12/1.5.12.0へ（Chromiumあり版はv2.1.7/2.1.7.0から
+  v2.1.12/2.1.12.0へ）明示的に変更（ユーザーからの明示的な指示によるもの）。
+- ColumnWidthDialog.xamlの「キャンセル」「OK」ボタンのスタイルを、`ToolbarButton`から
+  `DialogButton`へ変更（他のダイアログ（FindReplaceWindow等）と統一されたスタイルになった）。
+- 命名規約違反の修正（対象はBlockStyles.cs、ChromiumBrowserPool.cs、DebugLogger.cs、
+  FindReplaceWindow.xaml.cs、FolderTreeManager.cs、HtmlDocumentBuilder.cs、
+  ImageManager.cs、InlineStyleEditor.cs、LineHeightDialog.xaml.cs、ListEditor.cs、
+  MainWindow.xaml.cs、MarkdownConverter.cs、Models.cs、PdfMarginDialog.xaml.cs、
+  SearchReplaceService.cs、TableEditor.cs）：
+  - プロパティ（`ImageInfo`・`AnchorInfo`・`CodeBlockInfo`・`LinkInfo`のフィールド等）が
+    `m_` + キャメルケースになっていたものを、パスカルケース（例：`m_url` → `Url`）へ修正。
+  - `static readonly`のフィールドが、定数のような命名（大文字＋アンダースコア区切り、例：
+    `HEADER_BACKGROUND`）になっていたものを、真の定数（`const`）ではなくメンバ変数である
+    ことがわかる命名（`m_` + キャメルケース、例：`m_headerBackground`）へ修正。
+  - `static`な変数が`s_` + キャメルケース（例：`s_lock`、`s_lastTerm`）になっていたものを、
+    `m_` + キャメルケース（例：`m_lock`、`m_lastTerm`）へ修正。
+  - 真の`const`（コンパイル時定数。例：`DefaultLineHeight`、`MinMargin`）はアッパー
+    スネークケース（例：`DEFAULT_LINE_HEIGHT`、`MIN_MARGIN`）へ修正。
+
+**確認結果**：反映にあたり、変更前後の全ファイルの差分を確認した。いずれも定義側・
+呼び出し側を含めて一貫して名前が変更されており、古い名前の参照が実際のコード（コメントを
+除く）に残っていないこと、nashi/ari双方に同じ内容が反映されていること、括弧・ブレースの
+対応・NBSP・BOM・3行以上の連続空行に問題がないことを確認した。動作の変更を伴うものでは
+なく、名前の付け替えのみであるため、IMEに関わる処理への影響もない。
+
+**見つけた問題点（コメント内の古い名前の残存）**：上記の名前変更後も、一部のXMLドキュメント
+コメント（`///`）・行コメント（`//`）内で、変更前の古い名前がそのまま残っている箇所が
+6箇所見つかった（コンパイルには影響しないが、コードを読む際に古い名前と新しい名前が混在し、
+誤解を招く可能性があるため、あわせて修正した）。
+- BlockStyles.cs：`CELL_BORDER定数を渡す` → `m_cellBorderを渡す`、および3箇所の
+  `TABLE_MEASURE_FONT_FAMILY` → `m_tableMeasureFontFamily`（すべてコメント内）。
+- InlineStyleEditor.cs：`MarkdownConverter.INLINE_CONTENT_REGEX` → `MarkdownConverter.
+  m_inlineContentRegex`（コメント内）。
+- SearchReplaceService.cs：`CURRENT_MATCH_HIGHLIGHT_BRUSH`・`MATCH_HIGHLIGHT_BRUSH`が
+  それぞれ2箇所ずつコメント内に残っていたのを、`m_currentMatchHighlightBrush`・
+  `m_matchHighlightBrush`へ修正。
+
+**変更したファイル**：
+- 上記の命名規約修正・バージョン変更・ボタンスタイル変更を反映した全ファイル
+  （BlockStyles.cs、ChromiumBrowserPool.cs、ColumnWidthDialog.xaml、DebugLogger.cs、
+  FindReplaceWindow.xaml.cs、FolderTreeManager.cs、HtmlDocumentBuilder.cs、
+  ImageManager.cs、InlineStyleEditor.cs、LineHeightDialog.xaml.cs、ListEditor.cs、
+  MainWindow.xaml.cs、MarkdownConverter.cs、Models.cs、PdfMarginDialog.xaml.cs、
+  SearchReplaceService.cs、TableEditor.cs、Properties/AssemblyInfo.cs、msi/Package.wxs）。
+- doc/DEVELOPMENT_LOG.md：本節（14.45）として、反映内容・確認結果・見つけた問題点を記録した。
+
+**検証方法**：
+- 括弧・ブレースの対応チェック（変更のあった全.csファイル）：新たな不均衡なし。
+- NBSP・3行以上の連続空行のチェック（変更のあった全.csファイル）：問題なし。
+- BOMのチェック：一部のファイル（PdfMarginDialog.xaml.cs、DebugLogger.cs、
+  ColumnWidthDialog.xaml.cs、ImeCaretMoveHelper.cs、ChromiumPdfExporter.cs、
+  ChromiumBrowserPool.cs、HtmlDocumentBuilder.cs）にBOMが付いていないこと、
+  MarkdownConverter.csにBOMが2箇所（冒頭以外にもう1箇所）あることを確認したが、これらは
+  いずれも今回の変更前から存在していた状態であり、今回の反映によって新たに生じたものでは
+  ないことを確認した。
+- nashi/ari間のdiff -rqで、既知の差分一覧（MainWindow.xaml.csについてはPDF書き出し部分の
+  みの差分）以外に差分がないことを確認した。
+- バージョン番号は、ユーザーからの明示的な指示に基づき1.5.12.0／2.1.12.0へ変更した
+  （AssemblyInfo.cs・msi/Package.wxsの両方で一致していることを確認）。
+- 命名変更については、変更前後の全ファイルの差分を1つずつ確認し、定義側・呼び出し側を
+  含めて一貫していること、コンパイルに影響する古い名前の参照が残っていないことを確認した。
+- こちらの環境はネットワーク制限のためdotnet buildができず、実際のコンパイル確認は
+  今回もできていない。
+
+**確認をお願いしたいこと**：
+- 実際にビルド・動作確認をしていただき、問題がないか確認いただきたい（今回はユーザー側の
+  変更をそのまま反映したものであり、こちらでは動作の変更は加えていないが、念のため）。
+- 上記のコメント内の古い名前の修正について、意図と異なる修正になっていないか確認いただきたい。
+
 ## 16. 新しい機能を追加する時の指針
 
 1. **どのクラスの責務かを見極める**：4章の表を参照し、既存クラスに機能を追加すべきか、新しい

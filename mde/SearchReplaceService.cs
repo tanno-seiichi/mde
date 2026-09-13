@@ -55,9 +55,9 @@ namespace mde
         /// 同時に強調表示するため、単一ではなく一覧として保持する。</summary>
         private readonly List<TextRange> m_currentHighlights = new List<TextRange>();
 
-        /// <summary>今「現在の一致箇所」としてCURRENT_MATCH_HIGHLIGHT_BRUSHで強調表示している
+        /// <summary>今「現在の一致箇所」としてm_currentMatchHighlightBrushで強調表示している
         /// 範囲（あれば）。次にキャレットが別の一致箇所へ移動した際、この範囲の背景色を通常の
-        /// MATCH_HIGHLIGHT_BRUSHへ戻すために保持している。m_currentHighlightsの一覧から除外
+        /// m_matchHighlightBrushへ戻すために保持している。m_currentHighlightsの一覧から除外
         /// されたり、ClearHighlight()/OnDocumentReplaced()で文書ごと無効化された場合は、
         /// 古い（存在しない、または別文書の）範囲を誤って触らないようnullに戻す。</summary>
         private TextRange m_currentMatchRange;
@@ -355,8 +355,8 @@ namespace mde
         }
 
         /// <summary>
-        /// 「現在の一致箇所」を切り替える。直前に「現在」として専用色（CURRENT_MATCH_HIGHLIGHT_
-        /// BRUSH）で強調表示していた範囲があれば、通常の一致箇所と同じ色（MATCH_HIGHLIGHT_BRUSH）
+        /// 「現在の一致箇所」を切り替える。直前に「現在」として専用色（m_currentMatchHighlight
+        /// Brush）で強調表示していた範囲があれば、通常の一致箇所と同じ色（m_matchHighlightBrush）
         /// へ戻し、新しい範囲に専用色を適用する。範囲がすでに文書上に存在しない場合は、
         /// ApplyPropertyValueが例外を投げることがあるため、それぞれ個別にtry/catchしている。
         /// </summary>

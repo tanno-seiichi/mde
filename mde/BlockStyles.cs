@@ -222,7 +222,7 @@ namespace mde
         /// 防ぎやすい）。
         /// </summary>
         /// <param name="a_table">対象の表（RowGroups・Rows・Cellsまで構築済みであること）。</param>
-        /// <param name="a_borderBrush">罫線の色（呼び出し側が使っているCELL_BORDER定数を渡す）。</param>
+        /// <param name="a_borderBrush">罫線の色（呼び出し側が使っているm_cellBorderを渡す）。</param>
         public static void ApplyTableCellBorders(Table a_table, Brush a_borderBrush)
         {
             // 表自身の外周（上辺・左辺）を1回だけ描く。TableはBlockを継承しており、
@@ -375,7 +375,7 @@ namespace mde
         public const double DEFAULT_NATURAL_COLUMN_WIDTH_PX = 80;
 
         /// <summary>
-        /// 「ダッシュ1個ぶんの幅」として使う基準値（px）。TABLE_MEASURE_FONT_FAMILY・
+        /// 「ダッシュ1個ぶんの幅」として使う基準値（px）。m_tableMeasureFontFamily・
         /// TABLE_MEASURE_FONT_SIZEで半角文字1つ（"0"）を測定した幅を基準にしている。
         /// これにより、ダイアログでの「幅の数値」が、おおよそ「その文字数ぶんの半角文字が
         /// 入る幅」という感覚に近くなる。
@@ -421,7 +421,7 @@ namespace mde
         /// 装飾で明示的に指定されているフォントファミリー・サイズ・太さ）で個別に測定し、
         /// 合計した幅（px）を返す。
         /// 【なぜセル全体を1つのフォントで測定してはいけないか】以前は、セル全体のプレーン
-        /// テキスト（TextRange.Text）を、常にTABLE_MEASURE_FONT_FAMILY・TABLE_MEASURE_FONT_SIZE
+        /// テキスト（TextRange.Text）を、常にm_tableMeasureFontFamily・TABLE_MEASURE_FONT_SIZE
         /// という単一のフォントで一括測定していた。しかし、インラインコード（`Ctrl+N`等）は
         /// 実際にはConsolas・13.5pxという別のフォントで表示される（AppendStyledRunsWithLineBreaks
         /// 参照）ため、この一括測定では実際の表示幅より小さく見積もってしまうことがあった。
@@ -434,7 +434,7 @@ namespace mde
         /// インラインコード等ごとに分かれた実際の描画単位）について、そのRunにローカルに設定
         /// されているFontFamily/FontSize/FontWeightがあればそれをそのまま使い（インラインコード
         /// のConsolas・13.5px、太字のFontWeights.Bold等）、無ければセルの既定
-        /// （TABLE_MEASURE_FONT_FAMILY・TABLE_MEASURE_FONT_SIZE・セルのFontWeight。ヘッダー行は
+        /// （m_tableMeasureFontFamily・TABLE_MEASURE_FONT_SIZE・セルのFontWeight。ヘッダー行は
         /// Bold）を使って個別に幅を測定し、合計する（1つの段落内で折り返さず1行に並ぶ前提の、
         /// 内容にちょうど収まる幅を求めるため）。ローカル値の有無で判定しているのは、Runが
         /// まだ実際の文書（FlowDocument）へ組み込まれる前に呼ばれる場合があり、通常の

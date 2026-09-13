@@ -775,7 +775,7 @@ namespace mde
                 '>' == lastChar)
             {
                 // URL自動リンク（<https://...>）のライブ入力変換。バッチ変換
-                // （MarkdownConverter.INLINE_CONTENT_REGEX）ではURL自動リンクの分岐が
+                // （MarkdownConverter.m_inlineContentRegex）ではURL自動リンクの分岐が
                 // メールアドレス自動リンクより先に置かれており、<https://user@example.com>
                 // のような（メールアドレス自動リンクの正規表現にも一致し得る）URLはURLとして
                 // 解釈される。ライブ入力変換でもこの優先順位を一致させるため、URL側を先に判定する。
