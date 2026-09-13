@@ -19,6 +19,9 @@ namespace mde
     public class OutlineManager
     {
         private readonly RichTextBox m_editor;
+        private readonly TextBox m_sourceEditor;
+        private readonly Func<bool> m_isSourceModeFunc;
+        private readonly Func<FlowDocument, Block, int> m_getMarkdownOffsetForBlockFunc;
 
         /// <summary>アウトラインペインの一覧（ListBox.ItemsSourceとして使う）。</summary>
         public ObservableCollection<OutlineEntry> Items { get; } = new ObservableCollection<OutlineEntry>();
@@ -26,10 +29,20 @@ namespace mde
         /// <summary>
         /// OutlineManagerを構築する。
         /// </summary>
-        /// <param name="a_editor">対象のRichTextBox。</param>
-        public OutlineManager(RichTextBox a_editor)
+        /// <param name="a_editor">対象のRichTextBox（Markdownモード）。</param>
+        /// <param name="a_sourceEditor">対象のTextBox（ソースモード）。ソースモード中に見出しを
+        /// クリックした時、Markdown側ではなくこちらへジャンプするために使う。</param>
+        /// <param name="a_isSourceModeFunc">現在ソースモードかどうかを返す関数。</param>
+        /// <param name="a_getMarkdownOffsetForBlockFunc">MarkdownConverter.GetMarkdownOffset
+        /// ForBlockへの参照。ソースモード中に見出しをクリックした時、その見出しに対応する
+        /// ソース文字列中のオフセットを求めるために使う。</param>
+        public OutlineManager(RichTextBox a_editor, TextBox a_sourceEditor, Func<bool> a_isSourceModeFunc,
+            Func<FlowDocument, Block, int> a_getMarkdownOffsetForBlockFunc)
         {
             this.m_editor = a_editor;
+            this.m_sourceEditor = a_sourceEditor;
+            this.m_isSourceModeFunc = a_isSourceModeFunc;
+            this.m_getMarkdownOffsetForBlockFunc = a_getMarkdownOffsetForBlockFunc;
         }
 
         /// <summary>現在の文書から見出しを収集し、一覧を作り直す。フォルダツリーペインと同じ
@@ -292,7 +305,7 @@ namespace mde
             if (a_args.NewValue is OutlineEntry entry && null != entry.Target)
             {
                 Paragraph target = entry.Target;
-                // ここでm_editor.Focus()を同期的に（SelectedItemChangedの中で即座に）呼ぶと、
+                // ここでFocus()を同期的に（SelectedItemChangedの中で即座に）呼ぶと、
                 // クリックされたTreeViewItem自身がまだ「選択状態にする・自分にフォーカスを
                 // 当てる」という処理を完了しきっていない同じタイミングでキーボードフォーカスを
                 // 強制的に奪ってしまい、TreeViewItem側の選択確定処理と競合する。この競合により、
@@ -302,6 +315,48 @@ namespace mde
                 // クリックの入力処理が完全に終わった直後まで遅延させることで、この競合を避ける。
                 m_editor.Dispatcher.BeginInvoke(new Action(() =>
                 {
+                    // ソースモード中は、Markdown側の（非表示になっている）m_editorを操作しても
+                    // 見た目には何も反映されない。ソースモードのままクリックした見出しの場所へ
+                    // 移動できるよう、表示中のソースエディタ側で対応する行へジャンプする（モードの
+                    // 切り替えは行わない）。
+                    //
+                    // targetはm_editor.Documentの中のParagraphのままだが、これはアウトライン
+                    // 一覧自体がm_editor.Documentから作られているため、対応関係は保たれている。
+                    // ただし、ソースモードに入った後にソース側だけを編集していた場合、アウトライン
+                    // 一覧はその編集を反映していない（ソースモード中はアウトラインが自動更新
+                    // されない、既存の制限）ため、その間の編集量によっては多少ずれることがある。
+                    if (m_isSourceModeFunc())
+                    {
+                        int offset = m_getMarkdownOffsetForBlockFunc(m_editor.Document, target);
+                        DebugLogger.Log($"OutlineManager.HandleSelectionChanged(source): offset={offset} textLen={m_sourceEditor.Text.Length}");
+                        if (offset >= 0 && offset <= m_sourceEditor.Text.Length)
+                        {
+                            // CaretIndexを先に確定させてから行番号を計算する（ToggleModeBtnClick
+                            // の→Source方向と同じ順序。詳しい理由はそちらのコメント参照）。
+                            m_sourceEditor.CaretIndex = offset;
+                            int line = m_sourceEditor.GetLineIndexFromCharacterIndex(offset);
+                            DebugLogger.Log($"OutlineManager.HandleSelectionChanged(source): line={line} caretIndex={m_sourceEditor.CaretIndex}");
+                            if (line >= 0)
+                            {
+                                // ScrollToLineは「見えていなければ最小限だけスクロールする」
+                                // 仕様のため、既に見えている行だと一番上への移動が起きない
+                                // ことがある。他のスクロール処理と同じ対策で、先に一旦先頭へ
+                                // リセットしてから改めて対象行へスクロールする。
+                                //
+                                // 2つの呼び出しの間にレイアウトを確定させる処理がないと、
+                                // 「一番上へのスクロール」がまだ実際には反映されていない状態の
+                                // まま「対象行が見えているか」の判定が行われてしまう可能性が
+                                // あるため、間にUpdateLayout()を挟んで確実に反映させる
+                                // （MainWindow.xaml.csのToggleModeBtnClickと同じ対策）。
+                                m_sourceEditor.ScrollToLine(0);
+                                m_sourceEditor.UpdateLayout();
+                                m_sourceEditor.ScrollToLine(line);
+                            }
+                        }
+                        m_sourceEditor.Focus();
+                        return;
+                    }
+
                     m_editor.CaretPosition = target.ContentStart;
                     ScrollParagraphToTop(target, m_editor);
                     m_editor.Focus();
