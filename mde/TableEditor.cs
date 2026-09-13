@@ -31,6 +31,7 @@ namespace mde
         private readonly Func<bool> m_isSourceMode;
         private readonly Action m_refreshOutline;
         private readonly Action<string> m_insertPlainTextWithLineBreaks;
+        private readonly Func<bool> m_correctColumnWidthsFlg;
 
         /// <summary>右クリック時にマウス下にあったセル。右クリックメニューの各項目から参照される。</summary>
         public TableCell ContextCell { get; set; }
@@ -48,6 +49,10 @@ namespace mde
         /// <param name="a_isSourceMode">現在ソースモードかどうかを返すdelegate。</param>
         /// <param name="a_refreshOutline">アウトラインペインの再構築を依頼するdelegate。</param>
         /// <param name="a_insertPlainTextWithLineBreaks">コードブロックへの貼り付け時に使う、改行対応のプレーンテキスト挿入delegate。</param>
+        /// <param name="a_correctColumnWidthsFlg">メニュー「表示」→「列幅を補正する」の現在の
+        /// 状態を返すdelegate。省略時（null）はtrueとして扱う。列幅調整ダイアログでOKが
+        /// 押された際、この状態に応じて実際の見た目を決める（BlockStyles.
+        /// ApplyEffectiveColumnWidths参照）。</param>
         public TableEditor(
             RichTextBox a_editor,
             OriginalTextTracker a_originalTextTracker,
@@ -55,7 +60,8 @@ namespace mde
             Action<Action> a_runAsProgrammaticChange,
             Func<bool> a_isSourceMode,
             Action a_refreshOutline,
-            Action<string> a_insertPlainTextWithLineBreaks)
+            Action<string> a_insertPlainTextWithLineBreaks,
+            Func<bool> a_correctColumnWidthsFlg = null)
         {
             this.m_editor = a_editor;
             this.m_originalTextTracker = a_originalTextTracker;
@@ -64,6 +70,7 @@ namespace mde
             this.m_isSourceMode = a_isSourceMode;
             this.m_refreshOutline = a_refreshOutline;
             this.m_insertPlainTextWithLineBreaks = a_insertPlainTextWithLineBreaks;
+            this.m_correctColumnWidthsFlg = a_correctColumnWidthsFlg;
         }
 
         private static readonly Brush HEADER_BACKGROUND = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
@@ -399,6 +406,31 @@ namespace mde
             int colInsertIdx = Math.Min(insertIdx, table.Columns.Count);
             table.Columns.Insert(colInsertIdx, newColumn);
 
+            // 区切り行のダッシュ数（保存されるべき「本当の値」）の記録も、列の増減に合わせて
+            // 同じ位置に既定値の要素を挿入しておく（まだ一度も調整されていない表には何もしない。
+            // BlockStyles.InsertIntoSourceDashCountsのコメント参照）。
+            BlockStyles.InsertIntoSourceDashCounts(table, colInsertIdx);
+
+            // 列幅調整ダイアログ（ステップ2）で、この表の他の列がすでに明示的な比率幅
+            // （Star）になっている場合、新しく挿入した列だけ既定のAuto幅のままだと、単位が
+            // 混在してしまう（BlockStyles.ApplyExplicitColumnWidthsのコメント参照：単位を
+            // 混在させない方針にしている）。そのため、他の列が1つでも明示的な比率幅なら、
+            // 新しい列にも既定の比率（TABLE_COLUMN_DEFAULT_DASH_COUNT。区切り行の既定の
+            // ダッシュ数と同じ値）を明示的に設定する。
+            bool tableAlreadyCustomizedFlg = false;
+            foreach (TableColumn col in table.Columns)
+            {
+                if (col != newColumn && col.Width.IsStar)
+                {
+                    tableAlreadyCustomizedFlg = true;
+                    break;
+                }
+            }
+            if (tableAlreadyCustomizedFlg)
+            {
+                newColumn.Width = new GridLength(BlockStyles.TABLE_COLUMN_DEFAULT_DASH_COUNT, GridUnitType.Star);
+            }
+
             // 表全体に対して罫線をまとめて設定し直す（詳細はBlockStyles.ApplyTableCellBorders
             // のコメント参照）。
             BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
@@ -409,6 +441,100 @@ namespace mde
             }
             m_editor.Focus();
             m_markDirty();
+        }
+
+        // ---------------- 列幅調整（ステップ2） ----------------
+
+        /// <summary>ContextCellが属する表の、列幅調整ダイアログの初期表示用データ（各列の
+        /// ラベルと現在の幅、「自動計算」チェックボックスの初期状態）を組み立てる。
+        /// ContextCellが無い、または表が見つからない場合はラベル一覧がnullの値を返す
+        /// （呼び出し側はLabelsがnullならダイアログを開かない）。</summary>
+        public (List<string> Labels, List<int> DashCounts, bool IsAutoCalculated) GetColumnWidthDialogInfo()
+        {
+            var table = null != ContextCell ? FindEnclosingTable(ContextCell) : null;
+            if (null == table)
+            {
+                return (null, null, false);
+            }
+            return BlockStyles.BuildColumnWidthDialogInfo(table);
+        }
+
+        /// <summary>列幅調整ダイアログでOKが押された後、ContextCellが属する表に、指定された
+        /// 幅（区切り行のダッシュ数相当。「自動計算」がオンだった場合はすべて既定値になっている。
+        /// ColumnWidthDialog.OkClick参照）と、現在の「列幅を補正する」の状態から決まる実際の
+        /// 見た目を適用する（詳細はBlockStyles.ApplyEffectiveColumnWidths参照）。呼び出し順は
+        /// ダイアログに渡した列の順序と一致していること。</summary>
+        /// <param name="a_dashCounts">列ごとの新しい値（ダッシュ数）。</param>
+        public void ApplyColumnWidths(List<int> a_dashCounts)
+        {
+            if (null == ContextCell)
+            {
+                return;
+            }
+            var table = FindEnclosingTable(ContextCell);
+            if (null == table)
+            {
+                return;
+            }
+            m_originalTextTracker.Invalidate(ContextCell.ContentStart);
+            // 区切り行のダッシュ数（保存されるべき「本当の値」）を先に記録しておく
+            // （BlockStyles.SetSourceDashCountsのコメント参照）。この記録は、直後の
+            // ApplyEffectiveColumnWidthsが「列幅を補正する」がオフで表示を既定の均等幅に
+            // 戻す場合でも、そのまま保持され続ける。
+            BlockStyles.SetSourceDashCounts(table, a_dashCounts);
+            bool correctColumnWidthsFlg = m_correctColumnWidthsFlg?.Invoke() ?? true;
+            BlockStyles.ApplyEffectiveColumnWidths(table, a_dashCounts, correctColumnWidthsFlg, GetAvailableTableWidth());
+            m_markDirty();
+        }
+
+        /// <summary>エディタの現在のサイズとパディングから、表に使える幅を計算する
+        /// （ImageManager.GetAvailableImageWidthと同じ考え方）。</summary>
+        /// <returns>利用可能な幅（ピクセル）。</returns>
+        public double GetAvailableTableWidth()
+        {
+            double w = m_editor.ActualWidth;
+            if (w <= 0)
+            {
+                return 560; // 初回レイアウト前の妥当なフォールバック値
+            }
+            w -= m_editor.Padding.Left + m_editor.Padding.Right;
+            w -= 24; // スクロールバー＋右端が詰まりすぎないための余白
+            return Math.Max(100, w);
+        }
+
+        /// <summary>文書内の表をすべて見つける（表は常に文書の最上位ブロックとして挿入される
+        /// ため、トップレベルのBlocksだけを見れば十分）。</summary>
+        /// <param name="a_doc">対象の文書。</param>
+        public List<Table> FindAllTables(FlowDocument a_doc)
+        {
+            var tables = new List<Table>();
+            foreach (Block b in a_doc.Blocks)
+            {
+                if (b is Table t)
+                {
+                    tables.Add(t);
+                }
+            }
+            return tables;
+        }
+
+        /// <summary>エディタのサイズが変わった時に、未調整（自動計算）の表の列幅を、現在の
+        /// 表示幅に合わせて再計算する。呼び出し側（MainWindow.EditorSizeChanged）で、
+        /// RunWithoutDirtyMarkingでラップして呼ぶこと（列幅の変更はRichTextBox.TextChangedを
+        /// 発生させるため。ChromiumPdfExporter呼び出し側の既存コメント参照）。「列幅を補正する」
+        /// がオフの間は、すべての表が既定のAuto幅で表示されているため何もしない。</summary>
+        public void RefreshAutoCalculatedColumnWidthsForResize()
+        {
+            bool correctColumnWidthsFlg = m_correctColumnWidthsFlg?.Invoke() ?? true;
+            if (!correctColumnWidthsFlg)
+            {
+                return;
+            }
+            double availableWidth = GetAvailableTableWidth();
+            foreach (var table in FindAllTables(m_editor.Document))
+            {
+                BlockStyles.RefreshAutoCalculatedColumnWidths(table, availableWidth);
+            }
         }
 
         /// <summary>ContextCellが属する行を削除する（表の唯一の行なら表ごと削除する）。</summary>
@@ -493,6 +619,10 @@ namespace mde
             {
                 table.Columns.RemoveAt(colIndex);
             }
+            // 区切り行のダッシュ数（保存されるべき「本当の値」）の記録も、列の増減に合わせて
+            // 同じ位置の要素を取り除いておく（InsertColumn側のInsertIntoSourceDashCountsと対に
+            // なる処理。BlockStyles.RemoveFromSourceDashCountsのコメント参照）。
+            BlockStyles.RemoveFromSourceDashCounts(table, colIndex);
             // 削除した列が最左列だった場合、繰り上がった新しい最左列のセルに左辺の罫線が
             // 必要になるため、表全体に対して罫線をまとめて設定し直す（DeleteRow側と同じ理由。
             // BlockStyles.ApplyTableCellBordersのコメント参照）。

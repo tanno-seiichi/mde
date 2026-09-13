@@ -71,6 +71,8 @@
                     <MenuItem x:Name="m_lineBreakModeBlankOnlyMenuItem" Header="空行が入るまで改行しない(_B)"
                               IsCheckable="True" Click="LineBreakModeBlankOnlyChecked"/>
                 </MenuItem>
+                <MenuItem x:Name="m_correctColumnWidthsMenuItem" Header="列幅を補正する(_W)"
+                          IsCheckable="True" Click="CorrectColumnWidthsMenuItemChecked"/>
                 <Separator/>
                 <MenuItem x:Name="m_debugLogMenuItem" Header="デバッグログを有効にする(_D)"
                           IsCheckable="True" Click="DebugLogMenuItemChecked"/>
@@ -329,6 +331,8 @@
                                           Click="InsertColumnLeftItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_insertColumnRightMenuItem" Header="右に列を挿入" Style="{StaticResource CtxMenuItem}"
                                           Click="InsertColumnRightItemClick" Visibility="Collapsed"/>
+                                <MenuItem x:Name="m_adjustColumnWidthsMenuItem" Header="列幅を調整…" Style="{StaticResource CtxMenuItem}"
+                                          Click="AdjustColumnWidthsItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_deleteRowMenuItem" Header="この行を削除" Style="{StaticResource CtxMenuItem}"
                                           Click="DeleteRowItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_deleteColumnMenuItem" Header="この列を削除" Style="{StaticResource CtxMenuItem}"
