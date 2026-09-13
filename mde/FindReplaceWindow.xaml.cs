@@ -77,12 +77,12 @@ namespace mde
         /// <param name="a_owner">検索・置換対象のメインウィンドウ。</param>
         // ダイアログを閉じても検索条件を覚えておくための静的フィールド
         // （アプリのプロセスが続いている間、ウィンドウを開き直しても引き継がれる）。
-        private static string s_lastTerm = "";
-        private static string s_lastReplacement = "";
-        private static bool s_lastCaseSensitiveFlg = false;
-        private static bool s_lastUseRegexFlg = false;
-        private static bool s_lastScopeFolderFlg = false;
-        private static bool s_lastReplaceExpandedFlg = false;
+        private static string m_lastTerm = "";
+        private static string m_lastReplacement = "";
+        private static bool m_lastCaseSensitiveFlg = false;
+        private static bool m_lastUseRegexFlg = false;
+        private static bool m_lastScopeFolderFlg = false;
+        private static bool m_lastReplaceExpandedFlg = false;
 
         public FindReplaceWindow(MainWindow a_owner)
         {
@@ -90,25 +90,25 @@ namespace mde
             this.m_owner = a_owner;
 
             // 前回の検索条件を復元する。
-            m_searchBox.Text = s_lastTerm;
-            m_replaceBox.Text = s_lastReplacement;
-            m_caseSensitiveBox.IsChecked = s_lastCaseSensitiveFlg;
-            m_useRegexBox.IsChecked = s_lastUseRegexFlg;
-            m_scopeFolder.IsChecked = s_lastScopeFolderFlg;
-            m_scopeCurrentFile.IsChecked = !s_lastScopeFolderFlg;
-            m_replaceExpander.IsExpanded = s_lastReplaceExpandedFlg;
+            m_searchBox.Text = m_lastTerm;
+            m_replaceBox.Text = m_lastReplacement;
+            m_caseSensitiveBox.IsChecked = m_lastCaseSensitiveFlg;
+            m_useRegexBox.IsChecked = m_lastUseRegexFlg;
+            m_scopeFolder.IsChecked = m_lastScopeFolderFlg;
+            m_scopeCurrentFile.IsChecked = !m_lastScopeFolderFlg;
+            m_replaceExpander.IsExpanded = m_lastReplaceExpandedFlg;
 
             m_searchBox.Focus();
             m_searchBox.SelectAll();
             Closed += (s, e) =>
             {
                 // 次回このウィンドウを開いた時のために、現在の検索条件を覚えておく。
-                s_lastTerm = m_searchBox.Text;
-                s_lastReplacement = m_replaceBox.Text;
-                s_lastCaseSensitiveFlg = CaseSensitive;
-                s_lastUseRegexFlg = UseRegex;
-                s_lastScopeFolderFlg = true == m_scopeFolder.IsChecked;
-                s_lastReplaceExpandedFlg = m_replaceExpander.IsExpanded;
+                m_lastTerm = m_searchBox.Text;
+                m_lastReplacement = m_replaceBox.Text;
+                m_lastCaseSensitiveFlg = CaseSensitive;
+                m_lastUseRegexFlg = UseRegex;
+                m_lastScopeFolderFlg = true == m_scopeFolder.IsChecked;
+                m_lastReplaceExpandedFlg = m_replaceExpander.IsExpanded;
 
                 a_owner.SearchReplace.ClearHighlight();
                 a_owner.OutlinePane.ClearSearchMatches();

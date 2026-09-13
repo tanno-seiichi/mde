@@ -20,21 +20,21 @@ namespace mde
     /// <summary>見出し・コードブロックの段落スタイルを適用する静的ヘルパー群。</summary>
     public static class BlockStyles
     {
-        private static readonly Brush CELL_BORDER = new SolidColorBrush(Color.FromRgb(0xB4, 0xB4, 0xB4));
-        private static readonly Brush CODE_BLOCK_BACKGROUND = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
+        private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xB4, 0xB4, 0xB4));
+        private static readonly Brush m_codeBlockBackground = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
         // 表のヘッダー行だけ、セル間の縦の区切り線（右辺）をこの太さにする。本文行の1に対して
         // わずかに太くすることで、印刷（PDF出力）時にヘッダー行の縦罫線だけが描画されずに
         // 消えてしまう現象を避ける（実機での複数バージョン比較検証により、色を変える案では
         // 効果が無く、太さを変えるこの案で解消することを確認済み）。
         private const double HEADER_VERTICAL_BORDER_THICKNESS = 1.75;
         // ハイライト（==text==）の背景色。
-        private static readonly Brush HIGHLIGHT_BACKGROUND = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0x8A));
+        private static readonly Brush m_highlightBackground = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0x8A));
 
         /// <summary>コードブロックの背景色（他クラスからも参照できるよう公開）。</summary>
-        public static Brush CodeBlockBackgroundBrush => CODE_BLOCK_BACKGROUND;
+        public static Brush CodeBlockBackgroundBrush => m_codeBlockBackground;
 
         /// <summary>ハイライト（==text==）の背景色（他クラスからも参照できるよう公開）。</summary>
-        public static Brush HighlightBrush => HIGHLIGHT_BACKGROUND;
+        public static Brush HighlightBrush => m_highlightBackground;
 
         /// <summary>段落を、見出し・コードブロック等の特別な見た目が付く前の状態にリセットする。</summary>
         /// <param name="a_p">対象の段落。</param>
@@ -73,7 +73,7 @@ namespace mde
                 a_p.Margin = new Thickness(0, a_level <= 2 ? 20 : 14, 0, 10);
                 if (a_level <= 2)
                 {
-                    a_p.BorderBrush = CELL_BORDER;
+                    a_p.BorderBrush = m_cellBorder;
                     a_p.BorderThickness = new Thickness(0, 0, 0, 1 == a_level ? 0.75 : 0.5);
                     a_p.Padding = new Thickness(0, 0, 0, 4);
                 }
@@ -90,14 +90,14 @@ namespace mde
         public static void ApplyCodeBlockStyle(Paragraph a_p, string a_language = "")
         {
             ClearSpecialStyling(a_p);
-            a_p.Tag = new CodeBlockInfo { m_language = a_language ?? "" };
+            a_p.Tag = new CodeBlockInfo { Language = a_language ?? "" };
             a_p.FontFamily = new FontFamily("Consolas");
             a_p.FontSize = 13.5;
             a_p.FontWeight = FontWeights.Normal;
-            a_p.Background = CODE_BLOCK_BACKGROUND;
+            a_p.Background = m_codeBlockBackground;
             a_p.Padding = new Thickness(14, 10, 14, 10);
             a_p.Margin = new Thickness(0, 4, 0, 14);
-            a_p.BorderBrush = CELL_BORDER;
+            a_p.BorderBrush = m_cellBorder;
             a_p.BorderThickness = new Thickness(1);
             ToolTipService.SetToolTip(a_p, string.IsNullOrEmpty(a_language) ? "コードブロック" : "コードブロック (" + a_language + ")");
         }
@@ -109,7 +109,7 @@ namespace mde
             ClearSpecialStyling(a_p);
             a_p.Tag = new HorizontalRuleInfo();
             a_p.FontSize = 1;
-            a_p.BorderBrush = CELL_BORDER;
+            a_p.BorderBrush = m_cellBorder;
             a_p.BorderThickness = new Thickness(0, 1, 0, 0);
             a_p.Margin = new Thickness(0, 14, 0, 14);
             a_p.Padding = new Thickness(0);
@@ -255,7 +255,7 @@ namespace mde
 
         /// <summary>表のセルの計測に使うフォント（MainWindow.xamlのFlowDocumentの設定と
         /// 合わせてある）。</summary>
-        private static readonly FontFamily TABLE_MEASURE_FONT_FAMILY = new FontFamily("Yu Gothic UI, Segoe UI");
+        private static readonly FontFamily m_tableMeasureFontFamily = new FontFamily("Yu Gothic UI, Segoe UI");
         private const double TABLE_MEASURE_FONT_SIZE = 16;
 
         /// <summary>この幅（px）を超える内容を持つ列は、固定幅にはせず、残りの幅を分け合って
@@ -328,7 +328,7 @@ namespace mde
                             continue;
                         }
                         var typeface = new Typeface(
-                            TABLE_MEASURE_FONT_FAMILY, FontStyles.Normal, cell.FontWeight, FontStretches.Normal);
+                            m_tableMeasureFontFamily, FontStyles.Normal, cell.FontWeight, FontStretches.Normal);
                         var formatted = new FormattedText(
                             text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface,
                             TABLE_MEASURE_FONT_SIZE, Brushes.Black, 1.0);
@@ -382,7 +382,7 @@ namespace mde
         /// </summary>
         private static double DashUnitWidthPx()
         {
-            var typeface = new Typeface(TABLE_MEASURE_FONT_FAMILY, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+            var typeface = new Typeface(m_tableMeasureFontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
             var formatted = new FormattedText(
                 "0", CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface,
                 TABLE_MEASURE_FONT_SIZE, Brushes.Black, 1.0);
@@ -465,7 +465,7 @@ namespace mde
                         continue;
                     }
                     FontFamily fontFamily = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontFamilyProperty)
-                        ? run.FontFamily : TABLE_MEASURE_FONT_FAMILY;
+                        ? run.FontFamily : m_tableMeasureFontFamily;
                     double fontSize = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontSizeProperty)
                         ? run.FontSize : TABLE_MEASURE_FONT_SIZE;
                     FontWeight fontWeight = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontWeightProperty)
@@ -590,7 +590,7 @@ namespace mde
         /// （TableColumn.Width）は、この値とメニューの状態から都度計算される、あくまで見た目
         /// だけの結果でしかない。
         /// </summary>
-        private static readonly ConditionalWeakTable<Table, int[]> s_sourceDashCounts =
+        private static readonly ConditionalWeakTable<Table, int[]> m_sourceDashCounts =
             new ConditionalWeakTable<Table, int[]>();
 
         /// <summary>表の、区切り行へ実際に保存されるべきダッシュ数を記録する（既存の記録が
@@ -601,8 +601,8 @@ namespace mde
         /// <param name="a_dashCounts">列ごとのダッシュ数。</param>
         public static void SetSourceDashCounts(Table a_table, IReadOnlyList<int> a_dashCounts)
         {
-            s_sourceDashCounts.Remove(a_table);
-            s_sourceDashCounts.Add(a_table, a_dashCounts.ToArray());
+            m_sourceDashCounts.Remove(a_table);
+            m_sourceDashCounts.Add(a_table, a_dashCounts.ToArray());
         }
 
         /// <summary>表の、区切り行へ実際に保存されるべきダッシュ数を取得する。一度も
@@ -611,7 +611,7 @@ namespace mde
         /// <param name="a_table">対象の表。</param>
         public static IReadOnlyList<int> GetSourceDashCounts(Table a_table)
         {
-            return s_sourceDashCounts.TryGetValue(a_table, out var counts) ? counts : null;
+            return m_sourceDashCounts.TryGetValue(a_table, out var counts) ? counts : null;
         }
 
         /// <summary>列の挿入（TableEditor.InsertColumn）に合わせて、記録済みのダッシュ数一覧に
@@ -621,15 +621,15 @@ namespace mde
         /// <param name="a_index">新しい列の挿入位置（0始まり）。</param>
         public static void InsertIntoSourceDashCounts(Table a_table, int a_index)
         {
-            if (!s_sourceDashCounts.TryGetValue(a_table, out var counts))
+            if (!m_sourceDashCounts.TryGetValue(a_table, out var counts))
             {
                 return;
             }
             var list = counts.ToList();
             int idx = Math.Max(0, Math.Min(a_index, list.Count));
             list.Insert(idx, TABLE_COLUMN_DEFAULT_DASH_COUNT);
-            s_sourceDashCounts.Remove(a_table);
-            s_sourceDashCounts.Add(a_table, list.ToArray());
+            m_sourceDashCounts.Remove(a_table);
+            m_sourceDashCounts.Add(a_table, list.ToArray());
         }
 
         /// <summary>列の削除（TableEditor.DeleteColumn）に合わせて、記録済みのダッシュ数一覧から
@@ -639,7 +639,7 @@ namespace mde
         /// <param name="a_index">削除する列の位置（0始まり）。</param>
         public static void RemoveFromSourceDashCounts(Table a_table, int a_index)
         {
-            if (!s_sourceDashCounts.TryGetValue(a_table, out var counts))
+            if (!m_sourceDashCounts.TryGetValue(a_table, out var counts))
             {
                 return;
             }
@@ -649,8 +649,8 @@ namespace mde
                 return;
             }
             list.RemoveAt(a_index);
-            s_sourceDashCounts.Remove(a_table);
-            s_sourceDashCounts.Add(a_table, list.ToArray());
+            m_sourceDashCounts.Remove(a_table);
+            m_sourceDashCounts.Add(a_table, list.ToArray());
         }
 
         /// <summary>

@@ -433,13 +433,13 @@ namespace mde
         private static extern int StrCmpLogicalW(string a_x, string a_y);
 
         /// <summary>ファイル名・フォルダ名を、エクスプローラーと同じ自然順で比較するコンパレータ。</summary>
-        private static readonly Comparison<string> s_naturalCompare = (a_x, a_y) => StrCmpLogicalW(a_x, a_y);
+        private static readonly Comparison<string> m_naturalCompare = (a_x, a_y) => StrCmpLogicalW(a_x, a_y);
 
         private void PopulateChildren(FileSystemItem a_node)
         {
             try
             {
-                foreach (var dir in Directory.GetDirectories(a_node.FullPath).OrderBy(d => d, Comparer<string>.Create(s_naturalCompare)))
+                foreach (var dir in Directory.GetDirectories(a_node.FullPath).OrderBy(d => d, Comparer<string>.Create(m_naturalCompare)))
                 {
                     var name = Path.GetFileName(dir);
                     if (name.StartsWith("."))
@@ -451,7 +451,7 @@ namespace mde
                 foreach (var file in Directory.GetFiles(a_node.FullPath)
                              .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
                                          f.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase))
-                             .OrderBy(f => f, Comparer<string>.Create(s_naturalCompare)))
+                             .OrderBy(f => f, Comparer<string>.Create(m_naturalCompare)))
                 {
                     a_node.Children.Add(BuildFileSystemNode(file, false));
                 }

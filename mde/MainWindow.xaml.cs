@@ -2140,7 +2140,7 @@ namespace mde
                         continue;
                     }
                     var info = (LinkInfo)run.Tag;
-                    Uri navigateUri = BuildPdfNavigateUri(info.m_url);
+                    Uri navigateUri = BuildPdfNavigateUri(info.Url);
                     if (null == navigateUri)
                     {
                         continue;
@@ -3192,9 +3192,9 @@ namespace mde
         /// ApplyImageSizing参照）、ピクセル量では復元後に全く違う場所を指してしまうため。</summary>
         private class EditorScrollAnchor
         {
-            public Paragraph Paragraph;
-            public double VerticalFraction;
-            public double HorizontalFraction;
+            public Paragraph Paragraph { get; set; }
+            public double VerticalFraction { get; set; }
+            public double HorizontalFraction { get; set; }
         }
 
         /// <summary>フォルダ/アウトラインペインの表示・非表示を切り替える直前に呼び出し、今

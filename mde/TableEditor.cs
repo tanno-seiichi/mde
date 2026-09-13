@@ -73,8 +73,8 @@ namespace mde
             this.m_correctColumnWidthsFlg = a_correctColumnWidthsFlg;
         }
 
-        private static readonly Brush HEADER_BACKGROUND = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
-        private static readonly Brush CELL_BORDER = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
+        private static readonly Brush m_headerBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
+        private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
 
         // ---------------- セル間の矢印キー移動 ----------------
 
@@ -248,7 +248,7 @@ namespace mde
                 var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
                 {
                     FontWeight = FontWeights.Bold,
-                    Background = HEADER_BACKGROUND,
+                    Background = m_headerBackground,
                     // 罫線は、表を組み立て終えた後にApplyTableCellBordersでまとめて設定する。
                     Padding = new Thickness(8, 6, 8, 6)
                 };
@@ -273,7 +273,7 @@ namespace mde
 
             // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて設定する
             // （詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
-            BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
+            BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
 
             var trailingPara = new Paragraph();
 
@@ -340,7 +340,7 @@ namespace mde
             // （下のDeleteRow参照）とも近い領域のため、ここで毎回明示的に設定し直しておく）。
             if (rg.Parent is Table refreshTable)
             {
-                BlockStyles.ApplyTableCellBorders(refreshTable, CELL_BORDER);
+                BlockStyles.ApplyTableCellBorders(refreshTable, m_cellBorder);
             }
 
             if (newRow.Cells.Count > 0 && newRow.Cells[0].Blocks.FirstBlock is Paragraph np)
@@ -391,7 +391,7 @@ namespace mde
                 if (0 == r)
                 {
                     cell.FontWeight = FontWeights.Bold;
-                    cell.Background = HEADER_BACKGROUND;
+                    cell.Background = m_headerBackground;
                 }
 
                 int idxInRow = Math.Min(insertIdx, targetRow.Cells.Count);
@@ -433,7 +433,7 @@ namespace mde
 
             // 表全体に対して罫線をまとめて設定し直す（詳細はBlockStyles.ApplyTableCellBorders
             // のコメント参照）。
-            BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
+            BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
 
             if (firstNewCell?.Blocks.FirstBlock is Paragraph np)
             {
@@ -569,7 +569,7 @@ namespace mde
             // BlockStyles.ApplyTableCellBordersのコメント参照）。
             if (rg.Parent is Table refreshTable)
             {
-                BlockStyles.ApplyTableCellBorders(refreshTable, CELL_BORDER);
+                BlockStyles.ApplyTableCellBorders(refreshTable, m_cellBorder);
             }
             // 行削除後、残ったセルの枠線が描画上消えて見えることがあるとの報告があったため、
             // 念のためレイアウトを強制的に再計算させている（上の罫線の明示的な設定し直しで
@@ -626,7 +626,7 @@ namespace mde
             // 削除した列が最左列だった場合、繰り上がった新しい最左列のセルに左辺の罫線が
             // 必要になるため、表全体に対して罫線をまとめて設定し直す（DeleteRow側と同じ理由。
             // BlockStyles.ApplyTableCellBordersのコメント参照）。
-            BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
+            BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
             // DeleteRow側と同じ理由（このメソッド内のコメント参照）による、未検証の対症療法。
             m_editor.UpdateLayout();
             m_markDirty();
@@ -983,7 +983,7 @@ namespace mde
                     if (0 == r)
                     {
                         cell.FontWeight = FontWeights.Bold;
-                        cell.Background = HEADER_BACKGROUND;
+                        cell.Background = m_headerBackground;
                     }
                     row.Cells.Add(cell);
                 }
@@ -992,7 +992,7 @@ namespace mde
 
             // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて設定する
             // （詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
-            BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
+            BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
 
             // 2026-08-30：MarkdownConverter.csと同じ理由で一時的に無効化
             // （BlockStyles.ApplyContentBasedColumnWidths参照。詳細はMarkdownConverter.cs側の
