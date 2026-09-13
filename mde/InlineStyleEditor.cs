@@ -25,10 +25,10 @@ namespace mde
     /// </summary>
     public class InlineStyleEditor
     {
-        private static readonly Brush LINK_BRUSH = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
-        private static readonly Brush CODE_BLOCK_BACKGROUND = BlockStyles.CodeBlockBackgroundBrush;
+        private static readonly Brush m_linkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
+        private static readonly Brush m_codeBlockBackground = BlockStyles.CodeBlockBackgroundBrush;
         // ハイライト（==text==）用の背景色。
-        private static readonly Brush HIGHLIGHT_BACKGROUND = BlockStyles.HighlightBrush;
+        private static readonly Brush m_highlightBackground = BlockStyles.HighlightBrush;
 
         private readonly RichTextBox m_editor;
         private readonly OriginalTextTracker m_originalTextTracker;
@@ -197,9 +197,9 @@ namespace mde
                 m_editor.Selection.Text = "";
                 var newRun = new Run(text, start)
                 {
-                    Foreground = LINK_BRUSH,
+                    Foreground = m_linkBrush,
                     TextDecorations = TextDecorations.Underline,
-                    Tag = new LinkInfo { m_url = a_url, m_isAutoLinkFlg = false },
+                    Tag = new LinkInfo { Url = a_url, IsAutoLinkFlg = false },
                     ToolTip = a_url
                 };
                 m_editor.Selection.Select(newRun.ContentStart, newRun.ContentEnd);
@@ -246,14 +246,14 @@ namespace mde
                         newRun = new Run(text, start) { TextDecorations = TextDecorations.Underline, Tag = "underline" };
                         break;
                     case "highlight":
-                        newRun = new Run(text, start) { Background = HIGHLIGHT_BACKGROUND, Tag = "highlight" };
+                        newRun = new Run(text, start) { Background = m_highlightBackground, Tag = "highlight" };
                         break;
                     case "code":
                         newRun = new Run(text, start)
                         {
                             FontFamily = new FontFamily("Consolas"),
                             FontSize = 13.5,
-                            Background = CODE_BLOCK_BACKGROUND,
+                            Background = m_codeBlockBackground,
                             Tag = "inline-code"
                         };
                         break;
@@ -278,7 +278,7 @@ namespace mde
         {
             if (ContextLinkRun?.Tag is LinkInfo li)
             {
-                NavigateLink(li.m_url);
+                NavigateLink(li.Url);
             }
         }
 
@@ -287,7 +287,7 @@ namespace mde
         {
             if (ContextLinkRun?.Tag is LinkInfo li)
             {
-                try { Clipboard.SetText(li.m_url); } catch { /* 失敗しても致命的ではない */ }
+                try { Clipboard.SetText(li.Url); } catch { /* 失敗しても致命的ではない */ }
             }
         }
 
@@ -299,12 +299,12 @@ namespace mde
             {
                 return;
             }
-            var dlg = new LinkInputDialog(li.m_url) { Owner = a_ownerWindow };
+            var dlg = new LinkInputDialog(li.Url) { Owner = a_ownerWindow };
             if (true == dlg.ShowDialog() && !string.IsNullOrWhiteSpace(dlg.Url))
             {
                 m_originalTextTracker.Invalidate(ContextLinkRun.ContentStart);
-                li.m_url = dlg.Url;
-                li.m_isAutoLinkFlg = false;
+                li.Url = dlg.Url;
+                li.IsAutoLinkFlg = false;
                 ContextLinkRun.ToolTip = dlg.Url;
                 m_markDirty();
             }
@@ -571,7 +571,7 @@ namespace mde
         {
             foreach (Inline inline in a_inlines)
             {
-                if (inline is Run run && run.Tag is AnchorInfo info && info.m_id == a_id)
+                if (inline is Run run && run.Tag is AnchorInfo info && info.Id == a_id)
                 {
                     return run;
                 }
@@ -606,9 +606,9 @@ namespace mde
                 return;
             }
 
-            if (pos.Parent is Run run && run.Tag is LinkInfo linkInfo && !string.IsNullOrWhiteSpace(linkInfo.m_url))
+            if (pos.Parent is Run run && run.Tag is LinkInfo linkInfo && !string.IsNullOrWhiteSpace(linkInfo.Url))
             {
-                NavigateLink(linkInfo.m_url);
+                NavigateLink(linkInfo.Url);
                 a_args.Handled = true;
             }
         }
@@ -922,9 +922,9 @@ namespace mde
                 new TextRange(a_start, a_caret).Text = "";
                 var newRun = new Run(a_linkText, a_start)
                 {
-                    Foreground = LINK_BRUSH,
+                    Foreground = m_linkBrush,
                     TextDecorations = TextDecorations.Underline,
-                    Tag = new LinkInfo { m_url = a_url, m_isAutoLinkFlg = a_isAutoLinkFlg, m_isEmailAutoLinkFlg = a_isEmailAutoLinkFlg },
+                    Tag = new LinkInfo { Url = a_url, IsAutoLinkFlg = a_isAutoLinkFlg, IsEmailAutoLinkFlg = a_isEmailAutoLinkFlg },
                     ToolTip = a_url
                 };
                 var trailingRun = new Run("\u200B", newRun.ContentEnd);
@@ -960,14 +960,14 @@ namespace mde
                 }
                 else if ("highlight" == a_style)
                 {
-                    newRun = new Run(a_content, a_start) { Background = HIGHLIGHT_BACKGROUND, Tag = "highlight" };
+                    newRun = new Run(a_content, a_start) { Background = m_highlightBackground, Tag = "highlight" };
                 }
                 else
                     newRun = new Run(a_content, a_start)
                     {
                         FontFamily = new FontFamily("Consolas"),
                         FontSize = 13.5,
-                        Background = CODE_BLOCK_BACKGROUND,
+                        Background = m_codeBlockBackground,
                         Tag = "inline-code"
                     };
 

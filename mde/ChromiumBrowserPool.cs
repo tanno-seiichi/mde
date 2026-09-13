@@ -23,36 +23,36 @@ namespace mde
     /// <summary>アプリ全体で共有する、起動済みのheadless Chromiumインスタンスを管理する。</summary>
     public static class ChromiumBrowserPool
     {
-        private static readonly SemaphoreSlim s_lock = new SemaphoreSlim(1, 1);
-        private static IBrowser s_browser;
-        private static bool s_browserDownloadedFlg;
+        private static readonly SemaphoreSlim m_lock = new SemaphoreSlim(1, 1);
+        private static IBrowser m_browser;
+        private static bool m_browserDownloadedFlg;
 
         /// <summary>ダウンロード済みブラウザの実行ファイルの実パス。LaunchAsync呼び出し時に
         /// 明示的に渡すために保持しておく（後述のコメント参照。ExecutablePathを渡さないと、
         /// LaunchAsync側が独自の既定バージョン解決を行ってしまい、実際にダウンロード済みの
         /// バージョンと食い違うことがあるため）。</summary>
-        private static string s_executablePath;
+        private static string m_executablePath;
 
         /// <summary>使い回し可能なブラウザインスタンスを取得する。まだ起動していなければ、
         /// （必要ならChromium本体のダウンロードも含めて）ここで起動する。既に起動済みで
         /// まだ生きていれば、それをそのまま返す。</summary>
         public static async Task<IBrowser> GetBrowserAsync()
         {
-            if (BrowserIsUsable(s_browser))
+            if (BrowserIsUsable(m_browser))
             {
-                return s_browser;
+                return m_browser;
             }
 
-            await s_lock.WaitAsync();
+            await m_lock.WaitAsync();
             try
             {
                 // ロック待ちの間に他の呼び出しが起動を終えている場合がある。
-                if (BrowserIsUsable(s_browser))
+                if (BrowserIsUsable(m_browser))
                 {
-                    return s_browser;
+                    return m_browser;
                 }
 
-                if (!s_browserDownloadedFlg)
+                if (!m_browserDownloadedFlg)
                 {
                     // インストーラでProgram Filesに配置された場合など、実行ファイルフォルダへ
                     // ダウンロードしようとするとアクセス拒否になるため、ユーザープロファイル
@@ -95,20 +95,20 @@ namespace mde
                     // executablePath」になることを実機で確認した。ダウンロードと起動の
                     // バージョン解決を必ず一致させるため、DownloadAsyncの戻り値
                     // （InstalledBrowser）が返す実パスをそのまま使う。
-                    s_executablePath = installedBrowser.GetExecutablePath();
-                    s_browserDownloadedFlg = true;
+                    m_executablePath = installedBrowser.GetExecutablePath();
+                    m_browserDownloadedFlg = true;
                 }
 
-                s_browser = await Puppeteer.LaunchAsync(new LaunchOptions
+                m_browser = await Puppeteer.LaunchAsync(new LaunchOptions
                 {
                     Headless = true,
-                    ExecutablePath = s_executablePath,
+                    ExecutablePath = m_executablePath,
                 });
-                return s_browser;
+                return m_browser;
             }
             finally
             {
-                s_lock.Release();
+                m_lock.Release();
             }
         }
 
@@ -144,8 +144,8 @@ namespace mde
         /// 子プロセスが取り残されてしまうことがある（特にWindowsで知られている問題）ため。</summary>
         public static async Task ShutdownAsync()
         {
-            IBrowser browser = s_browser;
-            s_browser = null;
+            IBrowser browser = m_browser;
+            m_browser = null;
             if (null == browser)
             {
                 return;

@@ -39,14 +39,14 @@ namespace mde
         private readonly Action<List<TextRange>> m_markOutlineMatches;
         private readonly Action<TextPointer> m_selectOutlineHeading;
 
-        private static readonly System.Windows.Media.Brush MATCH_HIGHLIGHT_BRUSH =
+        private static readonly System.Windows.Media.Brush m_matchHighlightBrush =
             new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xE1, 0x66));
 
         /// <summary>「現在」の一致箇所（次を検索/前を検索でキャレットが移動した先、または
         /// フォルダ全体検索・結果一覧からジャンプした先）専用の強調表示色。「すべて検索」で
-        /// 一括強調表示された他の一致箇所（MATCH_HIGHLIGHT_BRUSH、黄色）と見分けられるよう、
+        /// 一括強調表示された他の一致箇所（m_matchHighlightBrush、黄色）と見分けられるよう、
         /// 別の色にしている。</summary>
-        private static readonly System.Windows.Media.Brush CURRENT_MATCH_HIGHLIGHT_BRUSH =
+        private static readonly System.Windows.Media.Brush m_currentMatchHighlightBrush =
             new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xA5, 0x4D));
 
         /// <summary>直前に強調表示した一致箇所（フォーカスの有無に関わらず見えるよう、選択
@@ -338,7 +338,7 @@ namespace mde
         /// <param name="a_range">対象の範囲。</param>
         private void AddHighlight(TextRange a_range)
         {
-            m_runWithoutDirtyMarking(() => a_range.ApplyPropertyValue(TextElement.BackgroundProperty, MATCH_HIGHLIGHT_BRUSH));
+            m_runWithoutDirtyMarking(() => a_range.ApplyPropertyValue(TextElement.BackgroundProperty, m_matchHighlightBrush));
             m_currentHighlights.Add(a_range);
         }
 
@@ -370,12 +370,12 @@ namespace mde
             {
                 if (null != previous && !ReferenceEquals(previous, a_range))
                 {
-                    try { previous.ApplyPropertyValue(TextElement.BackgroundProperty, MATCH_HIGHLIGHT_BRUSH); }
+                    try { previous.ApplyPropertyValue(TextElement.BackgroundProperty, m_matchHighlightBrush); }
                     catch { /* 対象がすでに存在しなくなっていても問題ない */ }
                 }
                 if (null != a_range)
                 {
-                    try { a_range.ApplyPropertyValue(TextElement.BackgroundProperty, CURRENT_MATCH_HIGHLIGHT_BRUSH); }
+                    try { a_range.ApplyPropertyValue(TextElement.BackgroundProperty, m_currentMatchHighlightBrush); }
                     catch { /* 対象がすでに存在しなくなっていても問題ない */ }
                 }
             });

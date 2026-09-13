@@ -13,7 +13,7 @@ namespace mde
     /// <summary>行間の値を編集し、変更のたびにライブプレビュー用のコールバックを呼ぶダイアログ。</summary>
     public partial class LineHeightDialog : Window
     {
-        private const double DefaultLineHeight = 26;
+        private const double DEFAULT_LINE_HEIGHT = 26;
         private readonly double m_originalValue;
         private readonly Action<double> m_onPreview;
         private bool m_updatingFlg;
@@ -93,7 +93,7 @@ namespace mde
         /// <param name="a_args">Click event.</param>
         private void ResetClick(object a_sender, RoutedEventArgs a_args)
         {
-            SetValue(DefaultLineHeight);
+            SetValue(DEFAULT_LINE_HEIGHT);
         }
 
         /// <summary>現在の値を確定し、ダイアログを閉じる。</summary>

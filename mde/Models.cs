@@ -21,19 +21,19 @@ namespace mde
         // コピー&ペースト時に失われる可能性があるため、自動実装プロパティにしている。
 
         /// <summary>Markdown/HTML上に書かれていた元のsrc（相対パス・絶対パス・URLなど）。</summary>
-        public string m_originalSrc { get; set; }
+        public string OriginalSrc { get; set; }
 
         /// <summary>alt属性（代替テキスト）。</summary>
-        public string m_alt { get; set; }
+        public string Alt { get; set; }
 
         /// <summary>HTML形式の場合のstyle属性。Markdown形式では未使用。</summary>
-        public string m_style { get; set; }
+        public string Style { get; set; }
 
         /// <summary>元の記法。"html"（&lt;img&gt;タグ）または"md"（![alt](src)）。</summary>
-        public string m_format { get; set; }
+        public string Format { get; set; }
 
         /// <summary>Markdown形式の場合の、![alt](src "title")のタイトル部分（省略時はnull）。</summary>
-        public string m_title { get; set; }
+        public string Title { get; set; }
     }
 
     /// <summary>
@@ -51,7 +51,7 @@ namespace mde
     public class AnchorInfo
     {
         /// <summary>アンカーのid（[text](#id) からのジャンプ先として参照される）。</summary>
-        public string m_id { get; set; }
+        public string Id { get; set; }
     }
 
     /// <summary>
@@ -60,7 +60,7 @@ namespace mde
     public class CodeBlockInfo
     {
         /// <summary>```の直後に書かれた言語名（例: "csharp"）。未指定なら空文字。</summary>
-        public string m_language { get; set; } = "";
+        public string Language { get; set; } = "";
     }
 
     /// <summary>
@@ -70,18 +70,18 @@ namespace mde
     public class LinkInfo
     {
         /// <summary>リンク先URL。メールアドレス自動リンクの場合は "mailto:" 付きで格納する。</summary>
-        public string m_url { get; set; }
+        public string Url { get; set; }
 
         /// <summary>true の場合、&lt;url&gt; 形式（山括弧の自動リンク）から読み込まれたことを示す。</summary>
-        public bool m_isAutoLinkFlg { get; set; }
+        public bool IsAutoLinkFlg { get; set; }
 
         /// <summary>Markdown形式の場合の、[text](url "title")のタイトル部分（省略時はnull）。</summary>
-        public string m_title { get; set; }
+        public string Title { get; set; }
 
         /// <summary>true の場合、&lt;email@example.com&gt; 形式（山括弧のメールアドレス自動リンク）
         /// から読み込まれたことを示す。保存時に &lt;url&gt; ではなく &lt;email@example.com&gt;
         /// （mailto:を除いた元のアドレス）として書き戻すために使う。</summary>
-        public bool m_isEmailAutoLinkFlg { get; set; }
+        public bool IsEmailAutoLinkFlg { get; set; }
     }
 
     /// <summary>アウトラインペインの1項目（見出し1つ分）。フォルダツリーペインのFileSystemItemと

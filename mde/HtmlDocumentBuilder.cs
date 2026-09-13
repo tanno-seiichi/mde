@@ -171,9 +171,9 @@ namespace mde
                 {
                     string id = "a" + a_anchorCounter++;
                     m_customAnchorIds[run] = id;
-                    if (!string.IsNullOrEmpty(info.m_id) && !m_anchorTargets.ContainsKey(info.m_id))
+                    if (!string.IsNullOrEmpty(info.Id) && !m_anchorTargets.ContainsKey(info.Id))
                     {
-                        m_anchorTargets[info.m_id] = id;
+                        m_anchorTargets[info.Id] = id;
                     }
                 }
                 else if (inline is Span span)
@@ -397,7 +397,7 @@ namespace mde
 
             if (a_run.Tag is LinkInfo linkInfo)
             {
-                AppendLinkRun(a_html, a_run.Text, linkInfo.m_url);
+                AppendLinkRun(a_html, a_run.Text, linkInfo.Url);
                 return;
             }
 
@@ -468,7 +468,7 @@ namespace mde
             string path = m_imageManager.GetExportableFilePath(a_img);
             if (string.IsNullOrEmpty(path))
             {
-                string alt = (a_img.Tag as ImageInfo)?.m_alt;
+                string alt = (a_img.Tag as ImageInfo)?.Alt;
                 a_html.Append("<i>[画像").Append(string.IsNullOrEmpty(alt) ? "" : ": " + WebUtility.HtmlEncode(alt))
                     .Append("]</i>");
                 return;

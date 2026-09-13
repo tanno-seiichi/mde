@@ -12,12 +12,12 @@ namespace mde
     /// <summary>PDF書き出し時の、上下左右の余白（px）を入力させ、範囲内へ丸めて返すダイアログ。</summary>
     public partial class PdfMarginDialog : Window
     {
-        private const double DefaultTop = 64;
-        private const double DefaultBottom = 64;
-        private const double DefaultLeft = 80;
-        private const double DefaultRight = 80;
-        private const double MinMargin = 0;
-        private const double MaxMargin = 300;
+        private const double DEFAULT_TOP = 64;
+        private const double DEFAULT_BOTTOM = 64;
+        private const double DEFAULT_LEFT = 80;
+        private const double DEFAULT_RIGHT = 80;
+        private const double MIN_MARGIN = 0;
+        private const double MAX_MARGIN = 300;
 
         /// <summary>OKで閉じた場合に確定した、上の余白（px）。</summary>
         public double MarginTop { get; private set; }
@@ -60,7 +60,7 @@ namespace mde
             {
                 value = a_defaultValue;
             }
-            return Math.Max(MinMargin, Math.Min(MaxMargin, value));
+            return Math.Max(MIN_MARGIN, Math.Min(MAX_MARGIN, value));
         }
 
         /// <summary>4つの入力欄の値をそれぞれ検証・確定し、ダイアログを閉じる。</summary>
@@ -68,10 +68,10 @@ namespace mde
         /// <param name="a_args">Click event.</param>
         private void OkClick(object a_sender, RoutedEventArgs a_args)
         {
-            MarginTop = ParseMargin(m_topBox.Text, DefaultTop);
-            MarginBottom = ParseMargin(m_bottomBox.Text, DefaultBottom);
-            MarginLeft = ParseMargin(m_leftBox.Text, DefaultLeft);
-            MarginRight = ParseMargin(m_rightBox.Text, DefaultRight);
+            MarginTop = ParseMargin(m_topBox.Text, DEFAULT_TOP);
+            MarginBottom = ParseMargin(m_bottomBox.Text, DEFAULT_BOTTOM);
+            MarginLeft = ParseMargin(m_leftBox.Text, DEFAULT_LEFT);
+            MarginRight = ParseMargin(m_rightBox.Text, DEFAULT_RIGHT);
             DialogResult = true;
         }
 
@@ -80,10 +80,10 @@ namespace mde
         /// <param name="a_args">Click event.</param>
         private void ResetClick(object a_sender, RoutedEventArgs a_args)
         {
-            m_topBox.Text = DefaultTop.ToString("0");
-            m_bottomBox.Text = DefaultBottom.ToString("0");
-            m_leftBox.Text = DefaultLeft.ToString("0");
-            m_rightBox.Text = DefaultRight.ToString("0");
+            m_topBox.Text = DEFAULT_TOP.ToString("0");
+            m_bottomBox.Text = DEFAULT_BOTTOM.ToString("0");
+            m_leftBox.Text = DEFAULT_LEFT.ToString("0");
+            m_rightBox.Text = DEFAULT_RIGHT.ToString("0");
         }
 
         /// <summary>入力内容を破棄して、ダイアログを閉じる。</summary>

@@ -30,13 +30,13 @@ namespace mde
     /// </summary>
     public static class DebugLogger
     {
-        private static readonly object s_lock = new object();
-        private static readonly string s_logPath = BuildLogPath();
-        private static readonly Stopwatch s_stopwatch = Stopwatch.StartNew();
-        private static bool s_enabledFlg = false;
+        private static readonly object m_lock = new object();
+        private static readonly string m_logPath = BuildLogPath();
+        private static readonly Stopwatch m_stopwatch = Stopwatch.StartNew();
+        private static bool m_enabledFlg = false;
 
         /// <summary>現在デバッグログが有効かどうか。</summary>
-        public static bool IsEnabled => s_enabledFlg;
+        public static bool IsEnabled => m_enabledFlg;
 
         /// <summary>ログの保存先（デスクトップの mdelog フォルダ内、
         /// mde_v&lt;バージョン&gt;_pid&lt;プロセスID&gt;.log）のパス文字列を組み立てる。
@@ -132,20 +132,20 @@ namespace mde
         /// <param name="a_enabledFlg">true＝有効化、false＝無効化。</param>
         public static void SetEnabled(bool a_enabledFlg)
         {
-            s_enabledFlg = a_enabledFlg;
-            if (!a_enabledFlg || null == s_logPath)
+            m_enabledFlg = a_enabledFlg;
+            if (!a_enabledFlg || null == m_logPath)
             {
                 return;
             }
             try
             {
-                lock (s_lock)
+                lock (m_lock)
                 {
                     // 「デバッグログを有効にする」がオフのままならmdelogフォルダ自体を
                     // 作らずに済ませるため、フォルダの作成は実際に有効化された、この時点まで
                     // 遅延している（BuildLogPathの説明も参照）。
-                    Directory.CreateDirectory(Path.GetDirectoryName(s_logPath));
-                    File.WriteAllText(s_logPath,
+                    Directory.CreateDirectory(Path.GetDirectoryName(m_logPath));
+                    File.WriteAllText(m_logPath,
                         $"=== mde debug log started {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} " +
                         $"(v{System.Reflection.Assembly.GetExecutingAssembly().GetName().Version}) ===\r\n");
                 }
@@ -163,16 +163,16 @@ namespace mde
         /// <param name="a_message">記録するメッセージ。</param>
         public static void Log(string a_message)
         {
-            if (!s_enabledFlg || null == s_logPath)
+            if (!m_enabledFlg || null == m_logPath)
             {
                 return;
             }
             try
             {
-                string line = $"[{s_stopwatch.Elapsed.TotalMilliseconds,9:0.0}ms] [T{Thread.CurrentThread.ManagedThreadId}] {a_message}\r\n";
-                lock (s_lock)
+                string line = $"[{m_stopwatch.Elapsed.TotalMilliseconds,9:0.0}ms] [T{Thread.CurrentThread.ManagedThreadId}] {a_message}\r\n";
+                lock (m_lock)
                 {
-                    File.AppendAllText(s_logPath, line);
+                    File.AppendAllText(m_logPath, line);
                 }
             }
             catch

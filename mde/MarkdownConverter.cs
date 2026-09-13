@@ -24,9 +24,9 @@ namespace mde
     /// </summary>
     public class MarkdownConverter
     {
-        private static readonly Brush HEADER_BACKGROUND = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
-        private static readonly Brush CELL_BORDER = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
-        private static readonly Brush LINK_BRUSH = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
+        private static readonly Brush m_headerBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
+        private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
+        private static readonly Brush m_linkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
 
         /// <summary>
         /// 表の列揃えで、「明示的な左揃え（:---）」と「揃え指定なし（---）」を区別して保存する
@@ -50,7 +50,7 @@ namespace mde
         /// 11,12:&lt;u&gt;underline&lt;/u&gt;／13,14:==highlight==／15,16,17:[text](url)（text,url)／
         /// 18,19:&lt;http(s)://url&gt;／20,21:&lt;email&gt;／22,23:&lt;a id="..."&gt;&lt;/a&gt;
         /// </summary>
-        private static readonly Regex INLINE_CONTENT_REGEX = new Regex(
+        private static readonly Regex m_inlineContentRegex = new Regex(
             "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(`([^`]+)`)|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|(<u>([^<]+)</u>)|(==([^=]+)==)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -194,7 +194,7 @@ namespace mde
                     var sb = new StringBuilder();
                     AppendInlinesMarkdown(p.Inlines, sb);
                     string codeText = sb.ToString().Trim('\r', '\n');
-                    return "```" + codeInfo.m_language + "\n" + codeText + "\n```";
+                    return "```" + codeInfo.Language + "\n" + codeText + "\n```";
                 }
                 int level = p.Tag is int lv ? lv : 0;
                 string text = ParagraphInlineToMarkdown(p);
@@ -435,33 +435,33 @@ namespace mde
                 else if (inline is Run linkRun && linkRun.Tag is LinkInfo linkInfo)
                 {
                     string content = linkRun.Text.Replace("​", "");
-                    if (linkInfo.m_isEmailAutoLinkFlg)
+                    if (linkInfo.IsEmailAutoLinkFlg)
                     {
                         // メールアドレス自動リンク。保存されているURLは"mailto:"付きなので、
                         // 書き戻す際は取り除く。
-                        string email = linkInfo.m_url != null && linkInfo.m_url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)
-                            ? linkInfo.m_url.Substring("mailto:".Length)
-                            : linkInfo.m_url;
+                        string email = linkInfo.Url != null && linkInfo.Url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)
+                            ? linkInfo.Url.Substring("mailto:".Length)
+                            : linkInfo.Url;
                         a_sb.Append('<').Append(email).Append('>');
                     }
-                    else if (linkInfo.m_isAutoLinkFlg && content == linkInfo.m_url)
+                    else if (linkInfo.IsAutoLinkFlg && content == linkInfo.Url)
                     {
-                        a_sb.Append('<').Append(linkInfo.m_url).Append('>');
+                        a_sb.Append('<').Append(linkInfo.Url).Append('>');
                     }
                     else
                     {
-                        a_sb.Append('[').Append(content).Append("](").Append(linkInfo.m_url);
-                        if (!string.IsNullOrEmpty(linkInfo.m_title))
+                        a_sb.Append('[').Append(content).Append("](").Append(linkInfo.Url);
+                        if (!string.IsNullOrEmpty(linkInfo.Title))
                         {
                             // タイトル属性。
-                            a_sb.Append(" \"").Append(linkInfo.m_title).Append('"');
+                            a_sb.Append(" \"").Append(linkInfo.Title).Append('"');
                         }
                         a_sb.Append(')');
                     }
                 }
                 else if (inline is Run anchorRun && anchorRun.Tag is AnchorInfo anchorInfo)
                 {
-                    a_sb.Append("<a id=\"").Append(anchorInfo.m_id).Append("\"></a>");
+                    a_sb.Append("<a id=\"").Append(anchorInfo.Id).Append("\"></a>");
                 }
                 else if (inline is Run escapedRun && (escapedRun.Tag as string) == "escaped")
                 {
@@ -494,24 +494,24 @@ namespace mde
         private string ImageToMarkdownString(Image a_img)
         {
             var info = a_img.Tag as ImageInfo;
-            string src = info?.m_originalSrc ?? "";
-            string alt = info?.m_alt ?? "";
-            if ("md" == info?.m_format)
+            string src = info?.OriginalSrc ?? "";
+            string alt = info?.Alt ?? "";
+            if ("md" == info?.Format)
             {
                 string result = "![" + alt + "](" + src;
-                if (!string.IsNullOrEmpty(info?.m_title))
+                if (!string.IsNullOrEmpty(info?.Title))
                 {
                     // タイトル属性。
-                    result += " \"" + info.m_title + "\"";
+                    result += " \"" + info.Title + "\"";
                 }
                 result += ")";
                 return result;
             }
 
             string tag = "<img src=\"" + src + "\" alt=\"" + alt + "\"";
-            if (!string.IsNullOrEmpty(info?.m_style))
+            if (!string.IsNullOrEmpty(info?.Style))
             {
-                tag += " style=\"" + info.m_style + "\"";
+                tag += " style=\"" + info.Style + "\"";
             }
             tag += " />";
             return tag;
@@ -696,7 +696,7 @@ namespace mde
                         var cell = new TableCell(hp)
                         {
                             FontWeight = FontWeights.Bold,
-                            Background = HEADER_BACKGROUND,
+                            Background = m_headerBackground,
                             // 罫線（BorderBrush/BorderThickness）は、表全体を組み立て終えた後に
                             // BlockStyles.ApplyTableCellBordersでまとめて設定する（隣接セルとの
                             // 境界線が二重に重ならないようにするため。詳細は同メソッド参照）。
@@ -775,7 +775,7 @@ namespace mde
                     }
                     // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて
                     // 設定する（詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
-                    BlockStyles.ApplyTableCellBorders(table, CELL_BORDER);
+                    BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
                     a_doc.Blocks.Add(table);
                     m_originalTextTracker.Record(table, lines, blockStart, i);
                     continue;
@@ -1198,7 +1198,7 @@ namespace mde
         /// <param name="append">falseなら、追加する前に段落の既存Inlinesをクリアする。</param>
         // \ に続く1文字をエスケープする際、正規表現の特殊文字マッチングから守るために一時的に
         // 使うプレースホルダ文字（Unicode私用領域）。マッチング後、実際の文字に戻す。
-        private static readonly Dictionary<char, char> ESCAPE_PLACEHOLDERS = new Dictionary<char, char>
+        private static readonly Dictionary<char, char> m_escapePlaceholders = new Dictionary<char, char>
         {
             ['*'] = '',
             ['~'] = '',
@@ -1211,8 +1211,8 @@ namespace mde
             ['<'] = '',
             ['>'] = '',
         };
-        private static readonly Dictionary<char, char> PLACEHOLDER_TO_CHAR =
-            ESCAPE_PLACEHOLDERS.ToDictionary(kv => kv.Value, kv => kv.Key);
+        private static readonly Dictionary<char, char> m_placeholderToChar =
+            m_escapePlaceholders.ToDictionary(kv => kv.Value, kv => kv.Key);
 
         /// <summary>
         /// エスケープ記法（\ + 1文字）を解決する。\の直後の1文字を、以降の**/~~/`/[]などの
@@ -1287,7 +1287,7 @@ namespace mde
                     if (i < a_text.Length)
                     {
                         char next = a_text[i];
-                        sb.Append(ESCAPE_PLACEHOLDERS.TryGetValue(next, out char ph) ? ph : next);
+                        sb.Append(m_escapePlaceholders.TryGetValue(next, out char ph) ? ph : next);
                         i++;
                     }
                     else
@@ -1299,7 +1299,7 @@ namespace mde
                 {
                     // 2つ以上連続する場合：1つ目が2つ目を「エスケープ」して消費し（結果として
                     // \が1つ分表示される）、3つ目以降はさらなるエスケープ処理をせずそのまま表示する。
-                    sb.Append(ESCAPE_PLACEHOLDERS['\\']);
+                    sb.Append(m_escapePlaceholders['\\']);
                     for (int k = 0; k < runLen - 2; k++)
                     {
                         sb.Append('\\');
@@ -1321,7 +1321,7 @@ namespace mde
             var sb = new StringBuilder(a_text.Length);
             foreach (char c in a_text)
             {
-                sb.Append(PLACEHOLDER_TO_CHAR.TryGetValue(c, out char real) ? real : c);
+                sb.Append(m_placeholderToChar.TryGetValue(c, out char real) ? real : c);
             }
             return sb.ToString();
         }
@@ -1334,7 +1334,7 @@ namespace mde
             }
             a_text = PreprocessEscapes(a_text);
             int lastIndex = 0;
-            foreach (Match m in INLINE_CONTENT_REGEX.Matches(a_text))
+            foreach (Match m in m_inlineContentRegex.Matches(a_text))
             {
                 if (m.Index > lastIndex)
                 {
@@ -1387,7 +1387,7 @@ namespace mde
                 }
                 else if (m.Groups[22].Success)
                 {
-                    a_p.Inlines.Add(new Run("") { Tag = new AnchorInfo { m_id = m.Groups[23].Value } });
+                    a_p.Inlines.Add(new Run("") { Tag = new AnchorInfo { Id = m.Groups[23].Value } });
                 }
 
                 lastIndex = m.Index + m.Length;
@@ -1410,14 +1410,14 @@ namespace mde
         {
             return new Run(a_linkText)
             {
-                Foreground = LINK_BRUSH,
+                Foreground = m_linkBrush,
                 TextDecorations = TextDecorations.Underline,
                 Tag = new LinkInfo
                 {
-                    m_url = a_url,
-                    m_isAutoLinkFlg = a_isAutoLinkFlg,
-                    m_title = a_title,
-                    m_isEmailAutoLinkFlg = a_isEmailAutoLinkFlg
+                    Url = a_url,
+                    IsAutoLinkFlg = a_isAutoLinkFlg,
+                    Title = a_title,
+                    IsEmailAutoLinkFlg = a_isEmailAutoLinkFlg
                 },
                 ToolTip = string.IsNullOrEmpty(a_title) ? a_url : a_title
             };
@@ -1455,7 +1455,7 @@ namespace mde
             var plain = new StringBuilder();
             foreach (char c in a_segment)
             {
-                if (PLACEHOLDER_TO_CHAR.TryGetValue(c, out char real))
+                if (m_placeholderToChar.TryGetValue(c, out char real))
                 {
                     if (plain.Length > 0) { a_p.Inlines.Add(new Run(plain.ToString())); plain.Clear(); }
                     a_p.Inlines.Add(new Run(real.ToString()) { Tag = "escaped" });
@@ -1539,7 +1539,7 @@ namespace mde
             TextPointer cursor = a_position;
             a_text = PreprocessEscapes(a_text);
             int lastIndex = 0;
-            foreach (Match m in INLINE_CONTENT_REGEX.Matches(a_text))
+            foreach (Match m in m_inlineContentRegex.Matches(a_text))
             {
                 if (m.Index > lastIndex)
                 {
@@ -1585,9 +1585,9 @@ namespace mde
                     string title = null == titleRaw ? null : RestorePlaceholders(titleRaw);
                     var run = new Run(linkText, cursor)
                     {
-                        Foreground = LINK_BRUSH,
+                        Foreground = m_linkBrush,
                         TextDecorations = TextDecorations.Underline,
-                        Tag = new LinkInfo { m_url = url, m_isAutoLinkFlg = false, m_title = title },
+                        Tag = new LinkInfo { Url = url, IsAutoLinkFlg = false, Title = title },
                         ToolTip = string.IsNullOrEmpty(title) ? url : title
                     };
                     cursor = run.ContentEnd;
@@ -1597,9 +1597,9 @@ namespace mde
                     string url = RestorePlaceholders(m.Groups[19].Value);
                     var run = new Run(url, cursor)
                     {
-                        Foreground = LINK_BRUSH,
+                        Foreground = m_linkBrush,
                         TextDecorations = TextDecorations.Underline,
-                        Tag = new LinkInfo { m_url = url, m_isAutoLinkFlg = true },
+                        Tag = new LinkInfo { Url = url, IsAutoLinkFlg = true },
                         ToolTip = url
                     };
                     cursor = run.ContentEnd;
@@ -1609,16 +1609,16 @@ namespace mde
                     string email = RestorePlaceholders(m.Groups[21].Value);
                     var run = new Run(email, cursor)
                     {
-                        Foreground = LINK_BRUSH,
+                        Foreground = m_linkBrush,
                         TextDecorations = TextDecorations.Underline,
-                        Tag = new LinkInfo { m_url = "mailto:" + email, m_isAutoLinkFlg = false, m_isEmailAutoLinkFlg = true },
+                        Tag = new LinkInfo { Url = "mailto:" + email, IsAutoLinkFlg = false, IsEmailAutoLinkFlg = true },
                         ToolTip = email
                     };
                     cursor = run.ContentEnd;
                 }
                 else if (m.Groups[22].Success)
                 {
-                    var run = new Run("", cursor) { Tag = new AnchorInfo { m_id = m.Groups[23].Value } };
+                    var run = new Run("", cursor) { Tag = new AnchorInfo { Id = m.Groups[23].Value } };
                     cursor = run.ContentEnd;
                 }
 
@@ -1665,7 +1665,7 @@ namespace mde
             var plain = new StringBuilder();
             foreach (char c in a_segment)
             {
-                if (PLACEHOLDER_TO_CHAR.TryGetValue(c, out char real))
+                if (m_placeholderToChar.TryGetValue(c, out char real))
                 {
                     if (plain.Length > 0)
                     {

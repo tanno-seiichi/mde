@@ -735,10 +735,10 @@ namespace mde
             {
                 tag = new LinkInfo
                 {
-                    m_url = li.m_url,
-                    m_isAutoLinkFlg = li.m_isAutoLinkFlg,
-                    m_title = li.m_title,
-                    m_isEmailAutoLinkFlg = li.m_isEmailAutoLinkFlg
+                    Url = li.Url,
+                    IsAutoLinkFlg = li.IsAutoLinkFlg,
+                    Title = li.Title,
+                    IsEmailAutoLinkFlg = li.IsEmailAutoLinkFlg
                 };
             }
             return new Run(a_text)

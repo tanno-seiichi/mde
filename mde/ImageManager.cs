@@ -27,7 +27,7 @@ namespace mde
     /// </summary>
     public class ImageManager
     {
-        private static readonly string[] IMAGE_DROP_EXTENSIONS = { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" };
+        private static readonly string[] m_imageDropExtensions = { ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp" };
 
         private readonly RichTextBox m_editor;
         private readonly OriginalTextTracker m_originalTextTracker;
@@ -98,7 +98,7 @@ namespace mde
 
             var img = new Image
             {
-                Tag = new ImageInfo { m_originalSrc = src, m_alt = alt, m_style = style, m_format = "html" },
+                Tag = new ImageInfo { OriginalSrc = src, Alt = alt, Style = style, Format = "html" },
                 Stretch = Stretch.Uniform,
                 Margin = new Thickness(0, 4, 0, 4)
             };
@@ -118,7 +118,7 @@ namespace mde
         {
             var img = new Image
             {
-                Tag = new ImageInfo { m_originalSrc = a_src, m_alt = a_alt, m_format = "md", m_title = a_title },
+                Tag = new ImageInfo { OriginalSrc = a_src, Alt = a_alt, Format = "md", Title = a_title },
                 Stretch = Stretch.Uniform,
                 Margin = new Thickness(0, 4, 0, 4)
             };
@@ -171,7 +171,7 @@ namespace mde
         /// <param name="a_img">対象の画像。</param>
         public void OpenImageFile(Image a_img)
         {
-            if (!(a_img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.m_originalSrc))
+            if (!(a_img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.OriginalSrc))
             {
                 return;
             }
@@ -183,7 +183,7 @@ namespace mde
                 return;
             }
 
-            string src = info.m_originalSrc;
+            string src = info.OriginalSrc;
             if (Uri.TryCreate(src, UriKind.Absolute, out Uri u) &&
                 ("http" == u.Scheme || "https" == u.Scheme))
             {
@@ -261,11 +261,11 @@ namespace mde
         /// <returns>実ファイルパス。解決できなければ null。</returns>
         public string GetExportableFilePath(Image a_img)
         {
-            if (!(a_img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.m_originalSrc))
+            if (!(a_img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.OriginalSrc))
             {
                 return null;
             }
-            string src = info.m_originalSrc;
+            string src = info.OriginalSrc;
 
             if (Uri.TryCreate(src, UriKind.Absolute, out Uri u) &&
                 ("http" == u.Scheme ||
@@ -505,7 +505,7 @@ namespace mde
         public bool IsImageFile(string a_path)
         {
             string ext = Path.GetExtension(a_path);
-            return !string.IsNullOrEmpty(ext) && IMAGE_DROP_EXTENSIONS.Contains(ext.ToLowerInvariant());
+            return !string.IsNullOrEmpty(ext) && m_imageDropExtensions.Contains(ext.ToLowerInvariant());
         }
 
         /// <summary>
@@ -813,17 +813,17 @@ namespace mde
 
             foreach (var img in FindAllImages(a_doc))
             {
-                if (!(img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.m_originalSrc))
+                if (!(img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.OriginalSrc))
                 {
                     continue;
                 }
-                if (!Path.IsPathRooted(info.m_originalSrc))
+                if (!Path.IsPathRooted(info.OriginalSrc))
                 {
                     continue; // 既に相対パスなら何もしない
                 }
 
                 string fullSrc;
-                try { fullSrc = Path.GetFullPath(info.m_originalSrc); } catch { continue; }
+                try { fullSrc = Path.GetFullPath(info.OriginalSrc); } catch { continue; }
                 if (!fullSrc.StartsWith(tempDir, StringComparison.OrdinalIgnoreCase))
                 {
                     continue; // このウィンドウの一時ファイルではない
@@ -835,8 +835,8 @@ namespace mde
                     continue;
                 }
 
-                info.m_originalSrc = imagesFolderName + "/" + Path.GetFileName(destPath);
-                SetImageSource(img, info.m_originalSrc);
+                info.OriginalSrc = imagesFolderName + "/" + Path.GetFileName(destPath);
+                SetImageSource(img, info.OriginalSrc);
 
                 try { File.Delete(fullSrc); } catch { /* 削除できなくても致命的ではない */ }
             }
@@ -885,7 +885,7 @@ namespace mde
             {
                 if (img.Tag is ImageInfo info)
                 {
-                    SetImageSource(img, info.m_originalSrc);
+                    SetImageSource(img, info.OriginalSrc);
                 }
             }
         }
