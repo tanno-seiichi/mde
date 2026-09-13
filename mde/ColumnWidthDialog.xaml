@@ -23,9 +23,9 @@
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
             <Button Content="キャンセル" Width="84" Height="30" Margin="0,0,8,0"
-                    Style="{StaticResource ToolbarButton}" Click="CancelClick"/>
+                    Style="{StaticResource DialogButton}" Click="CancelClick"/>
             <Button Content="OK" Width="84" Height="30" IsDefault="True"
-                    Style="{StaticResource ToolbarButton}" Click="OkClick"/>
+                    Style="{StaticResource DialogButton}" Click="OkClick"/>
         </StackPanel>
     </StackPanel>
 </Window>
