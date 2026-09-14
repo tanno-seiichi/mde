@@ -765,12 +765,21 @@ namespace mde
             // （Editor.PreviewTextInput／Editor.PreviewKeyDown）と対応する変更が見当たらない
             // 場合、何らかの理由でアプリの外側（IME側やUndoスタックなど）から文書が
             // 書き換えられていることを疑う手がかりにする。
-            string changesDetail = string.Join(",",
-                a_args.Changes.Select(c => $"[Off={c.Offset} Add={c.AddedLength} Rem={c.RemovedLength}]"));
-            DebugLogger.Log(
-                $"EditorTextChanged: m_isProgrammaticChangeFlg={m_isProgrammaticChangeFlg} " +
-                $"IsFocused={m_editor.IsFocused} Changes={a_args.Changes.Count} {changesDetail} " +
-                $"CanUndo={m_editor.CanUndo} CanRedo={m_editor.CanRedo}");
+            // 2026-09追記：DebugLogger.Logは無効時、中で即returnするだけで実質無コストだが、
+            // 呼び出し側でのメッセージ文字列の組み立て（特にa_args.ChangesをLINQのSelect/Joinで
+            // 展開する部分）自体は、C#の仕様上、無効時でも毎回必ず実行されてしまう。文字入力の
+            // たびに必ず呼ばれるこの関数では、デバッグログが無効な普段の使用でもこの組み立て
+            // コストが積み重なり、「全体的に動作がもっさりする」不具合の一因になり得るため、
+            // DebugLogger.IsEnabledで明示的に囲み、無効時は文字列の組み立てごと省略する。
+            if (DebugLogger.IsEnabled)
+            {
+                string changesDetail = string.Join(",",
+                    a_args.Changes.Select(c => $"[Off={c.Offset} Add={c.AddedLength} Rem={c.RemovedLength}]"));
+                DebugLogger.Log(
+                    $"EditorTextChanged: m_isProgrammaticChangeFlg={m_isProgrammaticChangeFlg} " +
+                    $"IsFocused={m_editor.IsFocused} Changes={a_args.Changes.Count} {changesDetail} " +
+                    $"CanUndo={m_editor.CanUndo} CanRedo={m_editor.CanRedo}");
+            }
             // RichTextBoxはInitializeComponent中に、既定の空文書を設定する際にTextChangedを
             // 発生させることがある。その時点ではコンストラクタでの各クラスの構築がまだ
             // 完了していない可能性があるため、念のためガードしておく。
@@ -1071,9 +1080,18 @@ namespace mde
             // Delete・矢印キー・Ctrl+Z（元に戻す）等の「文字を生成しないキー」がログに一切
             // 残らなかった。ソースモードかどうかや変換処理の判定より前、関数の一番最初で記録
             // することで、実際に押されたキーを漏れなく時系列に残す。
-            DebugLogger.Log(
-                $"Editor.PreviewKeyDown: Key={a_args.Key} SystemKey={a_args.SystemKey} " +
-                $"Modifiers={Keyboard.Modifiers} IsRepeat={a_args.IsRepeat}");
+            // 2026-09追記：DebugLogger.Logは無効時、中で即returnするだけで実質無コストだが、
+            // 呼び出し側でのメッセージ文字列の組み立て自体（文字列補間）はC#の仕様上、
+            // 無効時でも毎回必ず実行されてしまう。矢印キーでの範囲選択やキー入力のたびに
+            // 必ず通るこの関数では、デバッグログが無効な普段の使用でもこの組み立てコストが
+            // 積み重なり、「全体的に動作がもっさりする」不具合の一因になり得るため、
+            // DebugLogger.IsEnabledで明示的に囲み、無効時は文字列の組み立てごと省略する。
+            if (DebugLogger.IsEnabled)
+            {
+                DebugLogger.Log(
+                    $"Editor.PreviewKeyDown: Key={a_args.Key} SystemKey={a_args.SystemKey} " +
+                    $"Modifiers={Keyboard.Modifiers} IsRepeat={a_args.IsRepeat}");
+            }
 
             if (m_isSourceModeFlg)
             {

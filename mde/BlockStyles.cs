@@ -216,6 +216,15 @@ namespace mde
         /// ヘッダー行（最上段の行）のセルの右辺だけ、本文行より少し太く
         /// （<see cref="HEADER_VERTICAL_BORDER_THICKNESS"/>）描くようにしている。WYSIWYG
         /// （Markdown）モードでの見た目にはほとんど影響しない程度の差にとどめてある。
+        /// 【2026-09追記・対象の絞り込み】上記の消失は、隣接する2つのセルが互いに接する
+        /// 内部の区切り線（セルとセルの間の縦線）でのみ確認された現象であり、表の外周
+        /// （＝各行の最後のセルの右辺。隣に別のセルが無く、表の外側の余白に直接面している
+        /// 境界線）ではそもそも発生していなかった。にもかかわらず、この処理は当初、行内の
+        /// 全セル（最後のセルを含む）に一律でHEADER_VERTICAL_BORDER_THICKNESSを適用して
+        /// いたため、ヘッダー行の最後の列（＝表の右端の外周線）まで本文行より太くなって
+        /// しまい、「ヘッダーの右端の枠線だけ太く表示される」という別の不具合として
+        /// 実機から報告された。消失対策が本来必要なのは内部の区切り線だけなので、各行の
+        /// 最後のセルの右辺（表の外周線）は太さを変えず、本文行と同じ太さのままにする。
         /// 呼び出し側は、行・列の挿入や削除など表の構造を変えた直後に、表全体に対して
         /// 毎回呼び直すこと（個々の操作ごとに罫線の付け外しを個別に追いかけるのではなく、
         /// 常にこの関数で表全体を作り直す方が、境界線が消える・重なるといった不具合を
@@ -230,19 +239,25 @@ namespace mde
             a_table.BorderBrush = a_borderBrush;
             a_table.BorderThickness = new Thickness(1, 1, 0, 0);
 
-            // 全セルの右辺・下辺に罫線を描く。ヘッダー行（最上段の行）の右辺（セル間の
-            // 縦の区切り線）だけは、印刷時の消失対策としてわずかに太くする
-            // （HEADER_VERTICAL_BORDER_THICKNESS。それ以外は本文行と完全に同じ太さ）。
+            // 全セルの右辺・下辺に罫線を描く。ヘッダー行（最上段の行）のうち、セル同士が
+            // 隣接する内部の区切り線（＝行内で最後ではないセルの右辺）だけは、印刷時の
+            // 消失対策としてわずかに太くする（HEADER_VERTICAL_BORDER_THICKNESS）。行内で
+            // 最後のセルの右辺は、隣にセルが無く表の外周（外側の余白）に直接面しており、
+            // 消失は確認されていないため、本文行と完全に同じ太さ（1）のままにする。
             int rowIndex = 0;
             foreach (TableRowGroup rg in a_table.RowGroups)
             {
                 foreach (TableRow row in rg.Rows)
                 {
-                    double right = (0 == rowIndex) ? HEADER_VERTICAL_BORDER_THICKNESS : 1;
+                    int cellCount = row.Cells.Count;
+                    int cellIndex = 0;
                     foreach (TableCell cell in row.Cells)
                     {
+                        bool isLastCellInRow = (cellIndex == cellCount - 1);
+                        double right = (0 == rowIndex && !isLastCellInRow) ? HEADER_VERTICAL_BORDER_THICKNESS : 1;
                         cell.BorderBrush = a_borderBrush;
                         cell.BorderThickness = new Thickness(0, 0, right, 1);
+                        cellIndex++;
                     }
                     rowIndex++;
                 }
@@ -455,6 +470,20 @@ namespace mde
                 double paraWidth = 0;
                 foreach (Inline inline in p.Inlines)
                 {
+                    // 2026-09-14追記：セルに画像（InlineUIContainerで包まれたImage）が
+                    // 設定されている場合、その表示幅（Image.Width。ImageManager.
+                    // ApplyImageSizingで必ず設定済みのはず）も内容幅に含める。以前は
+                    // Runのテキストしか見ておらず、画像だけのセル（テキストが無い、または
+                    // 短い）の列が実際の画像幅よりずっと狭く測定されてしまい、「列幅を
+                    // 補正する」がオンの時に画像の右端が見切れる不具合の原因になっていた。
+                    if (inline is InlineUIContainer iuc && iuc.Child is Image img)
+                    {
+                        if (!double.IsNaN(img.Width) && img.Width > 0)
+                        {
+                            paraWidth += img.Width;
+                        }
+                        continue;
+                    }
                     if (!(inline is Run run))
                     {
                         continue;
