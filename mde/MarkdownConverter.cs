@@ -54,6 +54,27 @@ namespace mde
             "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(`([^`]+)`)|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|(<u>([^<]+)</u>)|(==([^=]+)==)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+        /// <summary>表のセルの行内改行を表す&lt;br&gt;（大文字小文字・&lt;br /&gt;のような
+        /// スペースや自己終了スラッシュの有無を問わない）を検出する正規表現。TableToMarkdownで
+        /// セル内の改行を&lt;br&gt;として書き出していることの対になる、読み込み側の処理
+        /// （ConvertTableCellBrToLineBreak）で使う。</summary>
+        private static readonly Regex m_tableCellBrRegex = new Regex("<br\\s*/?>", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// 表のセルのMarkdownソース文字列（ParseTableRowで分割した1セル分）に含まれる
+        /// &lt;br&gt;を、通常の段落と同じ行内改行の表現である実際の改行文字（'\n'）へ戻す。
+        /// これにより、セルのテキストをAppendInlineMarkdownToParagraphへそのまま渡すだけで、
+        /// 通常の段落（JoinParagraphSourceLines参照）と全く同じ仕組みで本物のLineBreakへ
+        /// 復元される。TableToMarkdownでの書き出し側の処理と対になっている（詳細は同メソッドの
+        /// コメント参照）。
+        /// </summary>
+        /// <param name="a_cellText">表のセル1つ分のMarkdownソース文字列。</param>
+        /// <returns>&lt;br&gt;を'\n'に置き換えた文字列。</returns>
+        private static string ConvertTableCellBrToLineBreak(string a_cellText)
+        {
+            return m_tableCellBrRegex.Replace(a_cellText, "\n");
+        }
+
         /// <summary>
         /// [text](url "title") / ![alt](src "title") の "(...)" の中身（URLとタイトルの両方を
         /// 含む生文字列）を、URL部分とタイトル部分（あれば）に分割する。
@@ -284,7 +305,18 @@ namespace mde
                             sb.Append(ParagraphInlineToMarkdown(cp));
                         }
                     }
-                    cells.Add(sb.ToString().Replace("|", "\\|"));
+                    // セル内でShift+Enter/Enterにより挿入した行内改行（LineBreak）は、
+                    // ParagraphInlineToMarkdownの中で他の段落と同じ実際の改行文字'\n'として
+                    // 書き出される。しかし表の1行は必ず1つの物理行として書き出す必要があり
+                    // （読み込み側は「|で始まる行が続く間は表」という行単位の判定をしている。
+                    // ParseTableRow・MarkdownToDocumentの表解析部分を参照）、セルの中に生の
+                    // '\n'をそのまま埋め込むと、その行がそこで終わってしまい、続きが「|」で
+                    // 始まらない別の行として切り離され、表の構造が壊れてしまう（実機で報告
+                    // された不具合）。GFMの慣例に合わせ、セルの中の改行だけは<br>に変換して
+                    // 1つの物理行に収める。読み込み側（ConvertTableCellBrToLineBreak）で
+                    // 元の'\n'へ戻してからAppendInlineMarkdownToParagraphへ渡すことで、
+                    // 通常の段落と同じ仕組みでLineBreakへ復元される。
+                    cells.Add(sb.ToString().Replace("\n", "<br>").Replace("|", "\\|"));
                 }
                 mdRows.Add("| " + string.Join(" | ", cells) + " |");
             }
@@ -692,7 +724,7 @@ namespace mde
                             // 保存できるようにするための印。
                             Tag = headerExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null
                         };
-                        AppendInlineMarkdownToParagraph(hp, txt, false);
+                        AppendInlineMarkdownToParagraph(hp, ConvertTableCellBrToLineBreak(txt), false);
                         var cell = new TableCell(hp)
                         {
                             FontWeight = FontWeights.Bold,
@@ -729,7 +761,7 @@ namespace mde
                                 // 表全体で一貫させておく）。
                                 Tag = bodyExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null
                             };
-                            AppendInlineMarkdownToParagraph(cp, txt, false);
+                            AppendInlineMarkdownToParagraph(cp, ConvertTableCellBrToLineBreak(txt), false);
                             var cell = new TableCell(cp)
                             {
                                 // 罫線は表全体の組み立て後にBlockStyles.ApplyTableCellBordersで

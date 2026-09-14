@@ -280,10 +280,26 @@ namespace mde
             m_editor.Focus();
         }
 
-        /// <summary>コードブロック内でのEnterキー処理（新しい段落を作らず、行内改行を挿入する）。</summary>
+        /// <summary>コードブロック内でのEnterキー処理（新しい段落を作らず、行内改行を挿入する）。
+        /// 箇条書き項目内でのShift+Enter、表のセル内でのEnter/Shift+Enterでも共通して使われる
+        /// （MainWindow.EditorPreviewKeyDown参照）。
+        /// 【2026-09追記】以前はここだけ、他の構造変更メソッド（ConvertParagraphToHeading・
+        /// ConvertParagraphToCodeBlock・OutdentCodeLine等、本ファイル内の他のすべてのメソッド）
+        /// と異なり、実際のドキュメント変更をm_runAsProgrammaticChangeで囲んでいなかった。
+        /// この状態だと、行内改行の挿入そのものがEditorTextChangedを「プログラムによる変更
+        /// ではない」通常の編集として発火させてしまい、直後に本来スキップされるはずの
+        /// ライブ入力変換のチェック一式（InlineStyleEditor.CheckInlineFormatTrigger、箇条書き
+        /// 項目向けのタスクチェックボックス判定等）が、行内改行を挿入した直後の中途半端な
+        /// 状態に対して余分に働いてしまっていた。箇条書き項目でShift+Enterの直後に文字を
+        /// 入力すると改行が無効になって見えるという報告を受けて調査した際に見つかったもので、
+        /// 他のメソッドと同じ保護（m_runAsProgrammaticChange）で囲むよう統一した。
+        /// </summary>
         public void InsertLineBreakAtCaret()
         {
-            m_editor.CaretPosition = m_editor.CaretPosition.InsertLineBreak();
+            m_runAsProgrammaticChange(() =>
+            {
+                m_editor.CaretPosition = m_editor.CaretPosition.InsertLineBreak();
+            });
         }
 
         /// <summary>

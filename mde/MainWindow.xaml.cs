@@ -765,12 +765,21 @@ namespace mde
             // （Editor.PreviewTextInput／Editor.PreviewKeyDown）と対応する変更が見当たらない
             // 場合、何らかの理由でアプリの外側（IME側やUndoスタックなど）から文書が
             // 書き換えられていることを疑う手がかりにする。
-            string changesDetail = string.Join(",",
-                a_args.Changes.Select(c => $"[Off={c.Offset} Add={c.AddedLength} Rem={c.RemovedLength}]"));
-            DebugLogger.Log(
-                $"EditorTextChanged: m_isProgrammaticChangeFlg={m_isProgrammaticChangeFlg} " +
-                $"IsFocused={m_editor.IsFocused} Changes={a_args.Changes.Count} {changesDetail} " +
-                $"CanUndo={m_editor.CanUndo} CanRedo={m_editor.CanRedo}");
+            // 2026-09追記：DebugLogger.Logは無効時、中で即returnするだけで実質無コストだが、
+            // 呼び出し側でのメッセージ文字列の組み立て（特にa_args.ChangesをLINQのSelect/Joinで
+            // 展開する部分）自体は、C#の仕様上、無効時でも毎回必ず実行されてしまう。文字入力の
+            // たびに必ず呼ばれるこの関数では、デバッグログが無効な普段の使用でもこの組み立て
+            // コストが積み重なり、「全体的に動作がもっさりする」不具合の一因になり得るため、
+            // DebugLogger.IsEnabledで明示的に囲み、無効時は文字列の組み立てごと省略する。
+            if (DebugLogger.IsEnabled)
+            {
+                string changesDetail = string.Join(",",
+                    a_args.Changes.Select(c => $"[Off={c.Offset} Add={c.AddedLength} Rem={c.RemovedLength}]"));
+                DebugLogger.Log(
+                    $"EditorTextChanged: m_isProgrammaticChangeFlg={m_isProgrammaticChangeFlg} " +
+                    $"IsFocused={m_editor.IsFocused} Changes={a_args.Changes.Count} {changesDetail} " +
+                    $"CanUndo={m_editor.CanUndo} CanRedo={m_editor.CanRedo}");
+            }
             // RichTextBoxはInitializeComponent中に、既定の空文書を設定する際にTextChangedを
             // 発生させることがある。その時点ではコンストラクタでの各クラスの構築がまだ
             // 完了していない可能性があるため、念のためガードしておく。
@@ -1071,9 +1080,18 @@ namespace mde
             // Delete・矢印キー・Ctrl+Z（元に戻す）等の「文字を生成しないキー」がログに一切
             // 残らなかった。ソースモードかどうかや変換処理の判定より前、関数の一番最初で記録
             // することで、実際に押されたキーを漏れなく時系列に残す。
-            DebugLogger.Log(
-                $"Editor.PreviewKeyDown: Key={a_args.Key} SystemKey={a_args.SystemKey} " +
-                $"Modifiers={Keyboard.Modifiers} IsRepeat={a_args.IsRepeat}");
+            // 2026-09追記：DebugLogger.Logは無効時、中で即returnするだけで実質無コストだが、
+            // 呼び出し側でのメッセージ文字列の組み立て自体（文字列補間）はC#の仕様上、
+            // 無効時でも毎回必ず実行されてしまう。矢印キーでの範囲選択やキー入力のたびに
+            // 必ず通るこの関数では、デバッグログが無効な普段の使用でもこの組み立てコストが
+            // 積み重なり、「全体的に動作がもっさりする」不具合の一因になり得るため、
+            // DebugLogger.IsEnabledで明示的に囲み、無効時は文字列の組み立てごと省略する。
+            if (DebugLogger.IsEnabled)
+            {
+                DebugLogger.Log(
+                    $"Editor.PreviewKeyDown: Key={a_args.Key} SystemKey={a_args.SystemKey} " +
+                    $"Modifiers={Keyboard.Modifiers} IsRepeat={a_args.IsRepeat}");
+            }
 
             if (m_isSourceModeFlg)
             {
@@ -2288,6 +2306,29 @@ namespace mde
                     }
                 }
 
+                // 表（「列幅を補正する」がオンで、まだ列幅調整ダイアログ等で明示的に調整されて
+                // いない＝自動計算の表）の列幅も、画像と同じ理由で一時的に再計算する。この列幅は
+                // 普段、画面上のエディタの表示幅（m_tableEditor.GetAvailableTableWidth）を基準に
+                // 計算されており、その内容が丸ごと収まる場合は固定px幅で確定してしまう
+                // （BlockStyles.ApplyAutoCalculatedColumnWidths参照）。編集画面の方がPDFの
+                // 印刷可能幅（contentWidth）より広い環境では、画面向けに確定した固定px幅が
+                // ページ幅に収まらず、表の右端が見切れてしまう不具合が実機で報告された。
+                // ウインドウのリサイズ時に使っているのと同じ再計算処理
+                // （BlockStyles.RefreshAutoCalculatedColumnWidths）を、画面幅の代わりに
+                // contentWidthを渡して呼ぶことで、この時だけ「印刷ページの幅に収まる」列幅に
+                // 揃える。すでに明示的に調整済みの表（区切り行が既定値以外）には何もしない
+                // （Star比率のままであり、印刷時のページ幅にも構造上収まるため）。書き出し後、
+                // 画面表示用の幅に戻す。
+                var originalTableColumnWidths = new Dictionary<Table, GridLength[]>();
+                if (m_correctColumnWidthsFlg)
+                {
+                    foreach (var table in m_tableEditor.FindAllTables(m_editor.Document))
+                    {
+                        originalTableColumnWidths[table] = table.Columns.Select(c => c.Width).ToArray();
+                        BlockStyles.RefreshAutoCalculatedColumnWidths(table, contentWidth);
+                    }
+                }
+
                 // FlowDocumentは、既定では印刷可能幅に応じて自動的に段組み（複数列）にしてしまう
                 // ことがある。ColumnWidthを「余白を差し引いた実際の本文の幅」に合わせておくことで、
                 // 画面表示と同じ単一列のレイアウトのまま印刷されるようにする。
@@ -2338,6 +2379,14 @@ namespace mde
                     {
                         kv.Key.Width = kv.Value.Width;
                         kv.Key.Height = kv.Value.Height;
+                    }
+                    foreach (var kv in originalTableColumnWidths)
+                    {
+                        var cols = kv.Key.Columns;
+                        for (int c = 0; c < cols.Count && c < kv.Value.Length; c++)
+                        {
+                            cols[c].Width = kv.Value[c];
+                        }
                     }
                     foreach (var swap in linkSwaps)
                     {
