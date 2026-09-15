@@ -52,14 +52,14 @@ namespace mde
         /// フラグ。TextChangedがこれを見て、ダーティ扱いにしないようにする。</summary>
         private bool m_isApplyingHighlightFlg = false;
 
-        /// <summary>アウトラインペインの再構築（ScheduleOutlineRefresh）が、まだ実行されていない
-        /// Dispatcher.BeginInvoke呼び出しとして予約済みかどうか。EditorTextChangedからの
-        /// 呼び出しだけ、このフラグで多重予約を防ぎつつDispatcher.BeginInvoke
-        /// （ApplicationIdle優先度）で1テンポ後回しにすることで、同じUIサイクル内で連続して
-        /// 発生する複数回の呼び出しを実質1回にまとめる。LoadFile・検索置換など、頻繁に連続
-        /// 発生しない他の呼び出し元は従来どおり同期的にm_outlineManager.Refresh()を直接呼んで
-        /// おり、この対象外。</summary>
-        private bool m_outlineRefreshPendingFlg = false;
+        /// <summary>アウトラインペインの再構築（ScheduleOutlineRefresh）を間引くためのデバウンス
+        /// 用タイマー。ガベージコレクションで消えないよう、フィールドとして保持しておく。
+        /// EditorTextChangedから呼ばれるたびにStop()→Start()で仕切り直すことで、「最後の編集
+        /// からInterval分だけ操作が無ければ1回だけ実行する」という、本来の意味でのデバウンスに
+        /// している（詳細はScheduleOutlineRefreshのコメントを参照）。LoadFile・検索置換など、
+        /// 頻繁に連続発生しない他の呼び出し元は従来どおり同期的にm_outlineManager.Refresh()を
+        /// 直接呼んでおり、この対象外。</summary>
+        private System.Windows.Threading.DispatcherTimer m_outlineRefreshDebounceTimer;
 
         /// <summary>現在エディタに表示中のファイルの絶対パス。未保存なら null。</summary>
         private string m_currentFilePath = null;
@@ -291,6 +291,22 @@ namespace mde
                     $"CurrentInputLanguage={InputLanguageManager.Current?.CurrentInputLanguage?.Name} " +
                     $"CanUndo={m_editor.CanUndo} CanRedo={m_editor.CanRedo}");
             m_imeDebugHeartbeatTimer.Start();
+
+            // アウトラインペイン再構築（ScheduleOutlineRefresh）のデバウンス用タイマー。
+            // Interval分だけEditorTextChangedが発生しなかった時点で、1回だけTickが呼ばれる
+            // （呼ばれるたびにScheduleOutlineRefresh側でStop()→Start()し直すため）。もっさり
+            // 感の実機ログ調査（2026-09、DEVELOPMENT_LOG.md参照）で、連続入力中に毎回
+            // m_outlineManager.Refresh()が走ってしまっていたことが重さの主因の一つと判明した
+            // ための対策。
+            m_outlineRefreshDebounceTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(400)
+            };
+            m_outlineRefreshDebounceTimer.Tick += (a_s, a_e) =>
+            {
+                m_outlineRefreshDebounceTimer.Stop();
+                m_outlineManager.Refresh();
+            };
 
             // 起動時引数でMarkdownファイルのパスを受け取っていれば、そちらを開く
             // （ファイルの関連付けからのダブルクリック起動などに対応するため）。
@@ -913,25 +929,28 @@ namespace mde
         }
 
         /// <summary>
-        /// アウトラインペインの再構築（m_outlineManager.Refresh()）を、直後の
-        /// Dispatcher.BeginInvoke（ApplicationIdle優先度）へ1回だけ予約する。EditorTextChanged
-        /// は文字入力のたびに呼ばれるが、Refresh()自体は文書全体を走査して一覧
-        /// （ObservableCollection）を丸ごと作り直す処理のため、1文字ごとに毎回同期実行すると
-        /// 入力全体が重くなる。m_outlineRefreshPendingFlgで多重予約を防ぐことで、同じUI
-        /// サイクル内で連続して発生する呼び出しを実質1回にまとめる。
+        /// アウトラインペインの再構築（m_outlineManager.Refresh()）を、EditorTextChangedから
+        /// 直接同期実行するのではなく、少し後回しにして呼び出す。EditorTextChangedは文字入力の
+        /// たびに呼ばれるが、Refresh()自体は文書全体を走査して一覧（ObservableCollection）を
+        /// 丸ごと作り直す処理のため、1文字ごとに毎回同期実行すると入力全体が重くなる。
+        ///
+        /// 2026-09追記：以前は「同じUIサイクル内での重複呼び出しをDispatcher.BeginInvoke
+        /// （ApplicationIdle優先度）でまとめて1回にする」という間引き方をしていたが、これは
+        /// ApplicationIdle優先度のコールバックが「UIスレッドが一瞬でも空けばすぐ実行される」
+        /// ため、連続入力中（特にIME変換中）でもキー入力のたびにほぼ毎回Refresh()が走って
+        /// しまっていた。実機ログ調査（「もっさりする」「入力を続けると徐々に重くなる」「太字
+        /// 変換など、他の操作と重なった直後に数秒単位で応答なしになる」という報告、
+        /// DEVELOPMENT_LOG.md参照）で、文書が大きくなるほどこのRefresh()の頻発自体が重さの
+        /// 主因の一つになっていることが分かったため、m_outlineRefreshDebounceTimer
+        /// （DispatcherTimer）を使い、呼ばれるたびにタイマーを仕切り直す（Stop()→Start()）
+        /// ことで、「最後の編集からInterval分だけ操作が無ければ1回だけ実行する」という、
+        /// 本来の意味でのデバウンスに変更した。これにより、連続入力中はRefresh()が実行されず、
+        /// 入力が一段落したタイミングでまとめて1回だけ実行されるようになる。
         /// </summary>
         private void ScheduleOutlineRefresh()
         {
-            if (m_outlineRefreshPendingFlg)
-            {
-                return;
-            }
-            m_outlineRefreshPendingFlg = true;
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                m_outlineRefreshPendingFlg = false;
-                m_outlineManager.Refresh();
-            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            m_outlineRefreshDebounceTimer.Stop();
+            m_outlineRefreshDebounceTimer.Start();
         }
 
         // ======================================================================

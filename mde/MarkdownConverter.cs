@@ -24,6 +24,8 @@ namespace mde
     /// </summary>
     public class MarkdownConverter
     {
+        // 2026-09追記：試験的にアウトラインビュー・フォルダペインの背景色（#FCFDFF）と
+        // 揃えてみたが、効果が薄いとのご判断により元の色（#F8F8F8）へ戻した。
         private static readonly Brush m_headerBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
         private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
         private static readonly Brush m_linkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
