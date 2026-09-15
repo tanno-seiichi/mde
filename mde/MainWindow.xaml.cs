@@ -1129,7 +1129,11 @@ namespace mde
                     if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
                     {
                         a_args.Handled = true;
-                        m_headingCodeBlockEditor.InsertLineBreakAtCaret();
+                        // 箇条書き項目内での行内改行は、LineBreak要素ではなく段落分割方式を使う
+                        // （HeadingCodeBlockEditor.InsertParagraphSplitAtCaretのコメント参照。
+                        // IMEの入力位置がずれる不具合の対策）。コードブロックは対象外のため、
+                        // その場合はInsertLineBreakAtCaretのまま（下のCodeBlockInfo分岐参照）。
+                        m_headingCodeBlockEditor.InsertParagraphSplitAtCaret(para);
                         return;
                     }
 
@@ -1152,7 +1156,10 @@ namespace mde
                 if (para.Parent is TableCell)
                 {
                     a_args.Handled = true;
-                    m_headingCodeBlockEditor.InsertLineBreakAtCaret();
+                    // 表のセル内での行内改行も、箇条書き項目と同じ理由で段落分割方式を使う
+                    // （上のListItem+Shift+Enterの分岐、およびHeadingCodeBlockEditor.
+                    // InsertParagraphSplitAtCaretのコメント参照）。
+                    m_headingCodeBlockEditor.InsertParagraphSplitAtCaret(para);
                     return;
                 }
                 if (para.Parent is FlowDocument)

@@ -78,6 +78,61 @@ namespace mde
         }
 
         /// <summary>
+        /// 表のセル1つ分のMarkdownソース文字列（&lt;br&gt;を含む、ParseTableRowで分割した
+        /// 生の文字列）から、TableCellを組み立てる。&lt;br&gt;で区切られた行それぞれを、
+        /// 独立したParagraph（Marginを0にして、見た目には1つのセルの中の複数行にしか見えない
+        /// ようにする）として追加する。
+        /// 【2026-09追記・なぜ1つのParagraph＋内部LineBreakではなく、複数のParagraphに
+        /// 分けるのか】セル内でのShift+Enter/Enterによる改行の直後にIMEで入力すると、確定した
+        /// 文字が改行の1つ手前に入ってしまう不具合が、WPFのLineBreak要素とTSF（IME）の連携に
+        /// おける制約として確認された（詳しい調査の経緯はDEVELOPMENT_LOG.md該当セクション、
+        /// HeadingCodeBlockEditor.InsertParagraphSplitAtCaretのコメント参照）。この制約を
+        /// 避けるため、ファイルを新規に読み込んでセルの内容を組み立てる際も、ライブ編集時に
+        /// InsertParagraphSplitAtCaretが作る構造（LineBreakを使わず、複数のParagraphを
+        /// 並べる）とあらかじめ一致させておく。これにより、ファイルを開き直した直後と、
+        /// 実際にセル内でShift+Enter/Enterを押して改行を入力した直後とで、内部構造（延いては
+        /// IMEとの相性）が食い違わないようにしている。
+        /// Markdownとしての書き出しは、この内部表現の違いに影響されない（TableToMarkdown参照。
+        /// 複数のParagraphがある場合はそれぞれを&lt;br&gt;で連結するだけで、以前の「1つの
+        /// Paragraph内の複数のLineBreak」と全く同じ形式のMarkdownが書き出される）。
+        /// </summary>
+        /// <param name="a_cellMarkdownText">セル1つ分のMarkdownソース文字列（&lt;br&gt;を含む）。</param>
+        /// <param name="a_alignment">このセルが属する列の文字揃え。</param>
+        /// <param name="a_tag">各段落のTagに設定する値（「明示的な左揃え」の印。通常はnull）。
+        /// Markdown書き出し時に参照されるのはセルの最初の段落のTagだけだが（TableToMarkdownの
+        /// ヘッダー行のTextAlignment/Tag検出部分参照）、すべての段落に同じ値を設定しておいても
+        /// 書き出し結果には影響しない。</param>
+        /// <returns>組み立てたTableCell（罫線・Padding・背景色等、内容以外の見た目は
+        /// 呼び出し側で設定すること）。</returns>
+        private TableCell BuildTableCellFromMarkdown(string a_cellMarkdownText, TextAlignment a_alignment, object a_tag)
+        {
+            string converted = ConvertTableCellBrToLineBreak(a_cellMarkdownText);
+            string[] cellLines = converted.Split('\n');
+            var cell = new TableCell();
+            foreach (string lineText in cellLines)
+            {
+                var p = new Paragraph
+                {
+                    Margin = new Thickness(0),
+                    // 表のセルは「行間（EditorLineHeight）」の設定値を継承させない。
+                    // Style TargetType="Paragraph"はFlowDocument内のすべての段落へ
+                    // 暗黙的に適用されるため、ここで明示的にLineHeightを上書きしない限り、
+                    // ユーザーが本文用に設定した行間がそのまま表のセルにも反映されてしまい、
+                    // 1行しかない短いセルまで縦に間延びして見える。double.NaNを指定すると、
+                    // WPF標準の「未指定（フォントの自然な行の高さ）」の挙動に戻るため、
+                    // 表は常にコンパクトな行の高さで表示される。
+                    LineHeight = double.NaN,
+                    KeepTogether = true,
+                    TextAlignment = a_alignment,
+                    Tag = a_tag
+                };
+                AppendInlineMarkdownToParagraph(p, lineText, false);
+                cell.Blocks.Add(p);
+            }
+            return cell;
+        }
+
+        /// <summary>
         /// [text](url "title") / ![alt](src "title") の "(...)" の中身（URLとタイトルの両方を
         /// 含む生文字列）を、URL部分とタイトル部分（あれば）に分割する。
         /// </summary>
@@ -252,13 +307,33 @@ namespace mde
             int number = 1;
             foreach (ListItem li in a_list.ListItems)
             {
-                var ownPara = li.Blocks.FirstBlock as Paragraph;
-                string ownText = null != ownPara ? ParagraphInlineToMarkdown(ownPara) : "";
-                var parts = ownText.Split('\n');
+                // 【2026-09追記】項目自身の内容は、以前は必ず1つのParagraph（内部にLineBreakを
+                // 持つことがある）だったが、Shift+Enterによる段落分割
+                // （HeadingCodeBlockEditor.InsertParagraphSplitAtCaret）により、入れ子の
+                // サブリストより前に複数のParagraphが並ぶことがあるようになった。そのため、
+                // Blocks.FirstBlockだけでなく、サブリストが現れるまでのすべてのown-paragraphを
+                // 順に集め、それぞれの中の'\n'（従来通りLineBreakに由来するもの。通常は
+                // 発生しないはずだが念のため）でも分割して、1項目ぶんの継続行一覧を組み立てる。
+                var parts = new List<string>();
+                foreach (Block b in li.Blocks)
+                {
+                    if (b is List)
+                    {
+                        break; // 入れ子のサブリストより後ろは対象外
+                    }
+                    if (b is Paragraph ownPara)
+                    {
+                        parts.AddRange(ParagraphInlineToMarkdown(ownPara).Split('\n'));
+                    }
+                }
+                if (0 == parts.Count)
+                {
+                    parts.Add("");
+                }
                 string prefix = orderedFlg ? ((constantNumberingFlg ? 1 : number) + ". ") : (bulletMarker + " ");
                 lines.Add(indent + prefix + parts[0]);
                 string contIndent = indent + new string(' ', prefix.Length);
-                for (int k = 1; k < parts.Length; k++)
+                for (int k = 1; k < parts.Count; k++)
                 {
                     lines.Add(contIndent + parts[k]);
                 }
@@ -300,15 +375,29 @@ namespace mde
                 foreach (TableCell cell in row.Cells)
                 {
                     var sb = new StringBuilder();
+                    // 【2026-09追記】セル内でShift+Enter/Enterにより改行を挿入すると、以前は
+                    // 1つのParagraph内にLineBreak要素を追加する方式だったが、IME入力位置が
+                    // ずれる不具合（HeadingCodeBlockEditor.InsertParagraphSplitAtCaretの
+                    // コメント参照）への対策として、LineBreakを使わず段落（Paragraph）そのものを
+                    // 複数並べる方式に変更した。そのため、セル内に複数のParagraphがあり得る
+                    // ようになった。各Paragraph（＝改行で区切られた1行分）のテキストの間に、
+                    // 明示的に'\n'を挟んで連結する（以前の「1つのParagraph内のLineBreakが
+                    // ParagraphInlineToMarkdownの中で'\n'として書き出される」動作と、最終的な
+                    // Markdown文字列としては同じ結果になる）。
+                    bool firstParaFlg = true;
                     foreach (Block b in cell.Blocks)
                     {
                         if (b is Paragraph cp)
                         {
+                            if (!firstParaFlg)
+                            {
+                                sb.Append('\n');
+                            }
                             sb.Append(ParagraphInlineToMarkdown(cp));
+                            firstParaFlg = false;
                         }
                     }
-                    // セル内でShift+Enter/Enterにより挿入した行内改行（LineBreak）は、
-                    // ParagraphInlineToMarkdownの中で他の段落と同じ実際の改行文字'\n'として
+                    // セル内でShift+Enter/Enterにより挿入した行内改行は、上記の通り'\n'として
                     // 書き出される。しかし表の1行は必ず1つの物理行として書き出す必要があり
                     // （読み込み側は「|で始まる行が続く間は表」という行単位の判定をしている。
                     // ParseTableRow・MarkdownToDocumentの表解析部分を参照）、セルの中に生の
@@ -709,33 +798,14 @@ namespace mde
                         // させないようにすることで、間に合わなければ行ごと次のページへ送られる
                         // ようにし、行の途中で表が壊れて見える問題を避ける。
                         var (headerAlignment, headerExplicitLeftFlg) = GetColumnAlignment(headerColIndex);
-                        var hp = new Paragraph
-                        {
-                            Margin = new Thickness(0),
-                            // 表のセルは「行間（EditorLineHeight）」の設定値を継承させない。
-                            // Style TargetType="Paragraph"はFlowDocument内のすべての段落へ
-                            // 暗黙的に適用されるため、ここで明示的にLineHeightを上書きしない限り、
-                            // ユーザーが本文用に設定した行間がそのまま表のセルにも反映されてしまい、
-                            // 1行しかない短いセルまで縦に間延びして見える。double.NaNを指定すると、
-                            // WPF標準の「未指定（フォントの自然な行の高さ）」の挙動に戻るため、
-                            // 表は常にコンパクトな行の高さで表示される。
-                            LineHeight = double.NaN,
-                            KeepTogether = true,
-                            TextAlignment = headerAlignment,
-                            // 「明示的な左揃え（:---）」を「揃え指定なし（---）」と区別して
-                            // 保存できるようにするための印。
-                            Tag = headerExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null
-                        };
-                        AppendInlineMarkdownToParagraph(hp, ConvertTableCellBrToLineBreak(txt), false);
-                        var cell = new TableCell(hp)
-                        {
-                            FontWeight = FontWeights.Bold,
-                            Background = m_headerBackground,
-                            // 罫線（BorderBrush/BorderThickness）は、表全体を組み立て終えた後に
-                            // BlockStyles.ApplyTableCellBordersでまとめて設定する（隣接セルとの
-                            // 境界線が二重に重ならないようにするため。詳細は同メソッド参照）。
-                            Padding = new Thickness(8, 6, 8, 6)
-                        };
+                        var cell = BuildTableCellFromMarkdown(
+                            txt, headerAlignment, headerExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null);
+                        cell.FontWeight = FontWeights.Bold;
+                        cell.Background = m_headerBackground;
+                        // 罫線（BorderBrush/BorderThickness）は、表全体を組み立て終えた後に
+                        // BlockStyles.ApplyTableCellBordersでまとめて設定する（隣接セルとの
+                        // 境界線が二重に重ならないようにするため。詳細は同メソッド参照）。
+                        cell.Padding = new Thickness(8, 6, 8, 6);
                         headerRow.Cells.Add(cell);
                         headerColIndex++;
                     }
@@ -750,26 +820,11 @@ namespace mde
                         {
                             // KeepTogether: 上のヘッダーセルと同じ理由（罫線が崩れる問題への対策）。
                             var (bodyAlignment, bodyExplicitLeftFlg) = GetColumnAlignment(bodyColIndex);
-                            var cp = new Paragraph
-                            {
-                                Margin = new Thickness(0),
-                                // ヘッダーセルと同じ理由でLineHeightを明示的に上書きする
-                                // （上のhp参照。行間設定の影響を受けず、常にコンパクトな
-                                // 行の高さで表示されるようにする）。
-                                LineHeight = double.NaN,
-                                KeepTogether = true,
-                                TextAlignment = bodyAlignment,
-                                // ヘッダーセルと同様の印（保存時に読むのはヘッダー行だけだが、
-                                // 表全体で一貫させておく）。
-                                Tag = bodyExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null
-                            };
-                            AppendInlineMarkdownToParagraph(cp, ConvertTableCellBrToLineBreak(txt), false);
-                            var cell = new TableCell(cp)
-                            {
-                                // 罫線は表全体の組み立て後にBlockStyles.ApplyTableCellBordersで
-                                // まとめて設定する（ヘッダーセルと同じ理由）。
-                                Padding = new Thickness(8, 6, 8, 6)
-                            };
+                            var cell = BuildTableCellFromMarkdown(
+                                txt, bodyAlignment, bodyExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null);
+                            // 罫線は表全体の組み立て後にBlockStyles.ApplyTableCellBordersで
+                            // まとめて設定する（ヘッダーセルと同じ理由）。
+                            cell.Padding = new Thickness(8, 6, 8, 6);
                             row.Cells.Add(cell);
                             bodyColIndex++;
                         }
@@ -1083,6 +1138,7 @@ namespace mde
             var numbersByList = new Dictionary<List, List<int>>();
 
             Paragraph pendingPara = null;
+            ListItem pendingListItem = null;
             var pendingTextLines = new List<string>();
             // 直前に確定した箇条書き項目がタスク項目だったかどうか（未確定ならnull）。
             bool? pendingTaskChecked = null;
@@ -1095,7 +1151,26 @@ namespace mde
                 {
                     return;
                 }
-                AppendInlineMarkdownToParagraph(pendingPara, JoinParagraphSourceLines(pendingTextLines), false);
+                // 【2026-09追記】項目の1行目＋継続行を結合した文字列（JoinParagraphSourceLines。
+                // 「表示」→「段落中の改行」設定が既定の「ソースの通りに改行する」であれば、
+                // 各行が'\n'でつながった文字列になる）を、以前は1つのParagraphへそのまま渡し、
+                // 内部の'\n'をLineBreak要素として復元していた。しかし、Shift+Enter/Enterによる
+                // ライブ編集時の改行はLineBreakを使わず段落分割方式に変更した
+                // （HeadingCodeBlockEditor.InsertParagraphSplitAtCaretのコメント参照）ため、
+                // ファイルを新規に読み込む際も同じ構造（複数のParagraphを並べる）にあらかじめ
+                // 揃えておく。'\n'で分割し、1行目は（すでにListItemへ追加済みの）pendingPara
+                // 自身へ、2行目以降は新しく作るown-paragraphへ、それぞれ振り分ける。
+                string joinedText = JoinParagraphSourceLines(pendingTextLines);
+                string[] ownLines = joinedText.Split('\n');
+                AppendInlineMarkdownToParagraph(pendingPara, ownLines[0], false);
+                Block insertAfter = pendingPara;
+                for (int k = 1; k < ownLines.Length; k++)
+                {
+                    var contPara = new Paragraph { Margin = new Thickness(0) };
+                    AppendInlineMarkdownToParagraph(contPara, ownLines[k], false);
+                    pendingListItem.Blocks.InsertAfter(insertAfter, contPara);
+                    insertAfter = contPara;
+                }
                 if (pendingTaskChecked.HasValue)
                 {
                     // チェックボックスの見た目はBlockStyles.CreateTaskCheckboxContainerに
@@ -1192,9 +1267,11 @@ namespace mde
                     }
 
                     var para = new Paragraph { Margin = new Thickness(0) };
-                    top.list.ListItems.Add(new ListItem(para));
+                    var newLi = new ListItem(para);
+                    top.list.ListItems.Add(newLi);
 
                     pendingPara = para;
+                    pendingListItem = newLi;
                     pendingTextLines = new List<string> { text };
                     pendingTaskChecked = taskChecked;
                 }

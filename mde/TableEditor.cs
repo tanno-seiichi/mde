@@ -784,11 +784,27 @@ namespace mde
         private string CellPlainText(TableCell a_cell)
         {
             var sb = new StringBuilder();
+            // 【2026-09追記】セル内でShift+Enter/Enterにより挿入した改行は、以前は1つの
+            // Paragraph内のLineBreak要素として表現されており、TextRange.Textがその改行を
+            // 含めて（"\r\n"として）そのまま拾ってくれていた。IME入力位置がずれる不具合への
+            // 対策として、この改行がLineBreakではなく複数のParagraphを並べる方式に変更された
+            // ため（HeadingCodeBlockEditor.InsertParagraphSplitAtCaretのコメント参照）、
+            // Paragraphが複数ある場合は、ここで明示的に'\n'を挟んで連結する（挟まないと、
+            // 別々の行だった文字列が区切りなく連結されてしまう）。呼び出し元
+            // （RangeToTsv・RangeToHtmlFragment・TableToTsv・TableToHtmlFragment）は、
+            // いずれもこの結果の'\n'をさらに変換（TSVでは半角スペースへ、HTMLでは&lt;br&gt;へ）
+            // するため、ここで'\n'を使っておけば従来通りの変換がそのまま機能する。
+            bool firstParaFlg = true;
             foreach (Block b in a_cell.Blocks)
             {
                 if (b is Paragraph p)
                 {
+                    if (!firstParaFlg)
+                    {
+                        sb.Append('\n');
+                    }
                     sb.Append(new TextRange(p.ContentStart, p.ContentEnd).Text);
+                    firstParaFlg = false;
                 }
             }
             return sb.ToString().Trim();
