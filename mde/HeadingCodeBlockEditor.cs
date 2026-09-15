@@ -283,23 +283,52 @@ namespace mde
         /// <summary>コードブロック内でのEnterキー処理（新しい段落を作らず、行内改行を挿入する）。
         /// 箇条書き項目内でのShift+Enter、表のセル内でのEnter/Shift+Enterでも共通して使われる
         /// （MainWindow.EditorPreviewKeyDown参照）。
-        /// 【2026-09追記】以前はここだけ、他の構造変更メソッド（ConvertParagraphToHeading・
+        /// 【2026-09追記・第1版】以前はここだけ、他の構造変更メソッド（ConvertParagraphToHeading・
         /// ConvertParagraphToCodeBlock・OutdentCodeLine等、本ファイル内の他のすべてのメソッド）
-        /// と異なり、実際のドキュメント変更をm_runAsProgrammaticChangeで囲んでいなかった。
-        /// この状態だと、行内改行の挿入そのものがEditorTextChangedを「プログラムによる変更
-        /// ではない」通常の編集として発火させてしまい、直後に本来スキップされるはずの
-        /// ライブ入力変換のチェック一式（InlineStyleEditor.CheckInlineFormatTrigger、箇条書き
-        /// 項目向けのタスクチェックボックス判定等）が、行内改行を挿入した直後の中途半端な
-        /// 状態に対して余分に働いてしまっていた。箇条書き項目でShift+Enterの直後に文字を
-        /// 入力すると改行が無効になって見えるという報告を受けて調査した際に見つかったもので、
-        /// 他のメソッドと同じ保護（m_runAsProgrammaticChange）で囲むよう統一した。
+        /// と異なり、実際のドキュメント変更をm_runAsProgrammaticChangeで囲んでいなかったため、
+        /// これを他のメソッドと同じ保護で囲むよう統一した（詳細は下記追記参照）。
+        /// 【2026-09追記・第2版（実機の画面録画・デバッグログで確認、後に不十分と判明）】上記の
+        /// 対策だけでは、箇条書き項目でShift+Enterの直後に文字を入力すると改行が無効になる
+        /// 不具合が直らないことが、ユーザーから提供された実機の画面録画とデバッグログにより
+        /// 判明した。ログを確認したところ、行内改行の挿入イベント自体（EditorTextChangedの
+        /// Off値）に対して、その直後に入力される文字（IME確定文字を含む）の挿入位置（Off値）
+        /// が、常に「1つ手前」（＝挿入した行内改行の直前の位置）になっていることが分かった。
+        /// これは、TextPointer.InsertLineBreakでCaretPositionをプログラム的に動かしても、
+        /// IME（TSF）側が新しいキャレット位置を認識できていないことを示している。見出し・
+        /// コードブロックへの変換や、ネストしていない箇条書き項目でのEnterによる新規項目作成
+        /// など、本ファイル・ListEditor.cs内の他の「キャレットをプログラム的に移動する」処理は
+        /// すべて、移動の直後に`m_editor.UpdateLayout()`→`Keyboard.ClearFocus()`→
+        /// `m_editor.Focus()`という一連の処理（IMEに新しいキャレット位置を再認識させるための、
+        /// 実機検証で確立された対策）で解決していたため、同じ対策をここにも適用した。
+        /// 【2026-09追記・第3版（実機の再現ログで、第2版策も不十分と判明。ネスト箇条書きと
+        /// 同じ非同期パターンへ変更）】第2版の対策（同期的なUpdateLayout→ClearFocus→Focus）を
+        /// 適用したビルドで改めて実機検証いただいたところ、それでもなお同じ不具合が再現する
+        /// ことが、新たに共有されたデバッグログにより判明した。ログでは、行内改行の挿入
+        /// （Off=10、1段目＝ネストしていない箇条書きでの再現。HandleListEnterのログでdepth=1
+        /// と確認済み）の直後、ClearFocus/Focusのサイクル（ログ上も実際に発生を確認）を経て
+        /// なお、次のIME入力が改行の1つ手前（Off=9）に挿入されてしまっていた。つまり、同期的に
+        /// （キー入力の処理と同じタイミングで）ClearFocus/Focusを行うだけでは、IME側に新しい
+        /// キャレット位置を認識させるのに間に合っていない。これは、ListEditor.HandleListEnterで
+        /// 「ネストした箇条書き（2段目以降）でだけ」発生するとして対策されていた不具合と、
+        /// 実質的に同じ種類の競合状態が、行内改行ではネストの有無に関わらず起きていることを
+        /// 示唆している。ネストした箇条書きの対策で使われているImeCaretMoveHelper.
+        /// ScheduleCaretMove（Dispatcher.BeginInvokeでキー入力の処理から実際のドキュメント
+        /// 変更・フォーカスの当て直しを1テンポ切り離す、より強い対策）に、この行内改行の処理も
+        /// 合わせることにした。なお、ImeCaretMoveHelper.cs自身のコメントにもある通り、この
+        /// 対策はIME（TSF）内部のタイミングに依存する競合状態への対策であり、発生確率を下げる
+        /// ことはできても100%の解消を保証するものではない。
         /// </summary>
         public void InsertLineBreakAtCaret()
         {
-            m_runAsProgrammaticChange(() =>
-            {
-                m_editor.CaretPosition = m_editor.CaretPosition.InsertLineBreak();
-            });
+            ImeCaretMoveHelper.ScheduleCaretMove(
+                m_editor,
+                () =>
+                {
+                    m_runAsProgrammaticChange(() =>
+                    {
+                        m_editor.CaretPosition = m_editor.CaretPosition.InsertLineBreak();
+                    });
+                });
         }
 
         /// <summary>
