@@ -374,20 +374,37 @@ namespace mde
         }
 
         /// <summary>リスト項目自身のテキストを取得する（入れ子のサブリストは含まない）。
-        /// マーカー記号を拾ってしまうTextRangeではなく、Inlinesを直接読むため安全。</summary>
+        /// マーカー記号を拾ってしまうTextRangeではなく、Inlinesを直接読むため安全。
+        /// 【2026-09追記】Shift+Enterによる段落分割（HeadingCodeBlockEditor.
+        /// InsertParagraphSplitAtCaret参照）により、1つの項目が複数の「自分自身の段落」
+        /// （入れ子のサブリストより前にあるParagraph）を持つことがあるようになったため、
+        /// Blocks.FirstBlockだけでなく、入れ子のサブリストが現れるまでのすべての own-paragraph
+        /// からテキストを集める。これにより、たとえば1つめの段落が空でも2つめ以降の段落に
+        /// 文字があれば、項目全体としては「空ではない」と正しく判定できる
+        /// （CreateOrExitListItemのisEmptyFlg判定が、この結果に依存している）。</summary>
         /// <param name="a_li">調べる項目。</param>
         /// <returns>トリム済みのテキスト。画像だけがあり文字がない場合はゼロ幅スペース1文字。</returns>
         public string GetOwnListItemText(ListItem a_li)
         {
-            var ownPara = a_li.Blocks.FirstBlock as Paragraph;
-            if (null == ownPara)
-            {
-                return "";
-            }
             var sb = new StringBuilder();
-            AppendPlainInlineText(ownPara.Inlines, sb);
+            bool imageFoundFlg = false;
+            foreach (Block block in a_li.Blocks)
+            {
+                if (block is List)
+                {
+                    break; // \u5165\u308C\u5B50\u306E\u30B5\u30D6\u30EA\u30B9\u30C8\u3088\u308A\u5F8C\u308D\u306F\u5BFE\u8C61\u5916
+                }
+                if (block is Paragraph ownPara)
+                {
+                    AppendPlainInlineText(ownPara.Inlines, sb);
+                    if (HasDescendantImage(ownPara))
+                    {
+                        imageFoundFlg = true;
+                    }
+                }
+            }
             string t = sb.ToString().Trim();
-            if (0 == t.Length && HasDescendantImage(ownPara))
+            if (0 == t.Length && imageFoundFlg)
             {
                 return "\u200B";
             }
@@ -557,7 +574,12 @@ namespace mde
         /// <returns>キャレットを移す先の新しい段落。</returns>
         private Paragraph CreateOrExitListItem(ListItem a_li, List a_parentList)
         {
-            bool hasNestedListFlg = a_li.Blocks.Count > 1;
+            // 【2026-09追記】以前は「Blocks.Count > 1」だけを「入れ子のサブリストを持つ」ことの
+            // 目印にしていたが、Shift+Enterによる段落分割（InsertParagraphSplitAtCaret）により、
+            // 入れ子のサブリストが無くても複数の「自分自身の段落」を持つ項目があり得るように
+            // なったため、これだけではもう正しく判定できない。OutdentListItem側で既に使われている
+            // 「Blocks.LastBlockが実際にListかどうか」まで確認する、より確実な判定に揃える。
+            bool hasNestedListFlg = a_li.Blocks.Count > 0 && a_li.Blocks.LastBlock is List;
             bool isEmptyFlg = !hasNestedListFlg && 0 == GetOwnListItemText(a_li).Length;
             DebugLogger.Log($"CreateOrExitListItem: 実行 isEmptyFlg={isEmptyFlg} hasNestedListFlg={hasNestedListFlg}");
 
@@ -600,14 +622,46 @@ namespace mde
                 // 項目自身の段落（入れ子のサブリストがある場合は対象外。サブリストごと丸ごと
                 // 動かすのは複雑になりすぎるため、これまで通り新しい項目は空のままにする）の
                 // 中で、キャレットより後ろにある内容を新しい項目へ移す。
-                if (!hasNestedListFlg && a_li.Blocks.FirstBlock is Paragraph ownPara)
+                // 【2026-09追記】Shift+Enterによる段落分割（InsertParagraphSplitAtCaret）により、
+                // 項目が複数の「自分自身の段落」を持つことがあるようになったため、常に
+                // Blocks.FirstBlockを対象にするのではなく、キャレットが実際にある段落を探して
+                // 対象にする（見つからない場合は、これまで通りFirstBlockへフォールバックする）。
+                // キャレットのあった段落より後ろに、まだ自分自身の段落が残っている場合
+                // （Shift+Enterで区切られた続きの行）は、それらの段落を丸ごと新しい項目へ移し、
+                // 複数段落の構成を保ったまま項目を分割する。
+                var laterOwnParas = new List<Paragraph>();
+                if (!hasNestedListFlg)
                 {
                     TextPointer caret = m_editor.CaretPosition;
-                    if (0 <= caret.CompareTo(ownPara.ContentStart) && 0 <= ownPara.ContentEnd.CompareTo(caret))
+                    Paragraph caretOwnPara = caret?.Paragraph;
+                    if (null == caretOwnPara || caretOwnPara.Parent != a_li)
                     {
-                        foreach (Inline movedInline in SplitInlinesAtCaret(ownPara.Inlines, caret))
+                        caretOwnPara = a_li.Blocks.FirstBlock as Paragraph;
+                    }
+                    if (null != caretOwnPara &&
+                        0 <= caret.CompareTo(caretOwnPara.ContentStart) && 0 <= caretOwnPara.ContentEnd.CompareTo(caret))
+                    {
+                        foreach (Inline movedInline in SplitInlinesAtCaret(caretOwnPara.Inlines, caret))
                         {
                             newPara.Inlines.Add(movedInline);
+                        }
+
+                        bool foundFlg = false;
+                        foreach (Block block in a_li.Blocks.ToList())
+                        {
+                            if (block == caretOwnPara)
+                            {
+                                foundFlg = true;
+                                continue;
+                            }
+                            if (foundFlg && block is Paragraph laterPara)
+                            {
+                                laterOwnParas.Add(laterPara);
+                            }
+                        }
+                        foreach (Paragraph laterPara in laterOwnParas)
+                        {
+                            a_li.Blocks.Remove(laterPara);
                         }
                     }
                 }
@@ -622,6 +676,10 @@ namespace mde
                 }
 
                 var newLi = new ListItem(newPara);
+                foreach (Paragraph laterPara in laterOwnParas)
+                {
+                    newLi.Blocks.Add(laterPara);
+                }
                 a_parentList.ListItems.InsertAfter(a_li, newLi);
                 return newPara;
             }
@@ -643,7 +701,14 @@ namespace mde
         /// <param name="a_inlines">分割対象のInlineCollection。</param>
         /// <param name="a_caret">分割の境目とするキャレット位置。</param>
         /// <returns>キャレットより後ろの内容として取り除かれた、新しいInlineのリスト（元の順序のまま）。</returns>
-        private List<Inline> SplitInlinesAtCaret(InlineCollection a_inlines, TextPointer a_caret)
+        /// <remarks>
+        /// 【2026-09追記・internal化】もともとはこのクラス内（項目のEnterでの分割）だけで
+        /// 使っていたためprivateだったが、Shift+Enterによる段落分割（HeadingCodeBlockEditor.
+        /// InsertParagraphSplitAtCaret）でも全く同じ「キャレット位置でInlineを書式ごと安全に
+        /// 分割する」処理が必要になったため、internalへ変更し共有する。このメソッド自体は
+        /// インスタンスの状態（m_editor等）を一切使わないため、staticにしても動作は変わらない。
+        /// </remarks>
+        internal static List<Inline> SplitInlinesAtCaret(InlineCollection a_inlines, TextPointer a_caret)
         {
             var moved = new List<Inline>();
             foreach (Inline inline in a_inlines.ToList())
@@ -728,7 +793,8 @@ namespace mde
         /// <param name="a_original">分割元のRun（前半として残る）。</param>
         /// <param name="a_text">後半として新しいRunに持たせるテキスト。</param>
         /// <returns>書式を引き継いだ、後半用の新しいRun。</returns>
-        private static Run CloneRunForSplit(Run a_original, string a_text)
+        /// <remarks>SplitInlinesAtCaretと同じ理由（2026-09追記）でinternalへ変更した。</remarks>
+        internal static Run CloneRunForSplit(Run a_original, string a_text)
         {
             object tag = a_original.Tag;
             if (tag is LinkInfo li)

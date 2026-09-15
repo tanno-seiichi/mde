@@ -1,4 +1,4 @@
-# mde 開発ログ（試行錯誤の備忘録）
+﻿# mde 開発ログ（試行錯誤の備忘録）
 
 このファイルは、`DESIGN.md` からは追いにくくなった「実装に至るまでの試行錯誤の過程」を、
 時系列の備忘として記録したものです。`DESIGN.md` 側は常に「今の実装が最終的にどうなっているか」
@@ -4982,6 +4982,182 @@ heartbeat等、非常に高い頻度で呼ばれるため、ログファイル�
 - 「まだエディターとして使いものになるレベルではない」とのことだったが、具体的にどの操作・
   どの場面が特に重いと感じるか（範囲選択、スクロール、特定の記号入力、ファイルの保存・
   読み込みなど）、もう少し詳しく伺えると、次の調査の的を絞りやすい。
+
+### 14.55 箇条書き項目・表のセル内でのShift+Enter/Enterによる改行の直後、IME入力が
+「改行の1つ手前」に入ってしまう不具合の調査・対策（本格実装）
+
+かねてより報告いただいていた、箇条書き項目・表のセル内でShift+Enter（表のセルは
+Enterのみでも）を押して改行を挿入した直後にIMEで日本語入力を行うと、確定した文字が
+改行の「後ろ」（新しい行）ではなく「1つ手前」（元の行の末尾、＝改行の直前の位置）に
+入ってしまうという不具合について、調査を再開し、実際にmde本体へ対策を組み込んだ。
+
+**これまでの調査の経緯（別セッションでの調査、および前節までの経緯）**：
+この不具合は、mdeとは別に用意した最小再現アプリ（mde本体のコードは一切経由しない、
+WPFのRichTextBox＋ListItem/TableCellだけの検証用プロジェクト）を使い、「行内改行
+（`TextPointer.InsertLineBreak()`によるLineBreak要素の挿入）の後、キャレット位置を
+どう設定・通知するか」という観点から、思いつく限り9通りの対策（同期的なキャレット
+設定、`GetInsertionPosition`の使用、WPF標準コマンド`EditingCommands.EnterLineBreak`
+の実行、`Selection.Select`での設定、WPF内部の`TextStore`クラスへリフレクション経由で
+選択位置変更を明示的に通知、など）を試したが、いずれも同じ症状が再現した。特に、
+mde・再現アプリのコードを一切経由せずWPFの既定の動作にそのまま任せた場合（対策F）でも
+同じ症状が出たことから、これはmde固有の不具合ではなく、WPFのLineBreak要素とTSF（IME）
+連携における、プラットフォーム側の制約であると判断し、この時点では「対策の方向性を
+根本的に変えない限り解消は見込めない」として調査を一旦保留していた。
+
+**方向転換のきっかけ**：
+調査再開にあたり、まず「Markdownの公式な仕様（CommonMark/GFM）で、箇条書き項目・表の
+セル内の改行がどう記述されるべきか」を確認した。その結果、mdeの既存のMarkdown書き出し
+（`ListToMarkdown`・`TableToMarkdown`）は、いずれも「段落の内容を改行文字で分割した
+もの」を基準にした変換であり、mde内部の表現が「1つの段落の中に複数のLineBreakを持つ」
+構造であることには依存していないことが確認できた（箇条書きはCommonMark標準の
+「インデントされた継続行」として、表のセルはGFMの慣例に従い`<br>`タグとして、それぞれ
+書き出されている）。つまり、mde内部の表現を「1つの段落＋内部LineBreak」から「複数の
+段落を並べる」方式に変えても、書き出されるMarkdownファイルの形式は変わらないことが
+分かった。
+
+この確認を踏まえ、最小再現アプリに、LineBreakを一切使わず、Shift+Enter等が押された
+位置で段落（Paragraph）そのものを2つに分割する対策（見た目には1つの段落がそのまま
+改行しているように見せるため、分割した両方の段落のMarginを0にする）を追加して検証
+したところ、箇条書き項目・表のセルのどちらでも、キャレット位置がずれる症状が再現
+しないことが実機のログ（`Minimul_4.log`）で確認できた。これは、行内改行という
+「インライン要素の挿入」ではなく、段落という「ブロック要素の追加」であり、WPFのTSF
+連携にとって操作の性質そのものが異なるためと考えられる。この方式では、ネストした
+箇条書きの対策で使っている`ImeCaretMoveHelper`（`Dispatcher.BeginInvoke`による非同期化）
+も不要で、同期的な処理のままで問題なく動作することも確認できた。
+
+**対策（mde本体への組み込み）**：
+最小再現アプリでの検証結果を受け、この「段落分割」方式をmde本体（nashi/ari両方）へ
+実装した。対象は、これまでの調査・検証の範囲と同じく、箇条書き項目（ListItem）内での
+Shift+Enterと、表のセル（TableCell）内でのEnter/Shift+Enterの2箇所のみである。コード
+ブロック（1つの段落の中にLineBreakで行をつなぐ、既存の構造のまま）は対象外とし、
+これまで通り`InsertLineBreakAtCaret`（行内改行方式）を使い続ける。
+
+- **`HeadingCodeBlockEditor.cs`**：新しく`InsertParagraphSplitAtCaret(Paragraph)`を
+  追加した。分割対象の段落の親がListItem/TableCellのいずれでもない場合（呼び出し側の
+  想定外）は何もしない。キャレットより後ろにあった内容（書式・リンク情報等を含む）は、
+  `ListEditor.SplitInlinesAtCaret`／`CloneRunForSplit`（後述）を再利用してInline単位で
+  新しい段落へ移す。新しい段落には、分割元の段落のMargin・LineHeight・KeepTogether・
+  TextAlignment・Tagをそのまま引き継がせ、表のセルでも箇条書き項目でも見た目が
+  食い違わないようにしている。既存の`InsertLineBreakAtCaret`はそのまま残し、
+  コードブロックはそちらを使い続ける。
+- **`MainWindow.xaml.cs`**（nashi/ari共通。PDF書き出しブロックは対象外）：
+  `EditorPreviewKeyDown`内の3箇所の`InsertLineBreakAtCaret()`呼び出しのうち、箇条書き
+  項目でのShift+Enterと、表のセルでのEnter/Shift+Enterの2箇所だけを
+  `InsertParagraphSplitAtCaret(para)`に置き換えた。コードブロックでのEnter（3箇所目）は
+  変更していない。
+- **`ListEditor.cs`**：
+  - `SplitInlinesAtCaret`（Inlineをキャレット位置で書式ごと安全に分割する、既存の
+    実績あるロジック）と`CloneRunForSplit`を、`HeadingCodeBlockEditor`からも共有できる
+    よう`private`から`internal static`へ変更した（インスタンスの状態を使っていない
+    ため、staticにしても動作は変わらない）。
+  - `GetOwnListItemText`：項目が「空かどうか」の判定に使われるこのメソッドが、従来は
+    `Blocks.FirstBlock`（＝1つめの自分自身の段落）だけを見ていたが、今回の対策により
+    1つの項目が複数の自分自身の段落を持てるようになったため、入れ子のサブリストが
+    現れるまでのすべての自分自身の段落からテキストを集めるよう修正した。これを
+    直さないと、1つめの段落が空でも2つめ以降の段落に文字が残っている項目を、Enterで
+    誤って「空の項目」と判定し、後ろの段落の内容ごとリストから削除してしまう
+    （データが失われる）不具合が起き得た。
+  - `CreateOrExitListItem`（Enterキーでの項目追加・リスト脱出の本体）：
+    - 「入れ子のサブリストを持つかどうか」の判定（`hasNestedListFlg`）が、従来は
+      `Blocks.Count > 1`という簡易な条件だったが、これも複数の自分自身の段落を
+      持てるようになったことで不正確になる（サブリストが無くても段落が2つ以上
+      あればtrueになってしまう）ため、`OutdentListItem`側で既に使われている
+      「`Blocks.LastBlock`が実際にListかどうか」まで確認する、より確実な判定に
+      揃えた。
+    - キャレットより後ろの内容を新しい項目へ移す処理が、従来は常に
+      `Blocks.FirstBlock`を対象にしていたが、キャレットが2つめ以降の自分自身の
+      段落にあることもあり得るようになったため、キャレットが実際にある段落を
+      探して対象にするよう修正した。また、キャレットのあった段落より後ろに残って
+      いる自分自身の段落（Shift+Enterで区切られた続きの行）があれば、それらの段落を
+      丸ごと新しい項目へ移し、複数段落の構成を保ったまま項目を分割するようにした。
+- **`MarkdownConverter.cs`**：
+  - 書き出し側（`ListToMarkdown`）：項目自身の内容を、`Blocks.FirstBlock`だけでなく、
+    入れ子のサブリストが現れるまでのすべての自分自身の段落から集め、継続行として
+    書き出すよう修正した。
+  - 書き出し側（`TableToMarkdown`）：セル内の複数のParagraphのテキストを、区切りなしで
+    連結していた（改行が失われる不具合になり得た）のを、明示的に`\n`を挟んで連結する
+    よう修正した（最終的に`<br>`へ変換される処理はそのまま）。
+  - 読み込み側（表：新しく`BuildTableCellFromMarkdown`ヘルパーを追加）：セルの
+    Markdownソース文字列（`<br>`を含む）から、`<br>`で区切られた行ごとに独立した
+    Paragraph（Margin=0・LineHeight=NaN・KeepTogether=true・列の文字揃えを統一）を
+    組み立ててセルへ追加するようにした。ヘッダー行・本文行の両方の組み立て箇所を、
+    このヘルパー経由に統一した。
+  - 読み込み側（箇条書き：`BuildNestedList`の`FlushPendingItem`）：項目の1行目＋継続行を
+    結合した文字列を、従来は1つのParagraphへそのまま渡し内部の改行をLineBreakとして
+    復元していたが、`\n`で分割し、1行目は既存のParagraphへ、2行目以降は新しく作る
+    自分自身の段落へ、それぞれ振り分けるよう修正した。
+  - 表のヘッダーセルのTextAlignment/Tag検出（書き出し時の区切り行の組み立てに使用）は、
+    引き続き`Blocks.FirstBlock`のままで問題ない（セル内のどの段落にも同じ文字揃え・
+    Tagを設定しているため）。
+- **`TableEditor.cs`**：Excelとの連携（コピー&ペースト）で使う`CellPlainText`が、
+  セル内の複数のParagraphのテキストを区切りなしで連結していた（改行が失われ、別々の
+  行だった文字列がそのまま連結されてしまう不具合になり得た）のを、`\n`を挟んで連結する
+  よう修正した（呼び出し元でこの`\n`がさらにTSV用の半角スペース・HTML用の`<br>`へ
+  変換される、既存の処理はそのまま活きる）。
+
+**監査した結果、変更が不要だった箇所**：
+今回の変更（1項目・1セルが複数の段落を持ち得るようになったこと）の影響範囲を洗い出す
+ため、`Blocks.FirstBlock`・`Blocks.LastBlock`・`Blocks.Count`を使っている箇所を
+`TableEditor.cs`・`BlockStyles.cs`・`MarkdownConverter.cs`・`MainWindow.xaml.cs`
+（PDF書き出し用のリンク検索）について確認したが、以下はいずれも「セルの先頭/末尾の
+段落を求める」「新規作成直後の（まだ1段落しかない）セルを対象にする」「全Blocksを
+汎用的に走査する」といった、複数段落があっても意味の変わらない使い方であることを
+確認し、変更は行わなかった：
+`TableEditor.IsCaretAtStart/IsCaretAtEnd`（セルの内容の先頭/末尾の判定）、
+`TableEditor.MoveVertical/MoveHorizontal`（セル間の矢印キー移動時の移動先セルの先頭/
+末尾を求める処理）、`TableEditor.InsertTable/InsertRow/InsertColumn/InsertParsedTable`
+（新規作成直後の単一段落のセルが対象）、`BlockStyles`の列幅測定・列幅ダイアログの
+ラベル抽出（いずれも全Blocksを走査するか、`ContentStart`/`ContentEnd`基準）、
+`ListEditor.OutdentListItem`・`MarkdownConverter`の入れ子リスト検出（いずれも
+`Blocks.LastBlock is List`の形で判定しており、元々複数段落でも安全な書き方だった）、
+`ListEditor.IsTaskCheckboxItem`（チェックボックスは常に1つめの段落の先頭にしか
+付かないため、`FirstBlock`のままで正しい）、`MainWindow`のPDF書き出し用リンク検索
+（`foreach (Block b in ...)`で全Blocksを再帰的に走査する既存の実装）。
+
+**変更したファイル**：
+- `HeadingCodeBlockEditor.cs`（nashi/ari共通）：`InsertParagraphSplitAtCaret`を新規追加。
+- `MainWindow.xaml.cs`（nashi/ari共通。PDF書き出しブロックは対象外）：`EditorPreview
+  KeyDown`内の2箇所の呼び出しを`InsertParagraphSplitAtCaret`に変更。
+- `ListEditor.cs`（nashi/ari共通）：`SplitInlinesAtCaret`/`CloneRunForSplit`を
+  `internal static`化、`GetOwnListItemText`・`CreateOrExitListItem`を複数段落対応に修正。
+- `MarkdownConverter.cs`（nashi/ari共通）：`ListToMarkdown`・`TableToMarkdown`（書き出し）、
+  `BuildNestedList`・表のセル組み立て（読み込み、新規`BuildTableCellFromMarkdown`）を
+  複数段落対応に修正。
+- `TableEditor.cs`（nashi/ari共通）：`CellPlainText`を複数段落対応に修正。
+- `doc/DEVELOPMENT_LOG.md`：本節（14.55）として記録した。
+
+**検証方法**：
+- nashi/ari間のdiff -rqで、既知の差分一覧（PDF書き出しブロック等）以外に差分がないことを
+  確認した。今回変更した箇所自体（`HeadingCodeBlockEditor.cs`・`ListEditor.cs`・
+  `MarkdownConverter.cs`・`TableEditor.cs`）は両方の版で完全に一致する。
+- バージョン番号は変更していない（1.5.13.0／2.1.13.0のまま）。
+- 変更した.csファイルについて、中括弧・丸括弧のバランス、NBSP（0件であること）、BOM
+  （各.csファイル先頭に1つずつであること）、3行以上の連続空行がないことを確認した
+  （`MarkdownConverter.cs`の丸括弧の集計値が他と異なるのは、この修正以前から存在する、
+  文字列リテラル中の絵文字・BOM文字列リテラル由来の既知の誤差であり、今回の変更による
+  ものではないことをari側の同ファイルと比較して確認済み）。
+- 最小再現アプリでの検証で使ったログ（`Minimul_4.log`）を根拠に、Strategy Jの構造
+  （段落分割・Margin=0）をそのままmde本体の実装へ落とし込んだ。ただし、こちらの環境
+  ではmde自体のビルド・実行ができないため、実装が実際に同じ効果を発揮するかは、実機での
+  確認が必須である。
+
+**確認をお願いしたいこと**：
+- 箇条書き項目でShift+Enterを押した直後、表のセルでEnter/Shift+Enterを押した直後に、
+  IMEで日本語入力を行い、これまで報告いただいていた「改行の1つ手前に入ってしまう」症状が
+  解消しているか。
+- 複数行にわたる箇条書き項目・表のセルを含むファイルを保存し、一度閉じて開き直しても、
+  内容・改行位置が変わらず保たれているか（Markdownとしての往復に問題がないか）。
+- 複数行の箇条書き項目に対して、Tab/Shift+Tabでの字下げ・字下げ解除、Enterでの新規項目
+  追加・リストからの脱出（特に、1行目が空で2行目以降に文字がある項目でEnterを押した
+  場合に、誤って項目ごと消えてしまわないか）、タスクリストのチェックボックス化が、
+  これまで通り正しく動作するか。
+- 複数行の表のセルを選択してコピーし、Excelなど別のアプリへ貼り付けた際、セル内の行が
+  正しく区切られて貼り付けられるか（`<br>`やスペースとして扱われ、行がつながって
+  しまわないか）。
+- 今回の対策はコードブロックには適用していないため、コードブロック内での改行は従来通り
+  であることも併せて確認いただきたい（もし変化があれば、意図しない影響が出ている
+  可能性がある）。
+
 
 ## 16. 新しい機能を追加する時の指針
 

@@ -6,6 +6,7 @@
 // コードブロック内でのTab/Shift+Tabによるインデント調整を扱う。
 
 using System;
+using System.Collections.Generic;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
@@ -329,6 +330,98 @@ namespace mde
                         m_editor.CaretPosition = m_editor.CaretPosition.InsertLineBreak();
                     });
                 });
+        }
+
+        /// <summary>
+        /// 箇条書き項目・表のセル内でのShift+Enter/Enter処理。上のInsertLineBreakAtCaretとは
+        /// 異なり、行内改行（LineBreak要素）は一切使わず、Shift+Enter等が押された位置で段落
+        /// （Paragraph）そのものを2つに分割する（見た目には1つの段落がそのまま改行している
+        /// ように見せるため、分割した両方の段落のMarginを揃えて0にする）。
+        /// 【なぜLineBreakではなくこの方式にしたか】上のInsertLineBreakAtCaretのコメントに
+        /// 記録されている通り、行内改行（LineBreak要素の挿入）を使う限り、キャレット位置の
+        /// 設定・通知方法をどう工夫しても（同期的なUpdateLayout→ClearFocus→Focus、
+        /// ImeCaretMoveHelperによる非同期化、WPF標準コマンドの使用、Selection.Selectでの
+        /// 設定、WPF内部のTextStoreクラスへのリフレクション経由の直接通知など、思いつく限り
+        /// 9通りの対策）、次のIME入力が改行の「1つ手前」（挿入した行内改行の直前の位置）に
+        /// 入ってしまう不具合を解消できなかった。これは、WPFのTSF（IME）連携が、LineBreakと
+        /// いう要素自体とうまくかみ合っていない、プラットフォーム側の制約と判断した
+        /// （詳細な調査の経緯はDEVELOPMENT_LOG.md該当セクション参照）。
+        /// 独立した最小再現アプリ（mde本体とは別プロジェクト）での検証により、LineBreakを
+        /// 一切使わず、Shift+Enter等が押された位置で段落そのものを2つに分割する方式では、
+        /// この症状が再現しないことが実機で確認された。これはLineBreakの挿入という
+        /// 「インライン要素の挿入」ではなく、段落という「ブロック要素の追加」であり、WPFの
+        /// TSF連携にとって操作の性質そのものが異なるためと考えられる。この方式では
+        /// ImeCaretMoveHelperによる非同期化も不要だった（最小再現アプリでの検証で、
+        /// 同期的なm_runAsProgrammaticChangeのみで問題なく動作することを確認済み。新しい
+        /// 段落は、分割元の段落と同じ親（ListItem/TableCell）の中に追加されるため、既存の
+        /// レイアウト済み要素の隣に挿入される形になり、見出し等の変換処理と同じ理由で、
+        /// 未レイアウトの新規要素特有の問題が起きにくいためと推測している）。
+        /// Markdownとしての書き出し・読み込みは、この内部表現の違いに影響されない
+        /// （MarkdownConverter.ListToMarkdown・TableToMarkdown・対応する読み込み側の
+        /// 各コメント参照。項目・セルの内容の中身のテキストと改行位置だけを基準にした変換で
+        /// あり、内部がLineBreakを持つ1つの段落か、複数の段落かには依存しない）。
+        /// キャレットより後ろにあった内容（書式を含む）は、そのままInline単位で新しい段落へ
+        /// 移す。ListEditor.SplitInlinesAtCaret・CloneRunForSplit（項目のEnterでの分割に
+        /// もともと使われていた、実績のあるロジック）をそのまま共有して使う。TextPointerの
+        /// オフセットベースでテキストを抜き出す方式は、箇条書きマーカー記号を巻き込んでしまう
+        /// 既知の不具合（ListEditor.GetOwnListItemText等のコメント参照）を避けるため、
+        /// あえて使わない。
+        /// </summary>
+        /// <param name="a_para">分割対象の段落（現在キャレットがある段落）。親がListItemまたは
+        /// TableCellでない場合（コードブロック等）は何もしない（呼び出し側は、そのような場合には
+        /// 代わりに従来通りInsertLineBreakAtCaretを呼ぶこと。コードブロックは今回の調査・対策の
+        /// 対象外であり、これまで通り行内改行のままにする）。</param>
+        public void InsertParagraphSplitAtCaret(Paragraph a_para)
+        {
+            if (null == a_para)
+            {
+                return;
+            }
+            object parent = a_para.Parent;
+            if (!(parent is ListItem) && !(parent is TableCell))
+            {
+                DebugLogger.Log(
+                    $"InsertParagraphSplitAtCaret: 想定外の親（{parent?.GetType().Name ?? "null"}）だったため、" +
+                    "何もしなかった");
+                return;
+            }
+
+            m_runAsProgrammaticChange(() =>
+            {
+                TextPointer caret = m_editor.CaretPosition;
+                // 分割元の段落が持つ見た目のプロパティ（表のセルならMargin=0・LineHeight=NaN・
+                // KeepTogether=true・文字揃え。箇条書き項目ならMargin=0）を、新しい段落にも
+                // そのまま引き継ぐ。ハードコードせず分割元から読み取ることで、呼び出し元
+                // （ListItem・TableCellのどちらか）に関わらず常に整合する。TagはTableCellの
+                // 「明示的な左揃え」の印（MarkdownConverter.ALIGN_LEFT_EXPLICIT_TAG）を想定
+                // しているが、これはMarkdown書き出し時にセルの最初の段落からしか参照されない
+                // ため、2つめ以降の段落にも同じ値が付くこと自体は無害（書き出し結果には影響しない）。
+                var newPara = new Paragraph
+                {
+                    Margin = a_para.Margin,
+                    LineHeight = a_para.LineHeight,
+                    KeepTogether = a_para.KeepTogether,
+                    TextAlignment = a_para.TextAlignment,
+                    Tag = a_para.Tag
+                };
+
+                foreach (Inline movedInline in ListEditor.SplitInlinesAtCaret(a_para.Inlines, caret))
+                {
+                    newPara.Inlines.Add(movedInline);
+                }
+
+                if (parent is ListItem li)
+                {
+                    li.Blocks.InsertAfter(a_para, newPara);
+                }
+                else if (parent is TableCell cell)
+                {
+                    cell.Blocks.InsertAfter(a_para, newPara);
+                }
+
+                m_editor.CaretPosition = newPara.ContentStart;
+                DebugLogger.Log("InsertParagraphSplitAtCaret: 段落を分割し、新しい段落の先頭へキャレットを移動した");
+            });
         }
 
         /// <summary>
