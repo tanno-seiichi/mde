@@ -14,6 +14,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace mde
 {
@@ -409,16 +410,13 @@ namespace mde
                 double paraWidth = 0;
                 foreach (Inline inline in p.Inlines)
                 {
-                    // セルに画像（InlineUIContainerで包まれたImage）がある場合、その表示幅
-                    // （Image.Width。ImageManager.ApplyImageSizingで設定済み）も内容幅に含める。
-                    // Runのテキストだけを見ると、画像中心のセルの列が実際の画像幅より狭く
-                    // 測定され、「列幅を補正する」オン時に画像の右端が見切れてしまうため。
-                    if (inline is InlineUIContainer iuc && iuc.Child is Image img)
+                    // セルの画像（InlineUIContainerで包まれたImage）は、列幅の自動計算には
+                    // 含めない（テキストの内容量だけで列幅を決める）。画像は、この計算で
+                    // 確定した列幅に収まるよう、後段のConstrainCellImagesToColumnWidthsで
+                    // 別途縮小する。ここで画像の表示幅を列幅計算に含めてしまうと、画像1枚の
+                    // ためだけに列（表全体）が編集領域を超えて広がってしまう。
+                    if (inline is InlineUIContainer iuc && iuc.Child is Image)
                     {
-                        if (!double.IsNaN(img.Width) && img.Width > 0)
-                        {
-                            paraWidth += img.Width;
-                        }
                         continue;
                     }
                     if (!(inline is Run run))
@@ -676,7 +674,11 @@ namespace mde
         /// <param name="a_dashCounts">列ごとの新しい値（ダッシュ数＝Starの比率）。列の順序と
         /// 一致させること。nullの要素は「この列は調整しない（内容に合わせた比率のままにする）」
         /// を意味する。</param>
-        public static void ApplyExplicitColumnWidths(Table a_table, IReadOnlyList<int?> a_dashCounts)
+        /// <param name="a_availableWidthPx">表を表示できる実際の幅（px）。Star列に含まれる
+        /// 画像を、実際に表示される幅の概算に収まるよう縮小する際に使う
+        /// （ConstrainCellImagesToColumnWidths参照）。呼び出し側が把握していない場合は
+        /// null（その場合、Star列の画像は縮小の対象外とする）。</param>
+        public static void ApplyExplicitColumnWidths(Table a_table, IReadOnlyList<int?> a_dashCounts, double? a_availableWidthPx = null)
         {
             int colCount = a_table.Columns.Count;
             var naturalWidths = MeasureNaturalColumnWidthsPx(a_table);
@@ -688,6 +690,7 @@ namespace mde
                     : PixelWidthToDashCount(c < naturalWidths.Length ? naturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX);
                 a_table.Columns[c].Width = new GridLength(starValue, GridUnitType.Star);
             }
+            ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
         }
 
         /// <summary>
@@ -724,6 +727,7 @@ namespace mde
                 {
                     a_table.Columns[c].Width = new GridLength(uncappedWidths[c], GridUnitType.Pixel);
                 }
+                ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
                 return;
             }
 
@@ -735,7 +739,96 @@ namespace mde
                 double px = c < naturalWidths.Length ? naturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX;
                 dashCounts.Add(PixelWidthToDashCount(px));
             }
-            ApplyExplicitColumnWidths(a_table, dashCounts);
+            ApplyExplicitColumnWidths(a_table, dashCounts, a_availableWidthPx);
+        }
+
+        /// <summary>
+        /// 列幅補正がオンの間、表内の画像を、確定した列の実際の幅に収まるよう（画像の自然な
+        /// ピクセルサイズを上限に）縮小する。列幅の自動計算そのものからは画像を除外している
+        /// （MeasureCellContentWidthPx参照）ため、これを行わないと、テキストの内容量だけで
+        /// 決まった狭い列から画像がはみ出してしまう。Pixel列は列幅の値をそのまま使い、Star列は
+        /// <paramref name="a_availableWidthPx"/>とStar比率の合計から実際の表示幅を概算する
+        /// （正確な値はレイアウト後でないと分からないが、画像がはみ出さない程度の概算で足りる）。
+        /// Auto列（列幅補正オフ時）や、Star列でa_availableWidthPxが不明な場合は対象外とし、
+        /// 画像はエディタ幅基準の既定サイズ（ImageManager.ApplyImageSizing）のままにする。
+        /// </summary>
+        /// <param name="a_table">対象の表。</param>
+        /// <param name="a_availableWidthPx">表を表示できる実際の幅（px）。Star列の概算に使う。
+        /// 呼び出し側が把握していない場合はnull。</param>
+        private static void ConstrainCellImagesToColumnWidths(Table a_table, double? a_availableWidthPx)
+        {
+            int colCount = a_table.Columns.Count;
+            double starSum = 0;
+            for (int c = 0; c < colCount; c++)
+            {
+                if (GridUnitType.Star == a_table.Columns[c].Width.GridUnitType)
+                {
+                    starSum += a_table.Columns[c].Width.Value;
+                }
+            }
+
+            var columnBudgets = new double?[colCount];
+            for (int c = 0; c < colCount; c++)
+            {
+                GridLength w = a_table.Columns[c].Width;
+                if (GridUnitType.Pixel == w.GridUnitType)
+                {
+                    columnBudgets[c] = Math.Max(1, w.Value - TABLE_CELL_HORIZONTAL_PADDING);
+                }
+                else if (GridUnitType.Star == w.GridUnitType && a_availableWidthPx.HasValue && starSum > 0)
+                {
+                    double share = a_availableWidthPx.Value * (w.Value / starSum);
+                    columnBudgets[c] = Math.Max(1, share - TABLE_CELL_HORIZONTAL_PADDING);
+                }
+                // Auto、またはStarでa_availableWidthPxが不明な場合は対象外（nullのまま）。
+            }
+
+            foreach (TableRowGroup rg in a_table.RowGroups)
+            {
+                foreach (TableRow row in rg.Rows)
+                {
+                    for (int c = 0; c < row.Cells.Count && c < colCount; c++)
+                    {
+                        if (columnBudgets[c].HasValue)
+                        {
+                            ConstrainImagesInCellToWidth(row.Cells[c], columnBudgets[c].Value);
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>1つのセル内の画像（複数あれば全て）を、指定した幅（px）に収まるよう
+        /// （画像の自然なピクセルサイズを上限に）縮小する。縦横比は維持する。</summary>
+        /// <param name="a_cell">対象のセル。</param>
+        /// <param name="a_maxWidthPx">収めたい幅（px）。</param>
+        private static void ConstrainImagesInCellToWidth(TableCell a_cell, double a_maxWidthPx)
+        {
+            foreach (Block block in a_cell.Blocks)
+            {
+                if (!(block is Paragraph p))
+                {
+                    continue;
+                }
+                foreach (Inline inline in p.Inlines)
+                {
+                    if (!(inline is InlineUIContainer iuc) || !(iuc.Child is Image img) ||
+                        !(img.Source is BitmapSource bmp))
+                    {
+                        continue;
+                    }
+                    double naturalWidth = bmp.PixelWidth;
+                    double naturalHeight = bmp.PixelHeight;
+                    if (naturalWidth <= 0 || naturalHeight <= 0)
+                    {
+                        continue;
+                    }
+                    double targetWidth = Math.Min(naturalWidth, a_maxWidthPx);
+                    double scale = targetWidth / naturalWidth;
+                    img.Width = targetWidth;
+                    img.Height = naturalHeight * scale;
+                }
+            }
         }
 
         /// <summary>
@@ -815,7 +908,7 @@ namespace mde
                 var explicitDashCounts = a_dashCounts
                     .Select(d => TABLE_COLUMN_DEFAULT_DASH_COUNT == d ? (int?)null : d)
                     .ToList();
-                ApplyExplicitColumnWidths(a_table, explicitDashCounts);
+                ApplyExplicitColumnWidths(a_table, explicitDashCounts, a_availableWidthPx);
             }
         }
     }
