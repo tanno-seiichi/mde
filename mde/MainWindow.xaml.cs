@@ -52,13 +52,11 @@ namespace mde
         /// フラグ。TextChangedがこれを見て、ダーティ扱いにしないようにする。</summary>
         private bool m_isApplyingHighlightFlg = false;
 
-        /// <summary>アウトラインペインの再構築（ScheduleOutlineRefresh）を間引くためのデバウンス
-        /// 用タイマー。ガベージコレクションで消えないよう、フィールドとして保持しておく。
-        /// EditorTextChangedから呼ばれるたびにStop()→Start()で仕切り直すことで、「最後の編集
-        /// からInterval分だけ操作が無ければ1回だけ実行する」という、本来の意味でのデバウンスに
-        /// している（詳細はScheduleOutlineRefreshのコメントを参照）。LoadFile・検索置換など、
-        /// 頻繁に連続発生しない他の呼び出し元は従来どおり同期的にm_outlineManager.Refresh()を
-        /// 直接呼んでおり、この対象外。</summary>
+        /// <summary>アウトラインペインの再構築（ScheduleOutlineRefresh）を間引くためのデバウンス用
+        /// タイマー。フィールドとして保持しGCされないようにする。EditorTextChangedから呼ばれる
+        /// たびにStop()→Start()し直し、最後の編集からInterval経過後に1回だけRefresh()する
+        /// （詳細はScheduleOutlineRefresh参照）。LoadFile・検索置換など連続発生しない呼び出し元は
+        /// 従来通り同期的にm_outlineManager.Refresh()を直接呼ぶ。</summary>
         private System.Windows.Threading.DispatcherTimer m_outlineRefreshDebounceTimer;
 
         /// <summary>現在エディタに表示中のファイルの絶対パス。未保存なら null。</summary>
@@ -195,10 +193,8 @@ namespace mde
 
             m_originalTextTracker = new OriginalTextTracker(m_editor);
             m_lineEndingTracker = new LineEndingTracker(PathsReferToSameFile);
-            // ソースモード中に見出しをクリックした場合にソースエディタ側へジャンプできるよう、
-            // GetMarkdownOffsetForBlockはクロージャで渡す。m_markdownConverterはこの数行後に
-            // 構築されるが、実際に呼ばれるのは構築が完了した後（見出しクリック時）のため、
-            // この順序で問題ない（m_tableEditorを使う直後のクロージャと同じ理由）。
+            // GetMarkdownOffsetForBlockはクロージャで渡す：m_markdownConverterはこの後で構築
+            // されるが、実際に呼ばれるのは構築完了後（見出しクリック時）なので問題ない。
             m_outlineManager = new OutlineManager(
                 m_editor, m_sourceEditor, () => m_isSourceModeFlg,
                 (doc, block) => m_markdownConverter.GetMarkdownOffsetForBlock(doc, block));
@@ -207,9 +203,8 @@ namespace mde
                 m_editor, m_originalTextTracker, () => m_isSourceModeFlg, () => m_currentFileDirectory,
                 () => m_currentFilePath,
                 RunAsProgrammaticChange, m_outlineManager.Refresh, m_instanceTempId);
-            // 表を表示できる幅（() => m_tableEditor.GetAvailableTableWidth()）は、m_tableEditorが
-            // このすぐ後で組み立てられるが、これはクロージャであり実際に呼ばれるのは組み立てが
-            // 完了した後（表の解析・再描画のタイミング）のため、この順序で問題ない。
+            // 表の表示幅（() => m_tableEditor.GetAvailableTableWidth()）もクロージャで渡す：
+            // m_tableEditorはこの後で構築されるが、呼ばれるのは構築完了後なので問題ない。
             m_markdownConverter = new MarkdownConverter(
                 m_originalTextTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg,
                 () => m_correctColumnWidthsFlg, () => m_tableEditor.GetAvailableTableWidth());
@@ -237,10 +232,9 @@ namespace mde
             m_outlineTree.ItemsSource = m_outlineManager.Items;
             m_folderTree.ItemsSource = m_folderTreeManager.Roots;
             DataObject.AddCopyingHandler(m_editor, m_tableEditor.HandleCopying);
-            // クリップボードの画像貼り付け対応。ブラウザ等からコピーした画像はHTML/テキストも
-            // 同時に乗せてくることがあるため、表・テキスト向けの後続のハンドラより先に登録し、
-            // 画像であればそちらへ渡る前に処理してしまう（詳しい登録順の理由は
-            // EditorHandleInlineMarkdownPastingのコメント参照）。
+            // 画像貼り付けハンドラを表・テキスト向けハンドラより先に登録する：ブラウザ等から
+            // コピーした画像はHTML/テキストも同時に持つことがあるため、画像なら他に渡る前に
+            // ここで処理する（詳細はEditorHandleInlineMarkdownPasting参照）。
             DataObject.AddPastingHandler(m_editor, m_imageManager.HandlePasting);
             DataObject.AddPastingHandler(m_editor, m_tableEditor.HandlePasting);
             DataObject.AddPastingHandler(m_editor, EditorHandleInlineMarkdownPasting);
@@ -252,10 +246,7 @@ namespace mde
             m_editor.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
             m_editor.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
 
-            // IME固まり不具合調査用のデバッグログ。フォーカスの実際の移り変わりと、実際に
-            // 入力されてくる文字（IME変換中のものも含む）の流れを時系列で記録しておくことで、
-            // 症状発生時にどちらが先に・どういう順序で起きているのかを、実機の動画だけに
-            // 頼らず後から追えるようにする。
+            // IME固まり調査用デバッグログ：フォーカス移動とIME入力（変換中含む）を時系列で記録する。
             m_editor.GotKeyboardFocus += (a_s, a_e) =>
                 DebugLogger.Log($"Editor.GotKeyboardFocus: Old={a_e.OldFocus} New={a_e.NewFocus}");
             m_editor.LostKeyboardFocus += (a_s, a_e) =>
@@ -272,10 +263,8 @@ namespace mde
                     $"Editor.TextInput: Text=\"{a_e.Text}\" " +
                     $"CompositionText=\"{a_e.TextComposition?.CompositionText}\"");
 
-            // IME固まり調査用：症状発生時、何もイベントが起きない「無音」の期間が観測される
-            // ことがあるため、イベント任せではなく、一定間隔で強制的に現在の状態（WPFの論理
-            // フォーカスと、実際のOSレベルのフォアグラウンドウィンドウの両方）を記録する
-            // 「心拍」ログも合わせて出す。
+            // IME固まり調査用の心拍ログ：イベントが発生しない無音期間もあるため、一定間隔で
+            // フォーカス状態とフォアグラウンドウィンドウを強制的に記録する。
             m_imeDebugHeartbeatTimer = new System.Windows.Threading.DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(500)
@@ -293,11 +282,8 @@ namespace mde
             m_imeDebugHeartbeatTimer.Start();
 
             // アウトラインペイン再構築（ScheduleOutlineRefresh）のデバウンス用タイマー。
-            // Interval分だけEditorTextChangedが発生しなかった時点で、1回だけTickが呼ばれる
-            // （呼ばれるたびにScheduleOutlineRefresh側でStop()→Start()し直すため）。もっさり
-            // 感の実機ログ調査（2026-09、DEVELOPMENT_LOG.md参照）で、連続入力中に毎回
-            // m_outlineManager.Refresh()が走ってしまっていたことが重さの主因の一つと判明した
-            // ための対策。
+            // Interval分だけEditorTextChangedが発生しなければ1回だけTickが呼ばれる
+            // （呼ばれるたびScheduleOutlineRefresh側でStop()→Start()し直すため）。
             m_outlineRefreshDebounceTimer = new System.Windows.Threading.DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(400)
@@ -776,17 +762,12 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorTextChanged(object a_sender, TextChangedEventArgs a_args)
         {
-            // IME固まり調査用：Changesの件数だけでなく、各変更が「追加」なのか「削除」なのか
-            // （挿入文字数／削除文字数）も記録する。ユーザーの明示的なキー入力ログ
-            // （Editor.PreviewTextInput／Editor.PreviewKeyDown）と対応する変更が見当たらない
-            // 場合、何らかの理由でアプリの外側（IME側やUndoスタックなど）から文書が
-            // 書き換えられていることを疑う手がかりにする。
-            // 2026-09追記：DebugLogger.Logは無効時、中で即returnするだけで実質無コストだが、
-            // 呼び出し側でのメッセージ文字列の組み立て（特にa_args.ChangesをLINQのSelect/Joinで
-            // 展開する部分）自体は、C#の仕様上、無効時でも毎回必ず実行されてしまう。文字入力の
-            // たびに必ず呼ばれるこの関数では、デバッグログが無効な普段の使用でもこの組み立て
-            // コストが積み重なり、「全体的に動作がもっさりする」不具合の一因になり得るため、
-            // DebugLogger.IsEnabledで明示的に囲み、無効時は文字列の組み立てごと省略する。
+            // IME固まり調査用：各変更が追加/削除どちらか（挿入/削除文字数）も記録する。
+            // ユーザーの明示的なキー入力ログと対応する変更が見当たらない場合、IME側や
+            // Undoスタックなどアプリの外側から文書が書き換えられたことを疑う手がかりになる。
+            // メッセージ文字列の組み立て（特にLINQでのChanges展開）はC#の仕様上、
+            // DebugLogger.IsEnabledがfalseでも評価されてしまうため、文字入力のたびに呼ばれる
+            // この関数では明示的にIsEnabledで囲み、無効時は組み立てごと省略する。
             if (DebugLogger.IsEnabled)
             {
                 string changesDetail = string.Join(",",
@@ -842,16 +823,12 @@ namespace mde
                 return;
             }
 
-            // タスクチェックボックスを含む段落は、チェックボックスの後ろに実際の文字を持つ
-            // Inline（空文字列でよいのでRunが1つ）が常に存在することを前提にしている
-            // （ConvertListItemTextToTaskCheckbox等でチェックボックスを挿入する際、空の
-            // Runを一緒に添えているのはこのため。理由はBlockStyles.CreateTaskCheckboxの
-            // コメントを参照：段落の中身がチェックボックスだけになると、行の高さの計算基準が
-            // チェックボックス自身の大きさになってしまい、「・」の位置が箇条書きより上に
-            // ずれて見える）。ところが、入力済みの文字をBackSpace/Deleteで最後の1文字まで
-            // 消すと、WPF標準の削除処理が、空になったRunを内部的に取り除いてしまうことが
-            // あり、この前提が崩れてしまう。ここで、チェックボックスの直後に実際にInlineが
-            // 存在するかを毎回確認し、なければ空のRunを補い直すことで、常にこの前提を保つ。
+            // タスクチェックボックスを含む段落は、チェックボックスの後ろに実際のInline
+            // （空でよいのでRunが1つ）が常に存在することを前提にしている（段落の中身が
+            // チェックボックスだけだと行の高さの基準がチェックボックス自身になり、箇条書きの
+            // 「・」より位置がずれて見えるため。詳細はBlockStyles.CreateTaskCheckbox参照）。
+            // BackSpace/Deleteで文字を全て消すと、WPF標準の削除処理が空になったRunを内部的に
+            // 取り除くことがあるため、ここで直後のInlineの有無を毎回確認し、無ければ補う。
             if (para.Parent is ListItem &&
                 para.Inlines.FirstInline is InlineUIContainer existingTaskIuc &&
                 existingTaskIuc.Child is CheckBox existingTaskCb &&
@@ -930,22 +907,12 @@ namespace mde
 
         /// <summary>
         /// アウトラインペインの再構築（m_outlineManager.Refresh()）を、EditorTextChangedから
-        /// 直接同期実行するのではなく、少し後回しにして呼び出す。EditorTextChangedは文字入力の
-        /// たびに呼ばれるが、Refresh()自体は文書全体を走査して一覧（ObservableCollection）を
-        /// 丸ごと作り直す処理のため、1文字ごとに毎回同期実行すると入力全体が重くなる。
-        ///
-        /// 2026-09追記：以前は「同じUIサイクル内での重複呼び出しをDispatcher.BeginInvoke
-        /// （ApplicationIdle優先度）でまとめて1回にする」という間引き方をしていたが、これは
-        /// ApplicationIdle優先度のコールバックが「UIスレッドが一瞬でも空けばすぐ実行される」
-        /// ため、連続入力中（特にIME変換中）でもキー入力のたびにほぼ毎回Refresh()が走って
-        /// しまっていた。実機ログ調査（「もっさりする」「入力を続けると徐々に重くなる」「太字
-        /// 変換など、他の操作と重なった直後に数秒単位で応答なしになる」という報告、
-        /// DEVELOPMENT_LOG.md参照）で、文書が大きくなるほどこのRefresh()の頻発自体が重さの
-        /// 主因の一つになっていることが分かったため、m_outlineRefreshDebounceTimer
-        /// （DispatcherTimer）を使い、呼ばれるたびにタイマーを仕切り直す（Stop()→Start()）
-        /// ことで、「最後の編集からInterval分だけ操作が無ければ1回だけ実行する」という、
-        /// 本来の意味でのデバウンスに変更した。これにより、連続入力中はRefresh()が実行されず、
-        /// 入力が一段落したタイミングでまとめて1回だけ実行されるようになる。
+        /// 直接同期実行するのではなく、デバウンスして呼び出す。Refresh()は文書全体を走査して
+        /// 一覧を丸ごと作り直す処理のため、文字入力のたびに毎回同期実行すると重くなる。
+        /// m_outlineRefreshDebounceTimerを呼ばれるたびStop()→Start()し直すことで、最後の編集
+        /// からInterval分だけ操作が無ければ1回だけ実行する、本来の意味でのデバウンスにしている
+        /// （Dispatcher.BeginInvokeによる同一UIサイクル内の間引きでは、連続入力中もほぼ毎回
+        /// Refresh()が走ってしまうため不十分だった）。
         /// </summary>
         private void ScheduleOutlineRefresh()
         {
@@ -1027,18 +994,14 @@ namespace mde
         }
 
         /// <summary>
-        /// 他アプリ（他のMarkdownアプリ含む）や、Xaml/Rtf形式を伴わない生のテキストが
-        /// クリップボードから貼り付けられた時、そのテキストをMarkdownのインライン記法
-        /// （**太字**・~~取り消し線~~・&lt;u&gt;下線&lt;/u&gt;・`コード`・[リンク](url)等）として
-        /// 解釈しながら挿入する。mde自身や他のリッチテキストアプリ（Xaml/Rtf形式を伴う）からの
-        /// 貼り付けは、WPF標準のリッチテキスト貼り付けにそのまま任せる（何もしない）。
-        /// コードブロックへの貼り付けは`TableEditor.HandlePasting`が先にリテラル挿入として
-        /// 処理し`CancelCommand()`するため、ここには来ない。表としての貼り付け
-        /// （Excel等からのHTML/TSV）も同様に`TableEditor.HandlePasting`が先に処理する
-        /// （`DataObject.AddPastingHandler`は登録順にすべてのハンドラを呼ぶため、
-        /// `a_args.CommandCancelled`を確認してから処理する）。クリップボードに画像が入っている
-        /// 場合は、さらに先に登録された`ImageManager.HandlePasting`が処理して`CancelCommand()`
-        /// するため、これらのどちらにも来ない。
+        /// 他アプリや、Xaml/Rtf形式を伴わない生のテキストが貼り付けられた時、そのテキストを
+        /// Markdownのインライン記法（**太字**・~~取り消し線~~・&lt;u&gt;下線&lt;/u&gt;・`コード`・
+        /// [リンク](url)等）として解釈しながら挿入する。Xaml/Rtfを伴う貼り付け（mdeや他の
+        /// リッチテキストアプリから）はWPF標準の貼り付けにそのまま任せる。`DataObject.
+        /// AddPastingHandler`は登録順に全ハンドラを呼ぶため、画像は`ImageManager.HandlePasting`、
+        /// コードブロック・表は`TableEditor.HandlePasting`がこのハンドラより先に登録されており、
+        /// それぞれ処理済みなら`CancelCommand()`する。ここでは`a_args.CommandCancelled`を
+        /// 確認してから処理することで、それらと重複処理しないようにしている。
         /// </summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">貼り付けイベントの引数。</param>
@@ -1095,16 +1058,11 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorPreviewKeyDown(object a_sender, KeyEventArgs a_args)
         {
-            // IME固まり調査用：これまでEditor.PreviewTextInputだけを記録しており、Backspace・
-            // Delete・矢印キー・Ctrl+Z（元に戻す）等の「文字を生成しないキー」がログに一切
-            // 残らなかった。ソースモードかどうかや変換処理の判定より前、関数の一番最初で記録
-            // することで、実際に押されたキーを漏れなく時系列に残す。
-            // 2026-09追記：DebugLogger.Logは無効時、中で即returnするだけで実質無コストだが、
-            // 呼び出し側でのメッセージ文字列の組み立て自体（文字列補間）はC#の仕様上、
-            // 無効時でも毎回必ず実行されてしまう。矢印キーでの範囲選択やキー入力のたびに
-            // 必ず通るこの関数では、デバッグログが無効な普段の使用でもこの組み立てコストが
-            // 積み重なり、「全体的に動作がもっさりする」不具合の一因になり得るため、
-            // DebugLogger.IsEnabledで明示的に囲み、無効時は文字列の組み立てごと省略する。
+            // IME固まり調査用：Backspace・Delete・矢印キー・Ctrl+Z等の「文字を生成しないキー」も
+            // 漏れなく記録するため、ソースモード判定より前、関数の一番最初でログを取る。
+            // メッセージ文字列の組み立て（文字列補間）はC#の仕様上、DebugLogger.IsEnabledが
+            // falseでも評価されてしまうため、キー入力のたびに呼ばれるこの関数では明示的に
+            // IsEnabledで囲み、無効時は組み立てごと省略する。
             if (DebugLogger.IsEnabled)
             {
                 DebugLogger.Log(
@@ -1176,32 +1134,17 @@ namespace mde
                 return; // 通常の段落: WPF標準の動作（新しい段落の作成）に任せる
             }
 
-            // 見出し段落の中身をBackSpaceで空にした後、もう一度BackSpaceが押された場合、
-            // 見出しの書式だけを本文へ戻す（箇条書きのListItemは同じ状況でWPF標準の動作の
-            // ままリストから抜けられるが、見出しはただのParagraphに書式を適用しているだけ
-            // なので、標準動作では書式が外れずに残ってしまうため）。
-            // v1.5.5.2では空判定に`0 == para.ContentStart.CompareTo(para.ContentEnd)`を
-            // 使っていたが、v1.5.5.3の調査用ログにより、見た目には文字が残っていない状態でも
-            // これがfalseのままになる（TextRange.Text=""で空にした段落に、0文字のRunなど
-            // 見えない構造が残り、TextPointer同士の比較では「空」と判定されない）ことが
-            // わかった。ListEditor.CreateOrExitListItemが空判定に生のTextPointer比較ではなく
-            // 実際に取り出したテキストの長さを使っているのと同じ考え方に合わせ、こちらも
-            // TextRangeで取り出した文字列の長さで判定するようにする。あわせて、キャレット位置の
-            // 生のTextPointer比較（同じ理由で信頼できない）もやめ、選択範囲が空であることの
-            // 確認に置き換える（paraはキャレット位置から解決しているため、段落が空である以上、
-            // キャレットはその中のどこにあっても実質的に「先頭」と同じ）。
-            //
-            // さらに、v1.5.5.4適用後の調査用ログにより、見出しが完全に空になる「前」の段階、
-            // つまり段落末尾で（残り1文字などの状態で）BackSpaceを押した際、WPF標準の
-            // BackSpaceコマンド自体が（このアプリのコードとは無関係に）何も削除せず反応しない
-            // ことがある（EditorTextChangedイベントすら発生しない）という、WPF側の不具合が
-            // 新たに判明した。IME合成の内部的な部分確定の繰り返しにより段落内のRun（区画）が
-            // 細かく分かれた状態が残ることが原因と推測される。この症状は段落「末尾」
-            // （キャレットの後ろに実際の文字が残っていない位置）でのみ確認されており、
-            // 段落途中でのBackSpaceはこれまで通り正しく動作しているため、影響範囲を
-            // 段落末尾でのBackSpaceに限定し、そこだけ標準動作に頼らず自前で最後の1文字を
-            // 削除するようにする（キャレットが段落末尾かどうかも、同じ理由で生のTextPointer
-            // 比較ではなく、キャレットから段落末尾までの実際の文字数で判定する）。
+            // 見出し段落が空の状態でBackSpaceが押された場合、見出しの書式だけを本文へ戻す
+            // （箇条書きのListItemは同じ状況でWPF標準の動作のままリストを抜けられるが、
+            // 見出しはただのParagraphに書式を適用しているだけなので標準動作では外れない）。
+            // 空判定・キャレット末尾判定は、生のTextPointer比較ではなくTextRangeで取り出した
+            // 文字列の長さで行う：空にした段落には0文字のRunなど見えない構造が残ることがあり、
+            // TextPointer同士の比較では「空」と判定されないことがあるため。
+            // また、段落末尾（残り1文字などの状態）でのBackSpaceは、IME合成の部分確定の
+            // 繰り返しで段落内のRunが細分化された結果、WPF標準のBackSpaceコマンドが何も
+            // 削除せず反応しないことがある（TextChangedすら発生しないWPF側の不具合）。
+            // この症状は段落末尾でのみ確認されているため、段落末尾でのBackSpaceに限り標準
+            // 動作に頼らず自前で最後の1文字を削除する。
             if (a_args.Key == Key.Back &&
                 para.Tag is int headingLevel && headingLevel > 0)
             {
@@ -1461,13 +1404,10 @@ namespace mde
         /// <summary>エディタ上でのマウス左ボタン押下を処理する。ダブルクリック位置が画像の上
         /// だった場合は、リンク先の画像ファイルを開くことを優先する（Ctrl+クリックでの
         /// リンク開きより先に判定する）。それ以外は通常通りInlineStyleEditorのリンククリック
-        /// 処理へ委譲する。画像の判定は、右クリックメニュー（EditorContextMenuOpening）の
-        /// 「画像を保存」判定と同じ、RichTextBox側からのVisualTreeHelper.HitTestを使う方式。
-        /// Image要素自身にPreviewMouseLeftButtonDownを直接持たせる方式（ドラッグ書き出し用に
-        /// 元々ある仕組み）はダブルクリック検出には使わない。RichTextBox内に埋め込まれた
-        /// InlineUIContainerの子要素は、マウスイベントの到達やカーソル表示がRichTextBox内部の
-        /// テキスト編集処理と絡んで不安定になることがあるため、代わりに常に確実に動作する
-        /// RichTextBox側でのヒットテストに統一している。</summary>
+        /// 処理へ委譲する。画像の判定は右クリックメニュー（EditorContextMenuOpening）と同じ、
+        /// RichTextBox側からのVisualTreeHelper.HitTestを使う方式に統一している：RichTextBoxに
+        /// 埋め込まれたInlineUIContainerの子要素は、マウスイベントの到達やカーソル表示が内部の
+        /// テキスト編集処理と絡んで不安定になることがあるため。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         private void EditorPreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args)
@@ -1476,12 +1416,9 @@ namespace mde
             var hit = VisualTreeHelper.HitTest(m_editor, pos);
 
             // タスクリストのチェックボックス（[ ]/[x]）のクリックによるチェック⇔アンチェック
-            // 切替。このメソッドのドキュメントコメントにある通り、RichTextBoxに埋め込まれた
-            // InlineUIContainerの子要素（CheckBox自身）の内部クリック処理に頼るとイベントが
-            // 不安定になるため、画像と同じくRichTextBox側でのヒットテストで検出し、IsChecked
-            // を手動で反転させたうえで、「元テキスト保持」の記憶破棄もここで直接・同期的に
-            // 呼ぶ（IsChecked変更にRunAsProgrammaticChangeを使わないのは、実際のユーザー
-            // 操作として扱うために重要）。
+            // 切替。画像と同じ理由でRichTextBox側のヒットテストで検出し、IsCheckedを手動で
+            // 反転させたうえで「元テキスト保持」の記憶破棄も直接・同期的に呼ぶ（IsChecked変更に
+            // RunAsProgrammaticChangeを使わないのは、実際のユーザー操作として扱うため）。
             CheckBox cb = FindVisualAncestorOrSelf<CheckBox>(hit?.VisualHit);
             if (null != cb && "task-checkbox" == (cb.Tag as string))
             {
@@ -1541,8 +1478,7 @@ namespace mde
                 // モード切替の前後でカーソル位置が大きくずれないよう、切替前にカーソルが
                 // あったトップレベルブロック（段落・見出し・箇条書き・表など）を覚えておき、
                 // 変換後のMarkdown文字列の中で、そのブロックに対応する開始位置へキャレットを
-                // 移動する。文字単位の完全な位置ではなく、ブロック単位での近似的な復元だが、
-                // 「切り替えるたびに必ず先頭へ戻ってしまう」問題は解消できる。
+                // 移動する（文字単位ではなくブロック単位での近似的な復元）。
                 Block caretBlock = m_originalTextTracker.GetTopLevelBlock(m_editor.CaretPosition);
 
                 m_sourceEditor.Text = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
@@ -1551,27 +1487,19 @@ namespace mde
                 m_isSourceModeFlg = true;
                 m_toggleModeBtn.Content = "Markdownモードに切替";
 
-                // 診断用ログの解析の結果、offset／lineの計算値そのものは繰り返し操作しても
-                // 毎回正しいことが確認できた（textLenに対する比率が常に一定）。そのため、
-                // 疑いの中心は計算ロジックから、実際に画面へ反映する処理（Focus・スクロール）
-                // 側に移っている。
-                //
-                // 以前はここでFocus()を呼んでからCaretIndex・スクロール位置を設定していたが、
-                // これだとTextBoxが「フォーカスを受け取った時に、その時点のCaretIndex（まだ
-                // 更新前の値）を基準に自動的にスクロールしようとする」内部処理と競合する
-                // 可能性があるため、Focus()は下のCaretIndex・スクロール位置の設定が終わった
-                // 後に呼ぶよう順序を入れ替えた。
+                // Focus()はCaretIndex・スクロール位置の設定が終わった後に呼ぶ：先にFocus()すると、
+                // TextBoxがフォーカス受け取り時に「その時点の（更新前の）CaretIndex」を基準に
+                // 自動スクロールしようとする内部処理と競合するため。
                 if (null != caretBlock)
                 {
                     int offset = m_markdownConverter.GetMarkdownOffsetForBlock(m_editor.Document, caretBlock);
                     DebugLogger.Log($"ToggleModeBtnClick(→Source): offset={offset} textLen={m_sourceEditor.Text.Length}");
                     if (offset >= 0 && offset <= m_sourceEditor.Text.Length)
                     {
-                        // CaretIndexを先に確定させてから、レイアウトを確定させる（UpdateLayout）。
-                        // 逆の順序（先にUpdateLayoutしてから後でCaretIndexを変える）だと、
-                        // m_sourceEditorはそれまでVisibility.Collapsedだった（レイアウトの対象外
-                        // だった）ため、Visibleにした直後・かつ古い（または既定の0のままの）
-                        // CaretIndexを基準にレイアウトの内部情報が検証されてしまう可能性がある。
+                        // CaretIndexを先に確定させてからUpdateLayout()する：m_sourceEditorは
+                        // それまでVisibility.Collapsedでレイアウト対象外だったため、逆の順序だと
+                        // Visibleにした直後の古い（既定0の）CaretIndexを基準にレイアウトの
+                        // 内部情報が確定してしまう。
                         m_sourceEditor.CaretIndex = offset;
                         m_sourceEditor.UpdateLayout();
                         int line = m_sourceEditor.GetLineIndexFromCharacterIndex(offset);
@@ -1579,19 +1507,10 @@ namespace mde
                         if (line >= 0)
                         {
                             // ScrollToLineは「見えていなければ最小限だけスクロールする」仕様のため、
-                            // 既に見えている行だと一番上への移動が起きないことがある。他のスクロール
-                            // 処理（RestoreEditorScrollAnchor等）と同じ対策で、先に一旦先頭へ
-                            // スクロール位置をリセットしてから改めて対象行へスクロールする。
-                            //
-                            // ただし、この2つの呼び出しの間にレイアウトを確定させる処理が
-                            // 入っていないと、WPF内部で「一番上へのスクロール」がまだ実際には
-                            // 反映されていない状態のまま、続けて「対象行へのスクロール」の判定
-                            // （＝対象行が見えているかどうかのチェック）が行われてしまい、
-                            // その判定に使われる情報が古いままになる可能性がある。1回目の
-                            // 呼び出しでは問題が起きにくいのに2回目以降でおかしくなる、という
-                            // report のパターンとも矛盾しないため、念のため間にUpdateLayout()を
-                            // 挟み、「一番上へのスクロール」を確実に反映させてから対象行へ
-                            // スクロールするようにした。
+                            // 既に見えている行だと一番上への移動が起きないことがある（他のスクロール
+                            // 処理と同じ対策で、先に先頭へリセットしてから対象行へスクロールする）。
+                            // リセットの間にUpdateLayout()を挟むのは、それが反映される前に次の
+                            // ScrollToLineの可視判定が走ってしまうのを防ぐため。
                             m_sourceEditor.ScrollToLine(0);
                             m_sourceEditor.UpdateLayout();
                             m_sourceEditor.ScrollToLine(line);
@@ -1611,23 +1530,14 @@ namespace mde
                 //      いた行に対応するMarkdown側のブロックを、切替後も画面の一番上に表示する
                 //      （見ていた内容をそのまま見せ続けるため）。
                 //
-                // 【今回判明した根本原因】m_sourceEditorはTextWrapping="Wrap"（折り返し表示）の
-                // TextBoxである。WPFのTextBoxでは、GetLineIndexFromCharacterIndex・
-                // GetFirstVisibleLineIndex・ScrollToLine等の「行」は、いずれも折り返し後の
-                // 見た目上の行（表示行）を指しており、Markdownソースの実際の改行（\n）で区切った
-                // 論理行とは一致しない。一方、FindBlockIndexForSourceLineは、Markdown文字列を
-                // \nで分割した「論理行」の配列に対するインデックスを引数として期待している。
-                // 長い箇条書きなど、折り返しで2行以上になる行が手前に1つでもあると、そこから
-                // 後ろのすべての行で「表示行番号」と「論理行番号」がずれてしまい、そのずれた
-                // 表示行番号をそのままFindBlockIndexForSourceLineに渡していたため、意図した
-                // 段落より後ろの段落が選ばれてしまっていた（これまでの一連の「近いが微妙に
-                // ずれる」報告の、実は一番の原因だったと考えられる）。
-                //
-                // 対策として、キャレット位置は文字インデックス（CaretIndex、折り返しに影響
-                // されない）から直接、画面の一番上に見えている位置はGetCharacterIndexFromLineIndex
-                // で一旦「表示行→文字インデックス」に変換してから、それぞれ文字インデックスを
-                // 基準に論理行番号を数え直すことで、折り返しの影響を受けない正しい論理行番号を
-                // 得るようにした。
+                // m_sourceEditorはTextWrapping="Wrap"のため、GetLineIndexFromCharacterIndex・
+                // GetFirstVisibleLineIndex等が返す「行」は折り返し後の表示行であり、Markdown
+                // ソースの改行（\n）で区切った論理行とは一致しない。一方FindBlockIndexForSourceLine
+                // は論理行のインデックスを期待するため、表示行番号をそのまま渡すと（折り返しで
+                // 2行以上になる行が手前にあった場合に）ずれた段落を指してしまう。そのため、
+                // キャレット位置は文字インデックス（CaretIndex、折り返しの影響を受けない）から、
+                // 画面の一番上に見えている位置はGetCharacterIndexFromLineIndexで一旦文字
+                // インデックスに変換してから、それぞれ論理行番号を数え直す。
                 string sourceText = m_sourceEditor.Text;
                 int caretIndexAtToggle = m_sourceEditor.CaretIndex;
                 int caretLine = GetLogicalLineIndexForCharacterOffset(sourceText, caretIndexAtToggle);
@@ -1679,19 +1589,13 @@ namespace mde
                 }
                 m_editorScrollViewer?.ScrollToVerticalOffset(0);
                 m_editor.UpdateLayout();
-                // BringIntoViewは「見えるようにするための最小限のスクロール」しか行わない
-                // ため、対象の段落が必ず画面の一番上に来るとは限らない可能性を考慮し、
-                // RestoreEditorScrollAnchor（フォルダ/アウトラインペイン切替時のスクロール
-                // 位置復元）と同じ考え方で、実際にその段落の先頭が画面の何ピクセル目に来て
-                // いるか（GetCharacterRectはビューポート基準の相対座標を返す）を確認する。
-                //
-                // 【前回の誤り】m_editorにはPadding="20,20,4,0"が設定されており、内容が
-                // 画面の一番上に来ている状態でも、GetCharacterRectのTopは0ではなく常に
-                // このPadding分（上端の場合20）を示す。これは折り返しや装飾のためのアプリ内
-                // 固有の余白であり、スクロール位置のずれではない。前回の対策では0との比較で
-                // 判定していたため、正しく一番上に来ている状態からさらに20px分だけ余計に
-                // スクロールしてしまい、文書の一番先頭を見た時とは異なる（余白の無い）
-                // 見え方になってしまっていた。今回、比較対象をm_editor.Padding.Topへ修正した。
+                // BringIntoViewは「見えるようにするための最小限のスクロール」しか行わないため、
+                // 対象の段落が必ず画面の一番上に来るとは限らない。RestoreEditorScrollAnchorと
+                // 同じ考え方で、その段落の先頭が画面の何ピクセル目に来ているか
+                // （GetCharacterRectはビューポート基準の相対座標を返す）を確認して補正する。
+                // 比較対象は0ではなくm_editor.Padding.Top：m_editorにはPadding="20,20,4,0"が
+                // 設定されており、内容が一番上に来ている状態でもGetCharacterRectのTopは常に
+                // このPadding分（上端なら20）を示すため。
                 Block scrollTargetBlock = scrollAnchorBlock ?? caretBlock;
                 if (null != scrollTargetBlock)
                 {
@@ -2244,12 +2148,10 @@ namespace mde
 
         /// <summary>
         /// 現在の文書をPDFへ書き出す。headless Chromium（PuppeteerSharp、MITライセンス）で
-        /// 文書をHTMLとして印刷する形でPDF化している。この方式なら、保存先ダイアログの既定
-        /// ファイル名（元のMarkdownファイル名から拡張子を変えたもの）も、書き出し完了後の
-        /// 自動オープンも問題なく行える上、画面表示と同じフォント（游ゴシック UI等）が
-        /// そのまま使え、見出しへのジャンプリンクや取り消し線も本物の見た目で表現できる。
-        /// 初回実行時のみ、Chromium本体（数百MB）のダウンロードが発生するため、
-        /// インターネット接続が必要で、多少時間がかかる。
+        /// HTMLとして印刷しPDF化する。この方式なら既定ファイル名の指定・書き出し後の自動
+        /// オープンが問題なく行え、画面表示と同じフォントや、見出しへのジャンプリンク・
+        /// 取り消し線も本物の見た目で表現できる。初回実行時のみChromium本体（数百MB）の
+        /// ダウンロードが発生し、インターネット接続と多少の時間を要する。
         /// </summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
@@ -2283,11 +2185,11 @@ namespace mde
             Mouse.OverrideCursor = Cursors.Wait;
             try
             {
-                // Markdownテキストを、書き出し専用の使い捨てFlowDocumentへ変換する。
-                // m_markdownConverter（m_originalTextTrackerを共有している）をそのまま使うと、
+                // Markdownテキストを書き出し専用の使い捨てFlowDocumentへ変換する。
+                // m_markdownConverter（m_originalTextTrackerを共有）をそのまま使うと、
                 // MarkdownToDocument内部のCleanupでライブなエディタ側の「未編集ブロックは
-                // 元テキストのまま保存する」という記憶まで失われてしまうため、この書き出し専用の
-                // 変換だけは独立したOriginalTextTrackerを使う一時的なMarkdownConverterで行う。
+                // 元テキストのまま保存」の記憶まで失われるため、独立したOriginalTextTrackerを
+                // 使う一時的なMarkdownConverterで行う。
                 var tempTracker = new OriginalTextTracker(m_editor);
                 var tempConverter = new MarkdownConverter(tempTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg, () => m_correctColumnWidthsFlg);
                 var tempDoc = new FlowDocument();
@@ -2967,20 +2869,13 @@ namespace mde
         /// m_sourceEditor）のスクロール位置を、無条件に一番上（左上端）へ戻す。LoadFileで
         /// 文書・テキストを丸ごと差し替えた直後に呼び出す。
         ///
-        /// RichTextBox・TextBoxは、Document.Blocks.Clear()＋作り直しやText差し替えで内容を
-        /// 丸ごと入れ替えても、同じ内部ScrollViewerを使い回すため、スクロール位置
-        /// （VerticalOffset）が古いファイルを表示していた時の値のまま残ってしまう。これに
-        /// 気づかず、CaretPositionやCaretIndexを先頭へ設定するだけで満足すると、明らかに
-        /// 初めて開くファイルなのに、その古いスクロール位置にたまたま来た新しい文書の内容
-        /// （中ほどや末尾など）が表示されたままになってしまう（新しい文書がその位置まで
-        /// 十分な長さを持つ場合。短い文書なら末尾に張り付いた状態で表示される）。
-        /// キャレット位置の変更は、プログラムからの変更では自動的な表示範囲へのスクロールを
-        /// 伴わないため（ユーザーの操作によるキャレット移動とは異なる）、ここでScrollViewerへ
-        /// 直接オフセット0への移動を指示している。ScrollToLine等の「見えていなければ最小限
-        /// だけスクロールする」系のメソッドでは、たまたま新しい文書の先頭付近が既に見えて
-        /// いる状態だと何も起こらないことがあるため使わない（他のスクロール処理
-        /// （RestoreEditorScrollAnchor等）で同種の問題への対策として使っている、ScrollViewerを
-        /// 直接操作する方法と同じ考え方）。</summary>
+        /// RichTextBox・TextBoxは内容を丸ごと入れ替えても同じ内部ScrollViewerを使い回すため、
+        /// スクロール位置が古いファイルを表示していた時の値のまま残る。CaretPosition/CaretIndex
+        /// を先頭へ設定するだけでは、古いスクロール位置に新しい文書のたまたまある内容
+        /// （プログラムによるキャレット変更は自動スクロールを伴わないため）が表示され続けて
+        /// しまうので、ScrollViewerへ直接オフセット0への移動を指示する。ScrollToLine等の
+        /// 「見えていなければ最小限だけスクロールする」系のメソッドは、新しい文書の先頭付近が
+        /// たまたま既に見えていると何も起こらないため使わない。</summary>
         private void ScrollEditorToTop()
         {
             if (m_isSourceModeFlg)
@@ -3584,31 +3479,17 @@ namespace mde
         }
 
         /// <summary>
-        /// アウトラインのTreeViewItemは、選択されたりキーボードフォーカスを受け取ったりする
-        /// たびに、既定の動作として自分自身を（横方向も含めて）完全に見えるようスクロール
-        /// しようとする（RequestBringIntoViewイベント）。見出しのテキストは省略せず横スクロール
-        /// で読む作り（フォルダペインの長いファイル名と同じ）にしているため、見出しが長いと、
-        /// 選択するたびにこの既定動作でWPFが見出し全体を見せようと横スクロールバーを右へ
-        /// 動かしてしまう。
+        /// アウトラインのTreeViewItemは、選択・フォーカス取得のたびに既定の動作として自分自身を
+        /// 横方向も含めて完全に見えるようスクロールしようとする（RequestBringIntoViewイベント）。
+        /// 見出しは省略せず横スクロールで読む作りのため、長い見出しを選択するたびにWPFが横
+        /// スクロールバーを右へ動かしてしまう。対策として、要求された範囲（TargetRect）を
+        /// 「幅0（項目の左端）・高さは項目の高さのまま」の矩形に置き換えて改めてBringIntoView
+        /// し直すことで、縦方向の可視化は保ちつつ横スクロール位置には触れさせないようにする。
         ///
-        /// フォルダペインでは項目名（ファイル名）が短く、この既定動作によるずれ幅がほとんど
-        /// 無いために目立たないだけで、根本的な原因は同じだと考えられる。対策として、この
-        /// 既定の横スクロールをそもそも起こさせないようにする。要求された範囲（TargetRect）を
-        /// 「幅0（＝項目の左端）・高さは項目の高さのまま」の矩形に置き換えて、改めて
-        /// BringIntoViewし直すことで、縦方向の可視化（一覧を上下にスクロールして選択項目を
-        /// 見えるようにする、という必要な動作）はそのまま保ちつつ、横スクロール位置には
-        /// 一切手を触れさせないようにする。
-        ///
-        /// 【修正履歴】当初、「置き換え済みの要求かどうか」をTargetRect.Widthが0以下かどうかで
-        /// 判定していたが、これは誤りだった。TreeViewItemが選択・フォーカスを受け取った際に
-        /// WPF内部が呼ぶ既定のBringIntoView()（引数なし）は、TargetRectとしてRect.Empty
-        /// （Width・HeightがともにNegativeInfinity）を渡してくる。Rect.Emptyの場合もWidthは
-        /// 0以下と判定されてしまうため、まさに一番防ぎたかった「既定の・引数なしのBringIntoView」
-        /// をこの判定でスキップしてしまい、対策が効かないまま素通りしていた（長い見出し、特に
-        /// 階層の深い見出しを選択した際に、横スクロールが数百ミリ秒にわたって右へずれたまま
-        /// になる形で発覚）。TargetRectの中身で判定するのではなく、「今まさにこのメソッド自身が
-        /// 発行した再要求の処理中かどうか」を示す専用のフラグ（無限ループ防止のための再入
-        /// ガード）で判定するように修正した。
+        /// 再入判定にはTargetRect.Widthではなく専用のフラグを使う：WPF内部が呼ぶ既定の
+        /// BringIntoView()（引数なし）はTargetRectとしてRect.Empty（Width/HeightがともにNegative
+        /// Infinity）を渡してくるため、Width&lt;=0での判定だとこの既定呼び出し自体もスキップして
+        /// しまい対策が効かない。
         /// </summary>
         /// <param name="a_sender">イベントの発生元（対象のTreeViewItem）。</param>
         /// <param name="a_args">イベントの引数。</param>
@@ -3637,14 +3518,7 @@ namespace mde
 
         /// <summary>
         /// フォルダペインのTreeViewItemに対する、OutlineTreeItemRequestBringIntoViewと全く同じ
-        /// 対策。当初は「フォルダペインはファイル名が短いので、この既定動作によるずれ幅が
-        /// ほとんど無いために目立たないだけ」と考えて対策を見送っていたが、実機での確認で、
-        /// ファイル名が長く実際に横幅が見切れる場合でもフォルダペインでは症状が出ない、という
-        /// 逆の結果が得られたため、この推測は誤りだったことが判明した。その後、アウトライン側の
-        /// 対策（TargetRect.Emptyを専用の再入ガードフラグへ置き換える修正）を先に確定させ、
-        /// 実機で「アウトラインの横スクロールのちらつきが直った」ことを確認できた上で、
-        /// 改めてフォルダペインにも同じ対策を追加する。実装内容・再入ガードの考え方は
-        /// OutlineTreeItemRequestBringIntoViewと同一で、対象のTreeViewとフラグだけが異なる。
+        /// 対策（対象のTreeViewとフラグだけが異なる）。
         /// </summary>
         /// <param name="a_sender">イベントの発生元（対象のTreeViewItem）。</param>
         /// <param name="a_args">イベントの引数。</param>

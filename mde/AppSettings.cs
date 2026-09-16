@@ -29,11 +29,10 @@ namespace mde
         public bool RequireCtrlForLinkClickFlg { get; set; } = true;
         public bool PreserveSourceLineBreaksFlg { get; set; } = true;
 
-        /// <summary>メニュー「表示」→「列幅を補正する」のチェック状態。オンなら、列幅調整
-        /// ダイアログで明示的に調整済みの表はその比率で、未調整（|---|）の表は内容量に応じて
-        /// 自動計算した比率で表示する。オフなら、両方とも既定の均等幅（Auto）で表示する
-        /// （表全体の列幅機能のマスタースイッチ）。既定はtrue（従来のステップ2の動作を維持し、
-        /// 新しく追加した「未調整の表への自動比率」も併せて有効にする）。</summary>
+        /// <summary>メニュー「表示」→「列幅を補正する」のチェック状態（表全体の列幅機能の
+        /// マスタースイッチ）。オンなら、明示的に調整済みの表はその比率で、未調整の表は内容量
+        /// に応じた自動比率で表示する。オフなら両方とも既定の均等幅（Auto）で表示する。
+        /// 既定はtrue。</summary>
         public bool CorrectColumnWidthsFlg { get; set; } = true;
         public double PdfMarginTop { get; set; } = 64;
         public double PdfMarginBottom { get; set; } = 64;
@@ -86,7 +85,7 @@ namespace mde
             }
             catch
             {
-                // 保存に失敗しても致命的ではない（ベストエフォート）
+                // 保存に失敗しても致命的ではないため、エラーは無視する
             }
         }
     }

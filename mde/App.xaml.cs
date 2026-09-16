@@ -31,19 +31,16 @@ namespace mde
             ChromiumBrowserPool.WarmUpInBackground();
 
             // F1キーで「Readmeを開く」を、アプリ内のどのウインドウ（メインウインドウ本体・
-            // 検索と置換・バージョン情報・行間の設定等、各種ダイアログ）からでも呼び出せるように
-            // する。個々のウインドウのPreviewKeyDownへ1つずつ実装する代わりに、Windowクラス
-            // 全体に対するクラスハンドラーとして登録することで、今後ウインドウ（ダイアログ）が
-            // 増えた場合にも、個別の対応漏れなく効くようにしている。
+            // 検索と置換・バージョン情報等、各種ダイアログ）からでも呼び出せるようにする。個々の
+            // ウインドウのPreviewKeyDownへ実装する代わりにWindowクラス全体のクラスハンドラーと
+            // して登録し、今後ダイアログが増えても対応漏れが出ないようにしている。
             EventManager.RegisterClassHandler(typeof(Window), Window.PreviewKeyDownEvent,
                 new KeyEventHandler(GlobalPreviewKeyDown));
         }
 
-        /// <summary>F1キーで「Readmeを開く」を実行する。押した時にキーボードフォーカスが
-        /// あったウインドウ自身がMainWindowであればそのまま、検索と置換・バージョン情報等の
-        /// ダイアログであれば、そのOwnerを辿って対応するMainWindowを探し、そちらでReadmeを
-        /// 開く（ダイアログは各々Owner=（そのダイアログを開いたMainWindow）で生成されている
-        /// ため、必ずどこかでMainWindowに辿り着く）。</summary>
+        /// <summary>F1キーで「Readmeを開く」を実行する。フォーカスのあったウインドウ自身が
+        /// MainWindowならそのまま、ダイアログであればOwnerを辿って対応するMainWindowを探して
+        /// 開く（各ダイアログはOwner=それを開いたMainWindowで生成されるため必ず辿り着く）。</summary>
         /// <param name="a_sender">キー入力があった時にフォーカスを持っていたウインドウ。</param>
         /// <param name="a_args">キーイベントの引数。</param>
         private void GlobalPreviewKeyDown(object a_sender, KeyEventArgs a_args)
@@ -69,14 +66,11 @@ namespace mde
         {
             try
             {
-                // ここ（UIスレッド）で ChromiumBrowserPool.ShutdownAsync() を直接
-                // GetAwaiter().GetResult() すると、内部のawaitがUIスレッドの
-                // SynchronizationContext（Dispatcher）へ結果を戻そうとして、まさにその
-                // Dispatcherをブロックして待っている当スレッドと待ち合ってしまい、永久に
-                // デッドロックする（＝OnExitがここで固まり、後続のEnvironment.Exitにも
-                // 到達できず、mde.exeプロセスが終了できずに残り続ける）。
-                // Task.Runで別スレッド（SynchronizationContextを持たないスレッドプール）
-                // 上でShutdownAsyncを開始させることで、このデッドロックを避ける。
+                // UIスレッドでChromiumBrowserPool.ShutdownAsync()を直接GetAwaiter().GetResult()
+                // すると、内部のawaitがUIスレッドのSynchronizationContext（Dispatcher）へ結果を
+                // 戻そうとして、それをブロックして待つ当スレッドと永久にデッドロックする
+                // （mde.exeが終了できず残り続ける）。Task.Runで別スレッド上で開始させることで
+                // これを避ける。
                 Task.Run(() => ChromiumBrowserPool.ShutdownAsync()).GetAwaiter().GetResult();
             }
             catch
@@ -86,8 +80,8 @@ namespace mde
 
             base.OnExit(a_args);
 
-            // 上記の対策後も、何らかの理由でプロセスが自然終了しないケースに備えて、
-            // ここで確実にプロセスを終了させる。終了処理はここまでで完了しているため安全に行える。
+            // 上記の対策後も何らかの理由でプロセスが自然終了しないケースに備え、終了処理完了
+            // 後のここで確実にプロセスを終了させる。
             Environment.Exit(0);
         }
 

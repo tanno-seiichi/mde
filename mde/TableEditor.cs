@@ -50,9 +50,8 @@ namespace mde
         /// <param name="a_refreshOutline">アウトラインペインの再構築を依頼するdelegate。</param>
         /// <param name="a_insertPlainTextWithLineBreaks">コードブロックへの貼り付け時に使う、改行対応のプレーンテキスト挿入delegate。</param>
         /// <param name="a_correctColumnWidthsFlg">メニュー「表示」→「列幅を補正する」の現在の
-        /// 状態を返すdelegate。省略時（null）はtrueとして扱う。列幅調整ダイアログでOKが
-        /// 押された際、この状態に応じて実際の見た目を決める（BlockStyles.
-        /// ApplyEffectiveColumnWidths参照）。</param>
+        /// 状態を返すdelegate（省略時はtrueとして扱う）。列幅適用時の見た目を決める
+        /// （BlockStyles.ApplyEffectiveColumnWidths参照）。</param>
         public TableEditor(
             RichTextBox a_editor,
             OriginalTextTracker a_originalTextTracker,
@@ -240,11 +239,10 @@ namespace mde
             var headerRow = new TableRow();
             for (int c = 0; c < a_cols; c++)
             {
-                // KeepTogether: PDF書き出し時、ページの境目で表の行が跨ると、跨いだ先のセルは
-                // 罫線が描画されないままテキストだけが続いてしまうというWPFの制約があるため、
-                // セル内の段落をページ内で分割させない（間に合わなければ行ごと次のページへ）。
-                // LineHeight=double.NaN：行間設定を継承させず、常に自然な行の高さで表示する
-                // （このファイル内の他のTableCell生成箇所も同様。MarkdownConverter.cs参照）。
+                // KeepTogether: PDF書き出し時にページを跨ぐとセルの罫線が消えるWPFの制約を
+                // 避けるため、セル内の段落をページ内で分割させない。
+                // LineHeight=double.NaN: 行間設定を継承せず常に自然な高さで表示する
+                // （このファイル内の他のTableCell生成箇所も同様）。
                 var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
                 {
                     FontWeight = FontWeights.Bold,
@@ -271,8 +269,8 @@ namespace mde
                 rg.Rows.Add(row);
             }
 
-            // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて設定する
-            // （詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
+            // 隣接セルの境界線が二重に重ならないよう、表全体へまとめて罫線を設定する
+            // （BlockStyles.ApplyTableCellBorders参照）。
             BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
 
             var trailingPara = new Paragraph();
@@ -323,9 +321,8 @@ namespace mde
             {
                 var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
                 {
-                    // 罫線は、挿入後に表全体へApplyTableCellBordersでまとめて設定し直す
-                    // （最上段より上に行を挿入した場合、新しい行が最上段になり、上辺の
-                    // 罫線を持つべきセルが変わるため）。
+                    // 罫線は挿入後にApplyTableCellBordersで設定し直す
+                    // （最上段への挿入で上辺罫線の対象セルが変わるため）。
                     Padding = new Thickness(8, 6, 8, 6)
                 };
                 newRow.Cells.Add(cell);
@@ -335,9 +332,8 @@ namespace mde
             int insertIdx = a_aboveFlg ? idx : idx + 1;
             rg.Rows.Insert(insertIdx, newRow);
 
-            // 表全体に対して罫線をまとめて設定し直す（詳細はBlockStyles.ApplyTableCellBorders
-            // のコメント参照。行削除後に罫線が消えて見えることがあるという未解決の不具合
-            // （下のDeleteRow参照）とも近い領域のため、ここで毎回明示的に設定し直しておく）。
+            // 表全体の罫線をApplyTableCellBordersで設定し直す（行削除後に罫線が消えて見える
+            // 未解決の不具合と近い領域のため、念のため毎回明示的に設定する。下のDeleteRow参照）。
             if (rg.Parent is Table refreshTable)
             {
                 BlockStyles.ApplyTableCellBorders(refreshTable, m_cellBorder);
@@ -383,9 +379,8 @@ namespace mde
                 var targetRow = rows[r];
                 var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
                 {
-                    // 罫線は、挿入後に表全体へApplyTableCellBordersでまとめて設定し直す
-                    // （最左列より左に列を挿入した場合、新しい列が最左列になり、左辺の
-                    // 罫線を持つべきセルが変わるため）。
+                    // 罫線は挿入後にApplyTableCellBordersで設定し直す
+                    // （最左列への挿入で左辺罫線の対象セルが変わるため）。
                     Padding = new Thickness(8, 6, 8, 6)
                 };
                 if (0 == r)
@@ -407,16 +402,13 @@ namespace mde
             table.Columns.Insert(colInsertIdx, newColumn);
 
             // 区切り行のダッシュ数（保存されるべき「本当の値」）の記録も、列の増減に合わせて
-            // 同じ位置に既定値の要素を挿入しておく（まだ一度も調整されていない表には何もしない。
-            // BlockStyles.InsertIntoSourceDashCountsのコメント参照）。
+            // 同じ位置に既定値を挿入する（未調整の表には何もしない。
+            // BlockStyles.InsertIntoSourceDashCounts参照）。
             BlockStyles.InsertIntoSourceDashCounts(table, colInsertIdx);
 
-            // 列幅調整ダイアログ（ステップ2）で、この表の他の列がすでに明示的な比率幅
-            // （Star）になっている場合、新しく挿入した列だけ既定のAuto幅のままだと、単位が
-            // 混在してしまう（BlockStyles.ApplyExplicitColumnWidthsのコメント参照：単位を
-            // 混在させない方針にしている）。そのため、他の列が1つでも明示的な比率幅なら、
-            // 新しい列にも既定の比率（TABLE_COLUMN_DEFAULT_DASH_COUNT。区切り行の既定の
-            // ダッシュ数と同じ値）を明示的に設定する。
+            // 他の列がすでに明示的な比率幅（Star）なら単位混在を避けるため、新しい列にも
+            // 既定の比率（TABLE_COLUMN_DEFAULT_DASH_COUNT）を明示的に設定する
+            // （単位を混在させない方針。BlockStyles.ApplyExplicitColumnWidths参照）。
             bool tableAlreadyCustomizedFlg = false;
             foreach (TableColumn col in table.Columns)
             {
@@ -431,8 +423,7 @@ namespace mde
                 newColumn.Width = new GridLength(BlockStyles.TABLE_COLUMN_DEFAULT_DASH_COUNT, GridUnitType.Star);
             }
 
-            // 表全体に対して罫線をまとめて設定し直す（詳細はBlockStyles.ApplyTableCellBorders
-            // のコメント参照）。
+            // 表全体の罫線をApplyTableCellBordersで設定し直す。
             BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
 
             if (firstNewCell?.Blocks.FirstBlock is Paragraph np)
@@ -447,8 +438,8 @@ namespace mde
 
         /// <summary>ContextCellが属する表の、列幅調整ダイアログの初期表示用データ（各列の
         /// ラベルと現在の幅、「自動計算」チェックボックスの初期状態）を組み立てる。
-        /// ContextCellが無い、または表が見つからない場合はラベル一覧がnullの値を返す
-        /// （呼び出し側はLabelsがnullならダイアログを開かない）。</summary>
+        /// ContextCellが無い、または表が見つからない場合はLabelsがnullの値を返す
+        /// （呼び出し側はこれでダイアログの要否を判定する）。</summary>
         public (List<string> Labels, List<int> DashCounts, bool IsAutoCalculated) GetColumnWidthDialogInfo()
         {
             var table = null != ContextCell ? FindEnclosingTable(ContextCell) : null;
@@ -459,11 +450,10 @@ namespace mde
             return BlockStyles.BuildColumnWidthDialogInfo(table);
         }
 
-        /// <summary>列幅調整ダイアログでOKが押された後、ContextCellが属する表に、指定された
-        /// 幅（区切り行のダッシュ数相当。「自動計算」がオンだった場合はすべて既定値になっている。
-        /// ColumnWidthDialog.OkClick参照）と、現在の「列幅を補正する」の状態から決まる実際の
-        /// 見た目を適用する（詳細はBlockStyles.ApplyEffectiveColumnWidths参照）。呼び出し順は
-        /// ダイアログに渡した列の順序と一致していること。</summary>
+        /// <summary>列幅調整ダイアログでOKが押された後、ContextCellが属する表に、指定された幅
+        /// （区切り行のダッシュ数相当。「自動計算」オン時はすべて既定値）と、現在の「列幅を
+        /// 補正する」の状態から決まる見た目を適用する（BlockStyles.ApplyEffectiveColumnWidths
+        /// 参照）。呼び出し順はダイアログに渡した列の順序と一致していること。</summary>
         /// <param name="a_dashCounts">列ごとの新しい値（ダッシュ数）。</param>
         public void ApplyColumnWidths(List<int> a_dashCounts)
         {
@@ -477,10 +467,9 @@ namespace mde
                 return;
             }
             m_originalTextTracker.Invalidate(ContextCell.ContentStart);
-            // 区切り行のダッシュ数（保存されるべき「本当の値」）を先に記録しておく
-            // （BlockStyles.SetSourceDashCountsのコメント参照）。この記録は、直後の
-            // ApplyEffectiveColumnWidthsが「列幅を補正する」がオフで表示を既定の均等幅に
-            // 戻す場合でも、そのまま保持され続ける。
+            // 区切り行のダッシュ数（保存されるべき「本当の値」）を先に記録する
+            // （BlockStyles.SetSourceDashCounts参照）。「列幅を補正する」オフ時に表示が
+            // 既定の均等幅へ戻っても、この記録は保持される。
             BlockStyles.SetSourceDashCounts(table, a_dashCounts);
             bool correctColumnWidthsFlg = m_correctColumnWidthsFlg?.Invoke() ?? true;
             BlockStyles.ApplyEffectiveColumnWidths(table, a_dashCounts, correctColumnWidthsFlg, GetAvailableTableWidth());
@@ -519,10 +508,9 @@ namespace mde
         }
 
         /// <summary>エディタのサイズが変わった時に、未調整（自動計算）の表の列幅を、現在の
-        /// 表示幅に合わせて再計算する。呼び出し側（MainWindow.EditorSizeChanged）で、
-        /// RunWithoutDirtyMarkingでラップして呼ぶこと（列幅の変更はRichTextBox.TextChangedを
-        /// 発生させるため。ChromiumPdfExporter呼び出し側の既存コメント参照）。「列幅を補正する」
-        /// がオフの間は、すべての表が既定のAuto幅で表示されているため何もしない。</summary>
+        /// 表示幅に合わせて再計算する。列幅の変更はRichTextBox.TextChangedを発生させるため、
+        /// 呼び出し側（MainWindow.EditorSizeChanged）はRunWithoutDirtyMarkingでラップして
+        /// 呼ぶこと。「列幅を補正する」がオフの間は何もしない。</summary>
         public void RefreshAutoCalculatedColumnWidthsForResize()
         {
             bool correctColumnWidthsFlg = m_correctColumnWidthsFlg?.Invoke() ?? true;
@@ -565,15 +553,13 @@ namespace mde
             }
             rg.Rows.Remove(row);
             // 削除した行が最上段だった場合、繰り上がった新しい最上段のセルに上辺の罫線が
-            // 必要になるため、表全体に対して罫線をまとめて設定し直す（詳細は
-            // BlockStyles.ApplyTableCellBordersのコメント参照）。
+            // 必要になるため、表全体の罫線をApplyTableCellBordersで設定し直す。
             if (rg.Parent is Table refreshTable)
             {
                 BlockStyles.ApplyTableCellBorders(refreshTable, m_cellBorder);
             }
-            // 行削除後、残ったセルの枠線が描画上消えて見えることがあるとの報告があったため、
-            // 念のためレイアウトを強制的に再計算させている（上の罫線の明示的な設定し直しで
-            // 解消する可能性もあるが、実機で未確認のため、念のためこちらも残してある）。
+            // 行削除後、残ったセルの枠線が消えて見える未解決の報告があるため、念のため
+            // レイアウトを強制再計算する（上の罫線再設定で解消する可能性もあるが実機で未確認）。
             m_editor.UpdateLayout();
             m_markDirty();
         }
@@ -619,15 +605,14 @@ namespace mde
             {
                 table.Columns.RemoveAt(colIndex);
             }
-            // 区切り行のダッシュ数（保存されるべき「本当の値」）の記録も、列の増減に合わせて
-            // 同じ位置の要素を取り除いておく（InsertColumn側のInsertIntoSourceDashCountsと対に
-            // なる処理。BlockStyles.RemoveFromSourceDashCountsのコメント参照）。
+            // 区切り行のダッシュ数の記録も列の増減に合わせて同じ位置の要素を取り除く
+            // （InsertColumn側のInsertIntoSourceDashCountsと対になる処理。
+            // BlockStyles.RemoveFromSourceDashCounts参照）。
             BlockStyles.RemoveFromSourceDashCounts(table, colIndex);
             // 削除した列が最左列だった場合、繰り上がった新しい最左列のセルに左辺の罫線が
-            // 必要になるため、表全体に対して罫線をまとめて設定し直す（DeleteRow側と同じ理由。
-            // BlockStyles.ApplyTableCellBordersのコメント参照）。
+            // 必要になるため、表全体の罫線を設定し直す（DeleteRow側と同じ理由）。
             BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
-            // DeleteRow側と同じ理由（このメソッド内のコメント参照）による、未検証の対症療法。
+            // DeleteRow側と同じ理由による、未検証の対症療法。
             m_editor.UpdateLayout();
             m_markDirty();
         }
@@ -651,10 +636,9 @@ namespace mde
         }
 
         /// <summary>ContextCellが属する表全体を、現在の選択状態とは関係なく、Excelとの連携
-        /// （HandleCopying）で使っているのと同じ形式（タブ区切りテキスト＋罫線付きHTML）で
-        /// クリップボードへコピーする（右クリックメニュー「表をコピー」用）。表内をクリック
-        /// しただけで選択範囲が無い状態でも、確実に表全体をコピーできるようにするための、
-        /// Copyingイベント（選択範囲が必要）に頼らない明示的な手段。</summary>
+        /// （HandleCopying）と同じ形式（タブ区切りテキスト＋罫線付きHTML）でクリップボードへ
+        /// コピーする（右クリックメニュー「表をコピー」用）。選択範囲を必要とするCopying
+        /// イベントに頼らず、選択が無い状態でも表全体をコピーできる。</summary>
         public void CopyTable()
         {
             if (null == ContextCell)
@@ -784,16 +768,11 @@ namespace mde
         private string CellPlainText(TableCell a_cell)
         {
             var sb = new StringBuilder();
-            // 【2026-09追記】セル内でShift+Enter/Enterにより挿入した改行は、以前は1つの
-            // Paragraph内のLineBreak要素として表現されており、TextRange.Textがその改行を
-            // 含めて（"\r\n"として）そのまま拾ってくれていた。IME入力位置がずれる不具合への
-            // 対策として、この改行がLineBreakではなく複数のParagraphを並べる方式に変更された
-            // ため（HeadingCodeBlockEditor.InsertParagraphSplitAtCaretのコメント参照）、
-            // Paragraphが複数ある場合は、ここで明示的に'\n'を挟んで連結する（挟まないと、
-            // 別々の行だった文字列が区切りなく連結されてしまう）。呼び出し元
-            // （RangeToTsv・RangeToHtmlFragment・TableToTsv・TableToHtmlFragment）は、
-            // いずれもこの結果の'\n'をさらに変換（TSVでは半角スペースへ、HTMLでは&lt;br&gt;へ）
-            // するため、ここで'\n'を使っておけば従来通りの変換がそのまま機能する。
+            // セル内の改行はLineBreakではなく複数のParagraphで表現される（IME位置ずれ対策。
+            // HeadingCodeBlockEditor.InsertParagraphSplitAtCaret参照）。ここで'\n'を挟んで
+            // 連結しないと別々の行が区切りなく連結されてしまう。呼び出し元（RangeToTsv・
+            // RangeToHtmlFragment・TableToTsv・TableToHtmlFragment）がこの'\n'をさらに変換する
+            // （TSVでは半角スペースへ、HTMLでは&lt;br&gt;へ）。
             bool firstParaFlg = true;
             foreach (Block b in a_cell.Blocks)
             {
@@ -1006,13 +985,11 @@ namespace mde
                 rg.Rows.Add(row);
             }
 
-            // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて設定する
-            // （詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
+            // 隣接セルの境界線が二重に重ならないよう、表全体へまとめて罫線を設定する
+            // （BlockStyles.ApplyTableCellBorders参照）。
             BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
 
-            // 2026-08-30：MarkdownConverter.csと同じ理由で一時的に無効化
-            // （BlockStyles.ApplyContentBasedColumnWidths参照。詳細はMarkdownConverter.cs側の
-            // コメント参照）。
+            // MarkdownConverter.csと同じ理由で一時的に無効化（BlockStyles.ApplyContentBasedColumnWidths参照）。
             // BlockStyles.ApplyContentBasedColumnWidths(table);
 
             m_runAsProgrammaticChange(() =>
@@ -1056,8 +1033,8 @@ namespace mde
                 return;
             }
 
-            // コードブロックへの貼り付け：常にリテラルなテキストとして、同じフェンス内に挿入する
-            // （既定の貼り付け動作のままだと新しい段落に分割されてしまうため）。
+            // コードブロックへの貼り付けは、既定動作だと新しい段落に分割されてしまうため、
+            // 常にリテラルなテキストとして同じフェンス内に挿入する。
             var currentPara = m_editor.CaretPosition?.Paragraph;
             if (null != currentPara && currentPara.Tag is CodeBlockInfo && a_args.SourceDataObject.GetDataPresent(DataFormats.Text))
             {
@@ -1082,14 +1059,9 @@ namespace mde
             }
 
             // フォールバック：タブ区切りのプレーンテキスト（コピー時にHTMLを出さないアプリ向け）。
-            // 2026-08-29修正：Xaml/Rtf形式（mde自身や他のリッチテキストアプリからのコピー）が
-            // 付いている場合はこのフォールバックを一切試みない。理由：mdeの箇条書き項目は、
-            // WPFの既定のプレーンテキスト抽出で「マーカー\t本文」のようにタブ区切りで表現される
-            // ことがあり、見出し・段落・箇条書き・表・画像を含む文書全体をmdeの別ウィンドウへ
-            // コピー&ペーストした際、この抽出結果にタブが複数含まれることをもって文書全体を
-            // 表として誤認識し、内容が丸ごと崩れた表に化けてしまう不具合が実機で確認された。
-            // Xaml/Rtf形式があれば、WPF標準のリッチテキスト貼り付けの方が常に正確なので、
-            // そちらに任せる。
+            // Xaml/Rtf形式が付いている場合はこのフォールバックを試みず、WPF標準のリッチテキスト
+            // 貼り付けに任せる（mdeの箇条書きはプレーンテキスト抽出で「マーカー\t本文」という
+            // タブ区切りになるため、リッチな文書全体を誤って表と認識してしまう不具合があった）。
             if (!a_args.SourceDataObject.GetDataPresent(DataFormats.Xaml) &&
                 !a_args.SourceDataObject.GetDataPresent(DataFormats.Rtf) &&
                 a_args.SourceDataObject.GetDataPresent(DataFormats.Text))

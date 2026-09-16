@@ -65,15 +65,10 @@ namespace mde
         }
 
         /// <summary>指定した位置から、実際の文字数で数えてa_charCount文字分だけ先へ進んだ位置を
-        /// 返す。TextPointer.GetPositionAtOffsetの「オフセット」はWPF内部のシンボリックな単位
-        /// であり、複数のInline（Run）にまたがる段落では実際の文字数と1対1に対応しないことが
-        /// ある。v1.5.5.3の調査用ログにより、後から記号（"* "等）を書き足して変換する際、
-        /// 記号の直前・直後で別々のRunに分かれることがあり、GetPositionAtOffset(2)を呼んでも
-        /// 実際には1文字分しか進まず、記号の後ろの半角スペースが変換後の内容に残ってしまう
-        /// 不具合があることがわかった。そのため、1シンボリック単位ずつ進めながら、実際に
-        /// 消費した文字数（各ステップのTextRange.Textの長さ。Run境界をまたぐだけで文字を
-        /// 消費しないステップは0になる）だけを積算し、目的の文字数に達するまで続ける、より
-        /// 確実な方法にする。</summary>
+        /// 返す。TextPointer.GetPositionAtOffsetの「オフセット」はWPF内部のシンボリックな単位で、
+        /// 複数のRunにまたがる段落では実際の文字数と1対1に対応しないため、1シンボリック単位ずつ
+        /// 進めながら各ステップのTextRange.Textの長さ（Run境界をまたぐだけなら0）を積算し、
+        /// 目的の文字数に達するまで続ける。</summary>
         /// <param name="a_start">開始位置。</param>
         /// <param name="a_charCount">進みたい実際の文字数。</param>
         /// <returns>a_charCount文字分先へ進んだ位置（それ以上進めない場合は進めるところまで）。</returns>
@@ -110,16 +105,13 @@ namespace mde
                 Block prev = a_p.PreviousBlock;
                 Block next = a_p.NextBlock;
 
-                // v1.5.5.2で「変化なし」というご報告をいただいたための調査用ログ。空白文字を
-                // 目に見える記号に置き換えたうえで、変換前・記号除去直後・余分な空白の除去後の
-                // 段落内容を記録する。
+                // 空白を可視化したうえで、変換前・記号除去直後・余分な空白除去後の段落内容を記録する。
                 DebugLogger.Log(
                     $"ConvertParagraphToListItem: 変換前 markerTextLength={a_markerTextLength} text=[" +
                     VisualizeForLog(new TextRange(a_p.ContentStart, a_p.ContentEnd).Text) + "]");
 
-                // 変換のきっかけとなった記号部分だけを段落の先頭から取り除く。それ以降に
-                // 既にあった内容（記述済みの行の先頭に後から記号を書き足した場合の、続きの
-                // 文字列）は、書式ごとそのまま残る。
+                // 変換のきっかけとなった記号部分だけを段落の先頭から取り除く。それ以降の内容は
+                // 書式ごとそのまま残る。
                 TextPointer markerEnd = AdvanceByCharCount(a_p.ContentStart, a_markerTextLength);
                 new TextRange(a_p.ContentStart, markerEnd).Text = "";
 
@@ -127,9 +119,8 @@ namespace mde
                     "ConvertParagraphToListItem: 記号除去直後 text=[" +
                     VisualizeForLog(new TextRange(a_p.ContentStart, a_p.ContentEnd).Text) + "]");
 
-                // 記号の直後に、既存の内容との間で余分な半角スペースが残ってしまうことがある
-                // （行の先頭に既に文章がある状態で、後から記号を書き足して変換した場合など）。
-                // リスト項目の内容が空白から始まってしまわないよう、残っていれば追加で取り除く。
+                // 記号の直後に余分な半角スペースが残ることがあるため、リスト項目の内容が空白から
+                // 始まらないよう残っていれば追加で取り除く。
                 while (true)
                 {
                     TextPointer afterOne = AdvanceByCharCount(a_p.ContentStart, 1);
@@ -149,11 +140,9 @@ namespace mde
                     "ConvertParagraphToListItem: 空白除去後 text=[" +
                     VisualizeForLog(new TextRange(a_p.ContentStart, a_p.ContentEnd).Text) + "]");
 
-                // フォーカス・キャレットのある「生きた」Paragraphオブジェクトを、文書構造から
-                // 一度外して別の親（ListItem）へそのまま付け替えると、IMEの内部状態と結び付いて
-                // 壊れる可能性がある（このバグの切り分けで確認済み）ため、a_p自身を再利用する
-                // のではなく、新しくParagraphを作り、a_pの中身（Inline、書式ごと）だけをそちらへ
-                // 移し替える。a_p自体は文書へ一度も戻さず、ここで完全に破棄する。
+                // フォーカス・キャレットのある「生きた」Paragraphを文書構造から外して別の親へ
+                // 付け替えると、IMEの内部状態が壊れることがあるため、a_p自身は再利用せず新しく
+                // Paragraphを作り、中身（Inline、書式ごと）だけを移し替える。a_pは破棄する。
                 var newP = new Paragraph();
                 BlockStyles.ApplyHeadingStyle(newP, 0);
                 newP.Margin = new Thickness(0);
@@ -199,9 +188,7 @@ namespace mde
 
         /// <summary>リスト項目内の段落先頭に入力された"[ ] "/"[x] "をタスクリストのチェックボックスに
         /// 変換する（ライブ入力時用）。MarkdownConverter.BuildNestedListのバッチ変換と対になる処理。
-        /// 見出し・箇条書き・順序付きリストの記号変換（ConvertParagraphToListItem等）と同様、
-        /// 変換のきっかけとなった記号部分（"[ ] "/"[x] "）だけを段落の先頭から取り除き、それ以降に
-        /// 既にあった内容（記述済みの行の先頭に後から記号を書き足した場合など）は書式ごと
+        /// ConvertParagraphToListItem等と同様、記号部分だけを取り除き、それ以降の内容は書式ごと
         /// そのまま残す。</summary>
         /// <param name="a_p">変換する段落（リスト項目直下のものであること）。</param>
         /// <param name="a_checked">"[x] "ならtrue、"[ ] "ならfalse。</param>
@@ -215,21 +202,12 @@ namespace mde
                     "ConvertListItemTextToTaskCheckbox: 変換前 markerTextLength=" + a_markerTextLength +
                     " text=[" + VisualizeForLog(GetParagraphPlainText(a_p)) + "]");
 
-                // ConvertParagraphToListItem等と同じAdvanceByCharCount（TextPointerを1シンボリック
-                // 単位ずつ進め、TextRangeの実際の文字数を積算する方式）は、ここでは使えない。
-                // a_pは既にリスト項目（ListItem）直下の段落であり、行頭には「・」等の箇条書き
-                // マーカーが表示されているが、これは段落のInlinesの一部ではなく、Listが自動的に
-                // 描画しているだけの見た目上の記号である。ところが、a_p.ContentStartを起点に
-                // TextPointer.GetPositionAtOffsetで1シンボリック単位ずつ進めると、このマーカー
-                // 分もTextRange.Textの文字数として一緒に数えてしまうことがある
-                // （InlineStyleEditor.GetSafeRangeTextの説明にある「TextRange(...).Textは、
-                // リスト項目内では行頭のマーカー記号まで文字列に含んでしまうことがある」という
-                // 既知の挙動と同根）。この状態でAdvanceByCharCountを使うと、実際にはマーカー
-                // 記号の分だけ余計にカウントが進んでしまい、本来取り除くべき文字数（"[ ] "の
-                // 4文字）に対して、実際に段落から取り除かれる文字数がそれより少なくなり、
-                // 記号の一部（"]"等）が段落に残ってしまう不具合があった。
-                // そのため、ここではTextPointer・TextRangeを一切使わず、Inlines（Run・Span）の
-                // Textプロパティを直接、実際の文字数分だけ切り詰める、より確実な方法にする。
+                // ConvertParagraphToListItem等が使うAdvanceByCharCount（TextPointerのオフセットを
+                // 積算する方式）はここでは使えない。a_pはリスト項目直下の段落で、行頭の「・」等の
+                // マーカーは見た目上の記号でInlinesの一部ではないが、TextPointer.GetPositionAtOffset
+                // ではこのマーカー分も一緒に数えてしまうことがある（GetSafeRangeTextの説明にある
+                // 既知の挙動と同根）。そのためTextPointer・TextRangeは使わず、Inlines（Run・Span）の
+                // Textプロパティを直接、実際の文字数分だけ切り詰める。
                 RemoveLeadingCharacters(a_p, a_markerTextLength);
 
                 DebugLogger.Log(
@@ -244,23 +222,15 @@ namespace mde
                 else
                 {
                     a_p.Inlines.Add(container);
-                    // 段落の中身がInlineUIContainer（チェックボックス）だけの状態だと、行の
-                    // 高さがこのUIElement自身の大きさ（15px）を基準に計算されてしまい、本文の
-                    // フォントサイズ・行間から決まる本来の行の高さより低くなることがある
-                    // （まだ何も文字が入っていない、真っさらな段落であれば本来の行の高さが
-                    // 使われるのに対し、チェックボックスというUIElementが1つでも入った途端に
-                    // この計算のされ方が変わってしまうように見える）。これにより、文字を
-                    // 入力する前だけ「・」やチェックボックスの位置が箇条書きよりも上に
-                    // ずれて見える不具合があった。空（内容なし）のRunを一緒に入れておくことで、
-                    // 段落に実際の文字用のフォント情報を持つ要素が常に存在する状態にし、行の
-                    // 高さが本文と同じ基準で計算されるようにする。空文字列のRunは、見た目にも
-                    // Markdown書き出し・GetParagraphPlainTextの結果にも影響しない。
+                    // 段落の中身がInlineUIContainer（チェックボックス）だけだと、行の高さがその
+                    // UIElement自身の大きさ（15px）基準になり、本文のフォント・行間から決まる
+                    // 本来の高さより低くなる。空のRunを一緒に入れることで、常に文字用のフォント
+                    // 情報を持つ要素が存在するようにし、行の高さを本文と揃える。見た目にも
+                    // Markdown書き出しにも影響しない。
                     a_p.Inlines.Add(new Run(""));
                 }
-                // 記号除去前に既存の内容があった場合（後から"[ ] "等を書き足して変換した場合）、
-                // ConvertParagraphToListItem等と同様、キャレットはチェックボックスの直後
-                // （＝残った内容の先頭）に置く。ContentEndのままだと、既存の内容の末尾まで
-                // 一気に飛んでしまう。
+                // 記号除去前に既存の内容があった場合、キャレットはチェックボックスの直後（＝
+                // 残った内容の先頭）に置く。ContentEndだと内容の末尾まで飛んでしまう。
                 m_editor.CaretPosition = container.ElementEnd;
             });
             FinishCaretMoveToNewParagraph();
@@ -359,12 +329,11 @@ namespace mde
         }
 
         /// <summary>
-        /// その場で新しく作った段落へCaretPositionを合わせた直後に呼ぶ後始末処理。新しく作った
-        /// （一度もレイアウトが計算されていない）段落へキャレットを合わせた直後にIME（日本語入力）で
-        /// 入力を始めると、変換候補は表示されるのに確定した文字が反映されない不具合があるため、
-        /// UpdateLayoutでレイアウトを確定させたうえで、Keyboard.ClearFocus()→Focus()により
-        /// フォーカスを一旦外して当て直し、内部のTextEditor/IME関連付けを作り直す（単に
-        /// Focus()を呼ぶだけでは、既にフォーカスがある場合は何もしないため効果がない）。
+        /// 新しく作った段落へCaretPositionを合わせた直後に呼ぶ後始末処理。レイアウト未計算の
+        /// 段落へキャレットを合わせた直後にIME入力を始めると変換確定が反映されないため、
+        /// UpdateLayoutでレイアウトを確定させ、Keyboard.ClearFocus()→Focus()でフォーカスを
+        /// 当て直してIME関連付けを作り直す（既にフォーカスがある状態でFocus()だけ呼んでも
+        /// 効果がない）。
         /// </summary>
         private void FinishCaretMoveToNewParagraph()
         {
@@ -374,14 +343,9 @@ namespace mde
         }
 
         /// <summary>リスト項目自身のテキストを取得する（入れ子のサブリストは含まない）。
-        /// マーカー記号を拾ってしまうTextRangeではなく、Inlinesを直接読むため安全。
-        /// 【2026-09追記】Shift+Enterによる段落分割（HeadingCodeBlockEditor.
-        /// InsertParagraphSplitAtCaret参照）により、1つの項目が複数の「自分自身の段落」
-        /// （入れ子のサブリストより前にあるParagraph）を持つことがあるようになったため、
-        /// Blocks.FirstBlockだけでなく、入れ子のサブリストが現れるまでのすべての own-paragraph
-        /// からテキストを集める。これにより、たとえば1つめの段落が空でも2つめ以降の段落に
-        /// 文字があれば、項目全体としては「空ではない」と正しく判定できる
-        /// （CreateOrExitListItemのisEmptyFlg判定が、この結果に依存している）。</summary>
+        /// マーカー記号を拾ってしまうTextRangeではなく、Inlinesを直接読むため安全。項目は
+        /// 複数の「自分自身の段落」を持ちうる（CreateOrExitListItem参照）ため、入れ子のサブ
+        /// リストが現れるまでのすべての段落からテキストを集める。</summary>
         /// <param name="a_li">調べる項目。</param>
         /// <returns>トリム済みのテキスト。画像だけがあり文字がない場合はゼロ幅スペース1文字。</returns>
         public string GetOwnListItemText(ListItem a_li)
@@ -510,11 +474,9 @@ namespace mde
         {
             DebugLogger.Log($"HandleListEnter: 呼び出し depth={GetListNestingDepth(a_parentList)} MarkerStyle={a_parentList.MarkerStyle}");
 
-            // ネストしたリスト（2段目以降）でだけ、新しい項目を作った直後にIME入力を始めると
-            // 変換候補が確定できなくなる不具合が確認されている。1段目（ネストしていない）では
-            // 発生しないため、1段目は従来どおり同期的にドキュメントを書き換えてキャレットを
-            // 移動し、ネストしたリストだけドキュメントの書き換え自体をキー入力の処理から切り
-            // 離したタイミングで行う（ImeCaretMoveHelper.ScheduleCaretMove）。
+            // ネストしたリスト（2段目以降）でだけ、新しい項目作成直後にIME入力を始めると変換候補が
+            // 確定できなくなるため、1段目は同期的にドキュメントを書き換え、ネストしたリストは
+            // キー入力処理から切り離したタイミングで書き換える（ImeCaretMoveHelper.ScheduleCaretMove）。
             bool nestedFlg = a_parentList.Parent is ListItem;
 
             m_originalTextTracker.InvalidateForBlock(a_parentList);
@@ -553,12 +515,9 @@ namespace mde
         /// <returns>合わせるべきTextPointer。</returns>
         private TextPointer GetCaretPositionForNewListParagraph(Paragraph a_para)
         {
-            // 新しい項目の先頭がタスクチェックボックス（InlineUIContainer）の場合、キャレットは
-            // その直後（＝チェックボックスの右隣。分割で持ち越された文字列があれば、その手前）に
-            // 置く。段落全体のContentEndだと、キャレット分割で文字列を持ち越した場合に、
-            // チェックボックスの直後ではなく持ち越した文字列の末尾まで飛んでしまうため、
-            // チェックボックス自身のElementEndを使う（ConvertListItemTextToTaskCheckboxで
-            // 同じ理由からcontainer.ElementEndを使っているのと同じ考え方）。
+            // 先頭がタスクチェックボックスの場合、キャレットはその直後（ElementEnd）に置く。
+            // 段落全体のContentEndだと持ち越した文字列の末尾まで飛んでしまうため
+            // （ConvertListItemTextToTaskCheckboxと同じ考え方）。
             return (a_para.Inlines.FirstInline is InlineUIContainer iuc) ? iuc.ElementEnd : a_para.ContentStart;
         }
 
@@ -574,11 +533,9 @@ namespace mde
         /// <returns>キャレットを移す先の新しい段落。</returns>
         private Paragraph CreateOrExitListItem(ListItem a_li, List a_parentList)
         {
-            // 【2026-09追記】以前は「Blocks.Count > 1」だけを「入れ子のサブリストを持つ」ことの
-            // 目印にしていたが、Shift+Enterによる段落分割（InsertParagraphSplitAtCaret）により、
-            // 入れ子のサブリストが無くても複数の「自分自身の段落」を持つ項目があり得るように
-            // なったため、これだけではもう正しく判定できない。OutdentListItem側で既に使われている
-            // 「Blocks.LastBlockが実際にListかどうか」まで確認する、より確実な判定に揃える。
+            // 項目はShift+Enterによる段落分割（InsertParagraphSplitAtCaret）で、入れ子のサブリストが
+            // 無くても複数の「自分自身の段落」を持ちうるため、「Blocks.Count > 1」だけでは入れ子判定
+            // にならない。OutdentListItemと同様、Blocks.LastBlockが実際にListかどうかで判定する。
             bool hasNestedListFlg = a_li.Blocks.Count > 0 && a_li.Blocks.LastBlock is List;
             bool isEmptyFlg = !hasNestedListFlg && 0 == GetOwnListItemText(a_li).Length;
             DebugLogger.Log($"CreateOrExitListItem: 実行 isEmptyFlg={isEmptyFlg} hasNestedListFlg={hasNestedListFlg}");
@@ -619,16 +576,12 @@ namespace mde
                     newPara.Inlines.Add(BlockStyles.CreateTaskCheckboxContainer(false));
                 }
 
-                // 項目自身の段落（入れ子のサブリストがある場合は対象外。サブリストごと丸ごと
-                // 動かすのは複雑になりすぎるため、これまで通り新しい項目は空のままにする）の
-                // 中で、キャレットより後ろにある内容を新しい項目へ移す。
-                // 【2026-09追記】Shift+Enterによる段落分割（InsertParagraphSplitAtCaret）により、
-                // 項目が複数の「自分自身の段落」を持つことがあるようになったため、常に
-                // Blocks.FirstBlockを対象にするのではなく、キャレットが実際にある段落を探して
-                // 対象にする（見つからない場合は、これまで通りFirstBlockへフォールバックする）。
-                // キャレットのあった段落より後ろに、まだ自分自身の段落が残っている場合
-                // （Shift+Enterで区切られた続きの行）は、それらの段落を丸ごと新しい項目へ移し、
-                // 複数段落の構成を保ったまま項目を分割する。
+                // 項目自身の段落（入れ子のサブリストがある場合は対象外。サブリストごと動かすのは
+                // 複雑になるため新しい項目は空のままにする）の中で、キャレットより後ろの内容を
+                // 新しい項目へ移す。項目は複数の自分自身の段落を持ちうる（上記hasNestedListFlgの
+                // 説明参照）ため、常にBlocks.FirstBlockではなくキャレットが実際にある段落を対象
+                // にし（見つからなければFirstBlockへフォールバック）、その段落より後ろに残る段落は
+                // 丸ごと新しい項目へ移して複数段落の構成を保つ。
                 var laterOwnParas = new List<Paragraph>();
                 if (!hasNestedListFlg)
                 {
@@ -668,10 +621,8 @@ namespace mde
 
                 if (taskCheckboxFlg && 1 == newPara.Inlines.Count)
                 {
-                    // 持ち越された文字列が無かった場合（キャレットが項目の末尾にあった場合など）は、
-                    // これまで通り空のRunも一緒に入れておく（理由はConvertListItemTextToTask
-                    // Checkboxの説明を参照。段落の中身がチェックボックスだけだと、行の高さが
-                    // 本文と違う基準で計算されてしまうため）。
+                    // 持ち越された文字列が無かった場合は、これまで通り空のRunも入れておく
+                    // （理由はConvertListItemTextToTaskCheckbox参照）。
                     newPara.Inlines.Add(new Run(""));
                 }
 
@@ -687,26 +638,19 @@ namespace mde
 
         /// <summary>指定したInlineCollection（項目自身の段落、または入れ子のSpanの中身）から、
         /// キャレット位置より後ろにある内容（書式・Tag・ツールチップ等も含めて丸ごと）だけを
-        /// 取り除き、切り出した内容を返す（呼び出し元は、これを新しく作った項目のInlinesへ
-        /// そのまま追加する想定）。キャレットがちょうどRunの途中にある場合は、そのRunだけを
-        /// 前後半に分割する（前半は元のRunをそのまま段落に残し、後半だけを新しいRunとして
-        /// 切り出す）。
-        /// TextPointerのオフセット計算やTextRange.Textでの範囲取得（a_p.ContentStartを起点に
-        /// するもの）は、リスト項目の段落では行頭のマーカー記号を巻き込んでしまう既知の不具合
-        /// （GetOwnListItemText・ConvertListItemTextToTaskCheckboxの説明を参照）があるため
-        /// 一切使わない。代わりに、キャレット自身を起点とするTextPointer.GetTextInRunと、
-        /// Inline同士のTextPointer比較（CompareTo）だけで判定する（この2つは
-        /// InlineStyleEditor.GetSafeRangeText／CheckInlineFormatTriggerで実績のある、
-        /// リスト項目内でも安全な方法）。</summary>
+        /// 取り除き、切り出した内容を返す。キャレットがRunの途中にある場合は、そのRunを前後半に
+        /// 分割する（前半は元のRunに残し、後半を新しいRunとして切り出す）。
+        /// TextPointerのオフセット計算やTextRange.Textでの範囲取得は、リスト項目の段落では行頭の
+        /// マーカー記号を巻き込む既知の不具合（GetOwnListItemText・ConvertListItemTextToTaskCheckbox
+        /// 参照）があるため使わない。代わりにキャレット起点のTextPointer.GetTextInRunと、Inline
+        /// 同士のTextPointer比較（CompareTo）だけで判定する（GetSafeRangeText／
+        /// CheckInlineFormatTriggerと同じ、リスト項目内でも安全な方法）。</summary>
         /// <param name="a_inlines">分割対象のInlineCollection。</param>
         /// <param name="a_caret">分割の境目とするキャレット位置。</param>
         /// <returns>キャレットより後ろの内容として取り除かれた、新しいInlineのリスト（元の順序のまま）。</returns>
         /// <remarks>
-        /// 【2026-09追記・internal化】もともとはこのクラス内（項目のEnterでの分割）だけで
-        /// 使っていたためprivateだったが、Shift+Enterによる段落分割（HeadingCodeBlockEditor.
-        /// InsertParagraphSplitAtCaret）でも全く同じ「キャレット位置でInlineを書式ごと安全に
-        /// 分割する」処理が必要になったため、internalへ変更し共有する。このメソッド自体は
-        /// インスタンスの状態（m_editor等）を一切使わないため、staticにしても動作は変わらない。
+        /// HeadingCodeBlockEditor.InsertParagraphSplitAtCaret（Shift+Enterでの段落分割）と共有する
+        /// ためinternal。インスタンス状態は使わないためstaticでも成立する。
         /// </remarks>
         internal static List<Inline> SplitInlinesAtCaret(InlineCollection a_inlines, TextPointer a_caret)
         {
@@ -783,17 +727,15 @@ namespace mde
         }
 
         /// <summary>SplitInlinesAtCaretで、Runの途中をキャレット位置で分割する際、後半用に
-        /// 新しく作るRunへ、元のRunの書式・Tag・ツールチップを引き継ぐ。TagがLinkInfo
-        /// （リンクのメタデータ）の場合は、前後半が同じインスタンスを共有すると、右クリック
-        /// メニューの「リンクを編集」が片方のURLだけを書き換えたつもりで両方に反映されてしまう
-        /// （InlineStyleEditor.EditContextLinkはLinkInfoを直接書き換えるため）ので、別インスタンス
-        /// として複製する。それ以外のTag（"bold"等の文字列やAnchorInfo）はイミュータブルか、
-        /// そもそも分割対象になり得ない（AnchorInfoは常に空文字のRunに付くため、キャレットが
-        /// 内部に入り込むことがなく、途中で分割されることがない）ため、そのまま共有してよい。</summary>
+        /// 新しく作るRunへ元のRunの書式・Tag・ツールチップを引き継ぐ。TagがLinkInfo（リンクの
+        /// メタデータ）の場合、前後半が同じインスタンスを共有すると「リンクを編集」が片方だけ
+        /// 書き換えたつもりで両方に反映されてしまう（EditContextLinkはLinkInfoを直接書き換える
+        /// ため）ので、別インスタンスとして複製する。それ以外のTagはイミュータブルか分割対象に
+        /// なり得ないため、そのまま共有してよい。</summary>
         /// <param name="a_original">分割元のRun（前半として残る）。</param>
         /// <param name="a_text">後半として新しいRunに持たせるテキスト。</param>
         /// <returns>書式を引き継いだ、後半用の新しいRun。</returns>
-        /// <remarks>SplitInlinesAtCaretと同じ理由（2026-09追記）でinternalへ変更した。</remarks>
+        /// <remarks>SplitInlinesAtCaretと同じ理由でinternal。</remarks>
         internal static Run CloneRunForSplit(Run a_original, string a_text)
         {
             object tag = a_original.Tag;
@@ -866,15 +808,11 @@ namespace mde
                 return; // 先頭の項目は字下げできない
             }
 
-            // Listオブジェクトの構築（新規作成・複数のListコレクション間での項目の移動）を
-            // mde側で手作りすると、その後そのList内で新しい項目を作成しIME入力を行った際、
-            // 最初の1文字目の変換候補が確定されずに固まる不具合が起きる。そのため構造の変更
-            // 自体はWPF標準の`EditingCommands.IncreaseIndentation`コマンドに任せ、mde独自の
-            // 見た目・データ（ネストした階層を示すMarkerStyle・箇条書き文字を伝えるTag）は、
-            // コマンド実行後にできあがった既存のListオブジェクトの**プロパティだけ**を変更する
-            // 形で復元する。プロパティの復元は、実際にa_parentListとは別の新しいListオブジェクト
-            // が作られた場合のみ行う（そうでない場合に復元すると、字下げされていない項目まで
-            // 含むa_parentList自身のMarkerStyleを誤って書き換えてしまう）。
+            // Listオブジェクトをmde側で手作りすると、IME入力で最初の1文字目の変換候補が確定
+            // されない不具合が起きるため、構造変更はWPF標準のEditingCommands.IncreaseIndentation
+            // に任せ、mde独自の見た目（MarkerStyle・Tag）はコマンド実行後に既存Listのプロパティ
+            // だけを変更して復元する。復元はa_parentListとは別の新しいListが作られた場合のみ
+            // 行う（そうでないとa_parentList自身のMarkerStyleを誤って書き換えてしまう）。
             bool parentOrderedFlg = a_parentList.MarkerStyle == TextMarkerStyle.Decimal;
             int beforeCount = a_parentList.ListItems.Count;
 
@@ -928,11 +866,10 @@ namespace mde
             {
                 EditingCommands.DecreaseIndentation.Execute(null, m_editor);
 
-                // a_li自身が（Blocksの2番目として）trailing siblingsをまとめた
-                // 入れ子Listを持つことになった場合、そのMarkerStyle/Tagを
-                // 復元する。CaretPositionから辿ることで、a_li自身のオブジェクト
-                // 参照がコマンド実行後も同一であることに依存しないようにする
-                // （IndentListItem側の修正と同じ考え方）。
+                // a_li自身がtrailing siblingsをまとめた入れ子Listを持つことになった場合、その
+                // MarkerStyle/Tagを復元する。CaretPositionから辿ることで、a_li自身のオブジェクト
+                // 参照がコマンド実行後も同一であることに依存しないようにする（IndentListItemと
+                // 同じ考え方）。
                 if (m_editor.CaretPosition?.Paragraph is Paragraph fp &&
                     fp.Parent is ListItem li &&
                     li.Blocks.Count > 1 &&

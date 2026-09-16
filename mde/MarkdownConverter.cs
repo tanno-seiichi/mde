@@ -24,8 +24,7 @@ namespace mde
     /// </summary>
     public class MarkdownConverter
     {
-        // 2026-09追記：試験的にアウトラインビュー・フォルダペインの背景色（#FCFDFF）と
-        // 揃えてみたが、効果が薄いとのご判断により元の色（#F8F8F8）へ戻した。
+        // 表のヘッダー行の背景色。アウトラインビュー・フォルダペインの背景色とは意図的に別にしている。
         private static readonly Brush m_headerBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
         private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
         private static readonly Brush m_linkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
@@ -82,19 +81,12 @@ namespace mde
         /// 生の文字列）から、TableCellを組み立てる。&lt;br&gt;で区切られた行それぞれを、
         /// 独立したParagraph（Marginを0にして、見た目には1つのセルの中の複数行にしか見えない
         /// ようにする）として追加する。
-        /// 【2026-09追記・なぜ1つのParagraph＋内部LineBreakではなく、複数のParagraphに
-        /// 分けるのか】セル内でのShift+Enter/Enterによる改行の直後にIMEで入力すると、確定した
-        /// 文字が改行の1つ手前に入ってしまう不具合が、WPFのLineBreak要素とTSF（IME）の連携に
-        /// おける制約として確認された（詳しい調査の経緯はDEVELOPMENT_LOG.md該当セクション、
-        /// HeadingCodeBlockEditor.InsertParagraphSplitAtCaretのコメント参照）。この制約を
-        /// 避けるため、ファイルを新規に読み込んでセルの内容を組み立てる際も、ライブ編集時に
-        /// InsertParagraphSplitAtCaretが作る構造（LineBreakを使わず、複数のParagraphを
-        /// 並べる）とあらかじめ一致させておく。これにより、ファイルを開き直した直後と、
-        /// 実際にセル内でShift+Enter/Enterを押して改行を入力した直後とで、内部構造（延いては
-        /// IMEとの相性）が食い違わないようにしている。
-        /// Markdownとしての書き出しは、この内部表現の違いに影響されない（TableToMarkdown参照。
-        /// 複数のParagraphがある場合はそれぞれを&lt;br&gt;で連結するだけで、以前の「1つの
-        /// Paragraph内の複数のLineBreak」と全く同じ形式のMarkdownが書き出される）。
+        /// LineBreakではなく複数のParagraphに分けているのは、WPFのLineBreakとTSF（IME）の
+        /// 組み合わせで、改行直後にIME確定した文字が1つ手前に入ってしまう不具合があるため
+        /// （HeadingCodeBlockEditor.InsertParagraphSplitAtCaretのコメント参照）。ライブ編集時に
+        /// 同メソッドが作る構造と一致させることで、ファイルを開いた直後と実際に改行を入力した
+        /// 直後とで内部構造が食い違わないようにしている。Markdownとしての書き出しはこの内部
+        /// 表現の違いに影響されない（TableToMarkdown参照）。
         /// </summary>
         /// <param name="a_cellMarkdownText">セル1つ分のMarkdownソース文字列（&lt;br&gt;を含む）。</param>
         /// <param name="a_alignment">このセルが属する列の文字揃え。</param>
@@ -307,13 +299,11 @@ namespace mde
             int number = 1;
             foreach (ListItem li in a_list.ListItems)
             {
-                // 【2026-09追記】項目自身の内容は、以前は必ず1つのParagraph（内部にLineBreakを
-                // 持つことがある）だったが、Shift+Enterによる段落分割
-                // （HeadingCodeBlockEditor.InsertParagraphSplitAtCaret）により、入れ子の
-                // サブリストより前に複数のParagraphが並ぶことがあるようになった。そのため、
-                // Blocks.FirstBlockだけでなく、サブリストが現れるまでのすべてのown-paragraphを
-                // 順に集め、それぞれの中の'\n'（従来通りLineBreakに由来するもの。通常は
-                // 発生しないはずだが念のため）でも分割して、1項目ぶんの継続行一覧を組み立てる。
+                // 項目自身の内容は、Shift+Enterによる段落分割（HeadingCodeBlockEditor.
+                // InsertParagraphSplitAtCaret。理由はBuildTableCellFromMarkdownのコメント参照）
+                // により、入れ子のサブリストより前に複数のParagraphが並ぶことがある。そのため
+                // サブリストが現れるまでのown-paragraphをすべて集め、念のため各段落内の'\n'
+                // （通常は発生しない）でも分割して、1項目分の継続行一覧を組み立てる。
                 var parts = new List<string>();
                 foreach (Block b in li.Blocks)
                 {
@@ -375,15 +365,9 @@ namespace mde
                 foreach (TableCell cell in row.Cells)
                 {
                     var sb = new StringBuilder();
-                    // 【2026-09追記】セル内でShift+Enter/Enterにより改行を挿入すると、以前は
-                    // 1つのParagraph内にLineBreak要素を追加する方式だったが、IME入力位置が
-                    // ずれる不具合（HeadingCodeBlockEditor.InsertParagraphSplitAtCaretの
-                    // コメント参照）への対策として、LineBreakを使わず段落（Paragraph）そのものを
-                    // 複数並べる方式に変更した。そのため、セル内に複数のParagraphがあり得る
-                    // ようになった。各Paragraph（＝改行で区切られた1行分）のテキストの間に、
-                    // 明示的に'\n'を挟んで連結する（以前の「1つのParagraph内のLineBreakが
-                    // ParagraphInlineToMarkdownの中で'\n'として書き出される」動作と、最終的な
-                    // Markdown文字列としては同じ結果になる）。
+                    // セル内の改行はLineBreakではなく複数のParagraphとして保持されている
+                    // （理由はBuildTableCellFromMarkdownのコメント参照）。各Paragraphのテキストを
+                    // '\n'で連結する。
                     bool firstParaFlg = true;
                     foreach (Block b in cell.Blocks)
                     {
@@ -397,16 +381,13 @@ namespace mde
                             firstParaFlg = false;
                         }
                     }
-                    // セル内でShift+Enter/Enterにより挿入した行内改行は、上記の通り'\n'として
-                    // 書き出される。しかし表の1行は必ず1つの物理行として書き出す必要があり
-                    // （読み込み側は「|で始まる行が続く間は表」という行単位の判定をしている。
-                    // ParseTableRow・MarkdownToDocumentの表解析部分を参照）、セルの中に生の
-                    // '\n'をそのまま埋め込むと、その行がそこで終わってしまい、続きが「|」で
-                    // 始まらない別の行として切り離され、表の構造が壊れてしまう（実機で報告
-                    // された不具合）。GFMの慣例に合わせ、セルの中の改行だけは<br>に変換して
-                    // 1つの物理行に収める。読み込み側（ConvertTableCellBrToLineBreak）で
-                    // 元の'\n'へ戻してからAppendInlineMarkdownToParagraphへ渡すことで、
-                    // 通常の段落と同じ仕組みでLineBreakへ復元される。
+                    // セル内の改行（'\n'）は<br>に変換して1つの物理行に収める。表の読み込みは
+                    // 「|で始まる行が続く間は表」という行単位の判定のため（ParseTableRow・
+                    // MarkdownToDocumentの表解析部分を参照）、生の'\n'を残すとその行がそこで
+                    // 終わり、続きが表として認識されず構造が壊れる。GFMの慣例に合わせた形。
+                    // 読み込み側（ConvertTableCellBrToLineBreak）で元の'\n'へ戻してから
+                    // AppendInlineMarkdownToParagraphへ渡し、通常の段落と同じ仕組みで
+                    // LineBreakへ復元する。
                     cells.Add(sb.ToString().Replace("\n", "<br>").Replace("|", "\\|"));
                 }
                 mdRows.Add("| " + string.Join(" | ", cells) + " |");
@@ -831,13 +812,9 @@ namespace mde
                         rg.Rows.Add(row);
                         i++;
                     }
-                    // 2026-08-30：列幅を内容に合わせてコンパクトにする試み
-                    // （BlockStyles.ApplyContentBasedColumnWidths）を一時的に無効化した。
-                    // Pixel幅を指定した列がかえって広く取られ、Star指定した列（内容が長い列）
-                    // が極端に狭く押しつぶされる、という意図と逆の現象が実機で確認されたため
-                    // （原因未特定。WPFのTable列幅アルゴリズムがGridと同じStar/Pixelの
-                    // 比率計算をしていない可能性がある）。原因を確認できるまで、既定の
-                    // 列幅（間延びはするが崩れない状態）に戻す。
+                    // BlockStyles.ApplyContentBasedColumnWidths（列幅を内容に合わせてコンパクトに
+                    // する機能）は無効化中。Pixel指定列が広がりStar指定列が潰れる、意図と逆の
+                    // 現象が確認されたため（原因未特定）。
                     // BlockStyles.ApplyContentBasedColumnWidths(table);
                     // 列幅調整ダイアログ（ステップ2）で明示的に幅が調整された表か、あるいは
                     // メニュー「表示」→「列幅を補正する」がオンの場合に、区切り行のダッシュ数と
@@ -1151,15 +1128,11 @@ namespace mde
                 {
                     return;
                 }
-                // 【2026-09追記】項目の1行目＋継続行を結合した文字列（JoinParagraphSourceLines。
-                // 「表示」→「段落中の改行」設定が既定の「ソースの通りに改行する」であれば、
-                // 各行が'\n'でつながった文字列になる）を、以前は1つのParagraphへそのまま渡し、
-                // 内部の'\n'をLineBreak要素として復元していた。しかし、Shift+Enter/Enterによる
-                // ライブ編集時の改行はLineBreakを使わず段落分割方式に変更した
-                // （HeadingCodeBlockEditor.InsertParagraphSplitAtCaretのコメント参照）ため、
-                // ファイルを新規に読み込む際も同じ構造（複数のParagraphを並べる）にあらかじめ
-                // 揃えておく。'\n'で分割し、1行目は（すでにListItemへ追加済みの）pendingPara
-                // 自身へ、2行目以降は新しく作るown-paragraphへ、それぞれ振り分ける。
+                // 項目の1行目＋継続行を結合した文字列（JoinParagraphSourceLines）を、ライブ編集時の
+                // 改行と同じ構造（LineBreakではなく複数のParagraph。理由はBuildTableCellFrom
+                // Markdownのコメント参照）に揃えて復元する。'\n'で分割し、1行目は（すでに
+                // ListItemへ追加済みの）pendingPara自身へ、2行目以降は新しく作るown-paragraphへ
+                // 振り分ける。
                 string joinedText = JoinParagraphSourceLines(pendingTextLines);
                 string[] ownLines = joinedText.Split('\n');
                 AppendInlineMarkdownToParagraph(pendingPara, ownLines[0], false);
