@@ -149,18 +149,69 @@ namespace mde
 
         private readonly OriginalTextTracker m_originalTextTracker;
 
+        /// <summary>連続する1つ以上のHTMLコメントをまとめて保持するクラス。各コメントごとに、
+        /// その直前にあった空行の数（直前の要素がコメントなら1つ前のコメントとの間、先頭の
+        /// コメントなら直前の実際のBlockとの間、またはファイル先頭からの空行数）も一緒に
+        /// 覚えておく。0は「空行なしで直接連続していた」ことを意味する。DocumentToMarkdown・
+        /// GetMarkdownOffsetForBlockで、元のソースにあった空行の数をそのまま再現するために
+        /// 使う（詳細は<see cref="m_blankLinesBeforeBlock"/>のコメントも参照）。</summary>
+        private class CommentGroupInfo
+        {
+            public readonly List<(int BlankLinesBefore, string Text)> Items = new List<(int, string)>();
+        }
+
         /// <summary>HTMLコメント（&lt;!-- --&gt;）を、Markdownモードで完全に非表示にする
         /// （空行すら残さない）ための仕組み。コメントは独立したBlockとしては表示に追加せず、
-        /// 直後（無ければ直前）の実際のBlockに対して、書き出し時にだけ差し込む文字列として
+        /// 直後（無ければ直前）の実際のBlockに対して、書き出し時にだけ差し込む文字列群として
         /// 覚えておく。キーはBlock参照（ConditionalWeakTableで、不要になれば自動的に解放
         /// される）。MarkdownToDocument（記録）とDocumentToMarkdown・GetMarkdownOffsetForBlock
         /// （書き出し）で共有する。</summary>
-        private readonly ConditionalWeakTable<Block, string> m_leadingComments = new ConditionalWeakTable<Block, string>();
+        private readonly ConditionalWeakTable<Block, CommentGroupInfo> m_leadingComments = new ConditionalWeakTable<Block, CommentGroupInfo>();
 
         /// <summary>ファイル末尾がコメントだけで終わる（直後に実際のBlockが無い）場合に、
         /// 直前のBlockに対して「後に付くコメント」として覚えておく先。詳細は
         /// <see cref="m_leadingComments"/>参照。</summary>
-        private readonly ConditionalWeakTable<Block, string> m_trailingComments = new ConditionalWeakTable<Block, string>();
+        private readonly ConditionalWeakTable<Block, CommentGroupInfo> m_trailingComments = new ConditionalWeakTable<Block, CommentGroupInfo>();
+
+        /// <summary>各トップレベルBlockの「直前（直前のBlock、直前のHTMLコメント、または
+        /// ファイル先頭）との間にあった空行の数」を覚えておく仕組み。Markdownモードへの変換を
+        /// 経ても、元のソースにあった空行の数（0個＝空行なしで直接連続、1個、2個以上…）を
+        /// そのまま復元できるようにするために使う。これが無いと、Markdownモードとソースモードを
+        /// 何度も往復するだけで、実際には何も編集していない（元々ソースモードに存在しなかった
+        /// 改行が増える）のに保存内容が変わってしまい（空行の数が常に1個に揃えられてしまう
+        /// ため）、ファイルを開いてモードを切り替えただけで「変更あり」の警告が出る、といった
+        /// 問題が起きる。記録するのはMarkdownToDocument（ソースの読み込み）で作られたBlockの
+        /// みで、Markdownモードでの編集によって新しく作られたBlock（段落の分割など）には
+        /// 記録が無い。書き出し時（DocumentToMarkdown・GetMarkdownOffsetForBlock）、記録が
+        /// 無いBlockについては、空行1個（従来通りの既定の区切り方）を使う。これにより、
+        /// 「読み込んだファイルの、編集していない箇所の空行の数はそのまま保たれる」ことと、
+        /// 「Markdownモードでの編集によって新しく生まれる区切りは、これまで通り空行1個になる」
+        /// ことの両方を満たす。キーはBlock参照（ConditionalWeakTableで自動的に解放される）。
+        /// 値はint1つを保持するためのSystem.Runtime.CompilerServices.StrongBox&lt;int&gt;
+        /// （ConditionalWeakTableの値は参照型である必要があるための入れ物。intそのものは
+        /// 値型のため直接は使えない）。なお、ファイルの一番最初のBlock（またはコメント）の
+        /// 直前にあった空行や、ファイル末尾の空行は、これまでと同様に保持・復元の対象外
+        /// （常に読み飛ばされる）である。</summary>
+        private readonly ConditionalWeakTable<Block, StrongBox<int>> m_blankLinesBeforeBlock = new ConditionalWeakTable<Block, StrongBox<int>>();
+
+        /// <summary>あるBlockについて<see cref="m_blankLinesBeforeBlock"/>に記録が無い場合
+        /// （Markdownモードでの編集によって新しく作られたBlockなど、ソースの読み込みを
+        /// 経由していない場合）に使う、既定の「直前の空行の数」。1（＝空行1個）にすることで、
+        /// 記録が無いBlockの前後は、これまで通りの区切り方（常に空行1個）になる。</summary>
+        private const int DEFAULT_BLANK_LINES_BEFORE_BLOCK = 1;
+
+        /// <summary>読み込み元のMarkdownソースが、ファイル末尾に改行を持っていたか
+        /// どうか（多くのテキストエディタ・Gitなどの慣習で、最後の行の末尾にも改行を
+        /// 1つ付けるのが一般的）。MarkdownToDocumentで記録し、DocumentToMarkdownで
+        /// 保存時に再現する。これが無いと、無編集でファイルを開いて上書き保存しただけ
+        /// でファイル末尾の改行が失われてしまう。</summary>
+        private bool m_hasTrailingNewlineAtEof;
+
+        /// <summary>読み込み元のMarkdownソースで、最後の実際の内容（Block・HTMLコメント）
+        /// より後、ファイル末尾までにあった、本当に空行だった行の数（ファイル末尾の
+        /// 改行そのもの＝<see cref="m_hasTrailingNewlineAtEof"/>とは別に数える）。
+        /// MarkdownToDocumentで記録し、DocumentToMarkdownで保存時に再現する。</summary>
+        private int m_trailingBlankLinesAtEof;
 
         private readonly ImageManager m_imageManager;
         private readonly Func<bool> m_preserveSourceLineBreaksFlg;
@@ -202,68 +253,115 @@ namespace mde
         // ======================================================================
 
         /// <summary>
+        /// 元のソースで、あるトップレベル要素（Block・HTMLコメント）の直前にあった空行の数から、
+        /// 書き出し時に実際に使う区切りの改行文字列を求める。文書の一番最初の要素の前には
+        /// 区切りを入れない（空文字列）。0個（空行なしで直接連続）なら改行1つ、N個なら
+        /// 改行(N+1)個（=空行N個）を挟む。DocumentToMarkdown・GetMarkdownOffsetForBlockの
+        /// 両方から、同じ規則で使う。</summary>
+        /// <param name="a_blankLinesBefore">元のソースで直前にあった空行の数。</param>
+        /// <param name="a_isFirstFlg">文書内で最初に書き出す要素かどうか。</param>
+        /// <returns>区切りとして挿入する文字列。</returns>
+        private static string BuildElementSeparator(int a_blankLinesBefore, bool a_isFirstFlg)
+        {
+            if (a_isFirstFlg)
+            {
+                return "";
+            }
+            return new string('\n', Math.Max(1, a_blankLinesBefore + 1));
+        }
+
+        /// <summary>
         /// FlowDocumentをMarkdown文字列へ書き出す。編集されていないブロックは元テキストを
         /// そのまま使い（OriginalTextTracker参照）、編集済み・新規のブロックは現在の構造から
-        /// 新しく組み立て直す。
+        /// 新しく組み立て直す。要素同士の間の空行の数は、元のソースにあった数をそのまま
+        /// 再現する（<see cref="m_blankLinesBeforeBlock"/>参照）。これにより、実際には何も
+        /// 編集していないのにMarkdownモードとソースモードを往復しただけで保存内容が変わって
+        /// しまう、という問題を防いでいる。
         /// </summary>
         /// <param name="a_doc">対象の文書。</param>
         /// <returns>改行はすべて "\n" のMarkdownテキスト（実ファイルへの改行コード変換は保存時に行う）。</returns>
         public string DocumentToMarkdown(FlowDocument a_doc)
         {
-            var lines = new List<string>();
+            var sb = new StringBuilder();
+            bool firstFlg = true;
+
+            // HTMLコメントのグループ（連続する1つ以上のコメント）を、各コメント自身が覚えている
+            // 「直前の空行の数」をそのまま再現しながら書き出す。
+            void AppendCommentGroup(CommentGroupInfo a_group)
+            {
+                foreach (var item in a_group.Items)
+                {
+                    sb.Append(BuildElementSeparator(item.BlankLinesBefore, firstFlg));
+                    sb.Append(item.Text);
+                    firstFlg = false;
+                }
+            }
+
             foreach (Block block in a_doc.Blocks)
             {
-                // <br>による段落内改行の「続き」段落（MarkdownToDocument参照）は、通常のブロック
-                // 区切り（空行="\n\n"）ではなく、直前の行へ<br>で連結する。
+                // <br>による段落内改行の「続き」段落（MarkdownToDocument参照）は、通常の
+                // ブロック区切り（空行）ではなく、直前の行へ<br>で連結する。文書の一番最初の
+                // 要素がいきなり続き段落になることはないはずだが（続き段落の前には必ず、その
+                // 分割元となった段落の先頭部分があるため）、念のためfirstFlgでも判定する。
                 if (block is Paragraph contPara && contPara.Tag is BrContinuationInfo)
                 {
                     string contS = BlockToMarkdown(block);
-                    if (lines.Count > 0)
+                    if (!firstFlg)
                     {
-                        lines[lines.Count - 1] += "<br>\n" + contS;
+                        sb.Append("<br>\n");
                     }
-                    else
-                    {
-                        lines.Add(contS);
-                    }
+                    sb.Append(contS);
+                    firstFlg = false;
                     // <br>の続き段落が文書の最後のBlockで、その直後（ファイル末尾）にHTMLコメント
                     // だけがあった場合、そのコメントはこの続き段落へ「後に付くコメント」として
                     // 結び付けられている（MarkdownToDocument参照）。上のcontinueでこの分岐を
                     // 抜けてしまうと、下のm_trailingCommentsのチェックに到達せず、コメントの
                     // 内容が保存時に失われてしまうため、ここでも必ずチェックする。
-                    if (m_trailingComments.TryGetValue(block, out var trailingCommentForCont))
+                    if (m_trailingComments.TryGetValue(block, out var trailingGroupForCont))
                     {
-                        lines.Add(trailingCommentForCont);
+                        AppendCommentGroup(trailingGroupForCont);
                     }
                     continue;
                 }
                 // このBlockの直前にあったHTMLコメント（Blockとしては存在しない。
-                // m_leadingComments参照）を、通常のブロックと同じ"\n\n"区切りで先に出力する。
-                if (m_leadingComments.TryGetValue(block, out var leadingComment))
+                // m_leadingComments参照）を、元のソースにあった空行の数を再現しながら先に出力する。
+                if (m_leadingComments.TryGetValue(block, out var leadingGroup))
                 {
-                    lines.Add(leadingComment);
+                    AppendCommentGroup(leadingGroup);
                 }
                 string s = m_originalTextTracker.TryGetOriginal(block, out var original) ? original : BlockToMarkdown(block);
                 if (!string.IsNullOrWhiteSpace(s))
                 {
-                    lines.Add(s);
+                    int blankLinesBeforeBlock = m_blankLinesBeforeBlock.TryGetValue(block, out var box) ? box.Value : DEFAULT_BLANK_LINES_BEFORE_BLOCK;
+                    sb.Append(BuildElementSeparator(blankLinesBeforeBlock, firstFlg));
+                    sb.Append(s);
+                    firstFlg = false;
                 }
                 // ファイル末尾がコメントだけで終わる場合の、このBlockに付随する「後に付く
                 // コメント」（m_trailingComments参照）。
-                if (m_trailingComments.TryGetValue(block, out var trailingComment))
+                if (m_trailingComments.TryGetValue(block, out var trailingGroup))
                 {
-                    lines.Add(trailingComment);
+                    AppendCommentGroup(trailingGroup);
                 }
             }
-            return string.Join("\n\n", lines);
+            // 元のソースがファイル末尾に持っていた改行・空行を再現する（m_hasTrailingNewlineAtEof・
+            // m_trailingBlankLinesAtEof参照）。何も書き出していない（空の文書の）場合は何も付け
+            // 加えない。
+            if (!firstFlg && m_hasTrailingNewlineAtEof)
+            {
+                sb.Append('\n');
+                sb.Append('\n', m_trailingBlankLinesAtEof);
+            }
+            return sb.ToString();
         }
 
         /// <summary>
         /// DocumentToMarkdownが生成する文字列の中で、指定したトップレベルブロックの内容が
         /// 開始する文字位置を求める。モード切替時（Markdownモード→ソースモード）のカーソル
         /// 位置復元のために使う。DocumentToMarkdownと全く同じ規則（空白のみのブロックは
-        /// 出力されない、ブロック間は"\n\n"で連結）に従って計算するが、DocumentToMarkdown
-        /// 自体は変更しない（既存の呼び出し箇所への影響を避けるため）。
+        /// 出力されない、要素間は元のソースにあった空行の数をそのまま再現する）に従って
+        /// 計算するが、DocumentToMarkdown自体は変更しない（既存の呼び出し箇所への影響を
+        /// 避けるため）。
         /// </summary>
         /// <param name="a_doc">対象の文書。</param>
         /// <param name="a_targetBlock">位置を求めたいトップレベルブロック。</param>
@@ -273,39 +371,48 @@ namespace mde
         {
             int offset = 0;
             bool firstFlg = true;
+
+            void AddCommentGroupOffset(CommentGroupInfo a_group)
+            {
+                foreach (var item in a_group.Items)
+                {
+                    offset += BuildElementSeparator(item.BlankLinesBefore, firstFlg).Length;
+                    offset += item.Text.Length;
+                    firstFlg = false;
+                }
+            }
+
             foreach (Block block in a_doc.Blocks)
             {
                 // DocumentToMarkdownの<br>連結規則（直前の行へ"<br>\n"で連結）と一致させる。
                 if (block is Paragraph contPara && contPara.Tag is BrContinuationInfo)
                 {
-                    offset += "<br>\n".Length;
+                    if (!firstFlg)
+                    {
+                        offset += "<br>\n".Length;
+                    }
                     string contS = BlockToMarkdown(block);
                     if (ReferenceEquals(block, a_targetBlock))
                     {
                         return offset;
                     }
                     offset += contS.Length;
+                    firstFlg = false;
                     // DocumentToMarkdownと同じく、この続き段落に「後に付くコメント」
                     // （m_trailingComments）が結び付いている場合、以降のオフセットがずれない
                     // よう加算しておく（このBlockが文書の最後の場合、実際には後続ブロックは
                     // 存在しないため影響しないが、一貫性のため処理しておく）。
-                    if (m_trailingComments.TryGetValue(block, out var trailingCommentForCont))
+                    if (m_trailingComments.TryGetValue(block, out var trailingGroupForCont))
                     {
-                        offset += 2;
-                        offset += trailingCommentForCont.Length;
+                        AddCommentGroupOffset(trailingGroupForCont);
                     }
                     continue;
                 }
                 // DocumentToMarkdownと同じく、このBlockの直前のHTMLコメント分もオフセットに
                 // 加算してから本体へ進む（対象ブロック自身がコメントになることはない）。
-                if (m_leadingComments.TryGetValue(block, out var leadingComment))
+                if (m_leadingComments.TryGetValue(block, out var leadingGroup))
                 {
-                    if (!firstFlg)
-                    {
-                        offset += 2;
-                    }
-                    offset += leadingComment.Length;
-                    firstFlg = false;
+                    AddCommentGroupOffset(leadingGroup);
                 }
                 string s = m_originalTextTracker.TryGetOriginal(block, out var original) ? original : BlockToMarkdown(block);
                 if (string.IsNullOrWhiteSpace(s))
@@ -316,10 +423,8 @@ namespace mde
                     }
                     continue;
                 }
-                if (!firstFlg)
-                {
-                    offset += 2; // 区切りの "\n\n"
-                }
+                int blankLinesBeforeBlock = m_blankLinesBeforeBlock.TryGetValue(block, out var box) ? box.Value : DEFAULT_BLANK_LINES_BEFORE_BLOCK;
+                offset += BuildElementSeparator(blankLinesBeforeBlock, firstFlg).Length;
                 if (ReferenceEquals(block, a_targetBlock))
                 {
                     return offset;
@@ -328,10 +433,9 @@ namespace mde
                 firstFlg = false;
                 // このBlockに付随する「後に付くコメント」（ファイル末尾がコメントだけの場合）分も、
                 // 以降のブロックのオフセットがずれないよう加算しておく。
-                if (m_trailingComments.TryGetValue(block, out var trailingComment))
+                if (m_trailingComments.TryGetValue(block, out var trailingGroup))
                 {
-                    offset += 2;
-                    offset += trailingComment.Length;
+                    AddCommentGroupOffset(trailingGroup);
                 }
             }
             return -1;
@@ -730,24 +834,43 @@ namespace mde
             m_leadingComments.Clear();
             m_trailingComments.Clear();
             // 直前に読み取った、まだどのBlockにも結び付けていないHTMLコメント（複数可）。
+            // 各要素は(そのコメントの直前にあった空行の数, コメントの元のテキスト)の組。
             // 詳細は下のHTMLコメント解析箇所のコメント参照。
-            var pendingComments = new List<string>();
+            var pendingComments = new List<(int BlankLinesBefore, string Text)>();
+            // 直前の要素（Block・HTMLコメント・ファイル先頭）から数えて、まだどの要素にも
+            // 「消費」されていない空行の数。空行をまたぐたびに加算し、次のコメント・Blockが
+            // 見つかった時点でその要素の「直前の空行の数」として記録し、0へリセットする
+            // （m_blankLinesBeforeBlock・CommentGroupInfo.BlankLinesBefore参照）。
+            int pendingBlankLines = 0;
             // 新しいトップレベルBlockをa_doc.Blocksへ追加する直前に呼ぶ。貯まっている
             // pendingCommentsがあれば、そのBlockの「直前のコメント」として結び付ける。
             void AttachPendingComments(Block a_newBlock)
             {
                 if (pendingComments.Count > 0)
                 {
-                    m_leadingComments.Add(a_newBlock, string.Join("\n\n", pendingComments));
+                    var group = new CommentGroupInfo();
+                    group.Items.AddRange(pendingComments);
+                    m_leadingComments.Add(a_newBlock, group);
                     pendingComments.Clear();
                 }
             }
+            // 新しいトップレベルBlockをa_doc.Blocksへ追加する直前に呼ぶ。このBlockの直前
+            // （直前のBlock・直前のHTMLコメント・またはファイル先頭）との間にあった空行の数を
+            // 記録し、pendingBlankLinesを0へリセットする。
+            void RecordBlankLinesBeforeBlock(Block a_newBlock)
+            {
+                m_blankLinesBeforeBlock.Add(a_newBlock, new StrongBox<int>(pendingBlankLines));
+                pendingBlankLines = 0;
+            }
             var lines = a_md.Replace("\r\n", "\n").Split('\n');
+            // ソースがファイル末尾に改行を持っていたか（Split('\n')の最後の要素が空文字列に
+            // なるのは、末尾に改行があった場合のみ）。DocumentToMarkdownでの再現に使う。
+            m_hasTrailingNewlineAtEof = lines.Length > 0 && "" == lines[lines.Length - 1];
             int i = 0;
             while (i < lines.Length)
             {
                 string line = lines[i];
-                if (IsEffectivelyBlankLine(line)) { i++; continue; }
+                if (IsEffectivelyBlankLine(line)) { pendingBlankLines++; i++; continue; }
 
                 int blockStart = i;
 
@@ -777,6 +900,7 @@ namespace mde
                         }
                         codePara.Inlines.Add(new Run(codeLines[k]));
                     }
+                    RecordBlankLinesBeforeBlock(codePara);
                     AttachPendingComments(codePara);
                     a_doc.Blocks.Add(codePara);
                     m_originalTextTracker.Record(codePara, lines, blockStart, i);
@@ -795,6 +919,8 @@ namespace mde
                 // 普通に見える・編集できる。
                 if (line.TrimStart().StartsWith("<!--"))
                 {
+                    int blankLinesBeforeThisComment = pendingBlankLines;
+                    pendingBlankLines = 0;
                     var commentLines = new List<string> { line };
                     bool closedFlg = line.Contains("-->");
                     i++;
@@ -804,7 +930,7 @@ namespace mde
                         closedFlg = lines[i].Contains("-->");
                         i++;
                     }
-                    pendingComments.Add(string.Join("\n", commentLines));
+                    pendingComments.Add((blankLinesBeforeThisComment, string.Join("\n", commentLines)));
                     continue;
                 }
 
@@ -814,6 +940,7 @@ namespace mde
                     var p = new Paragraph();
                     BlockStyles.ApplyHeadingStyle(p, hMatch.Groups[1].Value.Length);
                     AppendInlineMarkdownToParagraph(p, hMatch.Groups[2].Value, false);
+                    RecordBlankLinesBeforeBlock(p);
                     AttachPendingComments(p);
                     a_doc.Blocks.Add(p);
                     i++;
@@ -829,6 +956,7 @@ namespace mde
                 {
                     var hrPara = new Paragraph();
                     BlockStyles.ApplyHorizontalRuleStyle(hrPara);
+                    RecordBlankLinesBeforeBlock(hrPara);
                     AttachPendingComments(hrPara);
                     a_doc.Blocks.Add(hrPara);
                     i++;
@@ -875,6 +1003,7 @@ namespace mde
                         break;
                     }
                     var list = BuildNestedList(listLines);
+                    RecordBlankLinesBeforeBlock(list);
                     AttachPendingComments(list);
                     a_doc.Blocks.Add(list);
                     m_originalTextTracker.Record(list, lines, blockStart, i);
@@ -976,6 +1105,7 @@ namespace mde
                     // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて
                     // 設定する（詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
                     BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
+                    RecordBlankLinesBeforeBlock(table);
                     AttachPendingComments(table);
                     a_doc.Blocks.Add(table);
                     m_originalTextTracker.Record(table, lines, blockStart, i);
@@ -1015,6 +1145,7 @@ namespace mde
                 }
                 var para = new Paragraph();
                 AppendInlineMarkdownToParagraph(para, brSegments[0], false);
+                RecordBlankLinesBeforeBlock(para);
                 AttachPendingComments(para);
                 a_doc.Blocks.Add(para);
                 if (1 == brSegments.Length)
@@ -1061,18 +1192,45 @@ namespace mde
             // コメントだけだった）場合は、結び付け先として空の段落を1つ作る。
             if (pendingComments.Count > 0)
             {
-                string trailingText = string.Join("\n\n", pendingComments);
+                var trailingGroup = new CommentGroupInfo();
+                trailingGroup.Items.AddRange(pendingComments);
                 if (a_doc.Blocks.Count > 0)
                 {
-                    m_trailingComments.Add(a_doc.Blocks.LastBlock, trailingText);
+                    m_trailingComments.Add(a_doc.Blocks.LastBlock, trailingGroup);
                 }
                 else
                 {
                     var onlyPara = new Paragraph();
-                    m_leadingComments.Add(onlyPara, trailingText);
+                    m_leadingComments.Add(onlyPara, trailingGroup);
                     a_doc.Blocks.Add(onlyPara);
                 }
                 pendingComments.Clear();
+            }
+
+            // ファイル末尾（最後の実際の内容の後）にあった空行の数。pendingBlankLinesは
+            // この時点で、最後に消費された要素（Block・HTMLコメント）から数えて、まだ
+            // 消費されていない空行の数を表す。ただし、ソースがファイル末尾に改行を持って
+            // いた場合（m_hasTrailingNewlineAtEof）、その分割結果の末尾には必ず1つ余分な
+            // 空文字列要素が生じる（例："X\n"→["X",""]）ため、これは「本当の空行」では
+            // ない（単なる末尾の改行）として1つ差し引く。DocumentToMarkdownでの再現に使う。
+            m_trailingBlankLinesAtEof = (m_hasTrailingNewlineAtEof && pendingBlankLines > 0)
+                ? pendingBlankLines - 1
+                : pendingBlankLines;
+
+            // ファイル末尾に本当の空行があった場合、Markdownモード（WYSIWYG表示）でも
+            // その位置へカーソルを移動できるよう、目印として空の段落を1つ追加しておく
+            // （Typora等、他のエディタでは末尾の空行にカーソルを置けるため、それに合わせた）。
+            // 保存時に書き出す文字列自体は、この段落の有無に関わらずm_hasTrailingNewlineAtEof・
+            // m_trailingBlankLinesAtEofの記録からそのまま再現される（DocumentToMarkdown参照。
+            // この段落自身は空白のみのため、書き出し対象からは除外される）ため、この段落は
+            // 表示・カーソル移動のためだけの目印である。空行が複数あった場合でも、末尾へ
+            // カーソルを移動できれば十分なため、追加する空の段落は常に1つだけとする。
+            // ごく普通の空のParagraph（Tagなし、LineBreakも一切含まない）であり、14.55節・
+            // 14.57節で対策したLineBreakとIMEの組み合わせの不具合とは無関係のため、IME面での
+            // 懸念はない。
+            if (a_doc.Blocks.Count > 0 && m_trailingBlankLinesAtEof > 0)
+            {
+                a_doc.Blocks.Add(new Paragraph());
             }
 
             if (0 == a_doc.Blocks.Count)
@@ -1178,8 +1336,8 @@ namespace mde
         /// <returns>各セルのテキストの一覧。</returns>
         /// <summary>
         /// 通常の段落を組み立てている最中に、この行で段落を打ち切るべきかどうかを判定する。
-        /// 空行のほか、見出し・コードブロック・箇条書き・表など、他の種類のブロックの開始を
-        /// 示す行であれば true を返す。
+        /// 空行のほか、見出し・コードブロック・箇条書き・表・HTMLコメントなど、他の種類の
+        /// ブロック（またはコメント）の開始を示す行であれば true を返す。
         /// </summary>
         /// <param name="a_line">判定したい行。</param>
         /// <returns>この行より前で段落を打ち切るべきなら true。</returns>
@@ -1206,6 +1364,16 @@ namespace mde
                 return true;
             }
             if (Regex.IsMatch(a_line, "^ {0,3}([-*_])\\1{2,}\\s*$"))
+            {
+                return true;
+            }
+            // HTMLコメント（<!-- -->）。空行を挟まずに段落の直後へコメントを書いた場合でも、
+            // このチェックが無いと段落側の継続スキャン（この関数を使う側のwhileループ）が
+            // コメント行をただの本文として段落へ取り込んでしまい、コメントとして認識されなく
+            // なってしまう（MarkdownToDocumentのコメント解析分岐は、トップレベルの新しい
+            // ブロックを探すタイミングでのみ働くため）。空行の有無にかかわらずコメントを
+            // 正しく認識できるよう、ここで段落の境界として扱う。
+            if (a_line.TrimStart().StartsWith("<!--"))
             {
                 return true;
             }
