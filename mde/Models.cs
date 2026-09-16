@@ -63,19 +63,6 @@ namespace mde
     }
 
     /// <summary>
-    /// HTMLコメント（&lt;!-- ... --&gt;。複数行にまたがる場合を含む）を表す段落（Paragraph）の
-    /// Tagに設定するメタデータ。Markdownモード（WYSIWYG表示）では内容を表示しない
-    /// （MarkdownConverter.MarkdownToDocument参照）ため、元のコメント文字列をそのまま
-    /// ここに保持しておき、書き出し時（BlockToMarkdown）にそのまま書き戻す。
-    /// </summary>
-    public class HtmlCommentInfo
-    {
-        /// <summary>"&lt;!--"から"--&gt;"までの、コメントの元の文字列そのまま
-        /// （複数行の場合は"\n"区切り）。</summary>
-        public string RawText { get; set; }
-    }
-
-    /// <summary>
     /// 通常の段落中に書かれた&lt;br&gt;による行内改行の「続き」段落（Paragraph）のTagに
     /// 設定するマーカー用クラス。中身を持たない目印としてのみ使う。表のセル・箇条書き項目と
     /// 同じ理由（WPFのLineBreakとIMEの組み合わせの不具合対策。HeadingCodeBlockEditor.
