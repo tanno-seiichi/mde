@@ -142,9 +142,8 @@ namespace mde
         /// <param name="sender">ボタン。</param>
         /// <param name="e">クリックイベント。</param>
         // ---- フォルダ全体スコープでの「次を検索」「前を検索」共通の位置情報。
-        // 「今どのファイルの何件目の一致箇所を見ているか」という1つの状態を、次を検索・前を検索の
-        // 両方で共有して使う（別々の状態にしていると、方向を切り替えた時に「今どこにいるか」が
-        // 引き継がれず、そのファイルの先頭または末尾からやり直してしまう不具合があったため）。 ----
+        // 「今どのファイルの何件目の一致箇所を見ているか」という状態を両方で共有する
+        // （別々にすると、方向を切り替えた時に位置を見失いファイルの先頭/末尾からやり直してしまう）。 ----
         private List<string> m_folderFindFileList;
         private int m_folderFindCurrentFileIdx = -1;
         private List<TextRange> m_folderFindCurrentFileMatches;
@@ -204,8 +203,8 @@ namespace mde
         }
 
         /// <summary>
-        /// 原因切り分けのため、SelectFileNode（IsSelected/IsExpandedの設定を含む）自体を、
-        /// エディタ側の操作が完全に終わった後まで丸ごと遅らせて呼び出す。
+        /// SelectFileNode（IsSelected/IsExpandedの設定を含む）は、エディタ側の操作が
+        /// 完全に終わった後まで遅らせて呼び出す（同時に行うと競合する）。
         /// </summary>
         /// <param name="a_path">選択したいファイルの絶対パス。</param>
         private void SelectFileNodeDeferred(string a_path)
@@ -253,10 +252,9 @@ namespace mde
         }
 
         /// <summary>
-        /// 「すべて検索」の結果一覧からファイルをダブルクリックで開いた直後など、すでに
-        /// ある特定のファイル・一致箇所を表示している状態から、次を検索/前を検索がそこから
-        /// 正しく続けられるよう位置情報を作り直す（合わせておかないと、直後の次を検索が
-        /// 「まだこのファイルの1件目を見ていない」と誤解して同じ箇所を再度表示してしまう）。
+        /// 「すべて検索」の結果一覧からファイルをダブルクリックで開いた直後など、既に特定の
+        /// ファイル・一致箇所を表示している状態から、次を検索/前を検索が正しく続けられる
+        /// よう位置情報を作り直す。
         /// </summary>
         /// <param name="a_path">今表示しているファイルの絶対パス。</param>
         /// <param name="a_matches">そのファイル内のすべての一致箇所。</param>

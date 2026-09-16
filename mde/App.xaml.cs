@@ -24,20 +24,16 @@ namespace mde
             base.OnStartup(a_args);
             DispatcherUnhandledException += AppDispatcherUnhandledException;
 
-            // F1キーで「Readmeを開く」を、アプリ内のどのウインドウ（メインウインドウ本体・
-            // 検索と置換・バージョン情報・行間の設定等、各種ダイアログ）からでも呼び出せるように
-            // する。個々のウインドウのPreviewKeyDownへ1つずつ実装する代わりに、Windowクラス
-            // 全体に対するクラスハンドラーとして登録することで、今後ウインドウ（ダイアログ）が
-            // 増えた場合にも、個別の対応漏れなく効くようにしている。
+            // F1でReadmeを開く操作を全ウインドウ（メインウインドウ・各種ダイアログ）で有効にする。
+            // 個別にPreviewKeyDownを実装せず、Windowクラス全体のハンドラーとして登録することで、
+            // 新規ウインドウ追加時の対応漏れを防ぐ。
             EventManager.RegisterClassHandler(typeof(Window), Window.PreviewKeyDownEvent,
                 new KeyEventHandler(GlobalPreviewKeyDown));
         }
 
-        /// <summary>F1キーで「Readmeを開く」を実行する。押した時にキーボードフォーカスが
-        /// あったウインドウ自身がMainWindowであればそのまま、検索と置換・バージョン情報等の
-        /// ダイアログであれば、そのOwnerを辿って対応するMainWindowを探し、そちらでReadmeを
-        /// 開く（ダイアログは各々Owner=（そのダイアログを開いたMainWindow）で生成されている
-        /// ため、必ずどこかでMainWindowに辿り着く）。</summary>
+        /// <summary>F1キーで「Readmeを開く」を実行する。フォーカスのあったウインドウがダイアログ
+        /// の場合はOwnerを辿ってMainWindowを探す（各ダイアログはOwner=呼び出し元のMainWindowで
+        /// 生成されるため必ず辿り着く）。</summary>
         /// <param name="a_sender">キー入力があった時にフォーカスを持っていたウインドウ。</param>
         /// <param name="a_args">キーイベントの引数。</param>
         private void GlobalPreviewKeyDown(object a_sender, KeyEventArgs a_args)

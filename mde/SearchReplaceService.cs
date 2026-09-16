@@ -42,29 +42,22 @@ namespace mde
         private static readonly System.Windows.Media.Brush m_matchHighlightBrush =
             new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xE1, 0x66));
 
-        /// <summary>「現在」の一致箇所（次を検索/前を検索でキャレットが移動した先、または
-        /// フォルダ全体検索・結果一覧からジャンプした先）専用の強調表示色。「すべて検索」で
-        /// 一括強調表示された他の一致箇所（m_matchHighlightBrush、黄色）と見分けられるよう、
-        /// 別の色にしている。</summary>
+        /// <summary>「現在の一致箇所」専用の強調表示色。「すべて検索」の一括ハイライト色
+        /// （m_matchHighlightBrush、黄色）と区別するため別色にしている。</summary>
         private static readonly System.Windows.Media.Brush m_currentMatchHighlightBrush =
             new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xA5, 0x4D));
 
-        /// <summary>直前に強調表示した一致箇所（フォーカスの有無に関わらず見えるよう、選択
-        /// ハイライトではなくRunの背景色を直接変更する方式にしている）。次に検索する前、または
-        /// 見えなくなる前にこの背景色を消しておく必要がある。「すべて検索」では複数件を
-        /// 同時に強調表示するため、単一ではなく一覧として保持する。</summary>
+        /// <summary>強調表示中の一致箇所一覧。「すべて検索」で複数件を同時にハイライトするため
+        /// リストで保持する。次の検索前には必ずクリアすること。</summary>
         private readonly List<TextRange> m_currentHighlights = new List<TextRange>();
 
-        /// <summary>今「現在の一致箇所」としてm_currentMatchHighlightBrushで強調表示している
-        /// 範囲（あれば）。次にキャレットが別の一致箇所へ移動した際、この範囲の背景色を通常の
-        /// m_matchHighlightBrushへ戻すために保持している。m_currentHighlightsの一覧から除外
-        /// されたり、ClearHighlight()/OnDocumentReplaced()で文書ごと無効化された場合は、
-        /// 古い（存在しない、または別文書の）範囲を誤って触らないようnullに戻す。</summary>
+        /// <summary>「現在の一致箇所」として専用色で強調表示中の範囲。次に移動する際に通常色へ
+        /// 戻すために保持し、ClearHighlight()/OnDocumentReplaced()時はnullに戻して無効な範囲を
+        /// 誤って触らないようにする。</summary>
         private TextRange m_currentMatchRange;
 
-        /// <summary>直前にFindNext/FindPreviousInCurrentFileで見つかった一致箇所。次を検索/前を
-        /// 検索の検索開始位置の基準にする（CaretPosition/Selectionだけに頼ると、検索方向を
-        /// 切り替えた直後に正しく動かないことがあったため）。</summary>
+        /// <summary>直前にFindNext/FindPreviousInCurrentFileで見つかった一致箇所。検索方向を
+        /// 切り替えた直後もCaretPosition/Selectionだけに頼らず正しく続行するための基準位置。</summary>
         private TextRange m_lastFoundMatch;
 
         /// <summary>直前に「すべて検索」で強調表示した際の検索条件。次を検索/前を検索が
@@ -201,9 +194,8 @@ namespace mde
         }
 
         /// <summary>
-        /// fromIndex以降で、テキスト中の次の一致を探す。1件ずつ確認する置換セッション
-        /// （現在のファイル・フォルダ全体のどちらでも）が、正規表現の有無によらず統一的に
-        /// 使えるように用意されている。
+        /// fromIndex以降で、テキスト中の次の一致を探す。正規表現の有無を問わず、1件ずつ確認する
+        /// 置換セッションから共通で使う。
         /// </summary>
         /// <param name="a_text">対象の文字列。</param>
         /// <param name="a_term">検索する文字列。</param>
@@ -271,14 +263,8 @@ namespace mde
         //  現在のファイルでのライブ検索
         // ======================================================================
 
-        /// <summary>
-        /// キャレットより後ろで次に一致する箇所を選択・スクロール表示する。見つからなければ
-        /// 文書の先頭から探し直す（折り返し検索）。実際のライブ文書に対してTextPointerで
-        /// 直接検索するため、画面上でハイライトされる（ただし、一致箇所が見出し・箇条書き項目・
-        /// 埋め込み画像などのRunの境界をまたぐ場合は検出できないという制約がある）。
-        /// </summary>
-        /// <summary>直前の一致箇所の背景ハイライトを取り除く。検索と置換ウィンドウが閉じられた
-        /// 時などに、外部から呼び出してハイライトを消すためにも公開している。</summary>
+        /// <summary>直前の一致箇所の背景ハイライトを取り除く。検索と置換ウィンドウを閉じる際など、
+        /// 外部からも呼べるようpublicにしている。</summary>
         public void ClearHighlight()
         {
             if (m_currentHighlights.Count > 0)
@@ -298,11 +284,9 @@ namespace mde
         }
 
         /// <summary>
-        /// 文書が別のファイルの内容へ丸ごと入れ替わったことを通知する。それまでのハイライト
-        /// 一覧は、破棄された古い文書を指したままの無効な参照になるため、（プロパティを
-        /// 触ろうとせず）追跡情報だけを単純にクリアする。これを呼ばずにいると、ファイル切り替え
-        /// 後も「直前のすべて検索と同じ条件だから」という誤判定で、新しいファイルでの
-        /// ハイライトがスキップされてしまう。
+        /// 文書が別ファイルへ丸ごと入れ替わったことを通知する。古い文書を指す無効な参照になる
+        /// ハイライト追跡情報をクリアするだけで、プロパティ操作はしない。呼び忘れると、ファイル
+        /// 切替後も直前の「すべて検索」条件と誤判定されハイライトが更新されない。
         /// </summary>
         public void OnDocumentReplaced()
         {
@@ -329,11 +313,9 @@ namespace mde
         }
 
         /// <summary>
-        /// 指定範囲に背景ハイライトを付ける（既存のハイライトはクリアしない。複数件を同時に
-        /// 強調表示する場合は、呼び出し側が先にClearHighlight()を呼んでおくこと）。
-        /// RichTextBoxの標準の選択ハイライトは、コントロールがキーボードフォーカスを持っていない
-        /// 間（検索と置換ウィンドウを操作している間など）は薄く表示されてしまうため、フォーカスの
-        /// 有無に関わらず確実に見えるよう、選択ではなくRunの背景色を直接変更する方式にしている。
+        /// 指定範囲に背景ハイライトを付ける（既存のハイライトはクリアしない。複数件を強調する
+        /// 場合は呼び出し側が先にClearHighlight()を呼ぶこと）。RichTextBox標準の選択ハイライトは
+        /// フォーカスが無いと薄く表示されるため、Runの背景色を直接変更する方式にしている。
         /// </summary>
         /// <param name="a_range">対象の範囲。</param>
         private void AddHighlight(TextRange a_range)
@@ -342,10 +324,8 @@ namespace mde
             m_currentHighlights.Add(a_range);
         }
 
-        /// <summary>1件だけを強調表示する（既存のハイライトはクリアする）。この1件は、他に
-        /// 見分ける対象がなくても「現在の一致箇所」として扱い、MarkCurrentMatchで専用の色に
-        /// する（「すべて検索」の後で同じ検索語のまま次を検索/前を検索に切り替わっても、
-        /// 見た目が一貫するようにするため）。</summary>
+        /// <summary>1件だけを強調表示する（既存のハイライトはクリアする）。この1件は常に
+        /// MarkCurrentMatchで「現在の一致箇所」専用色にし、表示を一貫させる。</summary>
         /// <param name="a_range">対象の範囲。</param>
         private void ApplyHighlight(TextRange a_range)
         {
@@ -355,13 +335,11 @@ namespace mde
         }
 
         /// <summary>
-        /// 「現在の一致箇所」を切り替える。直前に「現在」として専用色（m_currentMatchHighlight
-        /// Brush）で強調表示していた範囲があれば、通常の一致箇所と同じ色（m_matchHighlightBrush）
-        /// へ戻し、新しい範囲に専用色を適用する。範囲がすでに文書上に存在しない場合は、
-        /// ApplyPropertyValueが例外を投げることがあるため、それぞれ個別にtry/catchしている。
+        /// 「現在の一致箇所」を切り替える。前回の範囲は通常色（m_matchHighlightBrush）へ戻し、
+        /// 新しい範囲に専用色（m_currentMatchHighlightBrush）を適用する。範囲が文書上に存在しない
+        /// 場合ApplyPropertyValueが例外を投げうるため、それぞれtry/catchで保護している。
         /// </summary>
-        /// <param name="a_range">新たに「現在の一致箇所」とする範囲。nullなら単に前回分を
-        /// 通常色へ戻すだけになる。</param>
+        /// <param name="a_range">新たに「現在の一致箇所」とする範囲。nullなら前回分を通常色へ戻すのみ。</param>
         private void MarkCurrentMatch(TextRange a_range)
         {
             TextRange previous = m_currentMatchRange;
@@ -409,10 +387,7 @@ namespace mde
                 AddHighlight(found);
                 results.Add(found);
 
-                // found.Endが何らかの理由でposより前へ戻ってしまう（または進まない）場合、
-                // 同じ箇所を繰り返し見つけ続けてループが実質止まってしまい、それより後ろに
-                // ある一致箇所（別の見出しなど）に到達できなくなる。必ず前へ進むことを
-                // 保証する安全策として、進んでいなければ1文字分だけ強制的に前進させる。
+                // found.Endがposより前後進しない場合は無限ループになるため、1文字分だけ強制前進させる。
                 TextPointer next = found.End;
                 if (null == next ||
                     next.CompareTo(pos) <= 0)
@@ -441,10 +416,8 @@ namespace mde
             m_editor.Selection.Select(a_range.Start, a_range.End);
             MarkCurrentMatch(a_range);
 
-            // ファイルを切り替えた直後（LoadFileで文書を丸ごと再構築した直後）は、その文書再構築に
-            // 伴うキャレット位置の確定処理が非同期に行われ、ここで即座にCaretPositionを設定しても
-            // 後から上書きされてしまうことがある。そのため、レイアウトが一段落したタイミング
-            // （Loaded優先度）まで、スクロール・キャレット設定を遅らせて確実性を高める。
+            // 文書再構築直後はキャレット位置確定処理が非同期のため、即座に設定すると上書きされる
+            // ことがある。レイアウトが落ち着くLoaded優先度まで遅延させる。
             m_editor.Dispatcher.BeginInvoke(new Action(() =>
             {
                 m_scrollParagraphToTop(a_range.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
@@ -459,6 +432,12 @@ namespace mde
             }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
+        /// <summary>キャレットより後ろで次の一致箇所を検索・選択・スクロール表示する。見つから
+        /// なければ文書先頭から探し直す（折り返し検索）。Run境界をまたぐ一致は検出できない。</summary>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>見つかればtrue。</returns>
         public bool FindNextInCurrentFile(string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
         {
             if (m_isSourceMode() || string.IsNullOrEmpty(a_term))
@@ -466,9 +445,8 @@ namespace mde
                 return false;
             }
 
-            // lastFoundMatchがあれば、その終端から続ける。CaretPosition/Selectionだけに頼らない
-            // のは、「前を検索」から「次を検索」へ切り替えた直後など、キャレット位置の設定が
-            // 検索方向の切り替えとかみ合わず、1回目だけ正しく進まないことがあったため。
+            // lastFoundMatchがあればその終端から続ける。検索方向切替直後はCaretPosition頼みだと
+            // 1回目だけ正しく進まないことがあるため。
             TextPointer startFrom = m_lastFoundMatch?.End ?? m_editor.CaretPosition;
             TextRange found = FindTextFrom(startFrom, a_term, a_caseSensitiveFlg, a_useRegexFlg)
                             ?? FindTextFrom(m_editor.Document.ContentStart, a_term, a_caseSensitiveFlg, a_useRegexFlg);
@@ -490,10 +468,7 @@ namespace mde
             }
             m_lastFoundMatch = found;
 
-            // ファイルを開いた直後など、文書の再構築に伴うキャレット位置の確定処理が非同期に
-            // 行われることがあり、ここで即座にCaretPositionを設定しても後から上書きされて
-            // しまうことがある。レイアウトが一段落したタイミング（Loaded優先度）まで、
-            // スクロール・キャレット設定を遅らせて確実性を高める。
+            // 文書再構築直後はキャレット確定処理が非同期のため、Loaded優先度まで遅延させる。
             m_editor.Dispatcher.BeginInvoke(new Action(() =>
             {
                 m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);
@@ -690,10 +665,7 @@ namespace mde
             }
             m_lastFoundMatch = found;
 
-            // ファイルを開いた直後など、文書の再構築に伴うキャレット位置の確定処理が非同期に
-            // 行われることがあり、ここで即座にCaretPositionを設定しても後から上書きされて
-            // しまうことがある。レイアウトが一段落したタイミング（Loaded優先度）まで、
-            // スクロール・キャレット設定を遅らせて確実性を高める。
+            // 文書再構築直後はキャレット確定処理が非同期のため、Loaded優先度まで遅延させる。
             m_editor.Dispatcher.BeginInvoke(new Action(() =>
             {
                 m_scrollParagraphToTop(found.Start.Paragraph ?? m_editor.Document.Blocks.FirstBlock as Paragraph);

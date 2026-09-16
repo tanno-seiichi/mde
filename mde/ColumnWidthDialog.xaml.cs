@@ -1,12 +1,10 @@
 // ColumnWidthDialog.xaml.cs
 //
 // Part of mde (Markdown インラインエディタ).
-// A small modal dialog for adjusting each column's width (expressed as a plain number that
-// corresponds to the separator row's dash count), shown from the m_editor's right-click
-// "列幅を調整…" table menu item. The number of rows in this dialog is not fixed (it depends
-// on how many columns the target table has), so the input rows are built dynamically in the
-// constructor rather than declared statically in XAML (unlike TableSizeDialog/PdfMarginDialog,
-// which always have a fixed number of fields).
+// A small modal dialog for adjusting each column's width (a number corresponding to the
+// separator row's dash count), shown from the right-click "列幅を調整…" table menu item.
+// The row count varies with the target table's column count, so input rows are built
+// dynamically in the constructor rather than declared statically in XAML.
 
 using System.Collections.Generic;
 using System.Linq;
@@ -25,11 +23,9 @@ namespace mde
         /// TextChangedイベントで「自動計算」を意図せずオフにしてしまわないための抑制フラグ。</summary>
         private bool m_suppressAutoUncheckFlg;
 
-        /// <summary>ダイアログがOKで閉じた後の、列ごとの値（区切り行のダッシュ数）。
-        /// 入力順は、コンストラクタに渡した列の順序と一致する。「自動計算」がオンのまま
-        /// OKされた場合は、すべて既定値（BlockStyles.TABLE_COLUMN_DEFAULT_DASH_COUNT）になる
-        /// （呼び出し側で「未調整の表に戻す」操作として扱われる。TableEditor.ApplyColumnWidths・
-        /// BlockStyles.ApplyEffectiveColumnWidths参照）。</summary>
+        /// <summary>ダイアログがOKで閉じた後の、列ごとの値（区切り行のダッシュ数）。入力順は
+        /// コンストラクタに渡した列の順序と一致する。「自動計算」がオンのままOKされた場合は
+        /// すべて既定値（BlockStyles.TABLE_COLUMN_DEFAULT_DASH_COUNT）になる。</summary>
         public List<int> DashCounts { get; private set; }
 
         /// <summary>
@@ -93,9 +89,7 @@ namespace mde
         }
 
         /// <summary>「自動計算」がオンならDashCountsをすべて既定値にし、オフなら各入力欄の値を
-        /// 検証・下限3・上限60でクランプしてDashCountsへ格納する（下限・上限はBlockStyles.
-        /// TABLE_COLUMN_MIN_DASH_COUNT・TABLE_COLUMN_MAX_DASH_COUNTと一致させてある）。
-        /// いずれの場合もOKで閉じる。</summary>
+        /// 検証・クランプしてDashCountsへ格納する。いずれの場合もOKで閉じる。</summary>
         /// <param name="a_sender">OKボタン。</param>
         /// <param name="a_args">Clickイベント。</param>
         private void OkClick(object a_sender, RoutedEventArgs a_args)

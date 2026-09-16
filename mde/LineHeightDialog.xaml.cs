@@ -32,9 +32,8 @@ namespace mde
             m_originalValue = a_initialValue;
             m_onPreview = a_onPreview;
 
-            // Minimum/Maximumの設定に伴う暗黙のValueChanged発火（InitializeComponent実行中に
-            // 既定値0が範囲外になることで起こる）が、まだ準備の整っていないこのコンストラクタの
-            // 処理と衝突しないよう、初期値の設定が終わってからイベントハンドラを登録する。
+            // InitializeComponent中にMinimum/Maximumが設定されると既定値0が範囲外になり
+            // ValueChangedが暗黙に発火するため、初期値の設定後にハンドラを登録する。
             m_updatingFlg = true;
             m_slider.Value = a_initialValue;
             m_valueBox.Text = a_initialValue.ToString("0");

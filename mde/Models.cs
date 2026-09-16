@@ -15,10 +15,9 @@ namespace mde
     /// </summary>
     public class ImageInfo
     {
-        // WPFのクリップボードXaml形式（RichTextBox間のリッチなコピー&ペーストで使われる）は
-        // XamlWriterによるシリアライズに依存しており、これは通常「公開プロパティ」だけを
-        // 対象にする。フィールドのままだとRunのTagに持たせたこのオブジェクトの中身が
-        // コピー&ペースト時に失われる可能性があるため、自動実装プロパティにしている。
+        // 自動実装プロパティにしているのは、WPFのクリップボードXaml形式（RichTextBox間の
+        // コピー&ペーストで使用）がXamlWriterで公開プロパティのみをシリアライズするため。
+        // フィールドのままだと貼り付け時にTagの内容が失われる。
 
         /// <summary>Markdown/HTML上に書かれていた元のsrc（相対パス・絶対パス・URLなど）。</summary>
         public string OriginalSrc { get; set; }
@@ -78,15 +77,13 @@ namespace mde
         /// <summary>Markdown形式の場合の、[text](url "title")のタイトル部分（省略時はnull）。</summary>
         public string Title { get; set; }
 
-        /// <summary>true の場合、&lt;email@example.com&gt; 形式（山括弧のメールアドレス自動リンク）
-        /// から読み込まれたことを示す。保存時に &lt;url&gt; ではなく &lt;email@example.com&gt;
-        /// （mailto:を除いた元のアドレス）として書き戻すために使う。</summary>
+        /// <summary>true の場合、&lt;email@example.com&gt; 形式（山括弧のメール自動リンク）から
+        /// 読み込まれたことを示す。保存時に mailto: を除いた元のアドレス形式で書き戻すために使う。</summary>
         public bool IsEmailAutoLinkFlg { get; set; }
     }
 
-    /// <summary>アウトラインペインの1項目（見出し1つ分）。フォルダツリーペインのFileSystemItemと
-    /// 同じ考え方で、折りたたみ可能なツリー構造として扱えるよう、子見出し一覧・展開状態・
-    /// 選択状態を持つ（フォルダビューを参考にした実装。DEVELOPMENT_LOG.md参照）。</summary>
+    /// <summary>アウトラインペインの1項目（見出し1つ分）。FileSystemItemと同様、折りたたみ可能な
+    /// ツリーとして扱うため子見出し一覧・展開状態・選択状態を持つ。</summary>
     public class OutlineEntry : INotifyPropertyChanged
     {
         public event PropertyChangedEventHandler PropertyChanged;
@@ -106,9 +103,8 @@ namespace mde
 
         private bool m_isExpandedFlg = true;
 
-        /// <summary>TreeViewの展開状態（バインディング用）。既定はtrue（新しくできた見出しは
-        /// 展開された状態で表示する）。OutlineManager.Refreshで一覧を作り直す際、同じ見出し
-        /// （同じParagraph）については、作り直す前の状態をそのまま引き継ぐ。</summary>
+        /// <summary>TreeViewの展開状態（バインディング用）。既定はtrue。OutlineManager.Refresh
+        /// で一覧を作り直す際、同じParagraphの見出しは元の展開状態を引き継ぐ。</summary>
         public bool IsExpanded
         {
             get => m_isExpandedFlg;

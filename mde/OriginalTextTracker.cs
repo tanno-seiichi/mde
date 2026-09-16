@@ -1,14 +1,12 @@
 ﻿// OriginalTextTracker.cs
 //
 // mde (Markdown インラインエディタ) の一部。
-// 「編集していないブロック（見出し・段落・箇条書き・表・コードブロック）は、保存時に
-// 元のテキストをそのまま書き戻す」仕組みを担当するクラス。読み込み時に各ブロックの
-// 元のソーステキストを記憶しておき、実際に編集されたブロックだけを記憶から取り除くことで、
-// 保存時にどちらを使うべきか判定できるようにする。
+// 「編集していないブロックは保存時に元のテキストをそのまま書き戻す」仕組みを担当する。
+// 読み込み時に各ブロックの元ソーステキストを記憶し、編集されたブロックだけ記憶から
+// 除去することで、保存時にどちらを使うか判定する。
 //
 // MarkdownConverter・ListEditor・TableEditor・InlineStyleEditor など、文書構造を直接
-// いじる複数のクラスから共有される協力オブジェクトとして使う（delegateではなく、
-// 状態を持つ本物のオブジェクトとして渡す）。
+// 操作する複数クラスが共有する協力オブジェクト（状態を持つ実体として渡す）。
 
 using System.Runtime.CompilerServices;
 using System.Windows;
@@ -18,10 +16,9 @@ using System.Windows.Documents;
 namespace mde
 {
     /// <summary>
-    /// 各トップレベルブロック（FlowDocument.Blocksの直接の子）について、読み込み時点の
-    /// 元テキストを記憶し、そのブロックが編集されたら記憶を破棄する。ブロックのオブジェクト
-    /// 参照をキーにした ConditionalWeakTable を使っているため、ブロックが不要になれば
-    /// 自動的にエントリも解放される。
+    /// 各トップレベルブロック（FlowDocument.Blocksの直接の子）について読み込み時の元テキストを
+    /// 記憶し、編集されたら破棄する。ブロック参照をキーにしたConditionalWeakTableを使うため、
+    /// 不要になったブロックのエントリは自動的に解放される。
     /// </summary>
     public class OriginalTextTracker
     {
@@ -47,8 +44,7 @@ namespace mde
 
         /// <summary>
         /// 指定位置から上へたどり、FlowDocument.Blocksの直接の子であるトップレベルブロックを
-        /// 見つける（すでにトップレベルの段落ならその段落自身、箇条書き項目や表のセルの中の
-        /// 位置なら、それを含むList/Table）。
+        /// 見つける（トップレベル段落ならその段落自身、リスト項目や表セル内ならそれを含むList/Table）。
         /// </summary>
         /// <param name="a_position">起点となる位置。</param>
         /// <returns>見つかったトップレベルブロック。positionがnullなら null。</returns>
@@ -74,9 +70,8 @@ namespace mde
         }
 
         /// <summary>
-        /// 指定位置にあるブロック（またはそれを含むトップレベルブロック）を「編集済み」として
-        /// 記憶から取り除く。保存時にはこのブロックは元テキストではなく、現在の構造から
-        /// 新たに組み立て直したテキストが使われるようになる。
+        /// 指定位置のブロック（を含むトップレベルブロック）を「編集済み」として記憶から取り除く。
+        /// 以降、保存時は元テキストでなく現在の構造から組み立て直したテキストが使われる。
         /// </summary>
         /// <param name="a_position">編集が行われた位置。</param>
         public void Invalidate(TextPointer a_position)

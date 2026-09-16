@@ -47,16 +47,10 @@ namespace mde
 
         /// <summary>現在の文書から見出しを収集し、一覧を作り直す。フォルダツリーペインと同じ
         /// 折りたたみ可能なツリー構造にするため、見出しレベルに応じた入れ子（親子関係）を
-        /// 組み立てる（レベルが浅い見出しほど上位、直前に出てきたそれより浅いレベルの見出しの
-        /// 子になる）。同じ見出し（Paragraphが変わっていないもの）については、作り直す前の
-        /// 展開状態（IsExpanded）と検索一致の強調表示（IsSearchMatch）をそのまま引き継ぐ。
-        ///
-        /// IsSearchMatchも引き継ぐ必要があるのは、EditorTextChanged（ScheduleOutlineRefresh）が
-        /// プログラム側の変更（LoadFileでのファイル読み込みなど）でも発生してしまい、「すべて
-        /// 検索」等でIsSearchMatchを立てた直後に、それとは無関係な理由でRefresh()が再度呼ばれて
-        /// 一覧を作り直してしまうことがあるため。以前はIsExpandedしか引き継いでいなかったため、
-        /// このタイミングでIsSearchMatchが失われ、検索結果のアウトラインでの強調表示（黄色）が
-        /// 表示されなくなる不具合があった。</summary>
+        /// 組み立てる（レベルが浅い見出しほど上位）。同じ見出し（Paragraphが同一）については、
+        /// 作り直す前の展開状態（IsExpanded）と検索一致の強調表示（IsSearchMatch）を引き継ぐ。
+        /// EditorTextChangedはプログラム側の変更（LoadFile等）でも発火しRefresh()を呼び直すため、
+        /// IsSearchMatchも引き継がないと検索結果の強調表示が消えてしまう。</summary>
         public void Refresh()
         {
             var expandedStateByTarget = new Dictionary<Paragraph, bool>();
@@ -109,9 +103,7 @@ namespace mde
                 ancestorStack.Add(entry);
             }
 
-            // 祖先への強調伝播（PropagateSearchMatchToAncestors）で立てたIsSearchMatchは、上の
-            // 引き継ぎだけでは（祖先側のTargetにも別途記録されているため理屈上は引き継がれるが、
-            // 念のため）再構築後の親子関係に対して確実に再計算しておく。
+            // 祖先への強調伝播は、再構築後の親子関係に対して念のため再計算しておく。
             PropagateSearchMatchToAncestors(Items);
         }
 
@@ -272,11 +264,10 @@ namespace mde
 
         /// <summary>
         /// プログラム側から（検索結果に合わせてなど）アウトラインペインのSelectedItemを
-        /// 変更する時に立てるフラグ。SelectionChangedイベントは、ユーザーがクリックした時と
-        /// プログラム側から変更した時の両方で発生するため、このフラグでユーザー操作かどうかを
-        /// 区別し、プログラム側からの変更ではエディタのキャレット・スクロールを動かさない
-        /// ようにする（動かしてしまうと、検索結果へジャンプした直後にキャレットが見出しの
-        /// 先頭へ引き戻されてしまう）。
+        /// 変更する時に立てるフラグ。SelectionChangedはユーザークリックとプログラム変更の
+        /// 両方で発生するため、このフラグで区別し、プログラム側からの変更ではエディタの
+        /// キャレット・スクロールを動かさないようにする（動かすと検索結果ジャンプ直後に
+        /// キャレットが見出し先頭へ引き戻されてしまう）。
         /// </summary>
         private bool m_suppressSelectionNavigationFlg;
 
@@ -305,26 +296,19 @@ namespace mde
             if (a_args.NewValue is OutlineEntry entry && null != entry.Target)
             {
                 Paragraph target = entry.Target;
-                // ここでFocus()を同期的に（SelectedItemChangedの中で即座に）呼ぶと、
-                // クリックされたTreeViewItem自身がまだ「選択状態にする・自分にフォーカスを
-                // 当てる」という処理を完了しきっていない同じタイミングでキーボードフォーカスを
-                // 強制的に奪ってしまい、TreeViewItem側の選択確定処理と競合する。この競合により、
-                // 1回目のクリックでは項目が選択状態にならず、2回目のクリック（＝実質的に
-                // ダブルクリック）でようやく選択できる、という不具合が発生する（フォルダペインの
-                // LoadFileはこのFocus()呼び出しを行っていないため、この問題が起きない）。
-                // クリックの入力処理が完全に終わった直後まで遅延させることで、この競合を避ける。
+                // Focus()をSelectedItemChanged内で同期的に呼ぶと、TreeViewItem自身の選択確定
+                // 処理とキーボードフォーカスの奪い合いが起き、1回目のクリックでは選択されず
+                // 2回目（実質ダブルクリック）でようやく選択される不具合が起きる（フォルダ
+                // ペインのLoadFileはFocus()を呼ばないためこの問題が起きない）。クリックの
+                // 入力処理が完全に終わった直後まで遅延させることでこの競合を避ける。
                 m_editor.Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    // ソースモード中は、Markdown側の（非表示になっている）m_editorを操作しても
-                    // 見た目には何も反映されない。ソースモードのままクリックした見出しの場所へ
-                    // 移動できるよう、表示中のソースエディタ側で対応する行へジャンプする（モードの
-                    // 切り替えは行わない）。
-                    //
-                    // targetはm_editor.Documentの中のParagraphのままだが、これはアウトライン
-                    // 一覧自体がm_editor.Documentから作られているため、対応関係は保たれている。
-                    // ただし、ソースモードに入った後にソース側だけを編集していた場合、アウトライン
-                    // 一覧はその編集を反映していない（ソースモード中はアウトラインが自動更新
-                    // されない、既存の制限）ため、その間の編集量によっては多少ずれることがある。
+                    // ソースモード中はMarkdown側（非表示）のm_editorを操作しても見た目に
+                    // 反映されないため、表示中のソースエディタ側で対応する行へジャンプする
+                    // （モードの切り替えは行わない）。targetの対応関係はアウトライン一覧が
+                    // m_editor.Documentから作られているため保たれているが、ソースモード中は
+                    // アウトラインが自動更新されないため、その間の編集量によっては多少ずれる
+                    // ことがある。
                     if (m_isSourceModeFunc())
                     {
                         int offset = m_getMarkdownOffsetForBlockFunc(m_editor.Document, target);
@@ -338,16 +322,10 @@ namespace mde
                             DebugLogger.Log($"OutlineManager.HandleSelectionChanged(source): line={line} caretIndex={m_sourceEditor.CaretIndex}");
                             if (line >= 0)
                             {
-                                // ScrollToLineは「見えていなければ最小限だけスクロールする」
-                                // 仕様のため、既に見えている行だと一番上への移動が起きない
-                                // ことがある。他のスクロール処理と同じ対策で、先に一旦先頭へ
-                                // リセットしてから改めて対象行へスクロールする。
-                                //
-                                // 2つの呼び出しの間にレイアウトを確定させる処理がないと、
-                                // 「一番上へのスクロール」がまだ実際には反映されていない状態の
-                                // まま「対象行が見えているか」の判定が行われてしまう可能性が
-                                // あるため、間にUpdateLayout()を挟んで確実に反映させる
-                                // （MainWindow.xaml.csのToggleModeBtnClickと同じ対策）。
+                                // ScrollToLineは既に見えている行には最小限しか動かない仕様のため、
+                                // 先に先頭へリセットしてから対象行へスクロールする（他のスクロール
+                                // 処理と同じ対策）。間にUpdateLayout()を挟み、リセットを確実に
+                                // 反映させてから判定させる（ToggleModeBtnClickと同じ対策）。
                                 m_sourceEditor.ScrollToLine(0);
                                 m_sourceEditor.UpdateLayout();
                                 m_sourceEditor.ScrollToLine(line);
@@ -365,17 +343,14 @@ namespace mde
         }
 
         /// <summary>
-        /// 指定した段落が、表示領域の一番上に完全な形で見えるようスクロールする。すでに画面内に
-        /// 見えている場合、標準のBringIntoViewは「見えているので何もしない」という挙動になり
-        /// 一番上への移動が起きないため、先に一旦スクロール位置を先頭へリセットしてから
-        /// BringIntoViewを呼ぶことで、毎回確実に一番上へ移動するようにしている。
+        /// 指定した段落が表示領域の一番上に見えるようスクロールする。標準のBringIntoViewは
+        /// 既に見えている場合は何もしないため、常に一番上へ移動するとは限らない。
         /// </summary>
         /// <param name="a_p">スクロール先の段落。</param>
         /// <param name="a_editor">対象のRichTextBox。</param>
         public static void ScrollParagraphToTop(Paragraph a_p, RichTextBox a_editor)
         {
-            // WPF標準のBringIntoViewが、表示領域の一番上へ正しくスクロールしてくれる
-            // （既に画面内に見えている場合は何もしない、という仕様のトレードオフを受け入れている）。
+            // 既に見えている場合は移動しない、というBringIntoViewの仕様のトレードオフを受け入れている。
             a_p.BringIntoView();
         }
 

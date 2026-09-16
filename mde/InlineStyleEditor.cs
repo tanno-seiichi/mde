@@ -43,15 +43,6 @@ namespace mde
         /// <summary>右クリック時にマウス下にあった段落（コードブロック丸ごとコピー等に使う）。</summary>
         public Paragraph ContextParagraph { get; set; }
 
-        /// <summary>
-        /// InlineStyleEditorを構築する。
-        /// </summary>
-        /// <param name="editor">編集対象のRichTextBox。</param>
-        /// <param name="originalTextTracker">「元テキスト保持」の追跡役。</param>
-        /// <param name="runAsProgrammaticChange">処理を「プログラムによる変更」として実行するdelegate。</param>
-        /// <param name="markDirty">ファイルが変更されたことを通知するdelegate。</param>
-        /// <param name="refreshOutline">アウトラインペインの再構築を依頼するdelegate。</param>
-        /// <param name="blockToMarkdown">ブロックをMarkdownテキストへ変換するdelegate（コードブロックのコピーに使う）。</param>
         private readonly Func<string> m_getCurrentFileDirectory;
         private readonly Action<string> m_loadFile;
         private readonly Func<string, bool> m_isWithinLoadedFolder;
@@ -123,17 +114,14 @@ namespace mde
             ApplyInlineStyle(a_style);
         }
 
-        /// <summary>現在の選択範囲を、指定URLへのリンクRunに置き換える。</summary>
-        /// <param name="url">リンク先URL。</param>
         /// <summary>
-        /// 指定した範囲のテキストを、リストのマーカー記号を巻き込まない安全な方法で取得する。
-        /// m_editor.Selection.TextやTextRange.Textは、選択範囲が箇条書き項目の中にある場合、
-        /// 行頭のマーカー記号（「1.」や「•」）まで文字列に含んでしまうことがあるため、
-        /// 代わりにRunのテキストを直接1区間ずつたどって連結する。
+        /// 選択範囲のテキストを取得する。Selection.TextやTextRange.Textは箇条書き項目内では
+        /// 行頭マーカー（「1.」「•」等）まで含んでしまうため、Runのテキストを1区間ずつ
+        /// たどって連結する。
         /// </summary>
         /// <param name="a_start">範囲の開始位置。</param>
         /// <param name="a_end">範囲の終了位置。</param>
-        /// <returns>範囲内のプレーンテキスト。</returns>
+        /// <returns>範囲内のプレーンテキスト（マーカー記号を含まない）。</returns>
         private string GetSafeRangeText(TextPointer a_start, TextPointer a_end)
         {
             var sb = new StringBuilder();
@@ -177,6 +165,8 @@ namespace mde
             return sb.ToString();
         }
 
+        /// <summary>現在の選択範囲を、指定URLへのリンクRunに置き換える。</summary>
+        /// <param name="a_url">リンク先URL。</param>
         public void ApplyLinkStyle(string a_url)
         {
             if (null == m_editor.Selection || m_editor.Selection.IsEmpty)
@@ -209,10 +199,9 @@ namespace mde
             m_markDirty();
         }
 
-        /// <summary>右クリック「文字装飾」の通常スタイル実装。現在の選択範囲を、指定スタイルの
-        /// 新しいRunで置き換える。既存のRunのプロパティを個別にリセットしようとすると、
-        /// WPFの仕様上（FontFamilyをnullにできない等）うまくいかないケースがあるため、
-        /// 常に新しいRunを作り直す方式にしている。</summary>
+        /// <summary>右クリック「文字装飾」の通常スタイル実装。選択範囲を指定スタイルの新しいRunに
+        /// 置き換える。既存Runのプロパティ個別リセットはWPFの制約（FontFamilyをnullにできない等）
+        /// で失敗するため、常に新規Runを作り直す。</summary>
         /// <param name="a_style">"normal"、"code"、"bold"、"strikethrough"、"underline"のいずれか。</param>
         private void ApplyInlineStyle(string a_style)
         {
@@ -433,9 +422,8 @@ namespace mde
         }
 
         /// <summary>現在の文書内で、指定した見出しテキストまたはカスタムアンカー（&lt;a a_id&gt;）に
-        /// 一致するジャンプ先を探し、そこまでスクロールする。見出しの完全なテキストとの一致に
-        /// 加えて、GitHub等が見出しから自動生成する「スラッグ」形式のアンカー（例：
-        /// 見出し「7. 依存ライブラリ」に対する #7-依存ライブラリ）にも対応する。</summary>
+        /// 一致する箇所へスクロールする。見出しの完全一致に加え、GitHub形式のスラッグ
+        /// （例：「7. 依存ライブラリ」→ #7-依存ライブラリ）にも対応する。</summary>
         /// <param name="a_anchor">見出しの完全なテキスト、見出しのスラッグ、またはアンカーのid。</param>
         public void JumpToAnchor(string a_anchor)
         {
@@ -457,9 +445,8 @@ namespace mde
                         OutlineManager.ScrollParagraphToTop(p, m_editor);
                         return;
                     }
-                    // 完全一致が見つからない場合に備えて、GitHub形式のスラッグが一致する
-                    // 最初の見出しを覚えておく（このループの後半で他の見出しが完全一致する
-                    // 可能性がまだ残っているため、ここでは即座にジャンプしない）。
+                    // 完全一致を優先するため即ジャンプせず、スラッグが一致する最初の
+                    // 見出しを保持しておく（後続に完全一致がある可能性があるため）。
                     if (null == slugMatch && SlugifyHeading(text) == a_anchor)
                     {
                         slugMatch = p;
@@ -490,9 +477,8 @@ namespace mde
         }
 
         /// <summary>
-        /// 見出しのテキストから、GitHub等が採用している方式に近いアンカー用スラッグを生成する。
-        /// 小文字化した上で、英数字・アンダースコア・ハイフン・空白・Unicodeの文字（日本語等）
-        /// 以外の記号を取り除き、空白をハイフンに置き換える。
+        /// 見出しテキストから、GitHub方式に近いアンカー用スラッグを生成する。小文字化し、
+        /// 英数字・_・-・空白・Unicode文字以外の記号を除去して、空白をハイフンに置換する。
         /// </summary>
         /// <param name="a_headingText">見出しの完全なテキスト。</param>
         /// <returns>アンカー用のスラッグ文字列。</returns>
@@ -618,14 +604,6 @@ namespace mde
         // ======================================================================
 
         /// <summary>
-        /// 直前に入力した文字が、キャレット位置で `コード`、**太字**、~~取り消し線~~、
-        /// または[リンク](a_url)の記法を閉じたかどうかを調べ、そうであればそのMarkdown記法を
-        /// スタイル付きのRunへ即座に置き換える。1つのRunの中のテキストだけでなく、
-        /// 後ろ向きに複数のRunをまたいでたどるため、段落中のどこでも（箇条書き項目の中でも）
-        /// 確実に動作する。
-        /// </summary>
-        /// <returns>装飾を適用した場合は true。</returns>
-        /// <summary>
         /// 指定位置にある区切り記号（`/**/~~/[ の開始位置）が、直前の連続する\の個数（奇数なら
         /// エスケープされている）から見てエスケープされているかどうかを判定する。
         /// </summary>
@@ -641,6 +619,12 @@ namespace mde
             return count % 2 == 1;
         }
 
+        /// <summary>
+        /// キャレット位置で `コード`/**太字**/~~取り消し線~~/[リンク](url) の記法が
+        /// 閉じられたかを調べ、閉じていればスタイル付きRunへ即座に置き換える。段落内を
+        /// Run境界をまたいで後ろ向きにたどるため、箇条書き項目内でも動作する。
+        /// </summary>
+        /// <returns>装飾を適用した場合は true。</returns>
         public bool CheckInlineFormatTrigger()
         {
             var caret = m_editor.CaretPosition;
@@ -650,11 +634,9 @@ namespace mde
                 return false;
             }
 
-            // 1つのRun区間ずつ後ろ向きにたどり、各区間自身のテキストと、その区間の開始位置の
-            // TextPointerを記憶していく。こうすることで、複数の区間をまたいだ位置計算を
-            // 一切行わずに済み、段落がいくつのRunで構成されていても確実に動作する。
-            // Tag="escaped"のRun（\によって既に確定した文字）由来の区間は別途記録しておき、
-            // それが後から「普通の」区切り記号として再解釈されてしまわないようにする。
+            // Run区間ごとに後ろ向きにたどり、各区間のテキストと開始位置を記録する（複数Run
+            // をまたぐ位置計算を避けるため）。Tag="escaped"の区間（\で確定済みの文字）も
+            // 区別して記録し、区切り記号として誤って再解釈されないようにする。
             var segments = new List<(string text, TextPointer segStart, bool isEscaped)>();
             TextPointer walker = caret;
             int totalLen = 0;
@@ -691,10 +673,8 @@ namespace mde
                 return false;
             }
 
-            // textBeforeは実際のマッチング用：エスケープ済みの区間は、区切り記号として絶対に
-            // 認識されない目印文字（\uE0FF）で長さを保ったまま置き換える。これにより、
-            // \によって既に確定した文字が、後から入力される別の記号と組み合わさって
-            // 誤って装飾のトリガーとして再解釈されることを防ぐ。
+            // textBeforeはマッチング用の文字列：エスケープ済み区間は区切り記号として絶対に
+            // マッチしない目印文字（\uE0FF）に置き換え、誤ったトリガー再解釈を防ぐ。
             string textBefore = string.Concat(segments.Select(s => s.isEscaped ? new string('\uE0FF', s.text.Length) : s.text));
             if (0 == textBefore.Length)
             {
@@ -775,10 +755,8 @@ namespace mde
                 '>' == lastChar)
             {
                 // URL自動リンク（<https://...>）のライブ入力変換。バッチ変換
-                // （MarkdownConverter.m_inlineContentRegex）ではURL自動リンクの分岐が
-                // メールアドレス自動リンクより先に置かれており、<https://user@example.com>
-                // のような（メールアドレス自動リンクの正規表現にも一致し得る）URLはURLとして
-                // 解釈される。ライブ入力変換でもこの優先順位を一致させるため、URL側を先に判定する。
+                // （MarkdownConverter.m_inlineContentRegex）と優先順位を合わせるため、
+                // メールアドレス自動リンクより先にURLとして判定する。
                 match = Regex.Match(textBefore, "<(https?://[^\\s<>]+)>$", RegexOptions.IgnoreCase);
                 if (match.Success && !IsEscapedAt(textBefore, match.Index))
                 {
@@ -820,10 +798,8 @@ namespace mde
             }
             if (null == style)
             {
-                // 上のどの装飾トリガーにも一致しなかった場合、直前が「\ + 直前の1文字」という
-                // 完成したエスケープ記法になっていないかを確認する。なっていれば、\を隠して
-                // 実際の文字だけをその場で表示する（保存時に再び\付きで書き戻せるよう
-                // Tag="escaped" を付ける）。
+                // どの装飾トリガーにも一致しない場合、直前が「\ + 1文字」の完成した
+                // エスケープ記法かを確認し、該当すれば\を隠してTag="escaped"を付ける。
                 if (textBefore.Length >= 2 &&
                     '\\' == textBefore[textBefore.Length - 2] &&
                     !IsEscapedAt(textBefore, textBefore.Length - 2))
@@ -971,9 +947,8 @@ namespace mde
                         Tag = "inline-code"
                     };
 
-                // 通常スタイルの、目に見えないゼロ幅スペースRun。以降の入力が今適用した
-                // 太字/取り消し線/コードのスタイルを引き継がないようにするためのもの。
-                // 保存時には自動的に取り除かれる（MarkdownConverter.AppendInlinesMarkdown参照）。
+                // 通常スタイルの目に見えないゼロ幅スペースRun。直後の入力へスタイルが
+                // 継承されるのを防ぐ（保存時に自動除去。MarkdownConverter.AppendInlinesMarkdown参照）。
                 var trailingRun = new Run("\u200B", newRun.ContentEnd);
                 m_editor.CaretPosition = trailingRun.ContentEnd;
             });

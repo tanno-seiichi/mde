@@ -22,10 +22,9 @@ namespace mde
     {
         private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xB4, 0xB4, 0xB4));
         private static readonly Brush m_codeBlockBackground = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
-        // 表のヘッダー行だけ、セル間の縦の区切り線（右辺）をこの太さにする。本文行の1に対して
-        // わずかに太くすることで、印刷（PDF出力）時にヘッダー行の縦罫線だけが描画されずに
-        // 消えてしまう現象を避ける（実機での複数バージョン比較検証により、色を変える案では
-        // 効果が無く、太さを変えるこの案で解消することを確認済み）。
+        // ヘッダー行のセル間縦罫線（右辺）だけこの太さにする。本文行の1pxのままだと、印刷
+        // （PDF出力）時にヘッダー行の縦罫線だけラスタライズされず消えることがあるため
+        // （色を変える対策は効果なし、太さを変える対策のみ有効と確認済み）。
         private const double HEADER_VERTICAL_BORDER_THICKNESS = 1.75;
         // ハイライト（==text==）の背景色。
         private static readonly Brush m_highlightBackground = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0x8A));
@@ -115,18 +114,13 @@ namespace mde
             a_p.Padding = new Thickness(0);
         }
 
-        /// <summary>タスクリスト用チェックボックスを生成する。
-        /// MarkdownConverter（バッチ変換）とListEditor（ライブ入力変換）の両方から共有で使い、
-        /// 見た目のプロパティ（IsChecked以外）が食い違わないようにするための共通ヘルパー。
-        /// 幅・高さを明示的に固定している：既定のCheckBoxはOSのテーマ等によって実際の描画
-        /// サイズがわずかに変わることがあり、これがRichTextBox内でタスク項目の行の高さだけ
-        /// 不安定に見える一因になっていた（Paragraph.LineHeightは行の「最低限」の高さでしか
-        /// なく、埋め込んだUIElement側がそれより大きいと行全体がその分だけ伸びてしまうため）。
-        /// サイズを固定することで、チェックボックスを含む行の高さが常に一定になるようにする。
-        /// Marginの上側にわずかな余白（4px）を付けているのは、行頭のマーカー（「・」）に対して
-        /// チェックボックスの位置を見た目でもう少しだけ下げるための微調整（当初2pxだったが、
-        /// 利用者からの追加要望により4pxに変更）。CheckBoxというUI部品自身の見た目上の余白で
-        /// しかなく、段落の文字位置・TextPointer・IME関連の処理には一切関わらない。
+        /// <summary>タスクリスト用チェックボックスを生成する。MarkdownConverter（バッチ変換）と
+        /// ListEditor（ライブ入力変換）の両方から共有で使い、見た目が食い違わないようにする
+        /// 共通ヘルパー。幅・高さを固定しているのは、既定のCheckBoxはOSテーマ等で描画サイズが
+        /// わずかに変わり、行の高さが不安定に見えるため（Paragraph.LineHeightは最低高さでしか
+        /// なく、埋め込みUIElementが大きいと行全体が伸びる）。Marginの上側4pxは、行頭マーカー
+        /// （「・」）に対してチェックボックスの位置を下げる見た目上の微調整で、段落の文字位置・
+        /// TextPointer・IME関連の処理には関わらない。
         /// </summary>
         /// <param name="a_checked">チェック済み状態（[x]）かどうか。</param>
         public static CheckBox CreateTaskCheckbox(bool a_checked)
@@ -145,14 +139,11 @@ namespace mde
 
         /// <summary>CreateTaskCheckboxで生成したチェックボックスを、行頭の箇条書きマーカー
         /// （「・」等）に対して縦方向中央に揃えた状態でInlineUIContainerに包んで返す。
-        /// InlineUIContainer（Inlineの一種）の既定のBaselineAlignmentは"Baseline"であり、
-        /// これは埋め込んだ要素の下端をテキストのベースラインに合わせる指定のため、正方形の
-        /// チェックボックスの大部分が文字の上側にはみ出す形になり、行頭のマーカーよりも
-        /// 高い位置にずれて表示されていた。BaselineAlignmentを"Center"にすることで、
-        /// チェックボックス自体の縦方向中央を行の中央（マーカーがおおよそ描画される位置）へ
-        /// 揃える。チェックボックスを段落へ挿入する箇所（ListEditor・MarkdownConverter）は
-        /// すべてこのヘルパー経由にし、直接InlineUIContainerを組み立てることで見た目が
-        /// 食い違うことのないようにする。</summary>
+        /// InlineUIContainerの既定のBaselineAlignmentは"Baseline"（埋め込み要素の下端を
+        /// テキストのベースラインに合わせる）のため、正方形のチェックボックスが文字の上側に
+        /// はみ出してマーカーより高い位置にずれる。BaselineAlignment="Center"にすることで
+        /// チェックボックスの縦方向中央を行の中央へ揃える。段落への挿入箇所（ListEditor・
+        /// MarkdownConverter）はすべてこのヘルパー経由にし、見た目の食い違いを防ぐ。</summary>
         /// <param name="a_checked">チェック済み状態（[x]）かどうか。</param>
         public static InlineUIContainer CreateTaskCheckboxContainer(bool a_checked)
         {
@@ -187,63 +178,36 @@ namespace mde
 
         /// <summary>
         /// 表の全セルに、隣接セルと境界線が二重に重ならないよう調整した罫線を設定する。
-        /// WPFの<see cref="Table"/>/<see cref="TableCell"/>には、CSSの
-        /// <c>border-collapse: collapse</c>に相当する「隣接セルの境界線を1本にまとめる」
-        /// 機能が無い。単純に全セルへ4辺とも罫線を付けると、隣り合うセルの境界に2本の
-        /// 罫線が重なって描画され、非整数DPI（125%/150%等の画面拡大率）や印刷（PDF出力）
-        /// では2本の位置が微妙にずれてぼやけたり、太い二重線に見えたり、あるいは片方だけが
-        /// 消えて見えたりする。
-        /// 【設計（第2版）】当初は「最上段の行だけ上辺、最左列だけ左辺を追加で描く」という
-        /// 行・列の位置によってセルごとにThicknessの形が異なる方式にしていたが、これは
-        /// ヘッダー行と本文行とでセルのThicknessの形（上辺の有無）が異なることになり、
-        /// 実機でのPDF出力テストで「ヘッダー行だけ縦の罫線が消える」という不具合が発生した
-        /// （原因はWPFの印刷パイプライン側の挙動と見られ詳細は不明だが、セルごとに異なる
-        /// Thicknessの組み合わせを使うこと自体を避けるのが確実な対策となる、という考え方
-        /// だった）。そこで第2版では、<see cref="Table"/>自身が<see cref="Block"/>を継承
-        /// しており、<see cref="TableCell"/>とは独立した自前のBorderBrush/BorderThickness
-        /// を持てることを利用し、「全セルは例外なく同一のThickness（右辺・下辺のみ）を持ち、
-        /// 表の外周の上辺・左辺は表自身が1回だけ描く」という形に変更した。
-        /// 【第3版・太さ調整版（採用）】第2版を実機のPDF出力で確認したところ、Chromium
-        /// あり版（HTML/ChromiumでPDF化する版）では罫線消失は発生しないが、Chromiumなし版
-        /// （WPFの「Microsoft Print to PDF」印刷パイプラインでそのままPDF化する版）では、
-        /// 依然としてヘッダー行の縦の罫線が印刷時に消えてしまう現象が残っていた。これは
-        /// Thicknessの形の違いが原因ではなく、WPFの印刷パイプラインが極端に細い罫線（1px
-        /// 相当）を特定の条件下でラスタライズし損ねる、という別の要因によるものと見られる。
-        /// 対策として「ヘッダー行のセルの右辺（セル間の縦の区切り線）だけ本文行より少し
-        /// 太くする」案と「ヘッダー行の罫線の色を見出しレベル1の下線と同じ色に変える」案の
-        /// 2通りを試作し、実機で比較検証した結果、太くする案（本版）では罫線消失が解消し、
-        /// 色を変える案では効果が見られなかったため、太さを変える案を正式に採用した。
-        /// ヘッダー行（最上段の行）のセルの右辺だけ、本文行より少し太く
-        /// （<see cref="HEADER_VERTICAL_BORDER_THICKNESS"/>）描くようにしている。WYSIWYG
-        /// （Markdown）モードでの見た目にはほとんど影響しない程度の差にとどめてある。
-        /// 【2026-09追記・対象の絞り込み】上記の消失は、隣接する2つのセルが互いに接する
-        /// 内部の区切り線（セルとセルの間の縦線）でのみ確認された現象であり、表の外周
-        /// （＝各行の最後のセルの右辺。隣に別のセルが無く、表の外側の余白に直接面している
-        /// 境界線）ではそもそも発生していなかった。にもかかわらず、この処理は当初、行内の
-        /// 全セル（最後のセルを含む）に一律でHEADER_VERTICAL_BORDER_THICKNESSを適用して
-        /// いたため、ヘッダー行の最後の列（＝表の右端の外周線）まで本文行より太くなって
-        /// しまい、「ヘッダーの右端の枠線だけ太く表示される」という別の不具合として
-        /// 実機から報告された。消失対策が本来必要なのは内部の区切り線だけなので、各行の
-        /// 最後のセルの右辺（表の外周線）は太さを変えず、本文行と同じ太さのままにする。
+        /// WPFの<see cref="Table"/>/<see cref="TableCell"/>にはCSSの
+        /// <c>border-collapse: collapse</c>に相当する機能が無く、全セルへ4辺とも罫線を
+        /// 付けると隣接セルの境界に2本の罫線が重なり、非整数DPIや印刷（PDF出力）では
+        /// 位置がずれてぼやけたり片方が消えたりする。そこで、全セルは例外なく同一の
+        /// Thickness（右辺・下辺のみ）を持ち、表の外周の上辺・左辺は<see cref="Table"/>
+        /// 自身（<see cref="TableCell"/>とは独立したBorderBrush/BorderThicknessを持てる）
+        /// が1回だけ描く。
+        /// ヘッダー行（最上段）のセル間の縦の区切り線（行内で最後ではないセルの右辺）だけは
+        /// 本文行より少し太く（<see cref="HEADER_VERTICAL_BORDER_THICKNESS"/>）描く。これは
+        /// WPFの印刷パイプラインが極端に細い罫線（1px相当）を特定条件下でラスタライズし
+        /// 損ね、ヘッダー行の縦罫線だけ印刷時に消えることがあるための対策（太さを変える
+        /// 対策のみ有効、色を変える対策は無効と確認済み）。WYSIWYGモードの見た目には
+        /// ほぼ影響しない。この消失は隣接セル間の内部の区切り線でのみ発生し、表の外周
+        /// （各行最後のセルの右辺）では発生しないため、最後のセルの右辺は太さを変えず
+        /// 本文行と同じにする。
         /// 呼び出し側は、行・列の挿入や削除など表の構造を変えた直後に、表全体に対して
-        /// 毎回呼び直すこと（個々の操作ごとに罫線の付け外しを個別に追いかけるのではなく、
-        /// 常にこの関数で表全体を作り直す方が、境界線が消える・重なるといった不具合を
-        /// 防ぎやすい）。
+        /// 毎回呼び直すこと（個々の操作ごとに追いかけるより、常に表全体を作り直す方が
+        /// 境界線の消失・重複を防ぎやすい）。
         /// </summary>
         /// <param name="a_table">対象の表（RowGroups・Rows・Cellsまで構築済みであること）。</param>
         /// <param name="a_borderBrush">罫線の色（呼び出し側が使っているm_cellBorderを渡す）。</param>
         public static void ApplyTableCellBorders(Table a_table, Brush a_borderBrush)
         {
-            // 表自身の外周（上辺・左辺）を1回だけ描く。TableはBlockを継承しており、
-            // TableCellとは独立したBorderBrush/BorderThicknessを持てる。
+            // 表自身の外周（上辺・左辺）を1回だけ描く。
             a_table.BorderBrush = a_borderBrush;
             a_table.BorderThickness = new Thickness(1, 1, 0, 0);
 
-            // 全セルの右辺・下辺に罫線を描く。ヘッダー行（最上段の行）のうち、セル同士が
-            // 隣接する内部の区切り線（＝行内で最後ではないセルの右辺）だけは、印刷時の
-            // 消失対策としてわずかに太くする（HEADER_VERTICAL_BORDER_THICKNESS）。行内で
-            // 最後のセルの右辺は、隣にセルが無く表の外周（外側の余白）に直接面しており、
-            // 消失は確認されていないため、本文行と完全に同じ太さ（1）のままにする。
+            // 全セルの右辺・下辺に罫線を描く。ヘッダー行の内部区切り線だけ太くする
+            // （HEADER_VERTICAL_BORDER_THICKNESS）。行内最後のセルの右辺（表の外周）は
+            // 本文行と同じ太さ（1）のまま。
             int rowIndex = 0;
             foreach (TableRowGroup rg in a_table.RowGroups)
             {
@@ -273,14 +237,12 @@ namespace mde
         private static readonly FontFamily m_tableMeasureFontFamily = new FontFamily("Yu Gothic UI, Segoe UI");
         private const double TABLE_MEASURE_FONT_SIZE = 16;
 
-        /// <summary>この幅（px）を超える内容を持つ列は、固定幅にはせず、残りの幅を分け合って
+        /// <summary>この幅（px）を超える内容を持つ列は固定幅にせず、残りの幅を分け合って
         /// 折り返す列として扱う（ApplyContentBasedColumnWidths、現在は無効化）。
-        /// MeasureNaturalColumnWidthsPxが返す「内容の自然な幅」の上限としても、同じ値を
-        /// 流用している。長い説明文などが入る、そもそも複数行に折り返される前提の列の
-        /// 幅が、この上限で頭打ちにならないと、列幅の自動計算（BuildColumnWidthDialogInfo・
-        /// ApplyAutoCalculatedColumnWidths）でその列の比率が突出して大きくなり、他の列が
-        /// 読めないほど狭く押しつぶされてしまう不具合が実機で確認されたため（詳細は
-        /// MeasureNaturalColumnWidthsPxのコメント参照）。</summary>
+        /// MeasureNaturalColumnWidthsPxが返す「内容の自然な幅」の上限としても流用している。
+        /// 長い説明文の列をこの上限で頭打ちにしないと、列幅の自動計算（BuildColumnWidthDialogInfo・
+        /// ApplyAutoCalculatedColumnWidths）でその列の比率が突出し、他の列が読めないほど
+        /// 狭く押しつぶされる（詳細はMeasureNaturalColumnWidthsPxのコメント参照）。</summary>
         private const double TABLE_COLUMN_COMPACT_MAX_WIDTH = 300;
 
         /// <summary>TableCellのPadding（左右合計）。列幅を内容ぴったりにする際、この分だけ
@@ -292,33 +254,24 @@ namespace mde
         /// MeasureNaturalColumnWidthsPxの測定（FormattedTextによる文字列幅の計測＋
         /// TABLE_CELL_HORIZONTAL_PADDING）には、セルの罫線の太さ（ApplyTableCellBordersで
         /// 各セルの右辺に加える罫線。本文行1px・ヘッダー行はHEADER_VERTICAL_BORDER_THICKNESS
-        /// ＝1.75px）が含まれていない。また、FormattedTextによる測定値と、実際に
-        /// RichTextBox上へ描画される幅との間には、環境の画面拡大率（DPI）等の要因により、
-        /// ごくわずかな差が生じることがある。
-        /// これまでは列幅が常にStar（比率）方式だったため、表全体が編集領域の横幅いっぱいに
-        /// 間延びする形でこの差が吸収され、表面化しなかった。しかし、内容にちょうど収まる
-        /// 固定幅（Pixel）で表示できる場合はそちらを使うよう変更した後（列幅を補正する機能の
-        /// 改良を参照）、この差がわずかに足りないだけで、その列でいちばん長い文字列の
-        /// 最後の1〜2文字だけが次の行へ意図せず送られてしまう不具合が実機で報告された
-        /// （例：「1つ前に開いていたファイルを開く」の「く」だけ、「タスクリスト
-        /// （チェックボックス）」の「ス）」だけが折り返される）。この余裕を上乗せすることで、
-        /// このような境界ぎりぎりでの折り返しを防ぐ。
+        /// ＝1.75px）が含まれておらず、また環境のDPI等により実際の描画幅と測定値にごく
+        /// わずかな差が生じることがある。固定幅（Pixel）表示でこの差が足りないと、いちばん
+        /// 長い文字列の最後の1〜2文字だけ次の行へ折り返される不具合が実機で確認されたため、
+        /// この余裕を上乗せして防いでいる。
         /// </summary>
         private const double TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX = 8;
 
         /// <summary>
         /// 表の各列の幅を、実際のセル内容に合わせて設定する。WPFの既定のTable列幅
-        /// アルゴリズムは、内容量に関わらず利用可能な幅いっぱいに広がってしまうため、
-        /// GitHub等の一般的なMarkdownビューアのような「短い列は内容ぴったりにコンパクトに、
-        /// 長い説明文などの列だけが残りの幅を使って折り返す」見た目にはならない
-        /// （すべての列が均等に間延びして見える）。ここでは各列の実際のセル文字列を
-        /// FormattedTextで測定し、TABLE_COLUMN_COMPACT_MAX_WIDTH以下に収まる列は
-        /// 内容ぴったりの固定幅（Pixel）へ、収まらない列は残りの幅を分け合うStar幅へ、
-        /// それぞれ明示的に上書きする。呼び出し側は、表の行・セルをすべて組み立てた
-        /// 直後（内容が確定した後）に呼ぶこと。
+        /// アルゴリズムは内容量に関わらず利用可能な幅いっぱいに広がるため、GitHub等の
+        /// 一般的なMarkdownビューアのような「短い列はコンパクトに、長い列だけ折り返す」
+        /// 見た目にはならない。各列の実際のセル文字列をFormattedTextで測定し、
+        /// TABLE_COLUMN_COMPACT_MAX_WIDTH以下に収まる列は内容ぴったりの固定幅（Pixel）へ、
+        /// 収まらない列は残りの幅を分け合うStar幅へ、それぞれ上書きする。呼び出し側は、
+        /// 表の行・セルをすべて組み立てた直後（内容が確定した後）に呼ぶこと。
         /// 注：System.Windows.Documents.Table（FrameworkContentElement）には
-        /// HorizontalAlignmentプロパティが存在しない（FrameworkElement専用のプロパティの
-        /// ため）。そのため、表全体を左揃えにする処理はここでは行っていない。
+        /// HorizontalAlignmentプロパティが無いため、表全体を左揃えにする処理はここでは
+        /// 行っていない。
         /// </summary>
         /// <param name="a_table">対象の表（RowGroups・Rows・Cellsまで構築済みであること）。</param>
         public static void ApplyContentBasedColumnWidths(Table a_table)
@@ -434,28 +387,14 @@ namespace mde
         /// <summary>
         /// 1つのセルの内容を、実際に使われているRunごとのフォント（太字・インラインコード等の
         /// 装飾で明示的に指定されているフォントファミリー・サイズ・太さ）で個別に測定し、
-        /// 合計した幅（px）を返す。
-        /// 【なぜセル全体を1つのフォントで測定してはいけないか】以前は、セル全体のプレーン
-        /// テキスト（TextRange.Text）を、常にm_tableMeasureFontFamily・TABLE_MEASURE_FONT_SIZE
-        /// という単一のフォントで一括測定していた。しかし、インラインコード（`Ctrl+N`等）は
-        /// 実際にはConsolas・13.5pxという別のフォントで表示される（AppendStyledRunsWithLineBreaks
-        /// 参照）ため、この一括測定では実際の表示幅より小さく見積もってしまうことがあった。
-        /// この結果、README.mdの「基本操作」表（`Ctrl+N`等のインラインコードを含むセル）で、
-        /// 列の右側に余白が残っているにも関わらず、その列の中でいちばん長いセルが折り返されて
-        /// しまう、という不具合が実機で報告された（表全体の幅は列の合計から決まるため、個々の
-        /// 列の測定が小さすぎると、表全体としては余白が残るのに、個々の列としては足りない、
-        /// という状態になり得る）。
-        /// このメソッドは、セルの各Run（AppendInlineMarkdownToParagraph等が組み立てる、太字・
-        /// インラインコード等ごとに分かれた実際の描画単位）について、そのRunにローカルに設定
-        /// されているFontFamily/FontSize/FontWeightがあればそれをそのまま使い（インラインコード
-        /// のConsolas・13.5px、太字のFontWeights.Bold等）、無ければセルの既定
-        /// （m_tableMeasureFontFamily・TABLE_MEASURE_FONT_SIZE・セルのFontWeight。ヘッダー行は
-        /// Bold）を使って個別に幅を測定し、合計する（1つの段落内で折り返さず1行に並ぶ前提の、
-        /// 内容にちょうど収まる幅を求めるため）。ローカル値の有無で判定しているのは、Runが
-        /// まだ実際の文書（FlowDocument）へ組み込まれる前に呼ばれる場合があり、通常の
-        /// プロパティ値の継承（親からの自動解決）に頼ると、その時点でのRunの親子関係次第で
-        /// 結果が変わってしまう可能性があるため（ローカルに明示設定された値は、親子関係に
-        /// 関わらず常に同じ値を返す）。
+        /// 合計した幅（px）を返す。セル全体を単一フォント（m_tableMeasureFontFamily・
+        /// TABLE_MEASURE_FONT_SIZE）で一括測定すると、インラインコード（Consolas・13.5px。
+        /// AppendStyledRunsWithLineBreaks参照）等は実際より小さく見積もられ、列全体としては
+        /// 余白が残るのに該当セルだけ折り返される不具合が起きるため、Run単位で測る。
+        /// 各Runは、ローカルに設定されたFontFamily/FontSize/FontWeightがあればそれを使い、
+        /// 無ければセルの既定（m_tableMeasureFontFamily・TABLE_MEASURE_FONT_SIZE・セルの
+        /// FontWeight）を使う（ローカル値の有無で判定するのは、まだFlowDocumentに組み込まれる
+        /// 前のRunでも、親子関係に左右されず同じ結果を得るため）。
         /// </summary>
         /// <param name="a_cell">対象のセル。</param>
         private static double MeasureCellContentWidthPx(TableCell a_cell)
@@ -470,12 +409,10 @@ namespace mde
                 double paraWidth = 0;
                 foreach (Inline inline in p.Inlines)
                 {
-                    // 2026-09-14追記：セルに画像（InlineUIContainerで包まれたImage）が
-                    // 設定されている場合、その表示幅（Image.Width。ImageManager.
-                    // ApplyImageSizingで必ず設定済みのはず）も内容幅に含める。以前は
-                    // Runのテキストしか見ておらず、画像だけのセル（テキストが無い、または
-                    // 短い）の列が実際の画像幅よりずっと狭く測定されてしまい、「列幅を
-                    // 補正する」がオンの時に画像の右端が見切れる不具合の原因になっていた。
+                    // セルに画像（InlineUIContainerで包まれたImage）がある場合、その表示幅
+                    // （Image.Width。ImageManager.ApplyImageSizingで設定済み）も内容幅に含める。
+                    // Runのテキストだけを見ると、画像中心のセルの列が実際の画像幅より狭く
+                    // 測定され、「列幅を補正する」オン時に画像の右端が見切れてしまうため。
                     if (inline is InlineUIContainer iuc && iuc.Child is Image img)
                     {
                         if (!double.IsNaN(img.Width) && img.Width > 0)
@@ -544,24 +481,14 @@ namespace mde
         }
 
         /// <summary>各列の実際のセル内容から、内容にちょうど収まる幅（px）を測る
-        /// （ApplyContentBasedColumnWidthsの測定部分と同じ考え方だが、Star幅の統一
-        /// 方針で使うための独立した測定ヘルパー。ここで返す値は、実際に列へ適用する際に
-        /// PixelWidthToDashCountでダッシュ数と同じ単位に変換した上でStarの比率として
-        /// 使われる。詳細はApplyExplicitColumnWidthsのコメント参照）。
-        /// 【上限（TABLE_COLUMN_COMPACT_MAX_WIDTH）について】長い説明文が入った列（1行の
-        /// 文字数が多く、そもそも複数行に折り返される前提の列）を、そのまま測定結果通りの
-        /// 幅にしてしまうと、その列だけ突出して幅の比率が大きくなり、他の列（短い見出し語
-        /// など）が読めないほど狭く押しつぶされてしまう不具合が実機で確認された（doc/
-        /// DESIGN.mdの「Tagの内容」「用途」列のような、説明文中心の表で顕著）。これを防ぐため、
-        /// この幅はTABLE_COLUMN_COMPACT_MAX_WIDTHで頭打ちにしている。長い列どうしは
-        /// おおむね同じ比率になり、それぞれの列の中で複数行に折り返して表示される
-        /// （見切れるわけではない）。この頭打ちは、あくまでStar（比率）で複数列が幅を
-        /// 奪い合う場合の「不公平さ」を防ぐためのものであり、Pixel（固定幅。他の列と
-        /// 幅を奪い合わない）で使う場合には適用しない（MeasureUncappedColumnWidthsPx参照）。
-        /// 【余裕（TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX）について】頭打ち後の幅に、さらに
-        /// 小さな余裕を上乗せしている。これはセルの罫線の太さや、環境による測定と実際の
-        /// 描画とのごくわずかな差を吸収するためのもの。詳細はTABLE_COLUMN_WIDTH_SAFETY_
-        /// MARGIN_PXのコメント参照。</summary>
+        /// （ApplyContentBasedColumnWidthsの測定部分と同じ考え方だが、Star幅の統一方針で
+        /// 使うための独立した測定ヘルパー。詳細はApplyExplicitColumnWidthsのコメント参照）。
+        /// 長い説明文の列をそのままの幅にすると、Star（比率）で他の列を圧迫して読めない
+        /// ほど狭く押しつぶす不具合があったため、TABLE_COLUMN_COMPACT_MAX_WIDTHで頭打ちに
+        /// している（長い列同士はおおむね同じ比率になり、それぞれの中で複数行に折り返す）。
+        /// Pixel（固定幅。他の列と幅を奪い合わない）で使う場合はこの頭打ちを適用しない
+        /// （MeasureUncappedColumnWidthsPx参照）。頭打ち後の幅には、罫線の太さやDPI差を
+        /// 吸収するための余裕（TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX）も上乗せする。</summary>
         /// <param name="a_table">対象の表。</param>
         private static double[] MeasureNaturalColumnWidthsPx(Table a_table)
         {
@@ -577,18 +504,12 @@ namespace mde
         /// <summary>
         /// 各列の実際のセル内容から、内容にちょうど収まる幅（px）を、TABLE_COLUMN_COMPACT_
         /// MAX_WIDTHでの頭打ちを行わずに測る（余裕（TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX）は
-        /// 加える）。
-        /// 【なぜPixelモードでは頭打ちをしてはいけないか】14.28で導入した300pxの頭打ちは、
-        /// Star（比率）方式で複数列が「表全体の幅」を奪い合う場合に、1つの長い列が比率の
-        /// 大半を占めて他の列を読めないほど狭く押しつぶしてしまう不具合を防ぐためのもの
-        /// だった（Star特有の「他の列と幅を奪い合う」性質への対策）。しかしPixel（固定幅）
-        /// 方式は、各列が他の列と幅を奪い合わない（表全体の幅に余裕がある場合にのみPixelを
-        /// 使う設計のため）。そのため、Pixelで使う幅にまで一律300pxの頭打ちを適用すると、
-        /// 「表全体には余裕があるのに、300pxで頭打ちにされた列だけが本来不要なはずの折り
-        /// 返しをしてしまう」という不具合になる（実機で報告：README.mdの「基本操作」表で、
-        /// `Shift+Ctrl+N`等のインラインコードを含むセルが、表の右側に余白が残っているのに
-        /// 折り返される）。ApplyAutoCalculatedColumnWidthsは、この頭打ち無しの幅の合計が
-        /// 表示可能幅に収まる場合にだけPixelを使うため、他の列を圧迫する心配が無い。
+        /// 加える）。300pxの頭打ちは、Star（比率）方式で複数列が幅を奪い合う場合に1つの
+        /// 長い列が比率の大半を占めて他の列を圧迫するのを防ぐためのものであり、Pixel
+        /// （固定幅、他の列と幅を奪い合わない）方式にまで適用すると、表全体には余裕が
+        /// あるのに頭打ちされた列だけが不要な折り返しをする不具合になる。
+        /// ApplyAutoCalculatedColumnWidthsは、この頭打ち無しの幅の合計が表示可能幅に
+        /// 収まる場合にだけPixelを使うため、他の列を圧迫する心配が無い。
         /// </summary>
         /// <param name="a_table">対象の表。</param>
         private static double[] MeasureUncappedColumnWidthsPx(Table a_table)
@@ -605,19 +526,14 @@ namespace mde
         /// <summary>
         /// 表のインスタンスごとに、「区切り行のダッシュ数（＝Markdownソースへ実際に保存される
         /// べき値）」を覚えておくための、表示用の列幅（TableColumn.Width）とは独立した記録先。
-        /// 表インスタンス（Tableオブジェクト）をキーにした
-        /// <see cref="ConditionalWeakTable{TKey, TValue}"/>で、表が破棄されれば一緒にGCされる
-        /// （明示的な削除処理は不要）。
-        /// 【この記録先が必要な理由】メニュー「列幅を補正する」がオフの間は、表の見た目を
-        /// 常に既定の均等幅（Auto）に戻す（<see cref="ApplyEffectiveColumnWidths"/>参照）。
-        /// もしMarkdownへの書き出し（MarkdownConverter.TableToMarkdown）が表示用の
-        /// TableColumn.Widthだけを見て区切り行のダッシュ数を判断していると、トグルがオフの間に
-        /// 保存すると、実際には調整済みだった表の情報が失われ、既定値（|---|）で保存されてしまう
-        /// （トグルは見た目だけのはずなのに、保存内容まで書き換えてしまう不具合）。
-        /// そこで、区切り行のダッシュ数（保存されるべき「本当の値」）は、表示用の列幅とは
-        /// 別にこの記録先で管理し、TableToMarkdownは常にここを参照する。表示用の列幅
-        /// （TableColumn.Width）は、この値とメニューの状態から都度計算される、あくまで見た目
-        /// だけの結果でしかない。
+        /// 表インスタンスをキーにした<see cref="ConditionalWeakTable{TKey, TValue}"/>で、
+        /// 表が破棄されれば一緒にGCされる（明示的な削除処理は不要）。
+        /// メニュー「列幅を補正する」がオフの間は、表の見た目を既定の均等幅（Auto）に戻す
+        /// （<see cref="ApplyEffectiveColumnWidths"/>参照）。もし保存処理（MarkdownConverter.
+        /// TableToMarkdown）が表示用のTableColumn.Widthだけを見てダッシュ数を判断すると、
+        /// トグルがオフの間に保存した際、調整済みだった表の情報が既定値（|---|）で失われて
+        /// しまう。そこで、保存されるべき「本当の値」はこの記録先で表示用の列幅とは別に
+        /// 管理し、TableToMarkdownは常にここを参照する。
         /// </summary>
         private static readonly ConditionalWeakTable<Table, int[]> m_sourceDashCounts =
             new ConditionalWeakTable<Table, int[]>();
@@ -740,23 +656,16 @@ namespace mde
         }
 
         /// <summary>
-        /// 表の各列に、明示的な比率幅（Star）を設定する。
-        /// 【設計（第2版・比率方式への変更）】当初はPixel（絶対px）で幅を設定していたが、
-        /// 表の合計幅が編集領域の横幅を超える場合、超えた分が右端で見切れて読めなくなる
-        /// という報告があった。WPFのRichTextBoxは既定では表の右端を横スクロールで見られる
-        /// ようにはならず、絶対px指定は「ウインドウを狭くすると必ず再発しうる」問題を
-        /// 抱えていた。そこで、GridのColumnDefinitionと同じ「*（Star）」による比率指定に
-        /// 変更した。Star幅の列は、表全体の横幅を、指定した比率で分け合う形になり、
-        /// 編集領域の横幅を超えることが構造上あり得なくなる（ウインドウをリサイズしても
-        /// 常にきれいに収まり直す）。ダッシュ数（区切り行の文字数・ダイアログの入力値）は、
-        /// そのままStarの比率の値として使う（変換は不要。ピクセルへの変換が必要だったPixel
-        /// 方式とは異なる）。
-        /// なお、WPFの<see cref="Table"/>の列幅は、Pixel・Star・Auto（既定値）を混在させると、
-        /// 意図と逆の見た目になる現象が実機で確認されている（ApplyContentBasedColumnWidths
-        /// のコメント参照）。これは「Pixelと他の単位の混在」で確認された問題であり、今回の
-        /// ようにStarだけで統一する場合は該当しないと考えられるが、念のため今回も「列幅を
-        /// 1つでも明示的に調整する際は、対象の表の全列を例外なくStar幅にする」という、
-        /// 単位を混在させない方針は維持している。
+        /// 表の各列に、明示的な比率幅（Star）を設定する。列幅はPixelではなくStar（Gridの
+        /// ColumnDefinitionと同様の比率指定）を使う。表の合計幅が編集領域の横幅を超えると
+        /// 右端が見切れて読めなくなり、WPFのRichTextBoxは既定で横スクロールできないため、
+        /// 絶対px指定はウインドウを狭くすると再発する問題を抱えていた。Star幅なら表全体の
+        /// 横幅を比率で分け合うため、編集領域を超えることが構造上あり得ない。ダッシュ数
+        /// （区切り行の文字数・ダイアログの入力値）はそのままStarの比率として使う。
+        /// なお、WPFの<see cref="Table"/>の列幅はPixel・Star・Auto（既定値）を混在させると
+        /// 意図と逆の見た目になることが確認されているため（ApplyContentBasedColumnWidths
+        /// のコメント参照）、列幅を1つでも明示的に調整する際は対象の表の全列を例外なく
+        /// Star幅にする方針を維持している。
         /// <paramref name="a_dashCounts"/>で値が指定されている（nullでない）列は、その
         /// ダッシュ数をそのままStarの比率として使う。値が指定されていない（null）列は、
         /// その列の実際の内容から測った幅（MeasureNaturalColumnWidthsPx）をダッシュ数と
@@ -784,26 +693,20 @@ namespace mde
         /// <summary>
         /// まだ調整されていない表（区切り行がすべて既定値）に対して、列幅調整ダイアログの
         /// 「自動計算」欄と同じ計算方法（内容量から測った幅をダッシュ数と同じ単位に変換した
-        /// 比率）で、表示上だけ列幅を適用する。あくまで表示（TableColumn.Width）だけの効果で
-        /// あり、区切り行のダッシュ数（GetSourceDashCounts／SetSourceDashCounts）には一切
-        /// 触れない。そのため、Markdownへの書き出し（MarkdownConverter.TableToMarkdown）は
-        /// この比率を書き戻さず、区切り行は既定値（|---|）のまま保たれる。
-        /// 【表示幅に収まる場合はコンパクトな固定幅（Pixel）を使う】大きなディスプレイ・
-        /// 全画面表示など、内容量に対して表示領域が十分広い場合、これまでの実装（常にStar＝
-        /// 比率で表の横幅いっぱいに広げる）では、短い見出し語だけの表でも編集領域の横幅
-        /// いっぱいに間延びしてしまい、Typoraなど一般的なMarkdownビューアの「内容量ぴったりの
-        /// コンパクトな表示」と見た目が食い違う、との報告が実機であった。これを防ぐため、
-        /// <paramref name="a_availableWidthPx"/>が指定されており（nullでなく）、かつ各列の
-        /// 自然な幅（測定値。長い説明文の列はTABLE_COLUMN_COMPACT_MAX_WIDTHで頭打ち済み）の
-        /// 合計がその幅に収まる場合は、Starではなく、その自然な幅をそのままPixel（固定px）
-        /// として設定する（表全体としては、常に同一の単位＝全列Pixelになり、単位の混在は
-        /// 発生しない）。
-        /// 合計が収まらない場合（表示領域が狭い場合）は、これまでと同じStar比率にする
-        /// （表が編集領域の横幅を超えて右端が見切れることが構造上あり得ないようにするための、
-        /// 既存の安全策。ApplyExplicitColumnWidthsのコメント参照）。<paramref name="a_availableWidthPx"/>
-        /// がnull（呼び出し側が表示領域の幅を把握していない場合。例：保存専用の使い捨て文書や
-        /// PDF書き出し用の一時文書に対する変換）の場合も、常にこれまでと同じStar比率にする
-        /// （表示領域の実際の幅が分からない状況で誤った判断をしないよう、安全側に倒す）。
+        /// 比率）で、表示上だけ列幅を適用する。あくまで表示（TableColumn.Width）だけの効果
+        /// であり、区切り行のダッシュ数（GetSourceDashCounts／SetSourceDashCounts）には
+        /// 一切触れない。そのため、Markdownへの書き出し（MarkdownConverter.TableToMarkdown）
+        /// はこの比率を書き戻さず、区切り行は既定値（|---|）のまま保たれる。
+        /// <paramref name="a_availableWidthPx"/>が指定されており、かつ各列の自然な幅
+        /// （測定値。長い説明文の列はTABLE_COLUMN_COMPACT_MAX_WIDTHで頭打ち済み）の合計が
+        /// その幅に収まる場合は、Starではなく自然な幅をそのままPixel（固定px）として設定する
+        /// （常に同一の単位＝全列Pixelになり、単位の混在は発生しない）。表示領域に余裕が
+        /// ある場合でも常にStarで横幅いっぱいに広げると、短い見出し語だけの表まで間延びして
+        /// 見えてしまうため、それを防ぐ措置。
+        /// 合計が収まらない場合（表示領域が狭い場合）や<paramref name="a_availableWidthPx"/>
+        /// がnull（呼び出し側が表示領域の幅を把握していない場合。保存専用の使い捨て文書や
+        /// PDF書き出し用の一時文書など）は、常にStar比率にする（表が編集領域の横幅を超えて
+        /// 右端が見切れることが構造上あり得ないようにするための安全策）。
         /// </summary>
         /// <param name="a_table">対象の表。</param>
         /// <param name="a_availableWidthPx">表を表示できる実際の幅（px）。呼び出し側が
@@ -811,10 +714,8 @@ namespace mde
         public static void ApplyAutoCalculatedColumnWidths(Table a_table, double? a_availableWidthPx)
         {
             int colCount = a_table.Columns.Count;
-            // Pixelで使う場合は、他の列と幅を奪い合わないため、TABLE_COLUMN_COMPACT_MAX_WIDTHの
-            // 頭打ちを適用しない生の幅を使う（頭打ちを適用したままだと、表全体には余裕がある
-            // のに、頭打ちで狭められた列だけが不要な折り返しをしてしまう。詳細は
-            // MeasureUncappedColumnWidthsPxのコメント参照）。
+            // Pixelは他の列と幅を奪い合わないため、頭打ち無しの生の幅を使う
+            // （詳細はMeasureUncappedColumnWidthsPxのコメント参照）。
             var uncappedWidths = MeasureUncappedColumnWidthsPx(a_table);
 
             if (a_availableWidthPx.HasValue && uncappedWidths.Sum() <= a_availableWidthPx.Value)
@@ -826,8 +727,7 @@ namespace mde
                 return;
             }
 
-            // 収まらない場合（Star比率へフォールバック）は、複数列が表全体の幅を奪い合う
-            // ことになるため、これまで通り頭打ちした幅を使う（14.28の不具合の再発防止）。
+            // Star比率へフォールバックする場合は、複数列が幅を奪い合うため頭打ちした幅を使う。
             var naturalWidths = MeasureNaturalColumnWidthsPx(a_table);
             var dashCounts = new List<int?>();
             for (int c = 0; c < colCount; c++)

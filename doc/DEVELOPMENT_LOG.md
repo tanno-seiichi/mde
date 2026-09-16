@@ -5159,6 +5159,86 @@ Shift+Enterと、表のセル（TableCell）内でのEnter/Shift+Enterの2箇所
   可能性がある）。
 
 
+### 14.56 ソースコード全体のコメント整理（肥大化した調査履歴コメントを要点だけに凝縮）
+
+**経緯**：14.55までの対策を重ねる中で、各所のコメント（特に不具合調査の経緯を記した
+「追記」「第n版」といった積み重ね型のコメント）が徐々に長くなり、読みにくくなってきた
+とのご指摘をいただいた。対象範囲・方針について確認したところ、以下の方針で進めることに
+なった。
+- 対象範囲：プロジェクト全体（nashi版・ari版の両方、`mde/`配下の全`.cs`ファイル）。
+- 方針：要点だけを残して簡潔化する。調査の詳細な経緯はこのDEVELOPMENT_LOG.mdに既に
+  恒久的に残っているため、コード側のコメントは「現在のコード（what）」と「そうなって
+  いる理由（why）」を簡潔に伝えるものに絞り、過去の試行錯誤の日記的な記述（「〇〇と
+  試したが失敗した」「第2版として〇〇に変更」等）は削って良い、という考え方で統一した。
+  DESIGN.md §12の「XMLドキュメントコメントは日本語、簡潔に」という規約にも沿っている。
+
+**作業方針**：ソースコードの変更を伴わない、コメント文言のみの変更であるため、ファイル
+単位（または小さいファイルはまとめて）で並行して作業を進めた。各ファイルの作業では、
+以下を厳守した。
+- 変更するのはコメント文字列のみ。実行コード・文字列リテラル・メソッドシグネチャ・
+  メンバーの並び順は一切変更しない。
+- XMLドキュメントコメント（`<summary>`/`<param>`/`<returns>`）の構造はそのまま維持し、
+  内容だけを簡潔化する。
+- 技術的な要点（不具合の原因、WPFの制約、なぜその実装を選んだかの理由等）は、たとえ
+  長くても削らない。削って良いのは「重複した説明」「経緯の日記的な記述」であり、
+  「実質的な情報を削る」ことではない、という基準で判断した。
+- 各ファイルの変更後、（a）括弧`{}`・`()`の対応数がファイル変更前後で変わっていないか、
+  （b）BOMが保持されているか、（c）全角スペースではない本物のNBSP（U+00A0）が
+  含まれていないか、（d）3行以上の連続する空行が生じていないか、（e）ari版の対応する
+  ファイル（未着手の時点のもの）と比較して、変更した行がすべてコメント行だけであるか、
+  をそれぞれ確認した。
+
+**対象外・特別扱いしたファイル**：
+- `MainWindow.xaml.cs`のPDF書き出し部分（nashi版は「Microsoft Print to PDF」仮想
+  プリンタ経由、ari版はheadless Chromium経由と、実装そのものが両版で異なる箇所）は、
+  機械的なコピーができないため、各版ごとに個別にコメントを整理した。
+- `App.xaml.cs`（両版で内容が異なるファイル）も、各版ごとに個別に整理した。
+- 元々コメントが少なく簡潔だったファイル（`PdfMarginDialog.xaml.cs`、
+  `LineEndingTracker.cs`、`TableSizeDialog.xaml.cs`、`LinkInputDialog.xaml.cs`、
+  `AboutWindow.xaml.cs`等）は変更なし。
+
+**副次的に見つかった問題の修正**：コメントを整理する過程で、過去のリファクタリングの
+際に取り残されたとみられる「本来の対象から離れた場所に置かれたXMLドキュメント
+コメント」を数箇所発見し、正しいメソッドの直前へ移動した（`InlineStyleEditor.cs`の
+`ApplyLinkStyle`・`CheckInlineFormatTrigger`、`SearchReplaceService.cs`の
+`FindNextInCurrentFile`）。また、`InlineStyleEditor.cs`のコンストラクタに、現在の
+シグネチャ（11個の引数）と一致しない古いドキュメントコメント（6個の引数分のみを
+説明する、明らかに更新漏れの重複コメント）が離れた場所に残っていたため削除した
+（コンストラクタ自体には、正しく全引数を説明する別のドキュメントコメントが既に
+直前に存在することを確認済み）。
+
+**検証方法**：git管理下にない環境のため、作業前に取得したバックアップ一式との
+diffを全ファイルについて取り、変更行がすべて`//`または`///`で始まるコメント行
+（あるいは空行）だけであることを機械的に確認した。加えて、上記の括弧対応・BOM・
+NBSP・連続空行のチェックを全ファイルに対して再実行し、いずれも異常がないことを
+確認した。nashi版で整理した内容のうち、両版で共通のファイル（差分一覧に含まれない
+ファイル）はari版へそのままコピーし、`MainWindow.xaml.cs`の非PDF部分についても、
+バックアップとの差分（コメント変更箇所）を特定した上で同じ内容をari版側にも反映
+した。最終的に`diff -rq`でnashi/ari間の差分を確認し、既知の差分一覧（README.md、
+doc/DESIGN.md、doc/DEVELOPMENT_LOG.md、App.xaml.cs、ChromiumBrowserPool.cs／
+ChromiumPdfExporter.cs／HtmlDocumentBuilder.cs、MainWindow.xaml.cs、
+Properties/AssemblyInfo.cs、mde.csproj、msi配下の各ファイル）どおりであることを
+確認した。バージョン番号（1.5.13.0／2.1.13.0）は変更していない。
+
+**今回変更したファイル（nashi/ari共通、コメントのみの変更）**：
+ListEditor.cs、HeadingCodeBlockEditor.cs、MainWindow.xaml.cs、MarkdownConverter.cs、
+TableEditor.cs、BlockStyles.cs、SearchReplaceService.cs、ImageManager.cs、
+InlineStyleEditor.cs、DebugLogger.cs、OutlineManager.cs、FolderTreeManager.cs、
+FindReplaceWindow.xaml.cs、Models.cs、OriginalTextTracker.cs、
+ImeCaretMoveHelper.cs、ColumnWidthDialog.xaml.cs、LineHeightDialog.xaml.cs、
+AppSettings.cs、App.xaml.cs（nashi版・ari版それぞれ個別に整理）。
+
+**確認をお願いしたいこと**：今回はコメント文字列のみの変更であり、実行コードは
+一切変更していないため、動作面での変化は本来ないはずである。念のため、以下を
+確認いただけると安心です。
+- これまで通りビルドが通ること。
+- 普段お使いの操作一式（箇条書き・表の編集、IME入力、検索と置換、PDF書き出し等）が
+  これまで通り動作すること。
+- ソースコードを開いた際、コメントが以前より読みやすくなっているか（要点が
+  削れすぎていないか）。もし「この情報は残しておきたかった」という箇所があれば、
+  お知らせください。
+
+
 ## 16. 新しい機能を追加する時の指針
 
 1. **どのクラスの責務かを見極める**：4章の表を参照し、既存クラスに機能を追加すべきか、新しい

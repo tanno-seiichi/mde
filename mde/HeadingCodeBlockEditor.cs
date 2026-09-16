@@ -76,16 +76,10 @@ namespace mde
                 // 先頭から取り除く。それ以降に既にあった内容（記述済みの行の先頭に後から"#"を
                 // 書き足した場合の、続きの文字列）は、書式ごとそのまま残る。
                 //
-                // v1.5.5.5適用後の調査用ログにより、この部分にListEditor.
-                // ConvertParagraphToListItemで既に見つけて直した不具合と同じ問題が残っていた
-                // ことが判明した。GetPositionAtOffsetのオフセットはWPF内部のシンボリックな
-                // 単位であり、実際の文字数と1対1に対応しないことがあるため、"#"＋半角スペース
-                // の除去のつもりでもマーカーの一部（特に末尾の半角スペース）が消しきれずに
-                // 残ってしまうことがあった。この取り残された半角スペースが、後から見出しを
-                // BackSpaceで空にしようとした際、「画面上は空に見えるのにキャレットを右に
-                // 動かせる」「BackSpaceを繰り返しても最後まで消せない」という症状の原因に
-                // なっていた。ListEditor側の修正と同じAdvanceByCharCountを使い、実際に
-                // 取り出した文字列の長さだけを頼りに確実にa_level+1文字分を取り除くようにする。
+                // GetPositionAtOffsetのオフセットはWPF内部のシンボリックな単位であり実際の
+                // 文字数と1対1に対応しないため、単純なオフセット指定ではマーカー末尾のスペースが
+                // 消しきれず残ることがある（ListEditor.ConvertParagraphToListItemと同種の問題）。
+                // AdvanceByCharCountで実際の文字数を数え、確実にa_level+1文字分だけ取り除く。
                 TextPointer markerEnd = AdvanceByCharCount(a_p.ContentStart, a_level + 1);
                 DebugLogger.Log(
                     "ConvertParagraphToHeading: マーカー除去前 text=[" +
@@ -120,8 +114,6 @@ namespace mde
         /// <param name="a_p">対象の見出し段落（既に空であること）。</param>
         public void RevertEmptyHeadingOnBackspace(Paragraph a_p)
         {
-            // v1.5.5.2で「変化なし」というご報告をいただいたための調査用ログ。
-            // この処理が実際に呼び出され、最後まで実行されているかを確認する。
             DebugLogger.Log("RevertEmptyHeadingOnBackspace: 呼び出し");
             // 他の見出し関連の変換と同じ理由で、ImeCaretMoveHelper経由のDispatcher.BeginInvoke
             // 遅延は使わず、同期的に書き換えてその場でUpdateLayout・ClearFocus/Focusを行う
@@ -135,7 +127,6 @@ namespace mde
             m_editor.UpdateLayout();
             Keyboard.ClearFocus();
             m_editor.Focus();
-            // 調査用：処理後にTagが実際にnullへ戻っているか（本文スタイルに戻っているか）を記録する。
             DebugLogger.Log($"RevertEmptyHeadingOnBackspace: 完了 Tag={a_p.Tag ?? "null"}");
         }
 
@@ -162,12 +153,10 @@ namespace mde
         }
 
         /// <summary>見出し段落の末尾（キャレット位置）から、実際の文字1つ分だけを自前で
-        /// 削除する。v1.5.5.4適用後のログ調査により、IME入力で組み立てた見出し段落の
-        /// 最後の1文字に対しては、WPF標準のBackSpaceコマンド自体が（このアプリのコードとは
-        /// 無関係に）何もせず反応しないことがある（EditorTextChangedイベントすら発生しない）
-        /// という、WPF側の不具合が新たに判明した。IME合成の内部的な部分確定の繰り返しにより
-        /// 段落内のRun（区画）が細かく分かれた状態が残ることが原因と推測される。標準の
-        /// BackSpaceに委ねる代わりに、この処理で確実に最後の1文字を取り除く。</summary>
+        /// 削除する。IME入力で組み立てた見出し段落は、内部的な部分確定の繰り返しでRun
+        /// （区画）が細かく分かれることがあり、その最後の1文字に対してはWPF標準のBackSpace
+        /// コマンドが無反応になる（EditorTextChangedすら発生しない）場合があるため、標準の
+        /// BackSpaceには委ねず、この処理で確実に取り除く。</summary>
         /// <param name="a_p">対象の見出し段落。キャレットは段落末尾にあり、中身は空でないこと。</param>
         public void DeleteLastCharInHeading(Paragraph a_p)
         {
@@ -284,40 +273,11 @@ namespace mde
         /// <summary>コードブロック内でのEnterキー処理（新しい段落を作らず、行内改行を挿入する）。
         /// 箇条書き項目内でのShift+Enter、表のセル内でのEnter/Shift+Enterでも共通して使われる
         /// （MainWindow.EditorPreviewKeyDown参照）。
-        /// 【2026-09追記・第1版】以前はここだけ、他の構造変更メソッド（ConvertParagraphToHeading・
-        /// ConvertParagraphToCodeBlock・OutdentCodeLine等、本ファイル内の他のすべてのメソッド）
-        /// と異なり、実際のドキュメント変更をm_runAsProgrammaticChangeで囲んでいなかったため、
-        /// これを他のメソッドと同じ保護で囲むよう統一した（詳細は下記追記参照）。
-        /// 【2026-09追記・第2版（実機の画面録画・デバッグログで確認、後に不十分と判明）】上記の
-        /// 対策だけでは、箇条書き項目でShift+Enterの直後に文字を入力すると改行が無効になる
-        /// 不具合が直らないことが、ユーザーから提供された実機の画面録画とデバッグログにより
-        /// 判明した。ログを確認したところ、行内改行の挿入イベント自体（EditorTextChangedの
-        /// Off値）に対して、その直後に入力される文字（IME確定文字を含む）の挿入位置（Off値）
-        /// が、常に「1つ手前」（＝挿入した行内改行の直前の位置）になっていることが分かった。
-        /// これは、TextPointer.InsertLineBreakでCaretPositionをプログラム的に動かしても、
-        /// IME（TSF）側が新しいキャレット位置を認識できていないことを示している。見出し・
-        /// コードブロックへの変換や、ネストしていない箇条書き項目でのEnterによる新規項目作成
-        /// など、本ファイル・ListEditor.cs内の他の「キャレットをプログラム的に移動する」処理は
-        /// すべて、移動の直後に`m_editor.UpdateLayout()`→`Keyboard.ClearFocus()`→
-        /// `m_editor.Focus()`という一連の処理（IMEに新しいキャレット位置を再認識させるための、
-        /// 実機検証で確立された対策）で解決していたため、同じ対策をここにも適用した。
-        /// 【2026-09追記・第3版（実機の再現ログで、第2版策も不十分と判明。ネスト箇条書きと
-        /// 同じ非同期パターンへ変更）】第2版の対策（同期的なUpdateLayout→ClearFocus→Focus）を
-        /// 適用したビルドで改めて実機検証いただいたところ、それでもなお同じ不具合が再現する
-        /// ことが、新たに共有されたデバッグログにより判明した。ログでは、行内改行の挿入
-        /// （Off=10、1段目＝ネストしていない箇条書きでの再現。HandleListEnterのログでdepth=1
-        /// と確認済み）の直後、ClearFocus/Focusのサイクル（ログ上も実際に発生を確認）を経て
-        /// なお、次のIME入力が改行の1つ手前（Off=9）に挿入されてしまっていた。つまり、同期的に
-        /// （キー入力の処理と同じタイミングで）ClearFocus/Focusを行うだけでは、IME側に新しい
-        /// キャレット位置を認識させるのに間に合っていない。これは、ListEditor.HandleListEnterで
-        /// 「ネストした箇条書き（2段目以降）でだけ」発生するとして対策されていた不具合と、
-        /// 実質的に同じ種類の競合状態が、行内改行ではネストの有無に関わらず起きていることを
-        /// 示唆している。ネストした箇条書きの対策で使われているImeCaretMoveHelper.
-        /// ScheduleCaretMove（Dispatcher.BeginInvokeでキー入力の処理から実際のドキュメント
-        /// 変更・フォーカスの当て直しを1テンポ切り離す、より強い対策）に、この行内改行の処理も
-        /// 合わせることにした。なお、ImeCaretMoveHelper.cs自身のコメントにもある通り、この
-        /// 対策はIME（TSF）内部のタイミングに依存する競合状態への対策であり、発生確率を下げる
-        /// ことはできても100%の解消を保証するものではない。
+        /// 行内改行（LineBreak）の挿入後、IME（TSF）側が新しいキャレット位置をすぐには認識できず、
+        /// 直後の入力が改行の1つ手前に入ってしまう競合状態があるため、キャレット移動を
+        /// ImeCaretMoveHelper.ScheduleCaretMoveでキー入力処理から1テンポ切り離して行う
+        /// （調査の経緯はDEVELOPMENT_LOG.md参照）。この対策は発生確率を下げるものであり、
+        /// 100%の解消を保証するものではない。
         /// </summary>
         public void InsertLineBreakAtCaret()
         {
@@ -333,44 +293,21 @@ namespace mde
         }
 
         /// <summary>
-        /// 箇条書き項目・表のセル内でのShift+Enter/Enter処理。上のInsertLineBreakAtCaretとは
-        /// 異なり、行内改行（LineBreak要素）は一切使わず、Shift+Enter等が押された位置で段落
-        /// （Paragraph）そのものを2つに分割する（見た目には1つの段落がそのまま改行している
-        /// ように見せるため、分割した両方の段落のMarginを揃えて0にする）。
-        /// 【なぜLineBreakではなくこの方式にしたか】上のInsertLineBreakAtCaretのコメントに
-        /// 記録されている通り、行内改行（LineBreak要素の挿入）を使う限り、キャレット位置の
-        /// 設定・通知方法をどう工夫しても（同期的なUpdateLayout→ClearFocus→Focus、
-        /// ImeCaretMoveHelperによる非同期化、WPF標準コマンドの使用、Selection.Selectでの
-        /// 設定、WPF内部のTextStoreクラスへのリフレクション経由の直接通知など、思いつく限り
-        /// 9通りの対策）、次のIME入力が改行の「1つ手前」（挿入した行内改行の直前の位置）に
-        /// 入ってしまう不具合を解消できなかった。これは、WPFのTSF（IME）連携が、LineBreakと
-        /// いう要素自体とうまくかみ合っていない、プラットフォーム側の制約と判断した
-        /// （詳細な調査の経緯はDEVELOPMENT_LOG.md該当セクション参照）。
-        /// 独立した最小再現アプリ（mde本体とは別プロジェクト）での検証により、LineBreakを
-        /// 一切使わず、Shift+Enter等が押された位置で段落そのものを2つに分割する方式では、
-        /// この症状が再現しないことが実機で確認された。これはLineBreakの挿入という
-        /// 「インライン要素の挿入」ではなく、段落という「ブロック要素の追加」であり、WPFの
-        /// TSF連携にとって操作の性質そのものが異なるためと考えられる。この方式では
-        /// ImeCaretMoveHelperによる非同期化も不要だった（最小再現アプリでの検証で、
-        /// 同期的なm_runAsProgrammaticChangeのみで問題なく動作することを確認済み。新しい
-        /// 段落は、分割元の段落と同じ親（ListItem/TableCell）の中に追加されるため、既存の
-        /// レイアウト済み要素の隣に挿入される形になり、見出し等の変換処理と同じ理由で、
-        /// 未レイアウトの新規要素特有の問題が起きにくいためと推測している）。
-        /// Markdownとしての書き出し・読み込みは、この内部表現の違いに影響されない
-        /// （MarkdownConverter.ListToMarkdown・TableToMarkdown・対応する読み込み側の
-        /// 各コメント参照。項目・セルの内容の中身のテキストと改行位置だけを基準にした変換で
-        /// あり、内部がLineBreakを持つ1つの段落か、複数の段落かには依存しない）。
-        /// キャレットより後ろにあった内容（書式を含む）は、そのままInline単位で新しい段落へ
-        /// 移す。ListEditor.SplitInlinesAtCaret・CloneRunForSplit（項目のEnterでの分割に
-        /// もともと使われていた、実績のあるロジック）をそのまま共有して使う。TextPointerの
-        /// オフセットベースでテキストを抜き出す方式は、箇条書きマーカー記号を巻き込んでしまう
-        /// 既知の不具合（ListEditor.GetOwnListItemText等のコメント参照）を避けるため、
-        /// あえて使わない。
+        /// 箇条書き項目・表のセル内でのShift+Enter/Enter処理。上のInsertLineBreakAtCaretの
+        /// コメントにある通り、行内改行（LineBreak要素）はキャレット位置をどう工夫して設定・
+        /// 通知してもIME側との競合を解消しきれないため、こちらではLineBreakを一切使わず、
+        /// Shift+Enter等が押された位置で段落（Paragraph）そのものを2つに分割する（見た目には
+        /// 1つの段落がそのまま改行しているように見せるため、分割した両方の段落のMarginを
+        /// 揃えて0にする）。
+        /// キャレットより後ろにあった内容（書式を含む）は、ListEditor.SplitInlinesAtCaret・
+        /// CloneRunForSplit（項目のEnterでの分割に使われている、実績のあるロジック）を共有して
+        /// Inline単位で新しい段落へ移す。TextPointerのオフセットベースでテキストを抜き出す方式は
+        /// 箇条書きマーカー記号を巻き込んでしまう既知の不具合（ListEditor.GetOwnListItemText等の
+        /// コメント参照）があるため、あえて使わない。
         /// </summary>
         /// <param name="a_para">分割対象の段落（現在キャレットがある段落）。親がListItemまたは
         /// TableCellでない場合（コードブロック等）は何もしない（呼び出し側は、そのような場合には
-        /// 代わりに従来通りInsertLineBreakAtCaretを呼ぶこと。コードブロックは今回の調査・対策の
-        /// 対象外であり、これまで通り行内改行のままにする）。</param>
+        /// 代わりに従来通りInsertLineBreakAtCaretを呼ぶこと）。</param>
         public void InsertParagraphSplitAtCaret(Paragraph a_para)
         {
             if (null == a_para)

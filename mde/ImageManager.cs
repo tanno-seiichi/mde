@@ -43,16 +43,12 @@ namespace mde
 
         private Point? m_imageDragStartPoint;
 
-        /// <summary>m_imageDragStartPointを記録した瞬間のタイムスタンプ（InputEventArgs.
-        /// Timestamp、ミリ秒）。ダブルクリックの1回目のクリックのわずかな手ブレでドラッグが
-        /// 誤発生してしまう（結果としてダブルクリックとして認識されなくなる）のを防ぐため、
-        /// マウス押下からある程度の時間が経ってから動いた場合だけドラッグとみなすのに使う。</summary>
+        /// <summary>m_imageDragStartPointを記録した時刻（InputEventArgs.Timestamp、ミリ秒）。
+        /// ダブルクリック1回目のクリックの手ブレをドラッグ開始と誤認しないための判定に使う。</summary>
         private int m_imageDragStartTimestamp;
 
-        /// <summary>マウス押下からこの時間（ミリ秒）が経過するまでは、多少動いてもドラッグとは
-        /// みなさない。ダブルクリックの1回目のクリックで手ブレにより数ピクセル動いただけで
-        /// DragDrop.DoDragDrop（モーダルなドラッグ操作）が始まってしまうと、その裏で2回目の
-        /// クリックが正しく認識されなくなり、ダブルクリックが機能しなくなってしまうため。</summary>
+        /// <summary>マウス押下からこの時間（ミリ秒）内の移動はドラッグとみなさない猶予。手ブレで
+        /// DragDrop.DoDragDropが始まるとダブルクリックの2回目が拾えなくなるのを防ぐ。</summary>
         private const int IMAGE_DRAG_MIN_HOLD_MS = 200;
 
         /// <summary>
@@ -138,17 +134,15 @@ namespace mde
         private void AttachImageDragHandlers(Image a_img)
         {
             a_img.Cursor = Cursors.Hand;
-            // RichTextBox内に埋め込まれたInlineUIContainerの子要素は、RichTextBox内部の
-            // テキスト編集用カーソル制御（IBeam表示）にCursor指定が上書きされてしまうことが
-            // あるため、ForceCursorでこの画像自身の指定を優先させる。
+            // RichTextBox内部のカーソル制御（IBeam表示）にCursor指定が上書きされることがあるため、
+            // ForceCursorでこの画像自身の指定を優先させる。
             a_img.ForceCursor = true;
             a_img.PreviewMouseLeftButtonDown += ImagePreviewMouseLeftButtonDown;
             a_img.PreviewMouseMove += ImagePreviewMouseMove;
         }
 
-        /// <summary>マウス押下位置を記録する（後続のドラッグ判定に使う）。ダブルクリックの検出・
-        /// 画像を開く処理自体は、MainWindow.EditorPreviewMouseLeftButtonDown側で
-        /// （RichTextBoxからのVisualTreeHelper.HitTestを使って、より確実に）行う。</summary>
+        /// <summary>マウス押下位置を記録する（後続のドラッグ判定用）。ダブルクリック検出と画像を
+        /// 開く処理自体はMainWindow.EditorPreviewMouseLeftButtonDown側で行う。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         private void ImagePreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args)
@@ -161,12 +155,9 @@ namespace mde
             m_imageDragStartTimestamp = a_args.Timestamp;
         }
 
-        /// <summary>画像をダブルクリックした時に、そのリンク先の画像ファイルを既定のアプリ
-        /// （画像ビューア）で開く。ローカルの実ファイルが見つからずリモート画像（http/https）で
-        /// あれば、代わりにブラウザで開く。data:URIの埋め込み画像や、実ファイルが見つからない
-        /// 相対パスなど、開きようが無い場合は、SaveImageAsと同様に理由をダイアログで知らせる
-        /// （ユーザーが意図して開こうとした操作なので、原因が分からないまま何も起きないより、
-        /// 明示的に知らせた方が親切なため）。MainWindow.EditorPreviewMouseLeftButtonDownから
+        /// <summary>画像をダブルクリックした時に、リンク先の画像ファイルを既定のアプリで開く。
+        /// ローカル実ファイルが無くリモート画像（http/https）ならブラウザで開く。どちらも
+        /// できなければダイアログで理由を知らせる。MainWindow.EditorPreviewMouseLeftButtonDownから
         /// 呼ばれる。</summary>
         /// <param name="a_img">対象の画像。</param>
         public void OpenImageFile(Image a_img)
@@ -195,9 +186,8 @@ namespace mde
                 "画像を開く", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
-        /// <summary>指定したパス・URLを、OS標準の関連付けアプリ（画像ファイルならビューア、
-        /// URLならブラウザ）で開く。関連付けアプリが無い環境などで開けなくても、例外を
-        /// 握りつぶしてエディタの操作自体は継続できるようにする。</summary>
+        /// <summary>指定したパス・URLをOS標準の関連付けアプリで開く。開けない環境でも例外を
+        /// 握りつぶし、エディタの操作は継続させる。</summary>
         /// <param name="a_pathOrUrl">開くファイルパスまたはURL。</param>
         private static void OpenWithDefaultApp(string a_pathOrUrl)
         {
@@ -227,8 +217,7 @@ namespace mde
                 return;
             }
 
-            // ダブルクリックの1回目のクリックでの手ブレを、ドラッグ開始と誤認しないようにする
-            // （下のIMAGE_DRAG_MIN_HOLD_MSの説明を参照）。
+            // ダブルクリック1回目の手ブレをドラッグ開始と誤認しないための猶予（IMAGE_DRAG_MIN_HOLD_MS参照）。
             if (a_args.Timestamp - m_imageDragStartTimestamp < IMAGE_DRAG_MIN_HOLD_MS)
             {
                 return;
@@ -346,13 +335,10 @@ namespace mde
             }
         }
 
-        /// <summary>右クリック「画像を削除」。ContextImageが埋め込まれているInlineUIContainerを、
-        /// それが属する段落のInlinesから取り除く（HandleDropでの挿入と対になる操作のため、
-        /// 挿入時と同様にRunAsProgrammaticChangeでくるみ、削除に伴う段落文字列の変化を
-        /// 自動整形トリガーの対象にしないようにしている）。ダーティ扱い・アウトライン再構築の
-        /// 記憶破棄は、Inlinesの変更として通常どおりEditorTextChangedが検知するため、ここで
-        /// 明示的なMarkDirty呼び出しは行っていない（HandleDropが挿入時に行っていないのと同じ
-        /// 理由）。</summary>
+        /// <summary>右クリック「画像を削除」。ContextImageを含むInlineUIContainerを親段落の
+        /// Inlinesから取り除く。RunAsProgrammaticChangeでくるみ、自動整形トリガーの対象にしない
+        /// （挿入時のHandleDropと同様）。ダーティ化・アウトライン再構築はEditorTextChangedが
+        /// 検知するため、ここでは明示的なMarkDirty呼び出しは不要。</summary>
         /// <param name="a_img">削除対象の画像要素（ContextImage）。</param>
         public void DeleteImage(Image a_img)
         {
@@ -451,10 +437,9 @@ namespace mde
         }
 
         /// <summary>
-        /// 画像を元のピクセルサイズを上限に、エディタの表示幅に収まるようにサイズ調整する
-        /// （幅がはみ出す場合のみ縮小し、高さだけの理由で縮小することはない）。エディタの
-        /// ズームはエディタ全体への一律のLayoutTransformとして適用されるため、100%ズーム時に
-        /// 表示幅の100%を上限としておけば、どのズーム倍率でも欠けずに表示され続ける。
+        /// 画像を元のピクセルサイズを上限に、エディタの表示幅に収まるよう縮小する（幅が
+        /// はみ出す場合のみ）。ズームはエディタ全体へのLayoutTransformで一律適用されるため、
+        /// 100%幅を上限にしておけばどの倍率でも欠けない。
         /// </summary>
         /// <param name="a_img">対象の画像。</param>
         public void ApplyImageSizing(Image a_img)
@@ -509,10 +494,9 @@ namespace mde
         }
 
         /// <summary>
-        /// エディタへの画像ファイルドラッグ&amp;ドロップの入口。RichTextBoxは自前のテキスト用
-        /// ドラッグ&amp;ドロップ処理を内部に持っており、通常のバブリング方式のDragEnter/DragOver/
-        /// Dropイベントだと横取りされてしまうため、これらはPreview（トンネリング）方式の
-        /// ハンドラとしてXAML側で配線されている必要がある。
+        /// エディタへの画像ファイルドラッグ&amp;ドロップの入口。RichTextBoxが内部のテキスト用
+        /// ドラッグ&amp;ドロップ処理で横取りしないよう、Preview（トンネリング）方式のハンドラとして
+        /// XAML側で配線する必要がある。
         /// </summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
@@ -570,10 +554,8 @@ namespace mde
             {
                 foreach (var file in imageFiles)
                 {
-                    // 常にまずOSの一時フォルダに退避する（保存済みの文書であっても同様）。
-                    // こうすることで、前回保存以降に追加された画像は、ユーザーが明示的に保存する
-                    // までは実際の"<ファイル名>.images"フォルダに一切触れない。実フォルダへの
-                    // 移動は RelocatePendingTempImages が Save / Save As のたびに行う。
+                    // 保存済み文書でも常にまずOSの一時フォルダへ退避する。実フォルダへの移動は
+                    // RelocatePendingTempImagesがSave/Save Asのたびに行う。
                     string tempPath = CopyFileWithDedup(file, GetOrCreateTempImageFolder());
                     if (null == tempPath)
                     {
@@ -601,15 +583,11 @@ namespace mde
         private const string PASTED_IMAGE_BASE_NAME = "clipboard_image";
 
         /// <summary>
-        /// クリップボードに画像が入っている状態でのCtrl+V等の貼り付け（DataObject.Pasting
-        /// ルーティングイベント）を検知し、ドラッグ&amp;ドロップと同じ一時フォルダへPNGとして
-        /// 保存した上で挿入する。mde自身や他のリッチテキストアプリからの貼り付け（Xaml/Rtf
-        /// 形式を伴う。既に挿入済みの画像をコピー&amp;ペーストする場合など）は、元の相対パスや
-        /// altテキストといった情報を保ったままWPF標準の貼り付けに任せたいため、ここでは何も
-        /// しない。TableEditor.HandlePasting・EditorHandleInlineMarkdownPastingより先に登録
-        /// することで、画像を含むクリップボード内容（ブラウザ等はHTMLやテキストも同時に
-        /// 乗せてくることがある）がそれらの表・テキスト向け処理に誤って先取りされないように
-        /// している（MainWindow.xaml.csでの登録順を参照）。
+        /// クリップボードに画像がある状態でのCtrl+V等の貼り付け（DataObject.Pasting）を検知し、
+        /// ドラッグ&amp;ドロップと同じ一時フォルダへPNGとして保存して挿入する。Xaml/Rtf形式を伴う
+        /// 貼り付け（mde自身や他のリッチテキストアプリから）はWPF標準の処理に任せ、ここでは
+        /// 何もしない。TableEditor.HandlePasting・EditorHandleInlineMarkdownPastingより先に
+        /// 登録し、画像を含むクリップボード内容を横取りする（MainWindow.xaml.csの登録順を参照）。
         /// </summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">貼り付けイベントの引数。</param>
@@ -668,11 +646,9 @@ namespace mde
             m_editor.Focus();
         }
 
-        /// <summary>クリップボードの内容からBitmapSourceを取り出す。透過（アルファチャンネル）を
-        /// できるだけ保つため、まず"PNG"形式が入っていればそちらを直接デコードし、なければ
-        /// Clipboard.GetImage()（Bitmap/DIB形式からの変換）にフォールバックする。ブラウザや
-        /// Snipping Tool等からコピーした画像をClipboard.GetImage()だけで扱うと、透過が失われたり
-        /// 取得に失敗したりすることがあるための対策。</summary>
+        /// <summary>クリップボードからBitmapSourceを取り出す。透過を保つため"PNG"形式があれば
+        /// 直接デコードし、なければClipboard.GetImage()にフォールバックする
+        /// （GetImage()単体だとブラウザ等からのコピーで透過が失われることがある）。</summary>
         /// <param name="a_data">貼り付けイベントのクリップボードデータ。</param>
         /// <returns>取得できたBitmapSource。画像が入っていなければnull。</returns>
         private static BitmapSource TryGetClipboardImage(IDataObject a_data)
@@ -785,12 +761,10 @@ namespace mde
         }
 
         /// <summary>
-        /// 文書の保存先フォルダが判明したタイミング（初回のSave/Save As）で呼ばれる。OSの
-        /// 一時フォルダに退避されていた画像を、保存先の隣にある「&lt;ファイル名&gt;.images」
-        /// フォルダ（ファイルごとに専用、なければ作成する）へ移動し、各画像が記憶している
-        /// パスをMarkdown書き出し用の最終的な相対パスに更新する。ファイルごとに専用の
-        /// フォルダ名（拡張子を除いたファイル名+".images"）を使うことで、同じフォルダに
-        /// 複数のMarkdownファイルを保存しても、画像が混在せず区別できるようにしている。
+        /// 文書の保存先フォルダが判明したタイミング（Save/Save As）で呼ばれる。OSの一時フォルダの
+        /// 画像を、保存先の隣の「&lt;ファイル名&gt;.images」フォルダへ移動し、各画像のパスを
+        /// Markdown書き出し用の相対パスに更新する。ファイルごとに専用フォルダ名にすることで、
+        /// 同じフォルダの複数Markdownファイル間で画像が混在しない。
         /// </summary>
         /// <param name="a_doc">対象の文書。</param>
         public void RelocatePendingTempImages(FlowDocument a_doc)

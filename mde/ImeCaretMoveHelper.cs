@@ -1,15 +1,13 @@
 // ImeCaretMoveHelper.cs
 //
 // mde (Markdown インラインエディタ) の一部。
-// 「見出しへの変換」「箇条書きでEnterして新しい項目を作る」など、キー入力に応じて
-// ドキュメントを書き換え、そのままCaretPositionを移動する処理に共通する、IME
-// （日本語入力）の変換候補ポップアップが消えずに固まってしまう不具合への対策をまとめた
-// 共通処理。ドキュメントを書き換えるすべての箇所がこの不具合の対象になり得るため、
-// 新しく同種の処理を書く時は、この ScheduleCaretMove を使うことを検討すること。
+// 「見出しへの変換」「箇条書きでEnter」など、ドキュメントを書き換えてCaretPositionを
+// 移動する処理に共通する、IME変換候補ポップアップが消えず固まる不具合への対策。
+// ドキュメントを書き換える箇所は全てこの不具合の対象になり得るため、同種の処理を
+// 新しく書く時は ScheduleCaretMove の利用を検討すること。
 //
-// 【重要な注意】この対策は、症状の発生確率を下げることはできても、100%解消する保証は
-// ない。Windows側のIME（TSF）内部のタイミングに依存する、本質的にタイミング依存の
-// 競合状態（レースコンディション）である可能性が高いと考えられている。
+// 【重要】この対策は発生確率を下げるのみで100%の解消は保証しない。Windows側IME(TSF)
+// 内部のタイミングに依存する競合状態（レースコンディション）である可能性が高い。
 
 using System;
 using System.Reflection;
@@ -90,12 +88,11 @@ namespace mde
         }
 
         /// <summary>
-        /// WPFの内部（非公開）APIである`TextEditorSelection._ClearSuggestedX`を、リフレクション
-        /// 経由でベストエフォートで呼び出す。CaretPositionをコードから設定すると、TextEditorの
-        /// 内部状態が正しく初期化されないことがある（dotnet/wpfのIssue #10151）ため、これを
-        /// クリアしてIME固まり症状を防ぐ。非公開APIへのリフレクションアクセスのため、.NET/WPFの
-        /// バージョンが変われば型名・メンバー名ごと失われる可能性があり、その場合は例外を
-        /// 握りつぶして何もしない（＝この呼び出しを省略したのと同じ状態に留まる）。
+        /// WPF内部の非公開API `TextEditorSelection._ClearSuggestedX` をリフレクションで呼び出す。
+        /// コードからCaretPositionを設定するとTextEditorの内部状態が正しく初期化されないことが
+        /// あり（dotnet/wpf Issue #10151）、これをクリアしてIME固まりを防ぐ。非公開APIのため
+        /// .NET/WPFのバージョンが変わると型名・メンバー名ごと失敗し得るため、その場合は例外を
+        /// 握りつぶして何もしない。
         /// </summary>
         /// <param name="a_editor">対象のRichTextBox。</param>
         public static void TryClearSuggestedX(RichTextBox a_editor)
@@ -123,8 +120,8 @@ namespace mde
             }
             catch (Exception ex)
             {
-                // 非公開APIの内部構造が想定と違った場合（.NET/WPFのバージョン差異等）は、
-                // このベストエフォートの対策を諦めるだけでよい。呼び出し元の処理は続行する。
+                // 非公開APIの構造が想定と異なる場合（.NET/WPFのバージョン差異等）は諦めて
+                // 何もしない。呼び出し元の処理は続行する。
                 DebugLogger.Log($"TryClearSuggestedX: 例外 {ex.GetType().Name}: {ex.Message}");
             }
         }
