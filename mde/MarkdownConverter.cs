@@ -8,6 +8,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -147,6 +148,20 @@ namespace mde
         }
 
         private readonly OriginalTextTracker m_originalTextTracker;
+
+        /// <summary>HTMLコメント（&lt;!-- --&gt;）を、Markdownモードで完全に非表示にする
+        /// （空行すら残さない）ための仕組み。コメントは独立したBlockとしては表示に追加せず、
+        /// 直後（無ければ直前）の実際のBlockに対して、書き出し時にだけ差し込む文字列として
+        /// 覚えておく。キーはBlock参照（ConditionalWeakTableで、不要になれば自動的に解放
+        /// される）。MarkdownToDocument（記録）とDocumentToMarkdown・GetMarkdownOffsetForBlock
+        /// （書き出し）で共有する。</summary>
+        private readonly ConditionalWeakTable<Block, string> m_leadingComments = new ConditionalWeakTable<Block, string>();
+
+        /// <summary>ファイル末尾がコメントだけで終わる（直後に実際のBlockが無い）場合に、
+        /// 直前のBlockに対して「後に付くコメント」として覚えておく先。詳細は
+        /// <see cref="m_leadingComments"/>参照。</summary>
+        private readonly ConditionalWeakTable<Block, string> m_trailingComments = new ConditionalWeakTable<Block, string>();
+
         private readonly ImageManager m_imageManager;
         private readonly Func<bool> m_preserveSourceLineBreaksFlg;
         private readonly Func<bool> m_correctColumnWidthsFlg;
@@ -211,12 +226,33 @@ namespace mde
                     {
                         lines.Add(contS);
                     }
+                    // <br>の続き段落が文書の最後のBlockで、その直後（ファイル末尾）にHTMLコメント
+                    // だけがあった場合、そのコメントはこの続き段落へ「後に付くコメント」として
+                    // 結び付けられている（MarkdownToDocument参照）。上のcontinueでこの分岐を
+                    // 抜けてしまうと、下のm_trailingCommentsのチェックに到達せず、コメントの
+                    // 内容が保存時に失われてしまうため、ここでも必ずチェックする。
+                    if (m_trailingComments.TryGetValue(block, out var trailingCommentForCont))
+                    {
+                        lines.Add(trailingCommentForCont);
+                    }
                     continue;
+                }
+                // このBlockの直前にあったHTMLコメント（Blockとしては存在しない。
+                // m_leadingComments参照）を、通常のブロックと同じ"\n\n"区切りで先に出力する。
+                if (m_leadingComments.TryGetValue(block, out var leadingComment))
+                {
+                    lines.Add(leadingComment);
                 }
                 string s = m_originalTextTracker.TryGetOriginal(block, out var original) ? original : BlockToMarkdown(block);
                 if (!string.IsNullOrWhiteSpace(s))
                 {
                     lines.Add(s);
+                }
+                // ファイル末尾がコメントだけで終わる場合の、このBlockに付随する「後に付く
+                // コメント」（m_trailingComments参照）。
+                if (m_trailingComments.TryGetValue(block, out var trailingComment))
+                {
+                    lines.Add(trailingComment);
                 }
             }
             return string.Join("\n\n", lines);
@@ -249,7 +285,27 @@ namespace mde
                         return offset;
                     }
                     offset += contS.Length;
+                    // DocumentToMarkdownと同じく、この続き段落に「後に付くコメント」
+                    // （m_trailingComments）が結び付いている場合、以降のオフセットがずれない
+                    // よう加算しておく（このBlockが文書の最後の場合、実際には後続ブロックは
+                    // 存在しないため影響しないが、一貫性のため処理しておく）。
+                    if (m_trailingComments.TryGetValue(block, out var trailingCommentForCont))
+                    {
+                        offset += 2;
+                        offset += trailingCommentForCont.Length;
+                    }
                     continue;
+                }
+                // DocumentToMarkdownと同じく、このBlockの直前のHTMLコメント分もオフセットに
+                // 加算してから本体へ進む（対象ブロック自身がコメントになることはない）。
+                if (m_leadingComments.TryGetValue(block, out var leadingComment))
+                {
+                    if (!firstFlg)
+                    {
+                        offset += 2;
+                    }
+                    offset += leadingComment.Length;
+                    firstFlg = false;
                 }
                 string s = m_originalTextTracker.TryGetOriginal(block, out var original) ? original : BlockToMarkdown(block);
                 if (string.IsNullOrWhiteSpace(s))
@@ -270,6 +326,13 @@ namespace mde
                 }
                 offset += s.Length;
                 firstFlg = false;
+                // このBlockに付随する「後に付くコメント」（ファイル末尾がコメントだけの場合）分も、
+                // 以降のブロックのオフセットがずれないよう加算しておく。
+                if (m_trailingComments.TryGetValue(block, out var trailingComment))
+                {
+                    offset += 2;
+                    offset += trailingComment.Length;
+                }
             }
             return -1;
         }
@@ -285,10 +348,6 @@ namespace mde
                 if (p.Tag is HorizontalRuleInfo)
                 {
                     return "---";
-                }
-                if (p.Tag is HtmlCommentInfo commentInfo)
-                {
-                    return commentInfo.RawText;
                 }
                 if (p.Tag is CodeBlockInfo codeInfo)
                 {
@@ -668,6 +727,21 @@ namespace mde
         {
             a_doc.Blocks.Clear();
             m_originalTextTracker.Clear();
+            m_leadingComments.Clear();
+            m_trailingComments.Clear();
+            // 直前に読み取った、まだどのBlockにも結び付けていないHTMLコメント（複数可）。
+            // 詳細は下のHTMLコメント解析箇所のコメント参照。
+            var pendingComments = new List<string>();
+            // 新しいトップレベルBlockをa_doc.Blocksへ追加する直前に呼ぶ。貯まっている
+            // pendingCommentsがあれば、そのBlockの「直前のコメント」として結び付ける。
+            void AttachPendingComments(Block a_newBlock)
+            {
+                if (pendingComments.Count > 0)
+                {
+                    m_leadingComments.Add(a_newBlock, string.Join("\n\n", pendingComments));
+                    pendingComments.Clear();
+                }
+            }
             var lines = a_md.Replace("\r\n", "\n").Split('\n');
             int i = 0;
             while (i < lines.Length)
@@ -703,15 +777,21 @@ namespace mde
                         }
                         codePara.Inlines.Add(new Run(codeLines[k]));
                     }
+                    AttachPendingComments(codePara);
                     a_doc.Blocks.Add(codePara);
                     m_originalTextTracker.Record(codePara, lines, blockStart, i);
                     continue;
                 }
 
                 // HTMLコメント（<!-- ... -->。複数行にまたがる場合を含む）。Markdownモードでは
-                // 内容を表示しない（見た目にはほぼ高さを持たない段落として扱う）が、元の
-                // コメント文字列はHtmlCommentInfo.RawTextにそのまま保持し、書き出し時に
-                // そのまま書き戻す（BlockToMarkdown参照）。ソースモードでは通常のテキストとして
+                // 空行すら残さず完全に非表示にしたいため、Blockとしては一切追加しない
+                // （中身の無いBlockは、たとえ見た目を小さくしても空行に近いものが残ってしまう
+                // ため）。代わりに、pendingCommentsへ貯めておき、次に実際のBlockが追加される
+                // 直前にそのBlockへ「直前のコメント」として結び付ける（m_leadingComments。
+                // すぐ下のBlock追加箇所を参照）。ファイル末尾がコメントだけで終わる場合は、
+                // ループを抜けた後で直前のBlockへ「後に付くコメント」として結び付ける
+                // （m_trailingComments）。書き出し時はDocumentToMarkdown・
+                // GetMarkdownOffsetForBlockを参照。ソースモードでは通常のテキストとして
                 // 普通に見える・編集できる。
                 if (line.TrimStart().StartsWith("<!--"))
                 {
@@ -724,15 +804,7 @@ namespace mde
                         closedFlg = lines[i].Contains("-->");
                         i++;
                     }
-                    var commentPara = new Paragraph
-                    {
-                        FontSize = 1,
-                        LineHeight = 1,
-                        Margin = new Thickness(0),
-                        Tag = new HtmlCommentInfo { RawText = string.Join("\n", commentLines) }
-                    };
-                    a_doc.Blocks.Add(commentPara);
-                    m_originalTextTracker.Record(commentPara, lines, blockStart, i);
+                    pendingComments.Add(string.Join("\n", commentLines));
                     continue;
                 }
 
@@ -742,6 +814,7 @@ namespace mde
                     var p = new Paragraph();
                     BlockStyles.ApplyHeadingStyle(p, hMatch.Groups[1].Value.Length);
                     AppendInlineMarkdownToParagraph(p, hMatch.Groups[2].Value, false);
+                    AttachPendingComments(p);
                     a_doc.Blocks.Add(p);
                     i++;
                     m_originalTextTracker.Record(p, lines, blockStart, i);
@@ -756,6 +829,7 @@ namespace mde
                 {
                     var hrPara = new Paragraph();
                     BlockStyles.ApplyHorizontalRuleStyle(hrPara);
+                    AttachPendingComments(hrPara);
                     a_doc.Blocks.Add(hrPara);
                     i++;
                     m_originalTextTracker.Record(hrPara, lines, blockStart, i);
@@ -801,6 +875,7 @@ namespace mde
                         break;
                     }
                     var list = BuildNestedList(listLines);
+                    AttachPendingComments(list);
                     a_doc.Blocks.Add(list);
                     m_originalTextTracker.Record(list, lines, blockStart, i);
                     continue;
@@ -901,6 +976,7 @@ namespace mde
                     // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて
                     // 設定する（詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
                     BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
+                    AttachPendingComments(table);
                     a_doc.Blocks.Add(table);
                     m_originalTextTracker.Record(table, lines, blockStart, i);
                     continue;
@@ -939,6 +1015,7 @@ namespace mde
                 }
                 var para = new Paragraph();
                 AppendInlineMarkdownToParagraph(para, brSegments[0], false);
+                AttachPendingComments(para);
                 a_doc.Blocks.Add(para);
                 if (1 == brSegments.Length)
                 {
@@ -977,6 +1054,25 @@ namespace mde
                         a_doc.Blocks.Add(contPara);
                     }
                 }
+            }
+
+            // ファイル末尾がHTMLコメントだけで終わっていた場合（直後に実際のBlockが無い）、
+            // 直前のBlockへ「後に付くコメント」として結び付ける。1つもBlockが無い（文書全体が
+            // コメントだけだった）場合は、結び付け先として空の段落を1つ作る。
+            if (pendingComments.Count > 0)
+            {
+                string trailingText = string.Join("\n\n", pendingComments);
+                if (a_doc.Blocks.Count > 0)
+                {
+                    m_trailingComments.Add(a_doc.Blocks.LastBlock, trailingText);
+                }
+                else
+                {
+                    var onlyPara = new Paragraph();
+                    m_leadingComments.Add(onlyPara, trailingText);
+                    a_doc.Blocks.Add(onlyPara);
+                }
+                pendingComments.Clear();
             }
 
             if (0 == a_doc.Blocks.Count)
