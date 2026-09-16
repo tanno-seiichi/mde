@@ -198,6 +198,21 @@ namespace mde
             var lines = new List<string>();
             foreach (Block block in a_doc.Blocks)
             {
+                // <br>による段落内改行の「続き」段落（MarkdownToDocument参照）は、通常のブロック
+                // 区切り（空行="\n\n"）ではなく、直前の行へ<br>で連結する。
+                if (block is Paragraph contPara && contPara.Tag is BrContinuationInfo)
+                {
+                    string contS = BlockToMarkdown(block);
+                    if (lines.Count > 0)
+                    {
+                        lines[lines.Count - 1] += "<br>\n" + contS;
+                    }
+                    else
+                    {
+                        lines.Add(contS);
+                    }
+                    continue;
+                }
                 string s = m_originalTextTracker.TryGetOriginal(block, out var original) ? original : BlockToMarkdown(block);
                 if (!string.IsNullOrWhiteSpace(s))
                 {
@@ -224,6 +239,18 @@ namespace mde
             bool firstFlg = true;
             foreach (Block block in a_doc.Blocks)
             {
+                // DocumentToMarkdownの<br>連結規則（直前の行へ"<br>\n"で連結）と一致させる。
+                if (block is Paragraph contPara && contPara.Tag is BrContinuationInfo)
+                {
+                    offset += "<br>\n".Length;
+                    string contS = BlockToMarkdown(block);
+                    if (ReferenceEquals(block, a_targetBlock))
+                    {
+                        return offset;
+                    }
+                    offset += contS.Length;
+                    continue;
+                }
                 string s = m_originalTextTracker.TryGetOriginal(block, out var original) ? original : BlockToMarkdown(block);
                 if (string.IsNullOrWhiteSpace(s))
                 {
@@ -258,6 +285,10 @@ namespace mde
                 if (p.Tag is HorizontalRuleInfo)
                 {
                     return "---";
+                }
+                if (p.Tag is HtmlCommentInfo commentInfo)
+                {
+                    return commentInfo.RawText;
                 }
                 if (p.Tag is CodeBlockInfo codeInfo)
                 {
@@ -677,6 +708,34 @@ namespace mde
                     continue;
                 }
 
+                // HTMLコメント（<!-- ... -->。複数行にまたがる場合を含む）。Markdownモードでは
+                // 内容を表示しない（見た目にはほぼ高さを持たない段落として扱う）が、元の
+                // コメント文字列はHtmlCommentInfo.RawTextにそのまま保持し、書き出し時に
+                // そのまま書き戻す（BlockToMarkdown参照）。ソースモードでは通常のテキストとして
+                // 普通に見える・編集できる。
+                if (line.TrimStart().StartsWith("<!--"))
+                {
+                    var commentLines = new List<string> { line };
+                    bool closedFlg = line.Contains("-->");
+                    i++;
+                    while (!closedFlg && i < lines.Length)
+                    {
+                        commentLines.Add(lines[i]);
+                        closedFlg = lines[i].Contains("-->");
+                        i++;
+                    }
+                    var commentPara = new Paragraph
+                    {
+                        FontSize = 1,
+                        LineHeight = 1,
+                        Margin = new Thickness(0),
+                        Tag = new HtmlCommentInfo { RawText = string.Join("\n", commentLines) }
+                    };
+                    a_doc.Blocks.Add(commentPara);
+                    m_originalTextTracker.Record(commentPara, lines, blockStart, i);
+                    continue;
+                }
+
                 var hMatch = Regex.Match(line, "^(#{1,6})\\s+(.*)$");
                 if (hMatch.Success)
                 {
@@ -859,10 +918,65 @@ namespace mde
                     paraLines.Add(lines[i]);
                     i++;
                 }
+                string joinedText = JoinParagraphSourceLines(paraLines);
+
+                // <br>（表のセルの改行と同じ記法。m_tableCellBrRegex）による、段落中の明示的な
+                // 行区切りに対応する。LineBreakではなく独立したParagraph（見た目のプロパティは
+                // 分割元から引き継ぎ、見た目には1つの段落内の複数行にしか見えないようにする）
+                // として表現するのは、表のセル・箇条書き項目と同じ理由（WPFのLineBreakとIMEの
+                // 組み合わせの不具合対策。HeadingCodeBlockEditor.InsertParagraphSplitAtCaretの
+                // コメント参照）。書き出し側はDocumentToMarkdownのBrContinuationInfo分岐を参照。
+                string[] brSegments = m_tableCellBrRegex.Split(joinedText);
+                // 末尾が「<br>で終わり、その後に何も続かない」場合、分割結果の最後に意味のない
+                // 空文字列の要素が残る（例："abc<br>" → ["abc", ""]）。これをそのまま続き段落に
+                // すると、書き出し時に余分な空行が生じるため、末尾の空要素は読み捨てる
+                // （note: <br>そのものが本文の末尾にあった場合、その<br>自体も無視される。
+                // 元々「その後に何もない改行」はHTML/Markdownの表示上も意味を持たないため実害はない）。
+                while (brSegments.Length > 1 &&
+                       string.IsNullOrEmpty(brSegments[brSegments.Length - 1].TrimStart(' ', '\t', '\r', '\n')))
+                {
+                    brSegments = brSegments.Take(brSegments.Length - 1).ToArray();
+                }
                 var para = new Paragraph();
-                AppendInlineMarkdownToParagraph(para, JoinParagraphSourceLines(paraLines), false);
+                AppendInlineMarkdownToParagraph(para, brSegments[0], false);
                 a_doc.Blocks.Add(para);
-                m_originalTextTracker.Record(para, lines, blockStart, i);
+                if (1 == brSegments.Length)
+                {
+                    m_originalTextTracker.Record(para, lines, blockStart, i);
+                }
+                else
+                {
+                    // <br>で分割した場合は、元テキストの丸ごと保存（OriginalTextTracker）を使わず、
+                    // 常に現在の構造から書き出し直す（DocumentToMarkdown参照）。分割位置がソース
+                    // 行の境界と一致するとは限らない（1行の途中に<br>がある場合等）ため、行番号
+                    // ベースの元テキスト記録では個々の段落を正しく表現できないための措置。
+                    // 先頭段落（para）の下余白も0にする（続き段落との間を詰め、1つの段落内の
+                    // 複数行に見せるため。既定の下余白はまだ反映されていないスタイル値のため
+                    // 依存せず明示的に上書きする）。
+                    para.Margin = new Thickness(0);
+                    for (int segIdx = 1; segIdx < brSegments.Length; segIdx++)
+                    {
+                        string segText = brSegments[segIdx].TrimStart(' ', '\t', '\r', '\n');
+                        // Marginは明示的に指定する（段落の既定の下余白はEditorBlockSpacing
+                        // リソース経由で後から適用されるスタイル値であり、生成直後のこの時点で
+                        // para.Marginを読んでもまだ反映されていないため、依存せず明示的に指定
+                        // する）。グループ内の段落どうしの間は0にして、見た目には1つの段落内の
+                        // 複数行にしか見えないようにするが、グループの最後の段落だけは、次の
+                        // ブロックとの間の余白（ApplyEditorLineHeightのEditorBlockSpacingと
+                        // 同じ固定値）を通常の段落と同様に持たせる。
+                        bool lastSegmentFlg = segIdx == brSegments.Length - 1;
+                        var contPara = new Paragraph
+                        {
+                            Margin = lastSegmentFlg ? new Thickness(0, 0, 0, 14) : new Thickness(0),
+                            LineHeight = para.LineHeight,
+                            KeepTogether = para.KeepTogether,
+                            TextAlignment = para.TextAlignment,
+                            Tag = new BrContinuationInfo()
+                        };
+                        AppendInlineMarkdownToParagraph(contPara, segText, false);
+                        a_doc.Blocks.Add(contPara);
+                    }
+                }
             }
 
             if (0 == a_doc.Blocks.Count)
