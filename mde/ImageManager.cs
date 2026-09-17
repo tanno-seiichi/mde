@@ -869,6 +869,143 @@ namespace mde
         }
 
         /// <summary>
+        /// 「名前を付けて保存」で保存先フォルダやファイル名が変わった際に呼ばれる。文書内の
+        /// 画像のうち、既に相対パスになっている（＝前回の保存時点で退避済みの）ものを対象に、
+        /// 変更前のファイルのフォルダを基準とした相対パスの位置から、新しい保存先の同じ相対
+        /// パスの位置へファイルをコピーする。
+        ///
+        /// 当初は「&lt;変更前のファイル名&gt;.images」という専用フォルダの中の画像だけを対象に
+        /// していたが、複数のMarkdownファイルが共通の「images」等のフォルダを共有して参照する
+        /// ケース（docxから複数ファイルへ分割変換したもの等でよく見られる）では、フォルダ名が
+        /// ファイル名と対応しておらず対象から漏れ、画像が消えてしまう不具合があったため、
+        /// フォルダ名に依存しない、相対パスの構造をそのまま維持してコピーする方式に変更した。
+        /// これにより「&lt;ファイル名&gt;.images」に限らず、任意の名前・構造の相対パス参照
+        /// （複数ファイル共有フォルダ・入れ子のフォルダ等）を幅広くカバーする。
+        ///
+        /// なお、変更前のファイル専用の画像フォルダ（"&lt;変更前のファイル名&gt;.images"）内の
+        /// 画像に限っては、ファイル名も同時に変わる場合、フォルダ名を新しいファイル名に追従
+        /// させる（従来通りの挙動）。それ以外（共有フォルダ等）は、フォルダ名を変えず、その
+        /// ままの相対パス構造でコピーする。
+        ///
+        /// RelocatePendingTempImagesとは対象とする画像が重ならない（一方は絶対パス、もう一方は
+        /// 相対パスを対象にする）ため、両方呼んでも問題ない。コピー元（変更前のフォルダ内の
+        /// ファイル）は削除しない。これは、変更前のファイル自体がまだ元の場所に残っている場合、
+        /// そちらが引き続きその画像を参照しているため。
+        /// </summary>
+        /// <param name="a_doc">対象の文書。</param>
+        /// <param name="a_oldFileDirectory">変更前のファイルの保存先フォルダ。まだ一度も保存して
+        /// いない新規文書からの「名前を付けて保存」等、変更前の情報が無い場合はnull。</param>
+        /// <param name="a_oldFilePath">変更前のファイルのパス（専用画像フォルダ名の決定に使う）。
+        /// 変更前の情報が無い場合はnull。</param>
+        public void RelocateImagesFromOldFileImagesFolder(FlowDocument a_doc, string a_oldFileDirectory, string a_oldFilePath)
+        {
+            if (string.IsNullOrEmpty(a_oldFileDirectory) || string.IsNullOrEmpty(a_oldFilePath))
+            {
+                return; // 変更前のファイルが無かった（新規文書など）場合は移し替える対象も無い
+            }
+
+            string currentFileDirectory = m_getCurrentFileDirectory();
+            if (string.IsNullOrEmpty(currentFileDirectory))
+            {
+                return;
+            }
+
+            string oldDirFull;
+            string newDirFull;
+            try
+            {
+                oldDirFull = Path.GetFullPath(a_oldFileDirectory);
+                newDirFull = Path.GetFullPath(currentFileDirectory);
+            }
+            catch { return; }
+
+            bool sameFolder = string.Equals(oldDirFull, newDirFull, StringComparison.OrdinalIgnoreCase);
+
+            // 変更前のファイル専用の画像フォルダ（"<変更前のファイル名>.images"）内の画像は、
+            // ファイル名も同時に変わる場合、フォルダ名を新しいファイル名に追従させる。
+            string oldOwnedFolderName = Path.GetFileNameWithoutExtension(a_oldFilePath) + ".images";
+            string newOwnedFolderName = GetImagesFolderName(); // 決定できなければnull
+
+            foreach (var img in FindAllImages(a_doc))
+            {
+                if (!(img.Tag is ImageInfo info) || string.IsNullOrEmpty(info.OriginalSrc))
+                {
+                    continue;
+                }
+                if (Path.IsPathRooted(info.OriginalSrc))
+                {
+                    continue; // 絶対パス（一時フォルダ内画像・外部ファイルの直接参照等）は対象外
+                }
+                if (Uri.TryCreate(info.OriginalSrc, UriKind.Absolute, out Uri absoluteUri) &&
+                    ("http" == absoluteUri.Scheme || "https" == absoluteUri.Scheme || "data" == absoluteUri.Scheme))
+                {
+                    continue; // リモート画像は対象外
+                }
+
+                string relSrc = info.OriginalSrc.Replace('/', Path.DirectorySeparatorChar);
+                string destRelSrc = relSrc;
+
+                if (!string.IsNullOrEmpty(newOwnedFolderName))
+                {
+                    string firstSegment = relSrc.Split(Path.DirectorySeparatorChar)[0];
+                    if (string.Equals(firstSegment, oldOwnedFolderName, StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(oldOwnedFolderName, newOwnedFolderName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        destRelSrc = newOwnedFolderName + relSrc.Substring(firstSegment.Length);
+                    }
+                }
+
+                bool relSrcChanged = !string.Equals(relSrc, destRelSrc, StringComparison.OrdinalIgnoreCase);
+                if (sameFolder && !relSrcChanged)
+                {
+                    continue; // 保存先が同じフォルダで相対パスも変わらないなら、そのまま表示できる
+                }
+
+                string fullSrc;
+                string fullDest;
+                try
+                {
+                    fullSrc = Path.GetFullPath(Path.Combine(oldDirFull, relSrc));
+                    fullDest = Path.GetFullPath(Path.Combine(newDirFull, destRelSrc));
+                }
+                catch { continue; }
+
+                if (string.Equals(fullSrc, fullDest, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue; // コピー元・コピー先が同じ場所（実質的な移動が無い）
+                }
+
+                if (!File.Exists(fullDest))
+                {
+                    if (!File.Exists(fullSrc))
+                    {
+                        continue; // コピー元が見つからない場合は対象外
+                    }
+                    try
+                    {
+                        string destDir = Path.GetDirectoryName(fullDest);
+                        if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
+                        {
+                            Directory.CreateDirectory(destDir);
+                        }
+                        File.Copy(fullSrc, fullDest, false);
+                    }
+                    catch { continue; }
+                }
+                // コピー先に既にファイルがある場合は上書きせず、そのまま新しい相対パスとして使う
+                // （例えば直前の保存で既にコピー済みだった場合等）。
+
+                if (relSrcChanged)
+                {
+                    info.OriginalSrc = destRelSrc.Replace(Path.DirectorySeparatorChar, '/');
+                    SetImageSource(img, info.OriginalSrc);
+                }
+                // 変更前の画像フォルダの元ファイルはここでは削除しない（変更前のファイル自体が
+                // まだ元の場所に残っており、そちらの画像として引き続き使われているため）。
+            }
+        }
+
+        /// <summary>
         /// 一時フォルダの画像を退避する先のフォルダ名（"&lt;ファイル名（拡張子除く）&gt;.images"）
         /// を組み立てる。現在のファイルパスが分からない場合はnullを返す。
         /// </summary>
