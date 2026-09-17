@@ -75,8 +75,9 @@ namespace mde
         /// <summary>現在のファイル（m_currentFilePath）に未保存の変更があるかどうか。</summary>
         private bool m_currentFileIsDirtyFlg = false;
 
-        /// <summary>エディタに適用中のズーム倍率（1.0が100%）。</summary>
-        private double m_zoomLevel = 1.0;
+        /// <summary>エディタのズーム倍率の管理役。現在の倍率はm_zoomManager.ZoomLevelで
+        /// 参照できる（設定の保存時に使用）。</summary>
+        private ZoomManager m_zoomManager;
         private double m_editorLineHeight = 26;
         private bool m_requireCtrlForLinkClickFlg = true;
 
@@ -164,7 +165,7 @@ namespace mde
 
             AdjustWindowPosition ();
 
-            m_zoomLevel = m_savedSettings.ZoomLevel;
+            m_zoomManager = new ZoomManager(m_editor, m_sourceEditor, m_zoomLabelBtn, m_savedSettings.ZoomLevel);
             m_editorLineHeight = m_savedSettings.EditorLineHeight > 0 ? m_savedSettings.EditorLineHeight : 26;
             m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
             m_preserveSourceLineBreaksFlg = m_savedSettings.PreserveSourceLineBreaksFlg;
@@ -322,7 +323,7 @@ namespace mde
 
             ApplyFolderPaneVisibility();
             ApplyOutlinePaneVisibility();
-            SetZoom(m_zoomLevel);
+            m_zoomManager.ApplyCurrentZoomLevel();
             if (m_savedSettings.IsMaximized)
             {
                 this.WindowState = WindowState.Maximized;
@@ -564,7 +565,7 @@ namespace mde
                 OutlinePaneVisible = m_outlinePaneVisibleFlg,
                 FolderPaneWidth = folderWidthToSave,
                 OutlinePaneWidth = outlineWidthToSave,
-                ZoomLevel = m_zoomLevel,
+                ZoomLevel = m_zoomManager.ZoomLevel,
                 EditorLineHeight = m_editorLineHeight,
                 RequireCtrlForLinkClickFlg = m_requireCtrlForLinkClickFlg,
                 PreserveSourceLineBreaksFlg = m_preserveSourceLineBreaksFlg,
@@ -2019,34 +2020,19 @@ namespace mde
         private void DiscardCurrentDocumentSilently() => m_fileOperationsManager.DiscardCurrentDocumentSilently();
 
         // ======================================================================
-        //  ズーム
+        //  ズーム（実体はZoomManagerへ移動。XAMLのClick=／PreviewMouseWheel=が
+        //  コードビハインドの同名メソッドを直接参照するため、薄いラッパーとして残す）
         // ======================================================================
 
-        private void ZoomInClick(object a_sender, RoutedEventArgs a_args) => SetZoom(m_zoomLevel + 0.1);
-        private void ZoomOutClick(object a_sender, RoutedEventArgs a_args) => SetZoom(m_zoomLevel - 0.1);
-        private void ZoomResetClick(object a_sender, RoutedEventArgs a_args) => SetZoom(1.0);
+        private void ZoomInClick(object a_sender, RoutedEventArgs a_args) => m_zoomManager.ZoomInClick(a_sender, a_args);
+        private void ZoomOutClick(object a_sender, RoutedEventArgs a_args) => m_zoomManager.ZoomOutClick(a_sender, a_args);
+        private void ZoomResetClick(object a_sender, RoutedEventArgs a_args) => m_zoomManager.ZoomResetClick(a_sender, a_args);
 
-        /// <summary>Ctrl+ホイールでエディタをズームする（スクロールの代わり）。</summary>
+        /// <summary>Ctrl+ホイールでエディタをズームする（スクロールの代わり。詳細はZoomManager.
+        /// EditorPreviewMouseWheel参照）。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
-        private void EditorPreviewMouseWheel(object a_sender, MouseWheelEventArgs a_args)
-        {
-            if (Keyboard.Modifiers == ModifierKeys.Control)
-            {
-                a_args.Handled = true;
-                SetZoom(m_zoomLevel + (a_args.Delta > 0 ? 0.1 : -0.1));
-            }
-        }
-
-        /// <summary>新しいズーム倍率を適用し、ツールバーのパーセント表示を更新する。</summary>
-        /// <param name="a_value">新しいズーム倍率（1.0が100%）。妥当な範囲に丸められる。</param>
-        private void SetZoom(double a_value)
-        {
-            m_zoomLevel = Math.Max(0.5, Math.Min(2.5, Math.Round(a_value, 2)));
-            m_editor.LayoutTransform = new ScaleTransform(m_zoomLevel, m_zoomLevel);
-            m_sourceEditor.FontSize = 16 * m_zoomLevel;
-            m_zoomLabelBtn.Content = Math.Round(m_zoomLevel * 100) + "%";
-        }
+        private void EditorPreviewMouseWheel(object a_sender, MouseWheelEventArgs a_args) => m_zoomManager.EditorPreviewMouseWheel(a_sender, a_args);
 
         /// <summary>ソースモード編集中、ファイルをダーティにする。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
