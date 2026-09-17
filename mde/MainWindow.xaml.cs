@@ -2645,9 +2645,16 @@ namespace mde
             {
                 return;
             }
+            // 表のセル内の画像はApplyImageSizingConsideringTable経由で列幅を考慮したサイズに
+            // なるようにする（表の外の画像は従来通りエディタ幅基準）。以前はここで常に
+            // ApplyImageSizing（エディタ幅基準）だけを呼んでいたため、表のセル内の画像は
+            // リサイズ・ズーム変更のたびに一旦列幅を無視した（広すぎる）サイズになり、その後の
+            // RefreshAutoCalculatedColumnWidthsForResizeが「列幅補正オン・自動計算のまま」の
+            // 表だけを補正し直すことで見かけ上「治る」ことがある一方、列幅を明示的に調整した
+            // 表や、その補正が効くまでの間は欠けたまま（or 広すぎるまま）になっていた。
             foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
             {
-                m_imageManager.ApplyImageSizing(img);
+                m_imageManager.ApplyImageSizingConsideringTable(img);
             }
             // 列幅の変更はRichTextBox.TextChangedを発生させるため（ChromiumPdfExporter呼び出し側の
             // 既存コメント参照）、ウインドウのリサイズだけでファイルがダーティ扱いになってしまわない

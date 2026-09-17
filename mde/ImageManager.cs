@@ -424,11 +424,11 @@ namespace mde
 
                 if (bmp.IsDownloading)
                 {
-                    bmp.DownloadCompleted += (s, e) => ApplyImageSizing(a_img);
+                    bmp.DownloadCompleted += (s, e) => ApplyImageSizingConsideringTable(a_img);
                 }
 
                 a_img.Source = bmp;
-                ApplyImageSizing(a_img);
+                ApplyImageSizingConsideringTable(a_img);
             }
             catch
             {
@@ -464,6 +464,58 @@ namespace mde
             double scale = targetWidth / naturalWidth;
             a_img.Width = targetWidth;
             a_img.Height = naturalHeight * scale;
+        }
+
+        /// <summary>
+        /// 画像1枚の表示サイズを決める。表のセル内の画像は、そのセルが属する列の実際の幅
+        /// （BlockStyles.ConstrainCellImagesToColumnWidths）に収まるよう縮小し、表の外の
+        /// 画像はこれまで通りエディタの表示幅基準（ApplyImageSizing）で縮小する。
+        ///
+        /// 表内の画像を常にこちらの経路で扱うようにしたのは、次の不具合の修正のため。
+        /// 従来は、表内・表外を問わずSetImageSourceから常にApplyImageSizing（エディタ全体の
+        /// 幅を上限とする、表のセル幅を考慮しない縮小）だけが呼ばれていた。一方、表の列幅補正
+        /// （BlockStyles.ConstrainCellImagesToColumnWidths）は表の構築時（MarkdownToDocument内で
+        /// 表の各セルを組み立てる際）に呼ばれるが、その時点では埋め込み画像はまだSourceが
+        /// 解決されておらず（ResolveImagesはMarkdownToDocumentの最後、表の構築より後に呼ばれる
+        /// ため）、画像の自然サイズが分からずConstrainCellImagesToColumnWidths側のガード
+        /// （naturalWidth/naturalHeightが0以下なら対象外）に引っかかって常にスキップされていた。
+        /// 結果として、表のセル内の画像は初回表示時は列幅を考慮しない（広すぎる）サイズのまま
+        /// 表示され、その後ウインドウのリサイズやズーム変更（MainWindow.EditorSizeChanged経由で
+        /// TableEditor.RefreshAutoCalculatedColumnWidthsForResizeが呼ばれた時）に限って正しい
+        /// サイズへ補正される、という状態になっていた（「倍率を変えると治る」という現象の原因）。
+        /// このメソッドを介することで、画像のSourceが解決されるタイミング（初回表示・再読み込み
+        /// 双方）で必ず列幅を考慮したサイズが適用されるようにしている。
+        /// </summary>
+        /// <param name="a_img">対象の画像。</param>
+        public void ApplyImageSizingConsideringTable(Image a_img)
+        {
+            Table table = FindEnclosingTable(a_img);
+            if (null != table)
+            {
+                BlockStyles.ConstrainCellImagesToColumnWidths(table, GetAvailableImageWidth());
+                return;
+            }
+            ApplyImageSizing(a_img);
+        }
+
+        /// <summary>画像がテーブルのセル内にある場合、そのセルが属する表（Table）を返す。
+        /// TableEditor.FindEnclosingTableと同じ考え方で、WPFの論理ツリーを
+        /// Image→InlineUIContainer→Paragraph→TableCell→TableRow→TableRowGroup→Table の順に
+        /// たどる（DeleteImageで使っているImage→InlineUIContainer→Paragraphの辿り方と同じ
+        /// パターンを、TableCellまでさらに延長したもの）。表の外の画像であれば null を返す。</summary>
+        /// <param name="a_img">対象の画像。</param>
+        /// <returns>画像を含む表。表の外ならnull。</returns>
+        private Table FindEnclosingTable(Image a_img)
+        {
+            if (!(a_img.Parent is InlineUIContainer iuc) ||
+                !(iuc.Parent is Paragraph p) ||
+                !(p.Parent is TableCell cell) ||
+                !(cell.Parent is TableRow row) ||
+                !(row.Parent is TableRowGroup rg))
+            {
+                return null;
+            }
+            return rg.Parent as Table;
         }
 
         /// <summary>エディタの現在のサイズとパディングから、画像に使える幅を計算する。</summary>

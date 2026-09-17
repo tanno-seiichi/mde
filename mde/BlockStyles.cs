@@ -743,19 +743,24 @@ namespace mde
         }
 
         /// <summary>
-        /// 列幅補正がオンの間、表内の画像を、確定した列の実際の幅に収まるよう（画像の自然な
-        /// ピクセルサイズを上限に）縮小する。列幅の自動計算そのものからは画像を除外している
-        /// （MeasureCellContentWidthPx参照）ため、これを行わないと、テキストの内容量だけで
-        /// 決まった狭い列から画像がはみ出してしまう。Pixel列は列幅の値をそのまま使い、Star列は
-        /// <paramref name="a_availableWidthPx"/>とStar比率の合計から実際の表示幅を概算する
-        /// （正確な値はレイアウト後でないと分からないが、画像がはみ出さない程度の概算で足りる）。
-        /// Auto列（列幅補正オフ時）や、Star列でa_availableWidthPxが不明な場合は対象外とし、
-        /// 画像はエディタ幅基準の既定サイズ（ImageManager.ApplyImageSizing）のままにする。
+        /// 表内の画像を、確定した列の実際の幅に収まるよう（画像の自然なピクセルサイズを上限に）
+        /// 縮小する。列幅の自動計算そのものからは画像を除外している（MeasureCellContentWidthPx
+        /// 参照）ため、これを行わないと、テキストの内容量だけで決まった狭い列から画像が
+        /// はみ出してしまう。Pixel列は列幅の値をそのまま使い、Star列は<paramref name="a_availableWidthPx"/>
+        /// とStar比率の合計から実際の表示幅を概算する（正確な値はレイアウト後でないと分からないが、
+        /// 画像がはみ出さない程度の概算で足りる）。Auto列（列幅補正オフ時）や、Star列でも比率の
+        /// 合計が0（列が無い等）の場合は、列単位の上限までは付けられないが、<paramref name="a_availableWidthPx"/>
+        /// が分かっていれば、少なくとも表がエディタの表示幅を超えて画像だけがはみ出すことがない
+        /// よう、エディタ全体の幅を上限として使う（ImageManager.ApplyImageSizingと同じ考え方）。
+        /// <paramref name="a_availableWidthPx"/>そのものが不明な場合（呼び出し側が把握していない、
+        /// 保存専用の使い捨て文書やPDF書き出し用の一時文書など）に限り、対象外とする。
+        /// ImageManager.ApplyImageSizingConsideringTableから、画像1枚ごとのソース解決タイミング
+        /// （ズーム・リサイズ時を含む）でも呼ばれるため、public化している。
         /// </summary>
         /// <param name="a_table">対象の表。</param>
-        /// <param name="a_availableWidthPx">表を表示できる実際の幅（px）。Star列の概算に使う。
-        /// 呼び出し側が把握していない場合はnull。</param>
-        private static void ConstrainCellImagesToColumnWidths(Table a_table, double? a_availableWidthPx)
+        /// <param name="a_availableWidthPx">表を表示できる実際の幅（px）。Star列の概算や、列単位の
+        /// 上限を付けられない列のフォールバックに使う。呼び出し側が把握していない場合はnull。</param>
+        public static void ConstrainCellImagesToColumnWidths(Table a_table, double? a_availableWidthPx)
         {
             int colCount = a_table.Columns.Count;
             double starSum = 0;
@@ -780,7 +785,15 @@ namespace mde
                     double share = a_availableWidthPx.Value * (w.Value / starSum);
                     columnBudgets[c] = Math.Max(1, share - TABLE_CELL_HORIZONTAL_PADDING);
                 }
-                // Auto、またはStarでa_availableWidthPxが不明な場合は対象外（nullのまま）。
+                else if (a_availableWidthPx.HasValue)
+                {
+                    // Auto列（列幅補正オフ）や、Star列でも比率の合計が0の場合は、列単位の
+                    // 上限は付けられないが、a_availableWidthPxが分かっているのであれば、
+                    // 表がエディタの表示幅を超えて画像だけがはみ出すことは避けたいため、
+                    // エディタ全体の幅をフォールバックの上限として使う。
+                    columnBudgets[c] = Math.Max(1, a_availableWidthPx.Value - TABLE_CELL_HORIZONTAL_PADDING);
+                }
+                // a_availableWidthPxそのものが不明な場合のみ対象外（nullのまま）。
             }
 
             foreach (TableRowGroup rg in a_table.RowGroups)
