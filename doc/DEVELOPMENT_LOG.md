@@ -5624,6 +5624,96 @@ IME面での懸念はない。
    ご確認いただけると助かります。
 
 
+### 14.61 表のセル内の画像が欠ける不具合の再発（ズームで直ることがある）への対応
+
+**経緯**：14.57節で対応したはずの「表のセル内の画像が列幅に収まらず欠ける」問題に
+ついて、再度次のご報告をいただいた。
+
+> 表のセル内の画像が欠ける現象がまた発生しました
+> 一度倍率を変えてから元の倍率に戻すと治ることが多いようです
+
+**原因**：調査したところ、14.57節の対応（`BlockStyles.ConstrainCellImagesToColumnWidths`）
+自体に誤りがあったわけではなく、それが呼ばれるタイミングと、画像の表示サイズを決める
+`ImageManager`側の処理との間に、次のような順序の問題があった。
+
+1. Markdownファイルを読み込む際（`MarkdownConverter.MarkdownToDocument`）、表の構築時に
+   列幅を確定し、その直後に`ConstrainCellImagesToColumnWidths`で列幅に収まるよう画像を
+   縮小しようとする。しかしこの時点では、埋め込み画像はまだ`Source`（実際のビットマップ）
+   が解決されておらず、画像の自然なサイズが分からない。`ConstrainCellImagesToColumnWidths`
+   側には「自然なサイズが分からない画像は対象外にする」というガードがあるため、表の
+   セル内の画像はこの時点では常にスキップされていた。
+2. 画像の`Source`が実際に解決されるのは、`MarkdownToDocument`の一番最後に呼ばれる
+   `ImageManager.ResolveImages`（さらにその中の`SetImageSource`）であり、これは表の
+   構築よりも後に起こる。ところが`SetImageSource`は、表のセル内かどうかを一切考慮
+   せず、常にエディタ全体の表示幅を基準にした`ApplyImageSizing`だけで画像のサイズを
+   決めていた。そのため、表のセル内の画像は、初回表示の時点では列幅を無視した（列
+   より広い）サイズのまま表示され、はみ出した部分が欠けて見えていた。
+3. その後、ウインドウのリサイズやズームの変更（`MainWindow.SetZoom`が`LayoutTransform`
+   を変更すると`EditorSizeChanged`が発火する）が起きると、`EditorSizeChanged`は表の
+   列幅の再計算（`TableEditor.RefreshAutoCalculatedColumnWidthsForResize`→
+   `BlockStyles.RefreshAutoCalculatedColumnWidths`）を呼ぶが、これは「列幅補正がオン
+   で、かつまだ自動計算のまま（区切り行が既定値のまま）」の表だけを対象にしており、
+   その中で`ApplyAutoCalculatedColumnWidths`が改めて`ConstrainCellImagesToColumnWidths`
+   を呼ぶため、今度は画像のSourceが解決済みなので正しく縮小される。これが「倍率を
+   変えると治ることが多い」という現象の正体である。一方、列幅を明示的に調整した表
+   （区切り行を手動で変えた表）はこの再計算の対象外のため、ズームを変えても直らない
+   場合があった。
+
+**対応内容**：画像の表示サイズを決める処理そのものを、表のセル内かどうかを意識した
+ものに変更した。
+
+- `ImageManager`に、画像がテーブルのセル内にあるかどうかを、WPFの論理ツリーを
+  Image→InlineUIContainer→Paragraph→TableCell→TableRow→TableRowGroup→Tableの順に
+  たどって判定する`FindEnclosingTable`（既存の`DeleteImage`や、`TableEditor.
+  FindEnclosingTable`と同じ辿り方）と、それを使って表内なら列幅基準、それ以外は
+  従来通りエディタ幅基準でサイズを決める`ApplyImageSizingConsideringTable`を追加した。
+- `SetImageSource`（画像の同期読み込み・非同期読み込み`DownloadCompleted`の両方）から、
+  従来の`ApplyImageSizing`ではなくこの`ApplyImageSizingConsideringTable`を呼ぶように
+  変更した。これにより、画像のSourceが解決されるタイミング（初回表示・再読み込み
+  いずれも）で、表のセル内の画像は必ず列幅を考慮したサイズになる。
+- `BlockStyles.ConstrainCellImagesToColumnWidths`は、これまで「列幅補正オフ時のAuto列」
+  や「Star列で表示幅が不明な場合」の画像を完全に対象外（サイズ未調整のまま）として
+  いたが、表示幅（`a_availableWidthPx`）が分かっている場合は、列単位の上限は付け
+  られなくても、少なくともエディタ全体の幅を上限として使うようにした
+  （`ImageManager.ApplyImageSizing`と同じ考え方）。`ImageManager`から画像1枚ごとに
+  呼ばれるようになったことに伴い、アクセス修飾子も`private`から`public`に変更した。
+- `MainWindow.EditorSizeChanged`（ウインドウのリサイズ・ズーム変更時に呼ばれる）でも、
+  すべての画像に対して一律`ApplyImageSizing`を呼んでいた箇所を
+  `ApplyImageSizingConsideringTable`に置き換えた。これにより、列幅補正がオンで自動
+  計算のままの表だけでなく、列幅を明示的に調整した表の画像も、リサイズ・ズーム変更
+  のたびに正しく列幅基準で再計算されるようになった（従来「明示的に調整した表は
+  ズームしても直らない」場合があったことへの対応も兼ねる）。
+
+今回追加した`FindEnclosingTable`はWPFの論理ツリーを辿るだけの読み取り専用の処理で
+あり、`LineBreak`やテキストの構造そのものには一切手を入れていないため、IME面への
+影響はない。
+
+**検証方法**：これまでと同様、こちらの環境ではmde自体のビルド・実行ができないため、
+コードレビューと、WPF抜きの構文チェック（Roslynコンパイラ）を行った。特に、
+`BlockStyles.ConstrainCellImagesToColumnWidths`の呼び出しタイミングが「表の構築時
+（画像未解決）」と「画像のSource解決時（`ImageManager.SetImageSource`経由）」の
+両方になったことで、二重に呼ばれても結果が変わらない（冪等である）ことをコードの
+読み合わせで確認した。
+
+`BlockStyles.cs`・`ImageManager.cs`はnashi版・ari版で共通のファイル（両版の差分
+一覧に含まれない）のため、nashi版での変更をそのままari版へも反映した。
+`MainWindow.xaml.cs`はPDF書き出し部分のみ両版で異なるため、今回変更した
+`EditorSizeChanged`メソッドの変更内容を両版に個別に適用した。バージョン番号
+（1.5.13.0／2.1.13.0）は変更していない。
+
+**確認をお願いしたいこと**：
+1. 表のセル内に画像を含むファイルをmdeで開いた際、ウインドウのリサイズやズームの
+   変更を一切行わなくても、最初から画像が列の幅に収まって表示されるか（今回、
+   最も直したかった点です）。
+2. 列幅を明示的に調整した表（列幅調整ダイアログで幅を指定した表）でも、画像が
+   欠けずに正しく表示されるか。またウインドウのリサイズ・ズーム変更後も、その
+   状態が保たれるか。
+3. 表の外にある通常の画像の表示・リサイズ時の縮小について、これまでと挙動が
+   変わっていないか。
+4. これまでの確認事項（HTMLコメント・`<br>`対応・空行の数の保持など）についても、
+   今回の変更で挙動が変わっていないか、あわせてご確認いただけると助かります。
+
+
 ## 16. 新しい機能を追加する時の指針
 
 1. **どのクラスの責務かを見極める**：4章の表を参照し、既存クラスに機能を追加すべきか、新しい
