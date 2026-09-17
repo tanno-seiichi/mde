@@ -193,6 +193,19 @@ namespace mde
 
         private bool MarkSearchMatchRecursive(FileSystemItem a_node, HashSet<string> a_matchedFullPaths)
         {
+            if (a_node.IsDirectory && IsUnloadedPlaceholder(a_node))
+            {
+                // 「すべて検索」（フォルダ全体）はサブフォルダの中身も含めて対象にする
+                // （SearchReplaceService.GetAllMarkdownFilesInRootがDirectory.GetFiles(...,
+                // AllDirectories)で全階層を見ている）が、フォルダツリーペイン側は表示の都合上、
+                // 一度も展開されていないフォルダの子をまだ読み込んでいない（「読み込み中…」の
+                // 仮ノードのまま）。ここで読み込んでおかないと、その中に一致するファイルが
+                // あってもトラバースできず、ファイル自身はもちろん、それを含むフォルダも
+                // 強調表示できないままになってしまう。
+                a_node.Children.Clear();
+                PopulateChildren(a_node);
+            }
+
             bool anyMatchBelowFlg = false;
             if (!a_node.IsDirectory && null != a_node.FullPath)
             {
@@ -216,9 +229,20 @@ namespace mde
             if (anyMatchBelowFlg)
             {
                 a_node.IsSearchMatch = true; // フォルダ自身も、含むファイルに一致があれば強調する
+                if (a_node.IsDirectory)
+                {
+                    // 一致を含むフォルダが折りたたまれたままだと、中の強調表示が見えない
+                    // （SelectFileNodeが選択対象のファイルまでの経路を展開するのと同じ考え方）。
+                    a_node.IsExpanded = true;
+                }
             }
             return anyMatchBelowFlg;
         }
+
+        /// <summary>子がまだ遅延読み込みされていない（「読み込み中…」の仮ノード1件だけの）
+        /// フォルダかどうか。HandleTreeViewItemExpandedの判定条件と同じ。</summary>
+        private static bool IsUnloadedPlaceholder(FileSystemItem a_node) =>
+            1 == a_node.Children.Count && null == a_node.Children[0].FullPath;
 
         /// <summary>検索結果の強調表示をすべて解除する。</summary>
         public void ClearSearchMatches()
@@ -468,8 +492,7 @@ namespace mde
         {
             if (a_sender is TreeViewItem tvi && tvi.DataContext is FileSystemItem node && node.IsDirectory)
             {
-                if (1 == node.Children.Count &&
-                    null == node.Children[0].FullPath)
+                if (IsUnloadedPlaceholder(node))
                 {
                     node.Children.Clear();
                     PopulateChildren(node);

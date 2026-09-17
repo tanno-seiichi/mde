@@ -116,10 +116,6 @@ namespace mde
         /// という制御のための静的フラグ（プロセス全体で共有される）。</summary>
         private static bool m_isFirstWindowInstanceFlg = true;
 
-        /// <summary>現在開いている検索と置換ウィンドウ（Ctrl+Fなどで、同時に2つ開かず既存の
-        /// ものを前面に出すために使う）。開いていなければ null。</summary>
-        private FindReplaceWindow m_openFindReplaceWindow;
-
         // フォルダ/アウトラインペインの表示・非表示状態
         private double m_lastFolderColumnWidth = 190;
         private double m_lastOutlineColumnWidth = 210;
@@ -146,6 +142,7 @@ namespace mde
         private readonly OutlineManager m_outlineManager;
         private readonly FolderTreeManager m_folderTreeManager;
         private readonly FileOperationsManager m_fileOperationsManager;
+        private readonly FindReplaceLauncher m_findReplaceLauncher;
 
         /// <summary>ウィンドウを初期化し、各機能クラスを構築・配線したうえで、初回起動時の
         /// 案内文書を読み込む。</summary>
@@ -230,6 +227,7 @@ namespace mde
                 () => m_folderTreeManager.LoadedFolderRootPath, GetCurrentContentForFile,
                 SetFileContentForReplaceImpl, LoadFile, RunWithoutDirtyMarking, m_outlineManager.MarkSearchMatches,
                 m_outlineManager.SelectHeadingForPosition);
+            m_findReplaceLauncher = new FindReplaceLauncher(() => new FindReplaceWindow(this) { Owner = this });
             m_fileOperationsManager = new FileOperationsManager(
                 m_editor, m_sourceEditor, m_markdownConverter, m_imageManager, m_lineEndingTracker,
                 m_outlineManager, m_folderTreeManager, m_searchReplaceService, m_recentFilesMenu,
@@ -238,7 +236,7 @@ namespace mde
                 RunAsProgrammaticChange, GetCurrentContentForFile, PathsReferToSameFile,
                 RememberCurrentScrollPosition, RestoreOrResetScrollPosition, OpenFileInNewWindow,
                 () => { var newWindow = new MainWindow(); newWindow.Show(); }, Close,
-                title => this.Title = title, () => m_openFindReplaceWindow,
+                title => this.Title = title, () => m_findReplaceLauncher.CurrentWindow,
                 () => m_currentFilePath, v => m_currentFilePath = v,
                 () => m_currentFileDirectory, v => m_currentFileDirectory = v,
                 () => m_currentFileIsDirtyFlg, v => m_currentFileIsDirtyFlg = v);
@@ -1844,7 +1842,9 @@ namespace mde
         private void EditorDrop(object a_sender, DragEventArgs a_args) => m_imageManager.HandleDrop(a_sender, a_args);
 
         // ======================================================================
-        //  検索と置換（FindReplaceWindowを開く）
+        //  検索と置換（ウィンドウを開く処理の実体はFindReplaceLauncherへ移動。以下の
+        //  公開プロパティは、FindReplaceWindow.xaml.cs側がMainWindowを直接参照して
+        //  使うAPIのため、引き続きここに残す）
         // ======================================================================
 
         /// <summary>検索・置換の公開API。FindReplaceWindowから使う。</summary>
@@ -1862,7 +1862,7 @@ namespace mde
 
         private void FindReplaceBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            OpenFindReplaceWindow();
+            m_findReplaceLauncher.Open();
         }
 
         /// <summary>メインウインドウのキーボードショートカットの実装。</summary>
@@ -1874,7 +1874,7 @@ namespace mde
                 Keyboard.Modifiers == ModifierKeys.Control)
             {
                 a_args.Handled = true;
-                OpenFindReplaceWindow();
+                m_findReplaceLauncher.Open();
             }
             // Ctrl+Nは「新規作成」のショートカットとして扱う（Windows標準のCtrl+Nは「新しいウィンドウ」なので、そちらは無効化する）。
             else if (a_args.Key == Key.N &&
@@ -1963,20 +1963,6 @@ namespace mde
                 a_args.Handled = true;
                 m_fileOperationsManager.NavigateFileHistoryForward();
             }
-        }
-
-        /// <summary>検索と置換ウィンドウを開く（すでに開いていれば、そちらを前面に出す）。</summary>
-        private void OpenFindReplaceWindow()
-        {
-            if (null != m_openFindReplaceWindow)
-            {
-                m_openFindReplaceWindow.Activate();
-                m_openFindReplaceWindow.Focus();
-                return;
-            }
-            m_openFindReplaceWindow = new FindReplaceWindow(this) { Owner = this };
-            m_openFindReplaceWindow.Closed += (s, e) => m_openFindReplaceWindow = null;
-            m_openFindReplaceWindow.Show();
         }
 
         /// <summary>メニュー「ヘルプ」→「Readmeを開く」。</summary>
