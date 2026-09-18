@@ -332,8 +332,8 @@ namespace mde
             int insertIdx = a_aboveFlg ? idx : idx + 1;
             rg.Rows.Insert(insertIdx, newRow);
 
-            // 表全体の罫線をApplyTableCellBordersで設定し直す（行削除後に罫線が消えて見える
-            // 未解決の不具合と近い領域のため、念のため毎回明示的に設定する。下のDeleteRow参照）。
+            // 表全体の罫線をApplyTableCellBordersで設定し直す（罫線が消えて見える不具合と
+            // 同じ領域のため、挿入のたびに明示的に設定する。下のDeleteRow参照）。
             if (rg.Parent is Table refreshTable)
             {
                 BlockStyles.ApplyTableCellBorders(refreshTable, m_cellBorder);
@@ -507,10 +507,12 @@ namespace mde
             return tables;
         }
 
-        /// <summary>エディタのサイズが変わった時に、未調整（自動計算）の表の列幅を、現在の
-        /// 表示幅に合わせて再計算する。列幅の変更はRichTextBox.TextChangedを発生させるため、
-        /// 呼び出し側（MainWindow.EditorSizeChanged）はRunWithoutDirtyMarkingでラップして
-        /// 呼ぶこと。「列幅を補正する」がオフの間は何もしない。</summary>
+        /// <summary>エディタのサイズが変わった時に、すべての表の列幅を、現在の表示幅に合わせて
+        /// 再計算する（未調整・調整済みのどちらも対象。詳細はBlockStyles.
+        /// RefreshAutoCalculatedColumnWidthsのコメント参照）。列幅の変更はRichTextBox.
+        /// TextChangedを発生させるため、呼び出し側（MainWindow.EditorSizeChanged）は
+        /// RunWithoutDirtyMarkingでラップして呼ぶこと。「列幅を補正する」がオフの間は
+        /// 何もしない。</summary>
         public void RefreshAutoCalculatedColumnWidthsForResize()
         {
             bool correctColumnWidthsFlg = m_correctColumnWidthsFlg?.Invoke() ?? true;
@@ -558,8 +560,8 @@ namespace mde
             {
                 BlockStyles.ApplyTableCellBorders(refreshTable, m_cellBorder);
             }
-            // 行削除後、残ったセルの枠線が消えて見える未解決の報告があるため、念のため
-            // レイアウトを強制再計算する（上の罫線再設定で解消する可能性もあるが実機で未確認）。
+            // 行削除後、残ったセルの枠線が消えて見えることがあるため、念のため
+            // レイアウトを強制再計算する（上の罫線再設定だけでは解消しない場合がある）。
             m_editor.UpdateLayout();
             m_markDirty();
         }
@@ -612,7 +614,7 @@ namespace mde
             // 削除した列が最左列だった場合、繰り上がった新しい最左列のセルに左辺の罫線が
             // 必要になるため、表全体の罫線を設定し直す（DeleteRow側と同じ理由）。
             BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
-            // DeleteRow側と同じ理由による、未検証の対症療法。
+            // DeleteRow側と同じ理由による対症療法。
             m_editor.UpdateLayout();
             m_markDirty();
         }

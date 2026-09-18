@@ -1770,13 +1770,15 @@ namespace mde
                     }
                 }
 
-                // 自動計算の表（「列幅を補正する」オンかつ未調整）の列幅も、画像と同じ理由で
-                // 一時的に再計算する。列幅は通常エディタの表示幅を基準に固定px幅で確定するため
-                // （BlockStyles.ApplyAutoCalculatedColumnWidths）、編集画面がPDF印刷可能幅
-                // （contentWidth）より広い環境では表の右端が見切れる不具合があった。ウインドウ
-                // リサイズ時と同じ再計算処理（BlockStyles.RefreshAutoCalculatedColumnWidths）を
-                // 画面幅の代わりにcontentWidthで呼び、印刷ページ幅に収まる列幅に揃える。明示的に
-                // 調整済みの表（Star比率）は構造上収まるため対象外。書き出し後、画面表示用の幅に戻す。
+                // 表（「列幅を補正する」オン時。未調整・調整済みのどちらも）の列幅も、画像と
+                // 同じ理由で一時的に再計算する。列幅は通常エディタの表示幅を基準に確定するため
+                // （BlockStyles.ApplyAutoCalculatedColumnWidths／ApplyExplicitColumnWidths）、
+                // 編集画面がPDF印刷可能幅（contentWidth）より広い環境では表の右端が見切れる
+                // 不具合があった。ウインドウリサイズ時と同じ再計算処理（BlockStyles.
+                // RefreshAutoCalculatedColumnWidths）を画面幅の代わりにcontentWidthで呼び、
+                // 印刷ページ幅に収まる列幅に揃える。調整済みの表も、比率での幅が固定幅（Pixel）
+                // で収まらなければStar比率になるため対象に含めている。書き出し後、画面表示用の
+                // 幅に戻す。
                 var originalTableColumnWidths = new Dictionary<Table, GridLength[]>();
                 if (m_correctColumnWidthsFlg)
                 {
@@ -2058,13 +2060,9 @@ namespace mde
             {
                 return;
             }
-            // 表のセル内の画像はApplyImageSizingConsideringTable経由で列幅を考慮したサイズに
-            // なるようにする（表の外の画像は従来通りエディタ幅基準）。以前はここで常に
-            // ApplyImageSizing（エディタ幅基準）だけを呼んでいたため、表のセル内の画像は
-            // リサイズ・ズーム変更のたびに一旦列幅を無視した（広すぎる）サイズになり、その後の
-            // RefreshAutoCalculatedColumnWidthsForResizeが「列幅補正オン・自動計算のまま」の
-            // 表だけを補正し直すことで見かけ上「治る」ことがある一方、列幅を明示的に調整した
-            // 表や、その補正が効くまでの間は欠けたまま（or 広すぎるまま）になっていた。
+            // 表のセル内の画像はApplyImageSizingConsideringTable経由で列幅を考慮したサイズにする
+            // （表の外の画像は従来通りエディタ幅基準）。単純にApplyImageSizing（エディタ幅基準）
+            // だけを呼ぶと、セル内の画像は列幅を無視した（広すぎる）サイズになってしまう。
             foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
             {
                 m_imageManager.ApplyImageSizingConsideringTable(img);

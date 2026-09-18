@@ -374,6 +374,29 @@ namespace mde
             return a_count;
         }
 
+        /// <summary>
+        /// 列ごとの区切り行のダッシュ数から、その表が「列幅調整ダイアログで明示的に調整された
+        /// もの」かどうかを判定する。すべての列のダッシュ数が互いに同じであれば、既定値
+        /// （3個＝|---|）ちょうどでなくても「未調整（自動計算のままでよい）」とみなす。
+        /// 手書きのMarkdownや他のエディタでは、列幅を意図して調整したわけではなく、単に
+        /// 見た目を整えるために区切り行のダッシュを（全列そろえて）3個より多く書くことが
+        /// よくある。そうしたファイルを開いた際まで「調整済み」として毎回編集領域いっぱいの
+        /// 幅（Star比率）にしてしまうと、意図しない見た目になってしまうため、列ごとに
+        /// ダッシュ数が異なる場合だけを、ダイアログで個別に比率を指定したものとみなす。
+        /// 列が1つしかない表は、常に「未調整」として扱う（列が1つだけならダッシュ数の値に
+        /// 意味を持たせようがないため）。
+        /// </summary>
+        /// <param name="a_dashCounts">列ごとの区切り行のダッシュ数。</param>
+        private static bool IsAutoCalculatedDashCounts(IReadOnlyList<int> a_dashCounts)
+        {
+            if (null == a_dashCounts || a_dashCounts.Count <= 1)
+            {
+                return true;
+            }
+            int first = a_dashCounts[0];
+            return a_dashCounts.All(d => first == d);
+        }
+
         /// <summary>ピクセル幅（実際のセル内容から測った、まだ調整されていない列の幅）を、
         /// ダッシュ数と同じ「単位」の数値に変換する（列幅調整ダイアログに現在値を表示する際、
         /// および調整済みの列と比率を揃える際に使う。DashUnitWidthPxを1単位とする）。</summary>
@@ -599,9 +622,10 @@ namespace mde
         /// <summary>
         /// 列幅調整ダイアログの初期表示用に、表の列ごとのラベル（見出しセルの文字列）と
         /// 現在の幅（ダッシュ数換算）、および「自動計算」チェックボックスの初期状態を組み立てる。
-        /// 表がまだ調整されていない（GetSourceDashCountsがnull、またはすべて既定値）場合は、
-        /// 実際の内容から測った幅をダッシュ数と同じ単位に変換した値と、IsAutoCalculated=true
-        /// を返す。すでに明示的な幅（ダッシュ数）が記録されている場合は、その値と
+        /// 表がまだ調整されていない（GetSourceDashCountsがnull、または全列のダッシュ数が
+        /// 互いに同じ。詳細はIsAutoCalculatedDashCountsのコメント参照）場合は、実際の内容から
+        /// 測った幅をダッシュ数と同じ単位に変換した値と、IsAutoCalculated=trueを返す。すでに
+        /// 明示的な幅（列によって異なるダッシュ数）が記録されている場合は、その値と
         /// IsAutoCalculated=falseを返す（自動計算か否かは表全体で1つの状態であり、列ごとには
         /// 分けない。ApplyExplicitColumnWidthsが常に全列を同じ扱いにする方針と揃えてある）。
         /// </summary>
@@ -614,8 +638,7 @@ namespace mde
             var naturalWidths = MeasureNaturalColumnWidthsPx(a_table);
 
             var sourceDashCounts = GetSourceDashCounts(a_table);
-            bool isAutoCalculatedFlg = null == sourceDashCounts ||
-                sourceDashCounts.All(d => TABLE_COLUMN_DEFAULT_DASH_COUNT == d);
+            bool isAutoCalculatedFlg = IsAutoCalculatedDashCounts(sourceDashCounts);
 
             TableRow headerRow = null;
             foreach (TableRowGroup rg in a_table.RowGroups)
@@ -654,52 +677,88 @@ namespace mde
         }
 
         /// <summary>
-        /// 表の各列に、明示的な比率幅（Star）を設定する。列幅はPixelではなくStar（Gridの
-        /// ColumnDefinitionと同様の比率指定）を使う。表の合計幅が編集領域の横幅を超えると
-        /// 右端が見切れて読めなくなり、WPFのRichTextBoxは既定で横スクロールできないため、
-        /// 絶対px指定はウインドウを狭くすると再発する問題を抱えていた。Star幅なら表全体の
-        /// 横幅を比率で分け合うため、編集領域を超えることが構造上あり得ない。ダッシュ数
-        /// （区切り行の文字数・ダイアログの入力値）はそのままStarの比率として使う。
+        /// 表の各列に、明示的に指定された比率（ダッシュ数）に基づく列幅を設定する。
+        /// ApplyAutoCalculatedColumnWidths（未調整の表）と同じ2段階の方針を取る。
+        /// まず、各列のダッシュ数をpx単位に換算した幅（<paramref name="a_dashCounts"/>が
+        /// nullの列は、その列の実際の内容から測った、頭打ち無しの幅）の合計が
+        /// <paramref name="a_availableWidthPx"/>に収まる場合は、他の列と幅を奪い合わない
+        /// Pixel（固定px）で、その換算幅そのままを設定する（指定した比率を保ちつつ、
+        /// 内容量に見合ったコンパクトな見た目になる）。
+        /// 収まらない場合、または<paramref name="a_availableWidthPx"/>が不明（null）な
+        /// 場合は、従来通りStar（Gridの ColumnDefinitionと同様の比率指定）で、ダッシュ数を
+        /// そのまま比率として使う。表の合計幅が編集領域の横幅を超えると右端が見切れて読めなく
+        /// なり、WPFのRichTextBoxは既定で横スクロールできないため、絶対px指定はウインドウを
+        /// 狭くすると再発する問題を抱えていた。Star幅なら表全体の横幅を比率で分け合うため、
+        /// 編集領域を超えることが構造上あり得ない。
         /// なお、WPFの<see cref="Table"/>の列幅はPixel・Star・Auto（既定値）を混在させると
         /// 意図と逆の見た目になることが確認されているため（ApplyContentBasedColumnWidths
-        /// のコメント参照）、列幅を1つでも明示的に調整する際は対象の表の全列を例外なく
-        /// Star幅にする方針を維持している。
+        /// のコメント参照）、いずれの段階でも対象の表の全列を例外なく同じ単位（Pixelなら
+        /// 全列Pixel、Starなら全列Star）にする方針を維持している。
         /// <paramref name="a_dashCounts"/>で値が指定されている（nullでない）列は、その
-        /// ダッシュ数をそのままStarの比率として使う。値が指定されていない（null）列は、
-        /// その列の実際の内容から測った幅（MeasureNaturalColumnWidthsPx）をダッシュ数と
-        /// 同じ単位に変換した上で比率として使う（ユーザーが調整していない列まで、
-        /// 無関係に極端に狭くなってしまわないようにするため）。
+        /// ダッシュ数をそのまま比率として使う。値が指定されていない（null）列は、その列の
+        /// 実際の内容から測った幅をダッシュ数と同じ単位に変換した上で比率として使う
+        /// （ユーザーが調整していない列まで、無関係に極端に狭くなってしまわないように
+        /// するため）。
         /// </summary>
         /// <param name="a_table">対象の表。</param>
-        /// <param name="a_dashCounts">列ごとの新しい値（ダッシュ数＝Starの比率）。列の順序と
+        /// <param name="a_dashCounts">列ごとの新しい値（ダッシュ数＝比率）。列の順序と
         /// 一致させること。nullの要素は「この列は調整しない（内容に合わせた比率のままにする）」
         /// を意味する。</param>
-        /// <param name="a_availableWidthPx">表を表示できる実際の幅（px）。Star列に含まれる
-        /// 画像を、実際に表示される幅の概算に収まるよう縮小する際に使う
-        /// （ConstrainCellImagesToColumnWidths参照）。呼び出し側が把握していない場合は
-        /// null（その場合、Star列の画像は縮小の対象外とする）。</param>
+        /// <param name="a_availableWidthPx">表を表示できる実際の幅（px）。コンパクトな
+        /// 固定幅（Pixel）にできるかどうかの判断と、Star列に含まれる画像を実際に表示される
+        /// 幅の概算に収まるよう縮小する際（ConstrainCellImagesToColumnWidths参照）の両方に
+        /// 使う。呼び出し側が把握していない場合はnull（その場合は常にStar比率にする。Star列の
+        /// 画像も縮小の対象外とする）。</param>
         public static void ApplyExplicitColumnWidths(Table a_table, IReadOnlyList<int?> a_dashCounts, double? a_availableWidthPx = null)
         {
             int colCount = a_table.Columns.Count;
-            var naturalWidths = MeasureNaturalColumnWidthsPx(a_table);
+            double unitPx = DashUnitWidthPx();
+            var uncappedNaturalWidths = MeasureUncappedColumnWidthsPx(a_table);
+
+            // Pixel候補の幅（頭打ち無し。他の列と幅を奪い合わないため）。
+            var pixelCandidateWidths = new double[colCount];
+            for (int c = 0; c < colCount; c++)
+            {
+                int? dashCount = c < a_dashCounts.Count ? a_dashCounts[c] : null;
+                pixelCandidateWidths[c] = dashCount.HasValue
+                    ? ClampDashCount(dashCount.Value) * unitPx + TABLE_CELL_HORIZONTAL_PADDING
+                    : (c < uncappedNaturalWidths.Length ? uncappedNaturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX);
+            }
+
+            if (a_availableWidthPx.HasValue && pixelCandidateWidths.Sum() <= a_availableWidthPx.Value)
+            {
+                for (int c = 0; c < colCount; c++)
+                {
+                    a_table.Columns[c].Width = new GridLength(pixelCandidateWidths[c], GridUnitType.Pixel);
+                }
+                ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
+                return;
+            }
+
+            // Star比率へフォールバックする場合は、複数列が幅を奪い合うため頭打ちした幅を使う
+            // （ApplyAutoCalculatedColumnWidthsのStarフォールバックと同じ考え方）。
+            var cappedNaturalWidths = MeasureNaturalColumnWidthsPx(a_table);
             for (int c = 0; c < colCount; c++)
             {
                 int? dashCount = c < a_dashCounts.Count ? a_dashCounts[c] : null;
                 int starValue = dashCount.HasValue
                     ? ClampDashCount(dashCount.Value)
-                    : PixelWidthToDashCount(c < naturalWidths.Length ? naturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX);
+                    : PixelWidthToDashCount(c < cappedNaturalWidths.Length ? cappedNaturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX);
                 a_table.Columns[c].Width = new GridLength(starValue, GridUnitType.Star);
             }
             ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
         }
 
         /// <summary>
-        /// まだ調整されていない表（区切り行がすべて既定値）に対して、列幅調整ダイアログの
+        /// まだ調整されていない表（区切り行のダッシュ数が全列とも互いに同じ。詳細は
+        /// IsAutoCalculatedDashCountsのコメント参照）に対して、列幅調整ダイアログの
         /// 「自動計算」欄と同じ計算方法（内容量から測った幅をダッシュ数と同じ単位に変換した
         /// 比率）で、表示上だけ列幅を適用する。あくまで表示（TableColumn.Width）だけの効果
         /// であり、区切り行のダッシュ数（GetSourceDashCounts／SetSourceDashCounts）には
         /// 一切触れない。そのため、Markdownへの書き出し（MarkdownConverter.TableToMarkdown）
-        /// はこの比率を書き戻さず、区切り行は既定値（|---|）のまま保たれる。
+        /// はこの比率を書き戻さず、区切り行のダッシュ数はそれまで記録されていた値
+        /// （手書きのMarkdownを読み込んだ場合はそのソースの値、既定値のまま一度も
+        /// 調整していない場合は既定値|---|）のまま保たれる。
         /// <paramref name="a_availableWidthPx"/>が指定されており、かつ各列の自然な幅
         /// （測定値。長い説明文の列はTABLE_COLUMN_COMPACT_MAX_WIDTHで頭打ち済み）の合計が
         /// その幅に収まる場合は、Starではなく自然な幅をそのままPixel（固定px）として設定する
@@ -845,22 +904,32 @@ namespace mde
         }
 
         /// <summary>
-        /// ウインドウ（エディタ）のリサイズ時に、未調整（自動計算）の表の列幅だけを、現在の
-        /// 表示幅に合わせて再計算する。調整済み（区切り行が既定値以外）の表には何もしない
-        /// （調整済みの表はStar比率のままであり、リサイズしても常に編集領域の横幅に収まるため、
-        /// 再計算の必要が無い）。MainWindow.EditorSizeChanged（TableEditor.
-        /// RefreshAutoCalculatedColumnWidthsForResize経由）から、表ごとに呼ばれる。
+        /// ウインドウ（エディタ）のリサイズ時に、表の列幅を現在の表示幅に合わせて再計算する。
+        /// 未調整（自動計算）の表はApplyAutoCalculatedColumnWidths、調整済み（列ごとに
+        /// 区切り行のダッシュ数が異なる）の表はApplyExplicitColumnWidthsで、それぞれ
+        /// 再計算する。ApplyExplicitColumnWidthsもコンパクトな固定幅（Pixel）とStar比率を
+        /// 表示幅に応じて切り替えるようになったため（詳細は同メソッドのコメント参照）、
+        /// 調整済みの表も、リサイズ後に幅が狭くなってPixel幅の合計が収まらなくなった場合は
+        /// Star比率へ、逆に広がってStar比率のままでは間延びして見える場合はPixelへ、切り替える
+        /// 必要がある。呼び出し元はどちらの場合もこのメソッドを呼べばよく、区別する必要はない。
+        /// MainWindow.EditorSizeChanged（TableEditor.RefreshAutoCalculatedColumnWidthsForResize
+        /// 経由）から、表ごとに呼ばれる。
         /// </summary>
         /// <param name="a_table">対象の表。</param>
         /// <param name="a_availableWidthPx">現在、表を表示できる幅（px）。</param>
         public static void RefreshAutoCalculatedColumnWidths(Table a_table, double a_availableWidthPx)
         {
             var sourceDashCounts = GetSourceDashCounts(a_table);
-            bool isAutoCalculatedFlg = null == sourceDashCounts ||
-                sourceDashCounts.All(d => TABLE_COLUMN_DEFAULT_DASH_COUNT == d);
-            if (isAutoCalculatedFlg)
+            if (IsAutoCalculatedDashCounts(sourceDashCounts))
             {
                 ApplyAutoCalculatedColumnWidths(a_table, a_availableWidthPx);
+            }
+            else
+            {
+                var explicitDashCounts = sourceDashCounts
+                    .Select(d => TABLE_COLUMN_DEFAULT_DASH_COUNT == d ? (int?)null : d)
+                    .ToList();
+                ApplyExplicitColumnWidths(a_table, explicitDashCounts, a_availableWidthPx);
             }
         }
 
@@ -891,10 +960,16 @@ namespace mde
         /// 　戻す（列幅機能全体のマスタースイッチ。すでにダイアログで明示的に調整済みの表も
         /// 　含めて、オフの間はすべて均等幅で表示される。ダッシュ数はSetSourceDashCountsの
         /// 　記録・Markdownソース側にそのまま残るため、オンに戻せば元の比率が復元される）。
-        /// ・オン＋すべての列が既定値（|---|、未調整）：内容量から自動計算した比率を、表示上
-        /// 　だけ適用する（ApplyAutoCalculatedColumnWidths）。
-        /// ・オン＋1列でも既定値以外（調整済み）：ダッシュ数をそのまま比率として使う
-        /// 　（ApplyExplicitColumnWidths。従来のステップ2の動作そのもの）。
+        /// ・オン＋全列のダッシュ数が互いに同じ（未調整）：内容量から自動計算した比率を、
+        /// 　表示上だけ適用する（ApplyAutoCalculatedColumnWidths）。既定値（|---|、3個）
+        /// 　ちょうどである必要はなく、全列そろっていれば既定値以外でも未調整として扱う
+        /// 　（詳細はIsAutoCalculatedDashCountsのコメント参照。手書きのMarkdownで見た目を
+        /// 　整えるために全列そろえて3個より多くのダッシュを書いているだけの表まで、
+        /// 　毎回全幅表示になってしまう不具合への対策）。
+        /// ・オン＋列によってダッシュ数が異なる（調整済み）：ダッシュ数を比率として使い、
+        /// 　その比率での幅が編集領域に収まるならコンパクトな固定幅（Pixel）、収まらなければ
+        /// 　編集領域いっぱいまでのStar比率にする（ApplyExplicitColumnWidths参照。指定した
+        /// 　比率を保ったまま、表全体を無条件に全幅表示してしまわないようにするための方針）。
         /// </summary>
         /// <param name="a_table">対象の表。</param>
         /// <param name="a_dashCounts">列ごとの区切り行のダッシュ数（Markdownソースの値そのもの）。
@@ -912,7 +987,7 @@ namespace mde
                 ResetColumnWidthsToAuto(a_table);
                 return;
             }
-            if (a_dashCounts.All(d => TABLE_COLUMN_DEFAULT_DASH_COUNT == d))
+            if (IsAutoCalculatedDashCounts(a_dashCounts))
             {
                 ApplyAutoCalculatedColumnWidths(a_table, a_availableWidthPx);
             }
