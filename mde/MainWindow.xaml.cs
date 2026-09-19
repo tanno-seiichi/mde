@@ -105,6 +105,12 @@ namespace mde
         /// と同じリストを共有する（OnClosedでの設定保存のため、フィールド自体はここに残す）。</summary>
         private List<string> m_recentFiles = new List<string>();
 
+        /// <summary>「名前を付けて保存」・「PDFに書き出し」ダイアログで、直近にユーザーが実際に
+        /// 選択した保存先フォルダ（次回以降のダイアログの初期フォルダに使う）。次回起動時にも
+        /// 復元される。FileOperationsManagerとdelegate経由で共有する（OnClosedでの設定保存の
+        /// ため、フィールド自体はここに残す）。</summary>
+        private string m_lastSaveDialogDirectory;
+
         /// <summary>このウィンドウ専用の一時フォルダ識別子（複数ウィンドウを同時に開いた際、
         /// ドラッグ挿入した画像のファイル名が衝突しないようにするため）。</summary>
         private readonly string m_instanceTempId = Guid.NewGuid().ToString("N");
@@ -222,6 +228,7 @@ namespace mde
             m_pdfMarginLeft = m_savedSettings.PdfMarginLeft > 0 ? m_savedSettings.PdfMarginLeft : 80;
             m_pdfMarginRight = m_savedSettings.PdfMarginRight > 0 ? m_savedSettings.PdfMarginRight : 80;
             m_recentFiles = null != m_savedSettings.RecentFiles ? new List<string>(m_savedSettings.RecentFiles) : new List<string>();
+            m_lastSaveDialogDirectory = m_savedSettings.LastSaveDialogDirectory;
             // 「最近使ったファイル」サブメニューの初回構築はFileOperationsManager構築後
             // （このコンストラクタの後半）で行う（RebuildRecentFilesMenu呼び出し箇所を参照）。
             ApplyEditorLineHeight(m_editorLineHeight);
@@ -285,7 +292,8 @@ namespace mde
                 title => this.Title = title, () => m_findReplaceLauncher.CurrentWindow,
                 () => m_currentFilePath, v => m_currentFilePath = v,
                 () => m_currentFileDirectory, v => m_currentFileDirectory = v,
-                () => m_currentFileIsDirtyFlg, v => m_currentFileIsDirtyFlg = v);
+                () => m_currentFileIsDirtyFlg, v => m_currentFileIsDirtyFlg = v,
+                () => m_lastSaveDialogDirectory, v => m_lastSaveDialogDirectory = v);
             // 「最近使ったファイル」サブメニューの初回構築（設定から読み込んだm_recentFilesの
             // 内容を反映する）。FileOperationsManagerの構築後に行う必要がある。
             m_fileOperationsManager.RebuildRecentFilesMenu();
@@ -619,7 +627,8 @@ namespace mde
                 PdfMarginBottom = m_pdfMarginBottom,
                 PdfMarginLeft = m_pdfMarginLeft,
                 PdfMarginRight = m_pdfMarginRight,
-                RecentFiles = m_recentFiles
+                RecentFiles = m_recentFiles,
+                LastSaveDialogDirectory = m_lastSaveDialogDirectory
             };
             settings.Save();
         }

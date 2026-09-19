@@ -60,6 +60,8 @@ namespace mde
         private readonly Action<string> m_setCurrentFileDirectory;
         private readonly Func<bool> m_getCurrentFileIsDirty;
         private readonly Action<bool> m_setCurrentFileIsDirty;
+        private readonly Func<string> m_getLastSaveDialogDirectory;
+        private readonly Action<string> m_setLastSaveDialogDirectory;
 
         /// <summary>メニュー「ファイル」→「最近使ったファイル」に表示する、最近開いた/保存した
         /// ファイルの最大件数。</summary>
@@ -113,6 +115,11 @@ namespace mde
         /// <param name="a_setCurrentFileDirectory">現在のファイルの保存先フォルダを設定するdelegate。</param>
         /// <param name="a_getCurrentFileIsDirty">現在のファイルに未保存の変更があるかを返すdelegate。</param>
         /// <param name="a_setCurrentFileIsDirty">現在のファイルの未保存フラグを設定するdelegate。</param>
+        /// <param name="a_getLastSaveDialogDirectory">直近に保存ダイアログで選択されたフォルダを
+        /// 返すdelegate（次回のダイアログの初期フォルダに使う。MainWindow.OnClosedでの設定保存
+        /// のため、値自体はMainWindow側で保持する）。</param>
+        /// <param name="a_setLastSaveDialogDirectory">直近に保存ダイアログで選択されたフォルダを
+        /// 記憶するdelegate。</param>
         public FileOperationsManager(
             RichTextBox a_editor,
             TextBox a_sourceEditor,
@@ -143,7 +150,9 @@ namespace mde
             Func<string> a_getCurrentFileDirectory,
             Action<string> a_setCurrentFileDirectory,
             Func<bool> a_getCurrentFileIsDirty,
-            Action<bool> a_setCurrentFileIsDirty)
+            Action<bool> a_setCurrentFileIsDirty,
+            Func<string> a_getLastSaveDialogDirectory,
+            Action<string> a_setLastSaveDialogDirectory)
         {
             this.m_editor = a_editor;
             this.m_sourceEditor = a_sourceEditor;
@@ -175,6 +184,43 @@ namespace mde
             this.m_setCurrentFileDirectory = a_setCurrentFileDirectory;
             this.m_getCurrentFileIsDirty = a_getCurrentFileIsDirty;
             this.m_setCurrentFileIsDirty = a_setCurrentFileIsDirty;
+            this.m_getLastSaveDialogDirectory = a_getLastSaveDialogDirectory;
+            this.m_setLastSaveDialogDirectory = a_setLastSaveDialogDirectory;
+        }
+
+        /// <summary>ファイル保存ダイアログの初期フォルダとして使う既定フォルダを返す。現在の
+        /// ファイルの保存先フォルダ・表示中フォルダ・記憶している直近の保存先のいずれも無い
+        /// 場合（新規インストール直後など）の最後のフォールバックとして、デスクトップを
+        /// 優先し、取得できなければドキュメントフォルダを使う。どちらも取得できない場合は
+        /// nullを返し、呼び出し側はInitialDirectoryを設定しない（OSの既定動作に委ねる）。</summary>
+        /// <returns>既定フォルダの絶対パス。取得できなければnull。</returns>
+        public static string GetDefaultSaveDirectory()
+        {
+            try
+            {
+                string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                if (!string.IsNullOrEmpty(desktop) && Directory.Exists(desktop))
+                {
+                    return desktop;
+                }
+            }
+            catch
+            {
+                // 取得できなければ次の候補（ドキュメントフォルダ）を試す
+            }
+            try
+            {
+                string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                if (!string.IsNullOrEmpty(documents) && Directory.Exists(documents))
+                {
+                    return documents;
+                }
+            }
+            catch
+            {
+                // どちらも取得できなければnullを返す（呼び出し側でInitialDirectoryを設定しない）
+            }
+            return null;
         }
 
         /// <summary>ウィンドウタイトルを、現在のファイル名（無ければアプリ名のみ）から
@@ -377,16 +423,11 @@ namespace mde
         }
 
         /// <summary>
-        /// 現在開いているファイルに未保存の変更があれば、別のファイルへ切り替える前に
-        /// pendingFileEditsへ退避する（1つしかないエディタを共有しているため、切り替え時に
-        /// 内容が失われないようにするため）。ソースモードでは単純化のためスキップする。
-        /// </summary>
-        /// <summary>
         /// エディタのUndo（元に戻す）履歴をクリアする。IsUndoEnabledをいったんfalseにしてから
         /// trueに戻すと、WPF標準の仕組みでUndo履歴が破棄される。ファイルを新しく読み込んで
         /// 文書を丸ごと差し替えた直後に呼ぶことで、「Ctrl+Zを押したら別のファイルの内容に
-        /// 戻ってしまう」という混乱を防ぐ（Undo/Redoは、あくまで今のファイルの編集内容の
-        /// 範囲だけで完結させる）。
+        /// 戻ってしまう」という混乱を防ぐ（Undo/Redoは今のファイルの編集内容の範囲だけで
+        /// 完結させる）。
         /// </summary>
         private void ClearEditorUndoHistory()
         {
@@ -530,6 +571,11 @@ namespace mde
             RebuildRecentFilesMenu();
         }
 
+        /// <summary>
+        /// 現在開いているファイルに未保存の変更があれば、別のファイルへ切り替える前に
+        /// pendingFileEditsへ退避する（1つしかないエディタを共有しているため、切り替え時に
+        /// 内容を失わないようにする）。ソースモードでは単純化のためスキップする。
+        /// </summary>
         private void SnapshotCurrentFileIfDirty()
         {
             string currentFilePath = m_getCurrentFilePath();
@@ -658,9 +704,12 @@ namespace mde
                 Filter = "Markdownファイル (*.md)|*.md|すべてのファイル (*.*)|*.*",
                 FileName = null != currentFilePath ? Path.GetFileName(currentFilePath) : "document.md"
             };
-            // 現在の文書自体には保存先フォルダがまだ無くても（新規作成直後など）、フォルダビューに
-            // 何かフォルダが表示されていれば、そちらを初期フォルダとして使う。
-            string initialDirectory = m_getCurrentFileDirectory() ?? m_folderTreeManager.LoadedFolderRootPath;
+            // 初期フォルダは、優先順に「現在の文書の保存先フォルダ」「フォルダビューに表示中の
+            // フォルダ」「前回このダイアログで実際に選択されたフォルダ」「デスクトップ等の
+            // 既定フォルダ」から決める（末尾2つは、新規作成直後などどちらも無い場合の
+            // フォールバック。以前は何も設定せず、実行ファイルのフォルダが使われてしまっていた）。
+            string initialDirectory = m_getCurrentFileDirectory() ?? m_folderTreeManager.LoadedFolderRootPath
+                ?? m_getLastSaveDialogDirectory() ?? GetDefaultSaveDirectory();
             if (!string.IsNullOrEmpty(initialDirectory))
             {
                 dlg.InitialDirectory = initialDirectory;
@@ -673,6 +722,9 @@ namespace mde
 
             string newFilePath = dlg.FileName;
             string newFileDirectory = Path.GetDirectoryName(dlg.FileName);
+            // 実際に選択されたフォルダを記憶しておく（次回以降のこのダイアログ・PDF書き出し
+            // ダイアログの初期フォルダに使う）。
+            m_setLastSaveDialogDirectory(newFileDirectory);
 
             // 「名前を付けて保存」は、保存元ファイルの改行コードスタイルを引き継ぐ
             // （名前や場所が変わっただけで、その設定を失わせないため）。
