@@ -21,4 +21,7 @@ This file contains the declaration of all the localizable strings.
   <!-- Message shown on ExitDialog after a successful upgrade -->
   <String Id="ExitMessageUpgradeComplete" Value="The upgrade has completed successfully." />
 
+  <!-- Explorer context menu verb "Open with mde" -->
+  <String Id="OpenWithMdeVerb" Value="Open with mde" />
+
 </WixLocalization>

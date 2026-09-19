@@ -8,6 +8,28 @@
 		<Component Id="mde.dll.runtimeconfig.json.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="mde.runtimeconfig.json" KeyPath="yes" /></Component>
 		<Component Id="mde.dll.deps.json.Component" Directory="INSTALLFOLDER" Guid="*"><File Source="mde.deps.json" KeyPath="yes" /></Component>
 
+		<!-- エクスプローラーの右クリックメニューに「mdeで開く」を追加する（.mdファイル向け）。
+		     .mdファイルの既定アプリの設定とは関係なく（.mdをダブルクリックした時に開くアプリが
+		     何であっても）、SystemFileAssociationsの下に登録することで常にこの項目が表示される。
+		     ファイルを選択して実行すると、そのファイルを開く（MainWindow.ResolveStartupPath参照）。 -->
+		<Component Id="OpenWithMdeFileVerb.Component" Directory="INSTALLFOLDER" Guid="*">
+			<RegistryValue Root="HKCR" Key="SystemFileAssociations\.md\shell\OpenWithMde" Type="string" Value="!(loc.OpenWithMdeVerb)" KeyPath="yes" />
+			<RegistryValue Root="HKCR" Key="SystemFileAssociations\.md\shell\OpenWithMde" Name="MUIVerb" Type="string" Value="!(loc.OpenWithMdeVerb)" />
+			<RegistryValue Root="HKCR" Key="SystemFileAssociations\.md\shell\OpenWithMde" Name="Icon" Type="string" Value="[INSTALLFOLDER]mde.exe,0" />
+			<RegistryValue Root="HKCR" Key="SystemFileAssociations\.md\shell\OpenWithMde\command" Type="string" Value="&quot;[INSTALLFOLDER]mde.exe&quot; &quot;%1&quot;" />
+		</Component>
+
+		<!-- エクスプローラーでフォルダの何もない場所を右クリックした時のコンテキストメニューにも
+		     「mdeで開く」を追加する。実行すると、そのフォルダをmdeのフォルダビューに読み込んだ
+		     状態で起動する（%Vはこの右クリックの対象フォルダのパスに展開される。
+		     MainWindow.ResolveStartupPath参照）。 -->
+		<Component Id="OpenWithMdeFolderVerb.Component" Directory="INSTALLFOLDER" Guid="*">
+			<RegistryValue Root="HKCR" Key="Directory\Background\shell\OpenWithMde" Type="string" Value="!(loc.OpenWithMdeVerb)" KeyPath="yes" />
+			<RegistryValue Root="HKCR" Key="Directory\Background\shell\OpenWithMde" Name="MUIVerb" Type="string" Value="!(loc.OpenWithMdeVerb)" />
+			<RegistryValue Root="HKCR" Key="Directory\Background\shell\OpenWithMde" Name="Icon" Type="string" Value="[INSTALLFOLDER]mde.exe,0" />
+			<RegistryValue Root="HKCR" Key="Directory\Background\shell\OpenWithMde\command" Type="string" Value="&quot;[INSTALLFOLDER]mde.exe&quot; &quot;%V&quot;" />
+		</Component>
+
 		<!-- License -->
 		<Component Id="License"><File Source="LICENSE.txt" /></Component>
 
