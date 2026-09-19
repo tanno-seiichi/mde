@@ -72,7 +72,18 @@
       Id="SetWelcomeMessageUpgrade"
       Property="WIX_WELCOME_MESSAGE"
       Value="!(loc.WelcomeDlgDescriptionUpgrade)" />
-    
+
+    <!--
+      右クリックメニュー「mdeで開く」（.mdファイル・フォルダ背景、msi/File.wxs参照）を
+      追加するかどうかのユーザー選択を保持するプロパティ。既定値を設定していないため
+      既定は「追加しない」（未設定）で、ContextMenuOptionDlgのチェックボックスに
+      チェックを入れた場合だけ"1"になる。チェックを外すとMSIのCheckBoxコントロールの
+      標準動作により再びプロパティが未設定に戻る。Secure="yes"により、
+      msiexec /i mde.msi ADDCONTEXTMENU=1 のようにサイレントインストール時にも
+      コマンドラインから指定できる。
+    -->
+    <Property Id="ADDCONTEXTMENU" Secure="yes" />
+
     <UI Id="WixUI_MinimalUpgrade_X64">
 
       <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
@@ -103,15 +114,46 @@
 
       <!--
         WelcomeDlg の [次へ]:
-        ・通常（新規インストール）: ライセンス確認画面へ
-        ・アップグレード時: ライセンス確認画面を経由せず、そのままインストール実行
+        ・通常（新規インストール）: コンテキストメニュー追加確認画面（ContextMenuOptionDlg）へ
+        ・アップグレード時: 確認画面・ライセンス確認画面のいずれも経由せず、そのまま
+          インストール実行（14.91節参照。ADDCONTEXTMENUプロパティは既定値［未設定＝
+          追加しない］のまま使われる）
       -->
-      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg" Condition="NOT WIX_UPGRADE_DETECTED" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="ContextMenuOptionDlg" Condition="NOT WIX_UPGRADE_DETECTED" />
       <Publish Dialog="WelcomeDlg" Control="Next" Event="EndDialog" Value="Return" Condition="WIX_UPGRADE_DETECTED" />
 
-      <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Condition="1" />
+      <!-- コンテキストメニュー追加確認画面（新規インストール時のみ表示） -->
+      <Publish Dialog="ContextMenuOptionDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Condition="1" />
+      <Publish Dialog="ContextMenuOptionDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg" Condition="1" />
+
+      <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="ContextMenuOptionDlg" Condition="1" />
       <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="EndDialog" Value="Return" Condition="LicenseAccepted = &quot;1&quot;" />
       <Publish Dialog="LicenseAgreementDlg" Control="Print" Event="DoAction" Value="WixUIPrintEula_X64" Condition="1" />
+
+      <!--
+        コンテキストメニュー「mdeで開く」を追加するかどうかの確認画面（新規インストール
+        時のみ、WelcomeDlgとLicenseAgreementDlgの間に表示。14.91節参照）。
+        チェックボックスの状態はADDCONTEXTMENUプロパティに反映され、msi/File.wxsの
+        OpenWithMdeFileVerb.Component・OpenWithMdeFolderVerb.ComponentのConditionで
+        参照している。チェックを入れなければ既定どおり追加しない。
+      -->
+      <Dialog Id="ContextMenuOptionDlg" Width="370" Height="270" Title="!(loc.ContextMenuOptionDlgTitle)">
+
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+
+        <Control Id="Description" Type="Text" X="20" Y="60" Width="330" Height="60" NoPrefix="yes" Text="!(loc.ContextMenuOptionDlgDescription)" />
+
+        <Control Id="ContextMenuCheckBox" Type="CheckBox" X="20" Y="130" Width="330" Height="18" Property="ADDCONTEXTMENU" CheckBoxValue="1" Text="!(loc.ContextMenuOptionCheckBoxText)" />
+
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)" />
+
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)" />
+
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" Condition="1" />
+        </Control>
+
+      </Dialog>
 
       <!-- ダウングレード確認ダイアログ（より新しいバージョンが既にインストールされている場合） -->
       <Dialog Id="DowngradeErrorDlg" Width="370" Height="270" Title="!(loc.DowngradeErrorDlgTitle)">
