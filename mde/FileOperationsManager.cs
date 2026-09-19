@@ -223,6 +223,33 @@ namespace mde
             return null;
         }
 
+        /// <summary>指定したフォルダが、このアプリケーション自身の実行フォルダ（インストール先）と
+        /// 同じかどうかを判定する。README.mdはビルド時にこのフォルダへ配置され、メニュー
+        /// 「ヘルプ」→「Readmeを開く」（およびF1キー）で開いた文書の保存先フォルダは通常ここに
+        /// なるが、ここは一般に書き込み権限が無い、あるいはユーザーの文書を置く場所として
+        /// ふさわしくないため、ファイル保存ダイアログの初期フォルダとしては使わないほうがよい。</summary>
+        /// <param name="a_directory">判定対象のフォルダ。nullや空文字はfalseを返す。</param>
+        /// <returns>アプリケーションの実行フォルダと同じであればtrue。</returns>
+        public static bool IsApplicationBaseDirectory(string a_directory)
+        {
+            if (string.IsNullOrEmpty(a_directory))
+            {
+                return false;
+            }
+            try
+            {
+                string normalizedTarget = Path.GetFullPath(a_directory)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string normalizedBase = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                return string.Equals(normalizedTarget, normalizedBase, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         /// <summary>ウィンドウタイトルを、現在のファイル名（無ければアプリ名のみ）から
         /// 組み立てて設定する。</summary>
         /// <param name="a_fileNameOrNull">タイトルに含めるファイル名。ファイルが無い場合はnull。</param>
@@ -411,8 +438,15 @@ namespace mde
 
             m_setCurrentFileIsDirty(false);
 
+            // 開いたファイルがフォルダビューに表示中のフォルダの範囲外であれば、その保存先
+            // フォルダを新たな表示対象として読み込む。ただし、そのフォルダがアプリケーション
+            // 自身の実行フォルダである場合（Readmeを開く等で開いたビルド同梱のREADME.mdなど）は
+            // 読み込まない。ユーザーの文書フォルダではないため、フォルダビューに表示する意味が
+            // 無く、そのまま読み込むと「名前を付けて保存」等の初期フォルダ候補としても使われて
+            // しまう（SaveAs参照）。
             string currentFileDirectory = m_getCurrentFileDirectory();
-            if (!string.IsNullOrEmpty(currentFileDirectory) && !m_folderTreeManager.IsWithinLoadedFolder(currentFileDirectory))
+            if (!string.IsNullOrEmpty(currentFileDirectory) && !IsApplicationBaseDirectory(currentFileDirectory)
+                && !m_folderTreeManager.IsWithinLoadedFolder(currentFileDirectory))
             {
                 m_folderTreeManager.LoadFolderTree(currentFileDirectory);
             }
@@ -663,13 +697,16 @@ namespace mde
             return md;
         }
 
-        /// <summary>現在のファイルを保存する（未保存の新規ファイルなら名前を付けて保存へ）。</summary>
+        /// <summary>現在のファイルを保存する（未保存の新規ファイルなら名前を付けて保存へ）。
+        /// 現在のファイルの保存先フォルダがアプリケーション自身の実行フォルダである場合
+        /// （Readmeを開く等で開いたビルド同梱のREADME.mdなど）も、そのまま上書きしてしまうと
+        /// アプリ本体に同梱されたファイルを書き換えてしまうため、同様に名前を付けて保存へ回す。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         public void SaveBtnClick(object a_sender, RoutedEventArgs a_args)
         {
             string currentFilePath = m_getCurrentFilePath();
-            if (string.IsNullOrEmpty(currentFilePath))
+            if (string.IsNullOrEmpty(currentFilePath) || IsApplicationBaseDirectory(m_getCurrentFileDirectory()))
             {
                 SaveAs();
                 return;
@@ -704,11 +741,28 @@ namespace mde
                 Filter = "Markdownファイル (*.md)|*.md|すべてのファイル (*.*)|*.*",
                 FileName = null != currentFilePath ? Path.GetFileName(currentFilePath) : "document.md"
             };
+            // 「現在の文書の保存先フォルダ」「フォルダビューに表示中のフォルダ」は、それが
+            // アプリケーション自身の実行フォルダである場合は使わない。ユーザーの文書を保存する
+            // 場所としてふさわしくなく、書き込み権限が無い環境も多いため、他の候補へ
+            // フォールスルーする。Readmeを開く等でビルド同梱のREADME.mdを開いた場合、LoadFile内
+            // でこのファイルの場所（＝実行フォルダ）がフォルダビューのルートとして自動的に
+            // 読み込まれるため、「現在の文書の保存先フォルダ」だけでなく「フォルダビューに
+            // 表示中のフォルダ」も実行フォルダになる点に注意（両方を判定する必要がある）。
+            string currentFileDirectory = m_getCurrentFileDirectory();
+            if (IsApplicationBaseDirectory(currentFileDirectory))
+            {
+                currentFileDirectory = null;
+            }
+            string loadedFolderRootPath = m_folderTreeManager.LoadedFolderRootPath;
+            if (IsApplicationBaseDirectory(loadedFolderRootPath))
+            {
+                loadedFolderRootPath = null;
+            }
             // 初期フォルダは、優先順に「現在の文書の保存先フォルダ」「フォルダビューに表示中の
             // フォルダ」「前回このダイアログで実際に選択されたフォルダ」「デスクトップ等の
             // 既定フォルダ」から決める（末尾2つは、新規作成直後などどちらも無い場合の
             // フォールバック。以前は何も設定せず、実行ファイルのフォルダが使われてしまっていた）。
-            string initialDirectory = m_getCurrentFileDirectory() ?? m_folderTreeManager.LoadedFolderRootPath
+            string initialDirectory = currentFileDirectory ?? loadedFolderRootPath
                 ?? m_getLastSaveDialogDirectory() ?? GetDefaultSaveDirectory();
             if (!string.IsNullOrEmpty(initialDirectory))
             {

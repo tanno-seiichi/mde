@@ -1945,12 +1945,29 @@ namespace mde
                 Filter = "PDFファイル (*.pdf)|*.pdf|すべてのファイル (*.*)|*.*",
                 FileName = docName + ".pdf"
             };
+            // 「現在の文書の保存先フォルダ」「フォルダビューに表示中のフォルダ」は、それが
+            // アプリケーション自身の実行フォルダである場合は使わない。ユーザーの文書を保存する
+            // 場所としてふさわしくなく、書き込み権限が無い環境も多いため、他の候補へ
+            // フォールスルーする。Readmeを開く等でビルド同梱のREADME.mdを開いた場合、LoadFile内
+            // でこのファイルの場所（＝実行フォルダ）がフォルダビューのルートとして自動的に
+            // 読み込まれるため、「現在の文書の保存先フォルダ」だけでなく「フォルダビューに
+            // 表示中のフォルダ」も実行フォルダになる点に注意（両方を判定する必要がある）。
+            string currentFileDirectory = m_currentFileDirectory;
+            if (FileOperationsManager.IsApplicationBaseDirectory(currentFileDirectory))
+            {
+                currentFileDirectory = null;
+            }
+            string loadedFolderRootPath = m_folderTreeManager.LoadedFolderRootPath;
+            if (FileOperationsManager.IsApplicationBaseDirectory(loadedFolderRootPath))
+            {
+                loadedFolderRootPath = null;
+            }
             // 初期フォルダは、優先順に「現在の文書の保存先フォルダ」「フォルダビューに表示中の
             // フォルダ」「前回、保存ダイアログ（名前を付けて保存／PDFに書き出し）で実際に
             // 選択されたフォルダ」「デスクトップ等の既定フォルダ」から決める（末尾2つは、
             // どちらも無い場合のフォールバック。以前は何も設定せず、実行ファイルのフォルダが
             // 使われてしまっていた）。
-            string initialDirectory = m_currentFileDirectory ?? m_folderTreeManager.LoadedFolderRootPath
+            string initialDirectory = currentFileDirectory ?? loadedFolderRootPath
                 ?? m_lastSaveDialogDirectory ?? FileOperationsManager.GetDefaultSaveDirectory();
             if (!string.IsNullOrEmpty(initialDirectory))
             {
