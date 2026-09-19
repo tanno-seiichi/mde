@@ -46,6 +46,12 @@ namespace mde
         /// ファイルの絶対パス一覧（先頭が最新）。</summary>
         public List<string> RecentFiles { get; set; } = new List<string>();
 
+        /// <summary>「名前を付けて保存」・「PDFに書き出し」のファイル保存ダイアログで、直近に
+        /// ユーザーが実際に選択した保存先フォルダ。現在のファイルの保存先フォルダも表示中の
+        /// フォルダも無い場合に、次回以降のダイアログの初期フォルダとして使う。一度も選択
+        /// されていなければnull（その場合はデスクトップ等を初期フォルダとする）。</summary>
+        public string LastSaveDialogDirectory { get; set; }
+
         private static string SettingsPath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mde", "settings.json");
 
