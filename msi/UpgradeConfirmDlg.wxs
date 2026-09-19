@@ -9,9 +9,12 @@
   上書きできます。ここでは説明文をプロパティ参照 "[WIX_WELCOME_MESSAGE]" に差し替え、
   アップグレード時だけ SetProperty で文言を切り替えています。
 
-  WelcomeDlg の [次へ] ボタンの遷移先も、アップグレード時だけ
-  ライセンス確認画面（LicenseAgreementDlg）を経由せず、直接インストールを
-  実行するように配線を分けています。
+  WelcomeDlg の [次へ] ボタンの遷移先も、アップグレード時（かつ右クリックメニュー
+  「mdeで開く」が既に追加済みの時）だけ、コンテキストメニュー追加確認画面
+  （ContextMenuOptionDlg）・ライセンス確認画面（LicenseAgreementDlg）のいずれも
+  経由せず、直接インストールを実行するように配線を分けています（詳細は
+  ContextMenuOptionDlg・CONTEXTMENU_ALREADY_ADDEDまわりのコメント、および
+  14.91・14.92節を参照）。
 
   これにより、新規インストール時とアップグレード時で見た目（赤いバナー画像を
   含む）が完全に同じになり、以前の「パタパタ切り替わる」問題も解消されます。
@@ -84,6 +87,32 @@
     -->
     <Property Id="ADDCONTEXTMENU" Secure="yes" />
 
+    <!--
+      アップグレード時に、右クリックメニュー「mdeで開く」が既に追加済み（前回の
+      インストールでチェックを入れていた、または14.88〜14.90節の時点のバージョンで
+      無条件に追加されていた）かどうかを、実際のレジストリの状態から判定する
+      プロパティ。AppSearch（RegistrySearchの標準動作）により、UI・実行の両
+      シーケンスでインストール前に自動的に値がセットされる。OpenWithMdeFileVerb.
+      Componentのキーパス（既定値／Name属性なし）を検索対象にしている。片方の
+      Componentだけが単独で存在する状態は無い設計のため、これだけで足りる。
+    -->
+    <Property Id="CONTEXTMENU_ALREADY_ADDED" Secure="yes">
+      <RegistrySearch Id="OpenWithMdeRegistrySearch" Root="HKCR" Key="SystemFileAssociations\.md\shell\OpenWithMde" Type="raw" />
+    </Property>
+
+    <!--
+      上記の判定で「既に追加済み」と分かった場合、確認画面（ContextMenuOptionDlg）を
+      経由せずにADDCONTEXTMENUを"1"にするためのCustomAction。チェックボックスは
+      UIシーケンスの中でしか操作されないため、確認画面を出さないアップグレード時にも
+      同じ結果になるよう、UI・実行の両シーケンスに登録する（下のInstallUISequence・
+      InstallExecuteSequence参照）。これを行わないと、既に追加済みの環境で
+      アップグレードするたびに、確認せずに右クリックメニューが削除されてしまう。
+    -->
+    <CustomAction
+      Id="SetAddContextMenuFromExisting"
+      Property="ADDCONTEXTMENU"
+      Value="1" />
+
     <UI Id="WixUI_MinimalUpgrade_X64">
 
       <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
@@ -114,28 +143,43 @@
 
       <!--
         WelcomeDlg の [次へ]:
-        ・通常（新規インストール）: コンテキストメニュー追加確認画面（ContextMenuOptionDlg）へ
-        ・アップグレード時: 確認画面・ライセンス確認画面のいずれも経由せず、そのまま
-          インストール実行（14.91節参照。ADDCONTEXTMENUプロパティは既定値［未設定＝
-          追加しない］のまま使われる）
+        ・新規インストール時: コンテキストメニュー追加確認画面（ContextMenuOptionDlg）へ
+        ・アップグレード時、かつ右クリックメニューがまだ追加されていない場合: 同じく
+          ContextMenuOptionDlgへ（新規インストール時と同様に確認する。14.92節参照）
+        ・アップグレード時、かつ右クリックメニューが既に追加済みの場合: 確認画面・
+          ライセンス確認画面のいずれも経由せず、そのままインストール実行（既に追加済み
+          なら確認するまでもないため。ADDCONTEXTMENUプロパティは、下記
+          SetAddContextMenuFromExistingにより"1"にセットされ、右クリックメニューは
+          削除されず維持される）
       -->
-      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="ContextMenuOptionDlg" Condition="NOT WIX_UPGRADE_DETECTED" />
-      <Publish Dialog="WelcomeDlg" Control="Next" Event="EndDialog" Value="Return" Condition="WIX_UPGRADE_DETECTED" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="ContextMenuOptionDlg" Condition="NOT WIX_UPGRADE_DETECTED OR NOT CONTEXTMENU_ALREADY_ADDED" />
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="EndDialog" Value="Return" Condition="WIX_UPGRADE_DETECTED AND CONTEXTMENU_ALREADY_ADDED" />
 
-      <!-- コンテキストメニュー追加確認画面（新規インストール時のみ表示） -->
+      <!--
+        コンテキストメニュー追加確認画面（新規インストール時、および右クリックメニューが
+        まだ追加されていないアップグレード時に表示）の[次へ]:
+        ・新規インストール時: ライセンス確認画面（LicenseAgreementDlg）へ（従来通り）
+        ・アップグレード時: ライセンス確認画面を経由せず、そのままインストール実行
+          （コンテキストメニュー確認画面を挟む以外は、従来のアップグレード時の流れ
+          （WelcomeDlgの[次へ]から直接インストール実行）と同じにする。14.94節参照）
+      -->
       <Publish Dialog="ContextMenuOptionDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Condition="1" />
-      <Publish Dialog="ContextMenuOptionDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg" Condition="1" />
+      <Publish Dialog="ContextMenuOptionDlg" Control="Next" Event="NewDialog" Value="LicenseAgreementDlg" Condition="NOT WIX_UPGRADE_DETECTED" />
+      <Publish Dialog="ContextMenuOptionDlg" Control="Next" Event="EndDialog" Value="Return" Condition="WIX_UPGRADE_DETECTED" />
 
       <Publish Dialog="LicenseAgreementDlg" Control="Back" Event="NewDialog" Value="ContextMenuOptionDlg" Condition="1" />
       <Publish Dialog="LicenseAgreementDlg" Control="Next" Event="EndDialog" Value="Return" Condition="LicenseAccepted = &quot;1&quot;" />
       <Publish Dialog="LicenseAgreementDlg" Control="Print" Event="DoAction" Value="WixUIPrintEula_X64" Condition="1" />
 
       <!--
-        コンテキストメニュー「mdeで開く」を追加するかどうかの確認画面（新規インストール
-        時のみ、WelcomeDlgとLicenseAgreementDlgの間に表示。14.91節参照）。
-        チェックボックスの状態はADDCONTEXTMENUプロパティに反映され、msi/File.wxsの
-        OpenWithMdeFileVerb.Component・OpenWithMdeFolderVerb.ComponentのConditionで
-        参照している。チェックを入れなければ既定どおり追加しない。
+        コンテキストメニュー「mdeで開く」を追加するかどうかの確認画面。WelcomeDlgと
+        LicenseAgreementDlgの間に表示する。新規インストール時は必ず表示し、
+        アップグレード時は右クリックメニューがまだ追加されていない場合のみ表示する
+        （既に追加済みの場合は表示せず、確認するまでもなくそのまま維持する。
+        14.91・14.92節参照）。チェックボックスの状態はADDCONTEXTMENUプロパティに
+        反映され、msi/File.wxsのOpenWithMdeFileVerb.Component・
+        OpenWithMdeFolderVerb.ComponentのConditionで参照している。チェックを
+        入れなければ既定どおり追加しない。
       -->
       <Dialog Id="ContextMenuOptionDlg" Width="370" Height="270" Title="!(loc.ContextMenuOptionDlgTitle)">
 
@@ -177,6 +221,12 @@
       <InstallUISequence>
         <Custom Action="SetWelcomeMessageInstall" After="LaunchConditions" Condition="NOT WIX_UPGRADE_DETECTED" />
         <Custom Action="SetWelcomeMessageUpgrade" After="SetWelcomeMessageInstall" Condition="WIX_UPGRADE_DETECTED" />
+        <!--
+          右クリックメニューが既に追加済みの場合、確認画面を経由せずADDCONTEXTMENUを
+          セットする。CONTEXTMENU_ALREADY_ADDEDはAppSearch（標準アクション）で
+          セットされるプロパティのため、AppSearchの後に実行する必要がある。
+        -->
+        <Custom Action="SetAddContextMenuFromExisting" After="AppSearch" Condition="CONTEXTMENU_ALREADY_ADDED" />
         <Show Dialog="WelcomeDlg" After="SetWelcomeMessageUpgrade" Condition="NOT Installed AND NOT WIX_DOWNGRADE_DETECTED" />
         <!--
           DowngradeErrorDlg は "LaunchConditions" より前に割り込ませます。
@@ -193,6 +243,22 @@
     </UI>
 
     <UIRef Id="WixUI_Common" />
+
+    <!--
+      SetAddContextMenuFromExistingはInstallUISequence（上記UI要素内）だけでなく
+      InstallExecuteSequenceにも登録する。ADDCONTEXTMENUプロパティは通常、対話的
+      インストールならUIシーケンス側で確定した値が実行シーケンスへそのまま引き継がれる
+      が、msiexec /quiet 等サイレントインストール（UIシーケンスを経由しない）でも
+      既に追加済みの右クリックメニューが削除されてしまわないよう、実行シーケンス側にも
+      同じ判定・設定を行っている。
+      【WIX0005修正】InstallExecuteSequenceはUI要素の子要素にはできない
+      （"The UI element contains an unexpected child element 'InstallExecuteSequence'"）ため、
+      Fragment直下（UI要素の外）に置く必要がある。14.92節の初版ではUI要素の内側に
+      置いてしまっており、実機のビルドでエラーになった（14.93節参照）。
+    -->
+    <InstallExecuteSequence>
+      <Custom Action="SetAddContextMenuFromExisting" After="AppSearch" Condition="CONTEXTMENU_ALREADY_ADDED" />
+    </InstallExecuteSequence>
 
   </Fragment>
 </Wix>

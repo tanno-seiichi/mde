@@ -8036,6 +8036,324 @@ grepで確認した。`Package.en-US.wxl`・`Package.ja-JP.wxl`はこのプロ�
 - アンインストール時に、チェックを入れていた場合の右クリックメニューのレジストリ
   エントリが正しく削除されること。
 
+### 14.92 【14.91節の追加対応】バージョンアップ時、右クリックメニュー「mdeで開く」が既に追加済みの場合は確認ダイアログを表示せず、そのまま維持するように変更
+
+**経緯**：14.91節で、右クリックメニュー「mdeで開く」を追加するかどうかを確認する
+ダイアログ（ContextMenuOptionDlg）を実装した際、ご相談のうえ「バージョンアップ時は
+この確認画面を表示しない（常に既定値＝追加しないのまま）」という方針にしていた。
+その後、「バージョンアップの時に、コンテキストメニューが追加されていない場合のみ
+確認ダイアログを表示するようにできますか」とのご依頼をいただいた。すなわち、
+
+- 右クリックメニューがまだ追加されていない環境でバージョンアップする場合は、
+  新規インストール時と同様に確認画面を表示してほしい。
+- 既に追加済みの環境でバージョンアップする場合は、（14.91節の当初方針どおり）
+  確認画面を表示せず、かつ既に追加されている右クリックメニューを削除せずそのまま
+  維持してほしい（14.91節の当初実装では、既定値が「追加しない」だったため、
+  確認画面を経由しないバージョンアップのたびに、既に追加済みの右クリック
+  メニューが黙って削除されてしまうという問題があった）。
+
+**対策**：4つの変更を組み合わせて実現した（いずれもnashi・ari両版で同一内容、
+`msi/UpgradeConfirmDlg.wxs`のみの変更）。
+
+1. **`CONTEXTMENU_ALREADY_ADDED`プロパティの新設**：右クリックメニューが既に
+   追加済みかどうかを、ユーザーの過去の選択を記憶する形ではなく、**実際の
+   レジストリの状態を都度調べる**ことで判定するプロパティ。
+
+   ```xml
+   <Property Id="CONTEXTMENU_ALREADY_ADDED" Secure="yes">
+     <RegistrySearch Id="OpenWithMdeRegistrySearch" Root="HKCR"
+       Key="SystemFileAssociations\.md\shell\OpenWithMde" Type="raw" />
+   </Property>
+   ```
+
+   `RegistrySearch`はWindows Installerの標準機能`AppSearch`によって、UI・実行の
+   両シーケンスでインストール処理の早い段階（`LaunchConditions`より前）に自動的に
+   実行される。検索対象は`OpenWithMdeFileVerb.Component`のキーパスとなっている
+   レジストリ値（`Name`属性が無い、つまりそのキーの既定値）であり、この値が
+   存在すれば`CONTEXTMENU_ALREADY_ADDED`に値がセットされ（存在の判定にのみ使う
+   ため値の中身自体は見ない）、存在しなければプロパティは未設定のままになる。
+
+   ユーザーの過去の選択を別途記憶する仕組み（レジストリへの独自の記録、
+   プロパティの永続化等）ではなく、**右クリックメニューのレジストリエントリが
+   実際に存在するかどうか**を直接調べる方式にした。この方式の利点は、
+   14.88〜14.90節時点の（確認なしで無条件に追加する）バージョンから今回の
+   バージョンへアップグレードする場合にも、追加の仕組みを要さず正しく
+   「既に追加済み」と判定できること（そのバージョンでは常にレジストリへ
+   書き込まれているため）。
+
+2. **`WelcomeDlg`の[次へ]の遷移先を3パターンに分岐**（既存の2パターンから拡張）：
+
+   修正前（14.91節）：
+   ```xml
+   <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog"
+     Value="ContextMenuOptionDlg" Condition="NOT WIX_UPGRADE_DETECTED" />
+   <Publish Dialog="WelcomeDlg" Control="Next" Event="EndDialog"
+     Value="Return" Condition="WIX_UPGRADE_DETECTED" />
+   ```
+
+   修正後：
+   ```xml
+   <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog"
+     Value="ContextMenuOptionDlg"
+     Condition="NOT WIX_UPGRADE_DETECTED OR NOT CONTEXTMENU_ALREADY_ADDED" />
+   <Publish Dialog="WelcomeDlg" Control="Next" Event="EndDialog"
+     Value="Return"
+     Condition="WIX_UPGRADE_DETECTED AND CONTEXTMENU_ALREADY_ADDED" />
+   ```
+
+   条件を論理的に整理すると、「新規インストール」または「アップグレードだが
+   まだ追加されていない」の場合は確認画面へ、「アップグレードかつ既に追加済み」の
+   場合のみ確認画面を経由せず直接インストール実行、という2条件で全パターンを
+   過不足なく分岐できる（元の2パターンの片方を条件式で拡張し、もう片方を
+   縮小する形になっている）。
+
+3. **`SetAddContextMenuFromExisting`（CustomAction）の新設**：確認画面を経由
+   しない「アップグレードかつ既に追加済み」のケースでは、チェックボックスが
+   一度も操作されないため、`ADDCONTEXTMENU`プロパティは既定（未設定）のまま
+   になってしまう。これを補うため、`CONTEXTMENU_ALREADY_ADDED`が真の場合に
+   `ADDCONTEXTMENU`を明示的に"1"にセットするCustomActionを新設した。
+
+   ```xml
+   <CustomAction
+     Id="SetAddContextMenuFromExisting"
+     Property="ADDCONTEXTMENU"
+     Value="1" />
+   ```
+
+   このCustomActionの定義自体は、既存の`SetWelcomeMessageInstall`・
+   `SetWelcomeMessageUpgrade`（`Property`属性で対象プロパティを指定し、
+   `Value`属性で固定値を設定する、最も単純な形のCustomAction）と全く同じ
+   書き方をしている。
+
+4. **`InstallUISequence`・`InstallExecuteSequence`両方への登録**：上記
+   CustomActionを、`AppSearch`（`CONTEXTMENU_ALREADY_ADDED`をセットする標準
+   アクション）の後に実行されるよう、`After="AppSearch"`・
+   `Condition="CONTEXTMENU_ALREADY_ADDED"`で`InstallUISequence`へ登録した。
+   これに加えて、今回新たに`InstallExecuteSequence`要素も追加し（このプロジェクトの
+   `UpgradeConfirmDlg.wxs`にこれまで`InstallExecuteSequence`は存在しなかった）、
+   同じCustomActionを同じ条件で登録した。
+
+   対話的インストールでは、UIシーケンス側でプロパティの値が確定すれば、その値は
+   自動的に実行シーケンスへ引き継がれる（Windows Installerの標準動作）ため、
+   本来はInstallUISequence側だけでも対話的インストールには十分機能する。
+   しかし、`msiexec /i mde.msi /quiet`のようなサイレントインストール（UI
+   シーケンスを経由しない）の場合にも、既に追加済みの右クリックメニューが
+   黙って削除されてしまわないよう、念のため実行シーケンス側にも同じ判定・
+   設定を重複して行うようにした。
+
+**この変更にともなうコメントの更新**：ファイル冒頭の設計方針コメント、
+`WelcomeDlg`の[次へ]の遷移先を説明するコメント、`ContextMenuOptionDlg`
+そのものの説明コメントを、いずれも「新規インストール時のみ表示」という
+14.91節時点の説明から、「新規インストール時、および右クリックメニューが
+まだ追加されていないアップグレード時に表示」という今回の仕様に合わせて
+更新した。
+
+**検証方法**：修正後の`msi/UpgradeConfirmDlg.wxs`（両版）について、`xmllint`で
+XMLとしての妥当性（well-formed）を確認した。このファイルはこのプロジェクトの
+差分対象外（nashi/ari共通）のファイルであるため、両版で完全に同一の内容で
+あることも`diff`で確認した。nashi/ari間の差分が既知の差分一覧どおりであることを
+`diff -rq`で確認した。バージョン番号（1.5.13.0／2.1.13.0）は変更していない。
+C#側のファイルは今回変更していない。
+
+**今回のご確認について（重要）**：14.91節に引き続き、今回もWiXのインストールUI・
+シーケンス制御に踏み込んだ変更であり、`xmllint`によるXML妥当性の確認に
+留まっている（WiXツールセットによる実際のビルド確認はできていない）。特に、
+今回新設した`InstallExecuteSequence`要素、および`RegistrySearch`・
+`CustomAction`の`InstallUISequence`／`InstallExecuteSequence`双方への登録は、
+このプロジェクトでこれまで使われていなかった組み合わせであり、実機での
+ビルド確認を強くお願いしたい。万一ビルドエラーが出た場合は、エラー
+メッセージをそのままお知らせいただければ対応する。
+
+**確認をお願いしたいこと**：
+- msiビルドが問題なく通ること（WiXの構文エラーが無いこと）。
+- 右クリックメニューを追加していない状態から、今回の版へバージョンアップした
+  場合、確認ダイアログが表示されること（14.91節までの動作からの変更点）。
+- 14.88〜14.90節時点の（確認なしで無条件に追加する）バージョンから今回の版へ
+  バージョンアップした場合、確認ダイアログが表示されず、右クリックメニューが
+  そのまま維持されること（削除されないこと）。
+- 14.91節の版（確認ダイアログでチェックを入れて右クリックメニューを追加した
+  状態）から今回の版へバージョンアップした場合も、確認ダイアログが表示されず、
+  右クリックメニューがそのまま維持されること。
+- 新規インストール時の挙動（確認ダイアログの表示・[戻る][次へ][キャンセル]の
+  動作）が14.91節までと変わらないこと。
+- サイレントインストール（`msiexec /quiet`等）でのアップグレードでも、既に
+  追加済みの右クリックメニューが削除されないこと。
+
+### 14.93 【14.92節の訂正】InstallExecuteSequence要素をUI要素の子要素として書いてしまっていたビルドエラー（WIX0005）を修正
+
+**経緯**：14.92節で追加した`msi/UpgradeConfirmDlg.wxs`を実機でビルドしたところ、
+次のビルドエラーのご報告をいただいた。
+
+```
+エラー (アクティブ) WIX0005 The UI element contains an unexpected child element
+'InstallExecuteSequence'.
+msi UpgradeConfirmDlg.wxs 242
+```
+
+**原因**：14.92節で、サイレントインストール時にも`ADDCONTEXTMENU`プロパティを
+正しく設定するため、`InstallExecuteSequence`要素を新設したが、これを誤って
+`UI`要素（`<UI Id="WixUI_MinimalUpgrade_X64">`）の内側、`InstallUISequence`や
+`Property Id="ARPNOMODIFY"`と同じ階層に書いてしまっていた。
+
+```xml
+<UI Id="WixUI_MinimalUpgrade_X64">
+  ...
+  <InstallUISequence>
+    ...
+  </InstallUISequence>
+
+  <InstallExecuteSequence>          <!-- ここがUI要素の内側になっていた（誤り） -->
+    <Custom Action="SetAddContextMenuFromExisting" .../>
+  </InstallExecuteSequence>
+
+  <Property Id="ARPNOMODIFY" Value="1" />
+</UI>
+```
+
+WiXのスキーマでは、`InstallUISequence`は`UI`要素の子要素として書けるが（実際、
+このプロジェクトでは以前から`InstallUISequence`を`UI`要素内に置いており、
+問題なくビルドできていた）、`InstallExecuteSequence`は`UI`要素の子要素には
+できない。`InstallExecuteSequence`は`Package`直下のインストール全体の実行
+シーケンスを表すものであり、UIダイアログの表示制御に関する`UI`要素とは
+別の階層（`Fragment`直下）に置く必要がある。`InstallUISequence`が`UI`要素の
+子要素として許可されているのに対し、`InstallExecuteSequence`は許可されて
+いない、という非対称なスキーマ制約になっている点が、今回見落としの原因
+だった。
+
+**対策**：`msi/UpgradeConfirmDlg.wxs`（両版）で、`InstallExecuteSequence`要素を
+`UI`要素の外（`</UI>`・`<UIRef Id="WixUI_Common" />`の後）、`Fragment`の直下へ
+移動した。
+
+修正後の構造：
+```xml
+<Fragment>
+  ...
+  <UI Id="WixUI_MinimalUpgrade_X64">
+    ...
+    <InstallUISequence>
+      ...
+    </InstallUISequence>
+
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+  </UI>
+
+  <UIRef Id="WixUI_Common" />
+
+  <InstallExecuteSequence>          <!-- Fragment直下（UI要素の外）に移動 -->
+    <Custom Action="SetAddContextMenuFromExisting" After="AppSearch" Condition="CONTEXTMENU_ALREADY_ADDED" />
+  </InstallExecuteSequence>
+
+</Fragment>
+```
+
+`InstallExecuteSequence`の中身（`Custom Action="SetAddContextMenuFromExisting"`の
+登録内容・条件）自体は変更していない。`InstallUISequence`側の同じCustomAction
+登録、`CONTEXTMENU_ALREADY_ADDED`プロパティ、`SetAddContextMenuFromExisting`
+CustomActionの定義、`WelcomeDlg`の[次へ]の分岐ロジックなど、14.92節のその他の
+部分にも変更はない。
+
+**検証方法**：修正後の`msi/UpgradeConfirmDlg.wxs`（両版）について、`xmllint`で
+XMLとしての妥当性（well-formed）を確認した。あわせて、`InstallExecuteSequence`
+要素が`UI`要素のブロックの外（閉じタグ`</UI>`より後）に置かれていることを、
+文字列上の位置関係でも確認した。両版で完全に同一の内容であることを`diff`で
+確認した。nashi/ari間の差分が既知の差分一覧どおりであることを`diff -rq`で
+確認した。バージョン番号（1.5.13.0／2.1.13.0）は変更していない。
+
+**今回のご確認について**：今回の修正は、要素の配置階層を訂正しただけであり、
+ロジック自体（判定条件・CustomActionの内容）は変更していないため、14.92節で
+お願いした確認事項がそのまま今回も当てはまる。今回もxmllintによるXML妥当性の
+確認に留まっており、WiXツールセットによる実際のビルド確認はできていない点は
+変わらない。
+
+**確認をお願いしたいこと**：
+- msiビルドが、今回のWIX0005エラー無く通ること。
+- （14.92節と同じ）右クリックメニューを追加していない状態から今回の版へ
+  バージョンアップした場合、確認ダイアログが表示されること。
+- （14.92節と同じ）既に右クリックメニューが追加済みの状態から今回の版へ
+  バージョンアップした場合、確認ダイアログが表示されず、右クリックメニューが
+  そのまま維持されること。
+- （14.91節と同じ）新規インストール時の挙動が変わらないこと。
+
+### 14.94 【14.92節の訂正】バージョンアップ時、コンテキストメニュー確認画面の次にライセンス確認画面が表示されてしまう不具合を修正
+
+**経緯**：14.92節（右クリックメニューがまだ追加されていないバージョンアップ時にも
+確認画面を表示する対応）を実機で確認いただいたところ、「バージョンアップなのに
+コンテキストメニューの確認画面の次にライセンス確認画面が表示された。コンテキスト
+メニューの確認画面を挿入する他は今までのバージョンアップと同じ動きにしたい」との
+ご指摘をいただいた。
+
+**原因**：`ContextMenuOptionDlg`（14.91節で新設した確認画面）の[次へ]ボタンの
+遷移先が、次のように新規インストール・バージョンアップの区別なく、常に
+`LicenseAgreementDlg`（ライセンス確認画面）を指すように書かれていた。
+
+```xml
+<Publish Dialog="ContextMenuOptionDlg" Control="Next" Event="NewDialog"
+  Value="LicenseAgreementDlg" Condition="1" />
+```
+
+このプロジェクトの元々の設計（`UpgradeConfirmDlg.wxs`冒頭のコメント参照）では、
+バージョンアップ時は`WelcomeDlg`の[次へ]から、ライセンス確認画面を経由せず
+直接インストールを実行するようになっている（ライセンスは初回インストール時に
+既に同意済みのため、バージョンアップのたびに再確認する必要が無いという設計）。
+
+14.92節で「右クリックメニューがまだ追加されていないバージョンアップ時にも
+`ContextMenuOptionDlg`を表示する」ようにした際、`ContextMenuOptionDlg`の[次へ]の
+遷移先を、新規インストール時と同じ「常に`LicenseAgreementDlg`」のままにして
+しまっていたため、バージョンアップ時に`ContextMenuOptionDlg`を経由するケースでは、
+本来経由しないはずのライセンス確認画面が割り込んで表示されてしまっていた。
+
+**対策**：`msi/UpgradeConfirmDlg.wxs`（両版）の`ContextMenuOptionDlg`の[次へ]の
+遷移先を、`WelcomeDlg`の[次へ]と同じ考え方で、新規インストール・バージョンアップ
+それぞれの条件に分岐するように修正した。
+
+修正前（不具合の原因）：
+```xml
+<Publish Dialog="ContextMenuOptionDlg" Control="Next" Event="NewDialog"
+  Value="LicenseAgreementDlg" Condition="1" />
+```
+
+修正後：
+```xml
+<Publish Dialog="ContextMenuOptionDlg" Control="Next" Event="NewDialog"
+  Value="LicenseAgreementDlg" Condition="NOT WIX_UPGRADE_DETECTED" />
+<Publish Dialog="ContextMenuOptionDlg" Control="Next" Event="EndDialog"
+  Value="Return" Condition="WIX_UPGRADE_DETECTED" />
+```
+
+これにより、バージョンアップ時に`ContextMenuOptionDlg`が表示されるケース
+（右クリックメニューがまだ追加されていない場合）でも、[次へ]を押すとライセンス
+確認画面を経由せず、そのままインストールが実行される（従来の`WelcomeDlg`の
+[次へ]がバージョンアップ時に行っていたのと同じ`EndDialog Value="Return"`を、
+`ContextMenuOptionDlg`の[次へ]でも行うようにした）。新規インストール時の動作
+（`LicenseAgreementDlg`へ進む）は変更していない。
+
+`LicenseAgreementDlg`の[戻る]の遷移先（`ContextMenuOptionDlg`）は変更していない。
+今回の修正後、`LicenseAgreementDlg`はバージョンアップ時には一切表示されなくなる
+（新規インストール時のみ到達する画面になる）ため、この[戻る]の遷移先は
+そのままで問題ない。
+
+**検証方法**：修正後の`msi/UpgradeConfirmDlg.wxs`（両版）について、`xmllint`で
+XMLとしての妥当性（well-formed）を確認した。両版で完全に同一の内容であることを
+`diff`で確認した。nashi/ari間の差分が既知の差分一覧どおりであることを
+`diff -rq`で確認した。バージョン番号（1.5.13.0／2.1.13.0）は変更していない。
+
+**今回のご確認について**：今回の修正はダイアログ間の遷移条件（Publish要素の
+Condition）のみの変更であり、14.92・14.93節で追加したプロパティ・CustomAction・
+シーケンス登録自体には変更が無い。今回もxmllintによるXML妥当性の確認に
+留まっており、WiXツールセットによる実際のビルド確認はできていない。
+
+**確認をお願いしたいこと**：
+- msiビルドが問題なく通ること。
+- 右クリックメニューを追加していない状態から今回の版へバージョンアップした
+  場合、コンテキストメニュー確認画面が表示され、[次へ]を押すとライセンス
+  確認画面を経由せず、そのままインストールが実行されること（今回の修正点）。
+- 既に右クリックメニューが追加済みの状態から今回の版へバージョンアップした
+  場合、確認画面自体が表示されず、これまで通りそのままインストールが
+  実行されること（14.92節の挙動、変更なし）。
+- 新規インストール時は、これまで通りコンテキストメニュー確認画面の次に
+  ライセンス確認画面が表示されること（変更なし）。
+
 ## 16. 新しい機能を追加する時の指針
 
 1. **どのクラスの責務かを見極める**：4章の表を参照し、既存クラスに機能を追加すべきか、新しい
