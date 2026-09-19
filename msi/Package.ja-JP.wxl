@@ -24,4 +24,10 @@ This file contains the declaration of all the localizable strings.
   <!-- エクスプローラー右クリックメニューの「mde で開く」 -->
   <String Id="OpenWithMdeVerb" Value="mde で開く" />
 
+  <!-- ContextMenuOptionDlg（UpgradeConfirmDlg.wxs）：新規インストール時に、右クリック
+       メニュー「mdeで開く」を追加するかどうかを確認するダイアログの文言。 -->
+  <String Id="ContextMenuOptionDlgTitle" Value="エクスプローラーの右クリックメニュー" />
+  <String Id="ContextMenuOptionDlgDescription" Value="エクスプローラーの右クリックメニューに「mdeで開く」を追加できます。.mdファイルを選択した時と、フォルダの何もない場所を右クリックした時の両方に表示されます。" />
+  <String Id="ContextMenuOptionCheckBoxText" Value="右クリックメニューに「mdeで開く」を追加する" />
+
 </WixLocalization>

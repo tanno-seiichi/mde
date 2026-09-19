@@ -435,6 +435,10 @@ Ctrl+S（`FileOperationsManager.SaveBtnClick`）は、現在のファイルパ�
 
 14.89節の訂正後、続けて「WIX0311 A string was provided with characters that are not available in the specified database code page '1252'.」というビルドエラーのご報告をいただいた。原因は、右クリックメニュー「mdeで開く」を登録している`msi/File.wxs`の`OpenWithMdeFileVerb.Component`・`OpenWithMdeFolderVerb.Component`内で、`RegistryValue`の`Value`属性に日本語文字列「mdeで開く」を直接記述していたこと。このプロジェクトのベース（en-US）パッケージの文字列テーブルはコードページ1252（Windows-1252）であり、日本語文字はこのコードページで表現できないため、WiXのビルド時にエラーとなった。一方、`Package.wxs`の`DowngradeErrorMessage="!(loc.DowngradeError)"`などで使われている既存の`!(loc.文字列ID)`によるローカライズ文字列参照の仕組みでは、`Package.en-US.wxl`・`Package.ja-JP.wxl`双方に該当IDの文字列を用意しておけば、カルチャーごとに正しいコードページで解決されるため同様の問題が起きない（このプロジェクトのダイアログ文言が既にこの方式で日本語表示できていたのはこのため）。対策として、日本語文字列「mdeで開く」の直書きをやめ、新規のローカライズ文字列ID`OpenWithMdeVerb`を追加（`Package.en-US.wxl`に英語訳"Open with mde"、`Package.ja-JP.wxl`に「mdeで開く」）し、`File.wxs`側の該当4箇所（両版とも）を`!(loc.OpenWithMdeVerb)`という参照に置き換えることで解決した。既存の他のダイアログ文言と同じ、実績のある仕組みに合わせた対応であり、新しい仕組みを持ち込んではいない。
 
+### 14.91 【重要・実機での入念な確認が必要】インストール時に、右クリックメニュー「mdeで開く」を追加するかどうかをユーザーに確認するダイアログを追加
+
+右クリックメニュー「mdeで開く」（.mdファイル・フォルダ背景の両方、14.88節）を、インストーラーが無条件に追加してしまうのではなく、追加してよいかユーザーに確認してから追加するようにしてほしいとのご依頼をいただいた。新規のプロパティ`ADDCONTEXTMENU`（既定は未設定＝追加しない）を追加し、`msi/File.wxs`の`OpenWithMdeFileVerb.Component`・`OpenWithMdeFolderVerb.Component`をこのプロパティの値が`"1"`の場合のみインストールする`Condition`付きにした。確認は、新規インストール時のみ（`UpgradeConfirmDlg.wxs`で新設した`ContextMenuOptionDlg`）、`WelcomeDlg`と`LicenseAgreementDlg`の間に挿入したチェックボックス付きダイアログで行い、初期状態は未チェック（追加しない）。バージョンアップ時はこの画面を経由せず、`ADDCONTEXTMENU`は既定値（未設定）のまま使われる（＝追加しない）ため、アップグレードのたびに毎回確認されることはない一方、初回インストール時に選んだ設定がアップグレード後も保持されるわけではない点は制約として残る。ダイアログの文言は英語／日本語のローカライズ文字列として`Package.en-US.wxl`・`Package.ja-JP.wxl`に追加した。この機能はWiXのUIシーケンス・ダイアログ定義に関わる、今回のセッションで最も複雑な変更であり、これまでの2度のビルドエラー（WIX0005・WIX0311）の教訓を踏まえて既存の実績あるパターン（自前定義の`DowngradeErrorDlg`、`Component/@Condition`によるオプション機能の実績パターン）になるべく沿う形で実装したが、**実機でのビルド・インストール・アンインストール・チェックボックスの動作について、特に入念な確認をお願いしたい**。
+
 ## 16. 新しい機能を追加する時の指針
 
 1. **どのクラスの責務かを見極める**：4章の表を参照し、既存クラスに機能を追加すべきか、新しい

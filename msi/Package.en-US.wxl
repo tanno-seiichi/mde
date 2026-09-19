@@ -24,4 +24,10 @@ This file contains the declaration of all the localizable strings.
   <!-- Explorer context menu verb "Open with mde" -->
   <String Id="OpenWithMdeVerb" Value="Open with mde" />
 
+  <!-- ContextMenuOptionDlg (UpgradeConfirmDlg.wxs): confirmation dialog shown on a fresh
+       install, asking whether to add the "Open with mde" Explorer context menu entries. -->
+  <String Id="ContextMenuOptionDlgTitle" Value="Explorer context menu" />
+  <String Id="ContextMenuOptionDlgDescription" Value="You can add &quot;Open with mde&quot; to the Explorer right-click menu. It appears both when a .md file is selected and when you right-click empty space inside a folder." />
+  <String Id="ContextMenuOptionCheckBoxText" Value="Add &quot;Open with mde&quot; to the right-click menu" />
+
 </WixLocalization>
