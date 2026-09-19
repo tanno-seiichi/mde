@@ -1289,13 +1289,27 @@ namespace mde
                     m_headingCodeBlockEditor.InsertLineBreakAtCaret();
                     return;
                 }
-                if (para.Parent is TableCell)
+                if (para.Parent is TableCell cellForEnter)
                 {
+                    if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                    {
+                        a_args.Handled = true;
+                        // 表のセル内での行内改行（Shift+Enter）は、箇条書き項目と同じ理由で
+                        // 段落分割方式を使う（上のListItem+Shift+Enterの分岐、および
+                        // HeadingCodeBlockEditor.InsertParagraphSplitAtCaretのコメント参照）。
+                        m_headingCodeBlockEditor.InsertParagraphSplitAtCaret(para);
+                        return;
+                    }
+
                     a_args.Handled = true;
-                    // 表のセル内での行内改行も、箇条書き項目と同じ理由で段落分割方式を使う
-                    // （上のListItem+Shift+Enterの分岐、およびHeadingCodeBlockEditor.
-                    // InsertParagraphSplitAtCaretのコメント参照）。
-                    m_headingCodeBlockEditor.InsertParagraphSplitAtCaret(para);
+                    // Enterキー単独では、Typora等の他のMarkdownエディタと同様、キャレットを
+                    // 下（同じ列）のセルへ移動する（ご要望により、以前あった「Enter単独での
+                    // セル内改行」はShift+Enterへ変更し、Enter単独はセル間移動用に空けた）。
+                    // 表の最終行だった場合は、MoveVertical内のMoveOutOfTableが表の外
+                    // （直後の段落。なければ新しく作る）へ移動する。上下矢印キーで既に
+                    // 使っている仕組みをそのまま再利用しているため、キャレットの移動先
+                    // （対象セルの最後の段落の末尾）は上下矢印キーの場合と同じになる。
+                    m_tableEditor.MoveVertical(cellForEnter, 1);
                     return;
                 }
                 if (para.Parent is FlowDocument)
