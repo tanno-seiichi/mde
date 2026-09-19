@@ -12,6 +12,7 @@
 // 高速化する。ブラウザ自体はアプリ終了時（App.xaml.csのOnExit）にまとめて終了する。
 
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using PuppeteerSharp;
@@ -33,9 +34,45 @@ namespace mde
         /// バージョンと食い違うことがあるため）。</summary>
         private static string m_executablePath;
 
+        /// <summary>Chromium本体のダウンロード先フォルダ。インストーラでProgram Filesに配置
+        /// された場合など、実行ファイルフォルダへダウンロードしようとするとアクセス拒否に
+        /// なるため、ユーザープロファイル配下の書き込み可能な場所を明示する。
+        /// IsBrowserDownloaded()とGetBrowserAsync()の両方から、必ず同じ場所を指すように
+        /// このメソッド経由で参照する。</summary>
+        private static string GetDownloadDir()
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mde", "chromium");
+        }
+
+        /// <summary>Chromium本体が、既にダウンロード先フォルダにダウンロード済みかどうかを
+        /// 判定する。ローカルのフォルダを調べるだけで、ネットワークへは一切アクセスしない。
+        /// 呼び出し元（ExportPdfBtnClick）が、これから実際にダウンロードが必要になりそうかを、
+        /// ユーザーへ確認ダイアログを出す前に判断するために使う。
+        ///
+        /// 注意：これは「過去に何らかのバージョンを一度でもダウンロードしたことがあるか」の
+        /// 判定に留まる。実際にGetBrowserAsync()を呼んだ時点でGoogle側の「現在のStable版」が
+        /// この判定時点から更新されていた場合は、新しいバージョンの追加ダウンロードが必要に
+        /// なることがある（頻度は低いが、ゼロではない）。</summary>
+        public static bool IsBrowserDownloaded()
+        {
+            try
+            {
+                var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions { Path = GetDownloadDir() });
+                return browserFetcher.GetInstalledBrowsers().Any();
+            }
+            catch
+            {
+                // 判定に失敗した場合は「未ダウンロード」として扱い、安全側（確認ダイアログを
+                // 出す側）に倒す。
+                return false;
+            }
+        }
+
         /// <summary>使い回し可能なブラウザインスタンスを取得する。まだ起動していなければ、
         /// （必要ならChromium本体のダウンロードも含めて）ここで起動する。既に起動済みで
-        /// まだ生きていれば、それをそのまま返す。</summary>
+        /// まだ生きていれば、それをそのまま返す。呼び出し元は、ダウンロードが必要になりそうな
+        /// 場合、事前にIsBrowserDownloaded()で確認しユーザーの同意を得てから呼ぶこと
+        /// （ExportPdfBtnClick参照）。</summary>
         public static async Task<IBrowser> GetBrowserAsync()
         {
             if (BrowserIsUsable(m_browser))
@@ -54,10 +91,7 @@ namespace mde
 
                 if (!m_browserDownloadedFlg)
                 {
-                    // インストーラでProgram Filesに配置された場合など、実行ファイルフォルダへ
-                    // ダウンロードしようとするとアクセス拒否になるため、ユーザープロファイル
-                    // 配下の書き込み可能な場所をダウンロード先に明示する。
-                    string downloadDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mde", "chromium");
+                    string downloadDir = GetDownloadDir();
                     Directory.CreateDirectory(downloadDir);
 
                     var browserFetcher = new BrowserFetcher(new BrowserFetcherOptions { Path = downloadDir });
@@ -114,10 +148,19 @@ namespace mde
 
         /// <summary>アプリの起動直後などに、あらかじめバックグラウンドでブラウザを起動しておく
         /// （実際にPDFへ書き出すまで待たず、事前に準備しておくことで、最初の書き出しも
-        /// 速くするための呼び出し）。失敗しても（オフライン環境など）ここでは何もしない。
-        /// 実際に書き出す際、GetBrowserAsync側で改めて起動を試みる。</summary>
+        /// 速くするための呼び出し）。ただし、Chromium本体がまだダウンロードされていない
+        /// 場合はここでは何もしない：ユーザーの同意なしにバックグラウンドでダウンロードを
+        /// 始めてしまうと、PDF書き出し時にご案内する確認ダイアログ（ExportPdfBtnClick参照）の
+        /// 意味がなくなるため。ダウンロード済みの場合のみ、起動だけを事前に済ませておく。
+        /// 失敗しても（オフライン環境など）ここでは何もせず、実際に書き出す際、GetBrowserAsync
+        /// 側で改めて起動を試みる。</summary>
         public static void WarmUpInBackground()
         {
+            if (!IsBrowserDownloaded())
+            {
+                return;
+            }
+
             _ = Task.Run(async () =>
             {
                 try

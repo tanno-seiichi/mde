@@ -20,9 +20,12 @@ namespace mde
     public partial class App : Application
     {
         /// <summary>Registers the unhandled-exception handler and the F1 shortcut on startup, and
-        /// starts warming up the headless Chromium instance used for PDF export
-        /// (ChromiumBrowserPool) in the background so the first export doesn't have to pay the
-        /// full startup cost.</summary>
+        /// (only if Chromium has already been downloaded before) starts warming up the headless
+        /// Chromium instance used for PDF export (ChromiumBrowserPool) in the background so the
+        /// first export doesn't have to pay the full startup cost. If Chromium has not been
+        /// downloaded yet, this intentionally does nothing here, so the user is asked for
+        /// confirmation at export time instead of a multi-hundred-MB download silently starting
+        /// at app launch (see ChromiumBrowserPool.WarmUpInBackground / MainWindow.ExportPdfBtnClick).</summary>
         /// <param name="a_args">Startup event args.</param>
         protected override void OnStartup(StartupEventArgs a_args)
         {
