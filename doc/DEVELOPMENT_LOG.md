@@ -439,6 +439,18 @@ Ctrl+S（`FileOperationsManager.SaveBtnClick`）は、現在のファイルパ�
 
 右クリックメニュー「mdeで開く」（.mdファイル・フォルダ背景の両方、14.88節）を、インストーラーが無条件に追加してしまうのではなく、追加してよいかユーザーに確認してから追加するようにしてほしいとのご依頼をいただいた。新規のプロパティ`ADDCONTEXTMENU`（既定は未設定＝追加しない）を追加し、`msi/File.wxs`の`OpenWithMdeFileVerb.Component`・`OpenWithMdeFolderVerb.Component`をこのプロパティの値が`"1"`の場合のみインストールする`Condition`付きにした。確認は、新規インストール時のみ（`UpgradeConfirmDlg.wxs`で新設した`ContextMenuOptionDlg`）、`WelcomeDlg`と`LicenseAgreementDlg`の間に挿入したチェックボックス付きダイアログで行い、初期状態は未チェック（追加しない）。バージョンアップ時はこの画面を経由せず、`ADDCONTEXTMENU`は既定値（未設定）のまま使われる（＝追加しない）ため、アップグレードのたびに毎回確認されることはない一方、初回インストール時に選んだ設定がアップグレード後も保持されるわけではない点は制約として残る。ダイアログの文言は英語／日本語のローカライズ文字列として`Package.en-US.wxl`・`Package.ja-JP.wxl`に追加した。この機能はWiXのUIシーケンス・ダイアログ定義に関わる、今回のセッションで最も複雑な変更であり、これまでの2度のビルドエラー（WIX0005・WIX0311）の教訓を踏まえて既存の実績あるパターン（自前定義の`DowngradeErrorDlg`、`Component/@Condition`によるオプション機能の実績パターン）になるべく沿う形で実装したが、**実機でのビルド・インストール・アンインストール・チェックボックスの動作について、特に入念な確認をお願いしたい**。
 
+### 14.92 【14.91節の追加対応】バージョンアップ時、右クリックメニュー「mdeで開く」が既に追加済みの場合は確認ダイアログを表示せず、そのまま維持するように変更
+
+14.91節の対応では、バージョンアップ時は常に確認ダイアログ（ContextMenuOptionDlg）を表示せず、`ADDCONTEXTMENU`プロパティの既定値（未設定＝追加しない）がそのまま使われる仕様だった。「バージョンアップの時に、コンテキストメニューが追加されていない場合のみ確認ダイアログを表示するようにできますか」とのご依頼を受け、実際のレジストリの状態（`SystemFileAssociations\.md\shell\OpenWithMde`キーの有無）を`RegistrySearch`で調べる新規プロパティ`CONTEXTMENU_ALREADY_ADDED`を追加し、バージョンアップ時の`WelcomeDlg`の[次へ]の遷移先を、このプロパティの有無で分岐するように変更した。右クリックメニューがまだ追加されていない場合（`CONTEXTMENU_ALREADY_ADDED`が未設定）は、新規インストール時と同様にContextMenuOptionDlgで確認する。既に追加済みの場合は、これまで通り確認画面を経由せずインストールを実行するが、その際に新設した`CustomAction`（`SetAddContextMenuFromExisting`）によって`ADDCONTEXTMENU`を明示的に"1"にセットし、右クリックメニューが確認なしに削除されてしまわないようにした（この`CustomAction`は対話的インストールだけでなくサイレントインストールでも正しく動作するよう、`InstallUISequence`・`InstallExecuteSequence`の両方に登録している）。レジストリの実際の状態を見て判定する方式のため、14.88〜14.90節の時点の（確認なしで無条件に追加する）バージョンから今回のバージョンへアップグレードする場合にも、既に追加済みの右クリックメニューがそのまま維持される。
+
+### 14.93 【14.92節の訂正】InstallExecuteSequence要素をUI要素の子要素として書いてしまっていたビルドエラー（WIX0005）を修正
+
+14.92節で追加した`InstallExecuteSequence`要素を、誤って`UI`要素の内側（`InstallUISequence`・`Property Id="ARPNOMODIFY"`と同じ階層）に書いてしまっており、「WIX0005 The UI element contains an unexpected child element 'InstallExecuteSequence'.」というビルドエラーが発生した、とのご報告をいただいた。WiXのスキーマでは`InstallExecuteSequence`は`UI`要素の子要素にはできず、`Fragment`直下（`UI`要素の外）に置く必要がある。`msi/UpgradeConfirmDlg.wxs`（両版）で、`InstallExecuteSequence`要素を`</UI>`・`<UIRef Id="WixUI_Common" />`の後、`Fragment`の直下へ移動して修正した。`InstallExecuteSequence`が参照している`CustomAction`（`SetAddContextMenuFromExisting`）や、`InstallUISequence`側の登録、その他のロジックはいずれも変更していない。
+
+### 14.94 【14.92節の訂正】バージョンアップ時、コンテキストメニュー確認画面の次にライセンス確認画面が表示されてしまう不具合を修正
+
+「バージョンアップなのにコンテキストメニューの確認画面の次にライセンス確認画面が表示された。コンテキストメニューの確認画面を挿入する他は今までのバージョンアップと同じ動きにしたい」とのご指摘をいただいた。原因は、`ContextMenuOptionDlg`（14.91節で新設したコンテキストメニュー追加確認画面）の[次へ]ボタンの遷移先が、新規インストール・バージョンアップのいずれの場合も無条件に`LicenseAgreementDlg`（ライセンス確認画面）へ向かうようになっていたこと。バージョンアップ時にこの確認画面が表示されるのは、右クリックメニューがまだ追加されていない場合のみ（14.92節）だが、従来のバージョンアップの流れ（`WelcomeDlg`の[次へ]から、ライセンス確認画面を経由せず直接インストールを実行する）ではライセンス確認は表示されないため、動作が食い違っていた。`msi/UpgradeConfirmDlg.wxs`（両版）で、`ContextMenuOptionDlg`の[次へ]の遷移先を、新規インストール時は`LicenseAgreementDlg`（従来通り）、バージョンアップ時はライセンス確認画面を経由せずそのままインストール実行、と分岐するように修正した。これにより、バージョンアップ時の流れは「コンテキストメニュー確認画面を挟む」点以外、従来と完全に同じになる。
+
 ## 16. 新しい機能を追加する時の指針
 
 1. **どのクラスの責務かを見極める**：4章の表を参照し、既存クラスに機能を追加すべきか、新しい
