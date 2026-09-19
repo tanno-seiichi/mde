@@ -364,13 +364,24 @@ namespace mde
                 m_outlineManager.Refresh();
             };
 
-            // 起動時引数でMarkdownファイルのパスを受け取っていれば、そちらを開く
-            // （ファイルの関連付けからのダブルクリック起動などに対応するため）。
-            string startupFilePath = ResolveStartupFilePath();
-            if (!string.IsNullOrEmpty(startupFilePath) && File.Exists(startupFilePath))
+            // 起動時引数でパスを受け取っていれば、そちらを開く（ファイルの関連付けからの
+            // ダブルクリック起動や、エクスプローラーの右クリックメニュー「mdeで開く」に
+            // 対応するため）。ファイルなら通常どおり開き、フォルダなら「フォルダを開く」と
+            // 同様にフォルダビューへ読み込んで先頭のファイルを開く（フォルダの背景を右クリック
+            // して「mdeで開く」を実行した場合など）。フォルダビューが非表示設定だった場合も、
+            // せっかく指定されたフォルダが見えないままでは意味が無いため、ここで表示状態に
+            // 切り替える（実際にXAMLへ反映されるのは直後のApplyFolderPaneVisibility）。
+            string startupPath = ResolveStartupPath();
+            if (!string.IsNullOrEmpty(startupPath) && File.Exists(startupPath))
             {
-                LoadFile(startupFilePath);
-                m_folderTreeManager.SelectFileNode(startupFilePath);
+                LoadFile(startupPath);
+                m_folderTreeManager.SelectFileNode(startupPath);
+            }
+            else if (!string.IsNullOrEmpty(startupPath) && Directory.Exists(startupPath))
+            {
+                m_folderPaneVisibleFlg = true;
+                m_folderTreeManager.LoadFolderTree(startupPath);
+                m_folderTreeManager.OpenFirstFileInLoadedFolder();
             }
 
             ApplyFolderPaneVisibility();
@@ -546,12 +557,16 @@ namespace mde
         }
 
         /// <summary>
-        /// 起動時のコマンドライン引数からMarkdownファイルのパスを取り出す。ファイルの関連付けで
-        /// 「プログラムから開く」を使った場合や、コマンドプロンプトから直接パスを指定して
-        /// 起動した場合などに対応するためのもの。引数が無ければnullを返す。
+        /// 起動時のコマンドライン引数からパスを取り出す。ファイルの関連付けで「開く」・
+        /// 「プログラムから開く」・エクスプローラーの右クリックメニュー「mdeで開く」を使った
+        /// 場合（ファイル・フォルダのいずれも）や、コマンドプロンプトから直接パスを指定して
+        /// 起動した場合などに対応するためのもの。呼び出し側で、ファイルかフォルダかを
+        /// 判定して扱いを分ける（コンストラクタ内の呼び出し箇所参照）。引数が無ければ
+        /// nullを返す。
         /// </summary>
-        /// <returns>解決できた絶対パス。引数が無い、または解決に失敗した場合はnull。</returns>
-        private string ResolveStartupFilePath()
+        /// <returns>解決できた絶対パス（ファイル・フォルダいずれもあり得る）。引数が無い、
+        /// または解決に失敗した場合はnull。</returns>
+        private string ResolveStartupPath()
         {
             // 起動時引数は、プロセス全体で共通の情報であり、ウィンドウ単位のものではない。
             // 「新しいウィンドウ」やファイルリンクからの別ウィンドウ起動でも同じ引数が

@@ -21,4 +21,7 @@ This file contains the declaration of all the localizable strings.
   <!-- アップグレード完了時に ExitDialog に表示するメッセージ -->
   <String Id="ExitMessageUpgradeComplete" Value="アップグレードが完了しました。" />
 
+  <!-- エクスプローラー右クリックメニューの「mde で開く」 -->
+  <String Id="OpenWithMdeVerb" Value="mde で開く" />
+
 </WixLocalization>
