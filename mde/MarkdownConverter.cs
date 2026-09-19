@@ -157,7 +157,7 @@ namespace mde
         /// 使う（詳細は<see cref="m_blankLinesBeforeBlock"/>のコメントも参照）。</summary>
         private class CommentGroupInfo
         {
-            public readonly List<(int BlankLinesBefore, string Text)> Items = new List<(int, string)>();
+            public readonly List<(int BlankLinesBefore, string Text)> m_items = new List<(int, string)>();
         }
 
         /// <summary>HTMLコメント（&lt;!-- --&gt;）を、Markdownモードで完全に非表示にする
@@ -289,7 +289,7 @@ namespace mde
             // 「直前の空行の数」をそのまま再現しながら書き出す。
             void AppendCommentGroup(CommentGroupInfo a_group)
             {
-                foreach (var item in a_group.Items)
+                foreach (var item in a_group.m_items)
                 {
                     sb.Append(BuildElementSeparator(item.BlankLinesBefore, firstFlg));
                     sb.Append(item.Text);
@@ -374,7 +374,7 @@ namespace mde
 
             void AddCommentGroupOffset(CommentGroupInfo a_group)
             {
-                foreach (var item in a_group.Items)
+                foreach (var item in a_group.m_items)
                 {
                     offset += BuildElementSeparator(item.BlankLinesBefore, firstFlg).Length;
                     offset += item.Text.Length;
@@ -849,7 +849,7 @@ namespace mde
                 if (pendingComments.Count > 0)
                 {
                     var group = new CommentGroupInfo();
-                    group.Items.AddRange(pendingComments);
+                    group.m_items.AddRange(pendingComments);
                     m_leadingComments.Add(a_newBlock, group);
                     pendingComments.Clear();
                 }
@@ -1193,7 +1193,7 @@ namespace mde
             if (pendingComments.Count > 0)
             {
                 var trailingGroup = new CommentGroupInfo();
-                trailingGroup.Items.AddRange(pendingComments);
+                trailingGroup.m_items.AddRange(pendingComments);
                 if (a_doc.Blocks.Count > 0)
                 {
                     m_trailingComments.Add(a_doc.Blocks.LastBlock, trailingGroup);
