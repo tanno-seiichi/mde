@@ -293,21 +293,26 @@ namespace mde
         }
 
         /// <summary>
-        /// 箇条書き項目・表のセル内でのShift+Enter/Enter処理。上のInsertLineBreakAtCaretの
-        /// コメントにある通り、行内改行（LineBreak要素）はキャレット位置をどう工夫して設定・
-        /// 通知してもIME側との競合を解消しきれないため、こちらではLineBreakを一切使わず、
-        /// Shift+Enter等が押された位置で段落（Paragraph）そのものを2つに分割する（見た目には
-        /// 1つの段落がそのまま改行しているように見せるため、分割した両方の段落のMarginを
-        /// 揃えて0にする）。
+        /// 箇条書き項目・表のセル内でのShift+Enter/Enter処理、および表の直後の段落での
+        /// Enter処理。上のInsertLineBreakAtCaretのコメントにある通り、行内改行（LineBreak
+        /// 要素）はキャレット位置をどう工夫して設定・通知してもIME側との競合を解消しきれない
+        /// ため、こちらではLineBreakを一切使わず、Enter等が押された位置で段落（Paragraph）
+        /// そのものを2つに分割する（見た目には1つの段落がそのまま改行しているように見せる
+        /// ため、分割した両方の段落のMarginを揃えて0にする）。
         /// キャレットより後ろにあった内容（書式を含む）は、ListEditor.SplitInlinesAtCaret・
         /// CloneRunForSplit（項目のEnterでの分割に使われている、実績のあるロジック）を共有して
         /// Inline単位で新しい段落へ移す。TextPointerのオフセットベースでテキストを抜き出す方式は
         /// 箇条書きマーカー記号を巻き込んでしまう既知の不具合（ListEditor.GetOwnListItemText等の
         /// コメント参照）があるため、あえて使わない。
+        /// 表の直後の段落（親がFlowDocumentで、直前のBlockが表）でも同じ分割方式を使うのは、
+        /// この位置でEnterキーの処理をWPF標準の動作に委ねると、キャレットが実際には表の外
+        /// （この段落）にあるにもかかわらず、WPFが表への行追加として処理してしまい、表の
+        /// 罫線が壊れる不具合があったため（MainWindow.EditorPreviewKeyDown参照）。
         /// </summary>
-        /// <param name="a_para">分割対象の段落（現在キャレットがある段落）。親がListItemまたは
-        /// TableCellでない場合（コードブロック等）は何もしない（呼び出し側は、そのような場合には
-        /// 代わりに従来通りInsertLineBreakAtCaretを呼ぶこと）。</param>
+        /// <param name="a_para">分割対象の段落（現在キャレットがある段落）。親がListItem・
+        /// TableCellのいずれか、または親がFlowDocumentで直前のBlockが表（Table）である場合
+        /// のみ分割する。それ以外（コードブロック等）は何もしない（呼び出し側は、そのような
+        /// 場合には代わりに従来通りInsertLineBreakAtCaretを呼ぶこと）。</param>
         public void InsertParagraphSplitAtCaret(Paragraph a_para)
         {
             if (null == a_para)
@@ -315,7 +320,8 @@ namespace mde
                 return;
             }
             object parent = a_para.Parent;
-            if (!(parent is ListItem) && !(parent is TableCell))
+            bool afterTableFlg = parent is FlowDocument && a_para.PreviousBlock is Table;
+            if (!(parent is ListItem) && !(parent is TableCell) && !afterTableFlg)
             {
                 DebugLogger.Log(
                     $"InsertParagraphSplitAtCaret: 想定外の親（{parent?.GetType().Name ?? "null"}）だったため、" +
@@ -327,12 +333,13 @@ namespace mde
             {
                 TextPointer caret = m_editor.CaretPosition;
                 // 分割元の段落が持つ見た目のプロパティ（表のセルならMargin=0・LineHeight=NaN・
-                // KeepTogether=true・文字揃え。箇条書き項目ならMargin=0）を、新しい段落にも
-                // そのまま引き継ぐ。ハードコードせず分割元から読み取ることで、呼び出し元
-                // （ListItem・TableCellのどちらか）に関わらず常に整合する。TagはTableCellの
-                // 「明示的な左揃え」の印（MarkdownConverter.ALIGN_LEFT_EXPLICIT_TAG）を想定
-                // しているが、これはMarkdown書き出し時にセルの最初の段落からしか参照されない
-                // ため、2つめ以降の段落にも同じ値が付くこと自体は無害（書き出し結果には影響しない）。
+                // KeepTogether=true・文字揃え。箇条書き項目・表の直後の段落ならMargin=0）を、
+                // 新しい段落にもそのまま引き継ぐ。ハードコードせず分割元から読み取ることで、
+                // 呼び出し元（ListItem・TableCell・表の直後の段落のいずれか）に関わらず常に
+                // 整合する。TagはTableCellの「明示的な左揃え」の印
+                // （MarkdownConverter.ALIGN_LEFT_EXPLICIT_TAG）を想定しているが、これは
+                // Markdown書き出し時にセルの最初の段落からしか参照されないため、2つめ以降の
+                // 段落にも同じ値が付くこと自体は無害（書き出し結果には影響しない）。
                 var newPara = new Paragraph
                 {
                     Margin = a_para.Margin,
@@ -354,6 +361,10 @@ namespace mde
                 else if (parent is TableCell cell)
                 {
                     cell.Blocks.InsertAfter(a_para, newPara);
+                }
+                else if (parent is FlowDocument doc)
+                {
+                    doc.Blocks.InsertAfter(a_para, newPara);
                 }
 
                 m_editor.CaretPosition = newPara.ContentStart;

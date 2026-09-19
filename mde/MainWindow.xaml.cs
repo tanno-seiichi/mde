@@ -984,19 +984,85 @@ namespace mde
             }
         }
 
-        /// <summary>`TextPointer.Paragraph`を段落解決の一次手段として使い、nullが返った場合は
-        /// `TextPointer.Parent`から上へ辿って囲んでいるParagraphを探すフォールバックを行う。
-        /// 表のセルなど入れ子になった構造の中では`.Paragraph`が期待通りに解決しないことがある
-        /// ため、その対策。</summary>
+        /// <summary>
+        /// 表のセル内の段落を優先して探す（`a_document`が渡されている場合）: 文書内の全ての
+        /// 表を直接辿り、各セルの段落の範囲（`ContentStart`〜`ContentEnd`）に`a_position`が
+        /// 含まれるかを`TextPointer.CompareTo`（2つの位置の前後関係を調べるだけの、曖昧さの
+        /// ない比較）で判定する。表のセル内かどうかをこの方法で最初に確定させ、それ以外の
+        /// 場合にのみ`TextPointer.Paragraph`・`.Parent`によるフォールバックへ進む。
+        ///
+        /// 当初は逆に、`.Paragraph`を一次手段として使い、`null`が返った場合にのみ`.Parent`を
+        /// 上へ辿るフォールバックを行い、それでも解決できない場合の最後の手段として上記の
+        /// 表の総当たりを行っていた。しかし、表の最後の行の最後のセルの末尾でEnterキーを
+        /// 押すと表が壊れる不具合の調査（14.71〜14.73節）を重ねる中で、この前提そのものが
+        /// 誤りだったと判明した。この境界位置（キャレットの直前でParagraph・TableCell・
+        /// TableRow・TableRowGroup・Tableという複数の要素の終端が1点に重なる位置）で、かつ
+        /// 表のすぐ後ろに（多くの場合`TableEditor.InsertTable`が自動的に挿入する）空の
+        /// 段落が続いている場合、`.Paragraph`は`null`を返すのではなく、その後ろの段落
+        /// （表の外の、次の段落）を返してしまうことがある。原因は、セルの最後の位置まで
+        /// キャレットを移動する操作（右矢印キー等）によってキャレットの論理方向が前方
+        /// （Forward）になり、`.Paragraph`が前方方向を優先してこの曖昧な境界位置を解決する
+        /// ためと考えられる。この場合`.Paragraph`は`null`を返さない（＝非nullの値を返して
+        /// しまう）ため、それ以降のnullチェック前提のフォールバック（`.Parent`を辿る処理や
+        /// 後方方向への取り直し）は一切実行されず、そのまま（表の外の）誤った段落が返って
+        /// しまっていた。これが、境界位置の検出だけをいくら精緻化しても（14.71・14.72節）
+        /// 直らなかった理由である。呼び出し元の`EditorPreviewKeyDown`では、この誤った段落の
+        /// 親（`FlowDocument`）を見てもEnterキーを処理すべき条件に一致せず、結局どの分岐にも
+        /// 入らないままWPF標準（RichTextBoxの表編集機能）の既定のEnter処理に委ねられ、表の
+        /// 行・罫線が壊れる不具合につながっていた（この時、内部的には表の最後に新しい行が
+        /// 正しく追加されており、ソースモードへの切り替え・Markdownモードへの切り替えで
+        /// 文書を再構築すると見た目も正しく直ることが、今回のご報告で確認された）。
+        ///
+        /// 表のセル内かどうかを`.Paragraph`より先に、位置の論理方向に依存しない方法
+        /// （`CompareTo`による範囲比較）で確定させることで、この曖昧な解決に一切左右されず
+        /// 確実にセルの段落を特定できる。表の数が多い文書でこの総当たりを毎回行うことに
+        /// なるが、実行されるのはEnterキー押下・貼り付け時のみ（本メソッドの呼び出し元
+        /// 参照）であり、通常の入力操作（文字入力そのもの）では呼ばれないため、実用上の
+        /// 性能への影響は小さいと考えている。
+        /// </summary>
         /// <param name="a_position">解決したい位置。</param>
+        /// <param name="a_document">
+        /// 表のセル内の段落を優先して探す処理で使う、位置の属する文書。nullの場合はその
+        /// 処理を行わず、`TextPointer.Paragraph`・`.Parent`によるフォールバックのみを使う。
+        /// </param>
         /// <returns>囲んでいるParagraph（見つからなければnull）。</returns>
-        private static Paragraph ResolveParagraph(TextPointer a_position)
+        private static Paragraph ResolveParagraph(TextPointer a_position, FlowDocument a_document = null)
         {
-            if (a_position?.Paragraph is Paragraph direct)
+            if (null == a_position)
+            {
+                return null;
+            }
+
+            if (null != a_document)
+            {
+                foreach (Table table in a_document.Blocks.OfType<Table>())
+                {
+                    foreach (TableRowGroup group in table.RowGroups)
+                    {
+                        foreach (TableRow row in group.Rows)
+                        {
+                            foreach (TableCell cell in row.Cells)
+                            {
+                                foreach (Block block in cell.Blocks)
+                                {
+                                    if (block is Paragraph cellPara &&
+                                        0 <= a_position.CompareTo(cellPara.ContentStart) &&
+                                        0 >= a_position.CompareTo(cellPara.ContentEnd))
+                                    {
+                                        return cellPara;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (a_position.Paragraph is Paragraph direct)
             {
                 return direct;
             }
-            DependencyObject node = a_position?.Parent;
+            DependencyObject node = a_position.Parent;
             while (null != node)
             {
                 if (node is Paragraph p)
@@ -1004,6 +1070,93 @@ namespace mde
                     return p;
                 }
                 node = (node as TextElement)?.Parent;
+            }
+
+            TextPointer backward = a_position.GetPositionAtOffset(0, LogicalDirection.Backward);
+            if (backward?.Paragraph is Paragraph backwardDirect)
+            {
+                return backwardDirect;
+            }
+            DependencyObject backwardNode = backward?.Parent;
+            while (null != backwardNode)
+            {
+                if (backwardNode is Paragraph bp)
+                {
+                    return bp;
+                }
+                backwardNode = (backwardNode as TextElement)?.Parent;
+            }
+
+            // 最後の保険：ここまでの全ての方法（セル範囲への一致、前方・後方どちらの方向でも
+            // の`.Paragraph`・`.Parent`）で見つからなかった場合、文書内にある表のうち、
+            // その表の開始位置（ContentStart）が指定位置以前にある最後の表（文書順で最も
+            // 後ろにある表）があれば、その表の最後のセルの最後の段落を返す。
+            //
+            // 当初は「文書の最後のBlockが表そのものである場合」だけをこの保険の対象として
+            // いたが（表の直後に必ず空の段落が続くよう、TableEditor.InsertTable・
+            // MarkdownConverter.MarkdownToDocumentの両方で保証しているため、本来この保険は
+            // 不要なはずだった）、実際には新規に表を挿入した直後・全セルが空のままの状態で
+            // 表の最後のセルから右矢印キーを押すと、表の直後に空の段落が確かに存在するに
+            // もかかわらず、その位置が前方・後方どちらの`.Paragraph`・`.Parent`によっても
+            // 解決できない（＝表の直後の段落そのものが見えなくなる）事例が確認された。
+            // 全セルが空（内容が1文字もない）だと、セル・段落間の境界がすべて同じ1点に
+            // 重なり、右矢印キー1回でこの境界を一気に越えてしまうことがあり、その結果
+            // 到達する位置が、後続の段落の`ContentStart`そのものではなく、表と後続の段落の
+            // 「間」の、どちらの要素にも帰属しない位置になっている可能性がある（詳細な
+            // メカニズムはまだ特定できていないため、次にこの保険条件を通った場合に備えて、
+            // 直後にこの状態を記録する調査用ログを追加した）。
+            //
+            // そのため、対象を「表が文書の最後のBlockである場合」に限定せず、「指定位置以前に
+            // 開始している、文書内で最も後ろの表」があれば常にこの保険を適用するように広げた。
+            // これはここまでの全ての方法を試した後の最後の手段であり、他に何も見つからない
+            // 場面でしか実行されないため、多少広めの条件でも実用上の弊害は小さいと考えている。
+            Table fallbackTable = null;
+            if (null != a_document)
+            {
+                foreach (Table table in a_document.Blocks.OfType<Table>())
+                {
+                    if (0 <= a_position.CompareTo(table.ContentStart))
+                    {
+                        fallbackTable = table;
+                    }
+                }
+            }
+            if (null != fallbackTable)
+            {
+                TableRowGroup lastGroup = fallbackTable.RowGroups.LastOrDefault();
+                TableRow lastRow = lastGroup?.Rows.LastOrDefault();
+                TableCell lastCell = lastRow?.Cells.LastOrDefault();
+                if (lastCell?.Blocks.LastOrDefault() is Paragraph lastCellPara)
+                {
+                    return lastCellPara;
+                }
+            }
+
+            // ここまでの全ての方法（表内の保険も含めて）で見つからなかった場合の調査用ログ。
+            // 本来ここに来ることはないはずだが、万一まだ来る場合に備えて、前方・後方双方向の
+            // GetPointerContext・親要素チェーン・文書内最後のBlockの種類を記録しておく。
+            if (DebugLogger.IsEnabled)
+            {
+                string DescribeParentChain(DependencyObject a_start)
+                {
+                    var names = new List<string>();
+                    DependencyObject n = a_start;
+                    int guard = 0;
+                    while (null != n && guard++ < 20)
+                    {
+                        names.Add(n.GetType().Name);
+                        n = (n as TextElement)?.Parent;
+                    }
+                    return names.Count > 0 ? string.Join("→", names) : "(none)";
+                }
+                DebugLogger.Log(
+                    "ResolveParagraph: 解決できずnullを返す直前の状態 " +
+                    $"ForwardContext={a_position.GetPointerContext(LogicalDirection.Forward)} " +
+                    $"BackwardContext={a_position.GetPointerContext(LogicalDirection.Backward)} " +
+                    $"ForwardParentChain={DescribeParentChain(a_position.Parent)} " +
+                    $"BackwardParentChain={DescribeParentChain(backward?.Parent)} " +
+                    $"DocumentLastBlock={a_document?.Blocks.LastBlock?.GetType().Name ?? "null"} " +
+                    $"TableCount={a_document?.Blocks.OfType<Table>().Count().ToString() ?? "N/A"}");
             }
             return null;
         }
@@ -1032,7 +1185,7 @@ namespace mde
             {
                 return; // リッチな形式が付いている場合はWPF標準の貼り付けに任せる
             }
-            var para = ResolveParagraph(m_editor.CaretPosition);
+            var para = ResolveParagraph(m_editor.CaretPosition, m_editor.Document);
             if (null != para && para.Tag is CodeBlockInfo)
             {
                 return; // コードブロックへの貼り付けはTableEditor.HandlePastingが処理する
@@ -1089,9 +1242,19 @@ namespace mde
             {
                 return;
             }
-            var para = ResolveParagraph(m_editor.CaretPosition);
+            var para = ResolveParagraph(m_editor.CaretPosition, m_editor.Document);
             if (null == para)
             {
+                // 表の最後のセルの末尾でEnterキーを押すと表が壊れる不具合（調査の詳細は
+                // ResolveParagraph・MarkdownConverter.MarkdownToDocumentのコメント参照）の
+                // 調査用ログ。本来この分岐に来ることはないはずだが、万一まだ来る場合に
+                // 備えて記録しておく。
+                if (DebugLogger.IsEnabled)
+                {
+                    DebugLogger.Log(
+                        "Editor.PreviewKeyDown: ResolveParagraphがnullを返したため、" +
+                        $"何もしなかった（Key={a_args.Key}）");
+                }
                 return;
             }
 
@@ -1143,6 +1306,18 @@ namespace mde
                     {
                         a_args.Handled = true;
                         m_headingCodeBlockEditor.ConvertParagraphToCodeBlock(para, fenceMatch.Groups[1].Value);
+                        return;
+                    }
+                    if (para.PreviousBlock is Table)
+                    {
+                        a_args.Handled = true;
+                        // 表の直後の段落でのEnterは、WPF標準の動作に任せると、キャレットが
+                        // 実際にはこの段落（表の外）にあるにもかかわらずWPFが表への行追加
+                        // として処理してしまい、表の罫線が壊れる不具合があった（詳細は
+                        // ResolveParagraph・InsertParagraphSplitAtCaretのコメント参照）。
+                        // そのため、箇条書き項目・表のセル内改行と同じ段落分割方式で自前で
+                        // 処理し、WPF標準の動作に一切渡さないようにする。
+                        m_headingCodeBlockEditor.InsertParagraphSplitAtCaret(para);
                         return;
                     }
                 }
@@ -1815,13 +1990,9 @@ namespace mde
             {
                 return;
             }
-            // 表のセル内の画像はApplyImageSizingConsideringTable経由で列幅を考慮したサイズに
-            // なるようにする（表の外の画像は従来通りエディタ幅基準）。以前はここで常に
-            // ApplyImageSizing（エディタ幅基準）だけを呼んでいたため、表のセル内の画像は
-            // リサイズ・ズーム変更のたびに一旦列幅を無視した（広すぎる）サイズになり、その後の
-            // RefreshAutoCalculatedColumnWidthsForResizeが「列幅補正オン・自動計算のまま」の
-            // 表だけを補正し直すことで見かけ上「治る」ことがある一方、列幅を明示的に調整した
-            // 表や、その補正が効くまでの間は欠けたまま（or 広すぎるまま）になっていた。
+            // 表のセル内の画像はApplyImageSizingConsideringTable経由で列幅を考慮したサイズにする
+            // （表の外の画像は従来通りエディタ幅基準）。単純にApplyImageSizing（エディタ幅基準）
+            // だけを呼ぶと、セル内の画像は列幅を無視した（広すぎる）サイズになってしまう。
             foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
             {
                 m_imageManager.ApplyImageSizingConsideringTable(img);

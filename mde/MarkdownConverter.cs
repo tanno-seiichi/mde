@@ -1225,15 +1225,32 @@ namespace mde
             // この段落自身は空白のみのため、書き出し対象からは除外される）ため、この段落は
             // 表示・カーソル移動のためだけの目印である。空行が複数あった場合でも、末尾へ
             // カーソルを移動できれば十分なため、追加する空の段落は常に1つだけとする。
-            // ごく普通の空のParagraph（Tagなし、LineBreakも一切含まない）であり、14.55節・
-            // 14.57節で対策したLineBreakとIMEの組み合わせの不具合とは無関係のため、IME面での
-            // 懸念はない。
+            // ごく普通の空のParagraph（Tagなし、LineBreakも一切含まない）であり、LineBreakと
+            // IMEの組み合わせで生じる不具合（BuildTableCellFromMarkdownのコメント参照）とは
+            // 無関係のため、IME面での懸念はない。
             if (a_doc.Blocks.Count > 0 && m_trailingBlankLinesAtEof > 0)
             {
                 a_doc.Blocks.Add(new Paragraph());
             }
 
             if (0 == a_doc.Blocks.Count)
+            {
+                a_doc.Blocks.Add(new Paragraph());
+            }
+
+            // 表が文書の最後のBlockのまま残っていると、表の最後のセルの末尾にキャレットが
+            // ある状態でEnterキーを押した時、その位置がどのセルの範囲にも一致せず（後ろに
+            // 段落が存在しないため）、MainWindow.ResolveParagraphが段落を解決できずnullを
+            // 返してしまい、結局WPF標準の表編集機能（行の自動追加）にEnterキーの処理が
+            // 渡ってしまって表の罫線が壊れる不具合があった（詳細はMainWindow.
+            // EditorPreviewKeyDown・ResolveParagraphのコメント参照）。TableEditor.
+            // InsertTableで表を新規挿入する際は、常に表の直後へ空の段落を追加することで
+            // この状態を避けているが、Markdownソースから文書を再構築するこの経路
+            // （ファイルを開く時、ソースモード⇔Markdownモードの切り替え時）では、その保証が
+            // 抜けていた。表の直後にカーソルを置いて入力できるようにする目的も兼ねて、
+            // ここでも同じように空の段落を1つ追加し、表が常に空でない後続の段落を伴う状態を
+            // 保つ（ごく普通の空のParagraphであり、IME面での懸念はない）。
+            if (a_doc.Blocks.LastBlock is Table)
             {
                 a_doc.Blocks.Add(new Paragraph());
             }
