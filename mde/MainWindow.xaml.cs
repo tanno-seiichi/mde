@@ -144,9 +144,33 @@ namespace mde
         private readonly FileOperationsManager m_fileOperationsManager;
         private readonly FindReplaceLauncher m_findReplaceLauncher;
 
+        /// <summary>
+        /// 既定の（引数なしの）コンストラクタ。App.xamlのStartupUriによりWPFがアプリ起動時に
+        /// リフレクション経由でこのウインドウを生成する際に使われる。XAMLからの生成は
+        /// 実際の型に一致する「引数なしのコンストラクタ」を要求するため、下の
+        /// MainWindow(MainWindow)だけ（引数を省略可能にする書き方）では対応できない
+        /// （引数を省略可能にしても、コンパイル後の型としては引数が1つの
+        /// コンストラクタのままであり、リフレクションからは見つけられずWPFの起動時に
+        /// XamlParseException/MissingMethodExceptionで落ちてしまう。実際にこの問題が
+        /// 起きたため、明示的に引数なしのコンストラクタを分けて用意している）。
+        /// 呼び出し元のウインドウなしで構築する。
+        /// </summary>
+        public MainWindow() : this(null)
+        {
+        }
+
         /// <summary>ウィンドウを初期化し、各機能クラスを構築・配線したうえで、初回起動時の
         /// 案内文書を読み込む。</summary>
-        public MainWindow()
+        /// <param name="a_openedFromWindow">
+        /// このウインドウが既存の別のウインドウから開かれた場合（「新しいウインドウ」・
+        /// 「フォルダペインの範囲外のファイルへのリンク」・「表示中のフォルダの外への
+        /// 名前を付けて保存」・「Readmeを開く」）、その呼び出し元のウインドウ。
+        /// 指定された場合、設定から復元した位置ではなく、そのウインドウから右下へ少し
+        /// （Left・Top それぞれ30px）ずらした位置に表示する。アプリ起動時に開く最初の
+        /// ウインドウ（設定に保存された位置を復元すべきウインドウ）ではnullを渡す
+        /// （上の引数なしのコンストラクタを使う）。
+        /// </param>
+        public MainWindow(MainWindow a_openedFromWindow)
         {
             InitializeComponent();
 
@@ -156,11 +180,34 @@ namespace mde
                 this.WindowStartupLocation = WindowStartupLocation.Manual;
                 this.Left = m_savedSettings.WindowLeft;
                 this.Top = m_savedSettings.WindowTop;
+                // AdjustWindowPositionは、設定に保存された座標が現在のディスプレイ構成
+                // （前回起動時から外部モニタを外した等）で画面外になっていないかを確認する
+                // ためのものなので、位置の設定がある場合にのみ呼ぶ。
+                AdjustWindowPosition();
+            }
+            else
+            {
+                // 新規インストール後の初回起動時など、ウインドウ位置がまだ設定に保存されて
+                // いない場合は、画面の中央に表示する。CenterScreenはLeft/Topが未設定
+                // （NaN）のままである必要があるため、ここではLeft/Topに実際の値を代入しない
+                // （代入するとWPFがCenterScreenでの位置決めをせず、代入した値がそのまま
+                // 使われてしまう）。
+                this.WindowStartupLocation = WindowStartupLocation.CenterScreen;
             }
             this.Width = m_savedSettings.WindowWidth;
             this.Height = m_savedSettings.WindowHeight;
 
-            AdjustWindowPosition ();
+            if (null != a_openedFromWindow)
+            {
+                // 別のウインドウから新しく開いたウインドウだとひと目でわかるよう、呼び出し元の
+                // ウインドウから右下へ少しずらした位置に表示する。以前は（設定から復元した
+                // 位置がそのまま使われるため）呼び出し元と全く同じ位置に重なって開いてしまい、
+                // 新しいウインドウが開いたことに気付きにくいというご指摘があった対策。
+                // 設定から復元した位置・AdjustWindowPositionによる画面外対策の結果を上書きする。
+                this.WindowStartupLocation = WindowStartupLocation.Manual;
+                this.Left = a_openedFromWindow.Left + 30;
+                this.Top = a_openedFromWindow.Top + 30;
+            }
 
             m_zoomManager = new ZoomManager(m_editor, m_sourceEditor, m_zoomLabelBtn, m_savedSettings.ZoomLevel);
             m_editorLineHeight = m_savedSettings.EditorLineHeight > 0 ? m_savedSettings.EditorLineHeight : 26;
@@ -234,7 +281,7 @@ namespace mde
                 () => m_isSourceModeFlg, () => m_preserveSourceLineBreaksFlg, () => m_correctColumnWidthsFlg,
                 RunAsProgrammaticChange, GetCurrentContentForFile, PathsReferToSameFile,
                 RememberCurrentScrollPosition, RestoreOrResetScrollPosition, OpenFileInNewWindow,
-                () => { var newWindow = new MainWindow(); newWindow.Show(); }, Close,
+                () => { var newWindow = new MainWindow(this); newWindow.Show(); }, Close,
                 title => this.Title = title, () => m_findReplaceLauncher.CurrentWindow,
                 () => m_currentFilePath, v => m_currentFilePath = v,
                 () => m_currentFileDirectory, v => m_currentFileDirectory = v,
@@ -704,7 +751,7 @@ namespace mde
         /// <param name="a_anchor">開いたあとにジャンプする見出し/アンカーのテキスト（無ければnull）。</param>
         private void OpenFileInNewWindow(string a_path, string a_anchor)
         {
-            var newWindow = new MainWindow();
+            var newWindow = new MainWindow(this);
             newWindow.Show();
             newWindow.LoadFile(a_path);
             if (!string.IsNullOrEmpty(a_anchor))
@@ -2418,7 +2465,7 @@ namespace mde
                 return;
             }
 
-            var readmeWindow = new MainWindow();
+            var readmeWindow = new MainWindow(this);
             readmeWindow.Show();
             readmeWindow.LoadFile(readmePath);
         }
