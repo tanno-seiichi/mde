@@ -15,8 +15,8 @@ namespace mde
     /// <summary>次回起動時に復元する、ウィンドウ・ペインの状態一式。</summary>
     public class AppSettings
     {
-        public double WindowWidth { get; set; } = 1240;
-        public double WindowHeight { get; set; } = 860;
+        public double WindowWidth { get; set; } = 810;
+        public double WindowHeight { get; set; } = 670;
         public double WindowLeft { get; set; } = double.NaN;
         public double WindowTop { get; set; } = double.NaN;
         public bool IsMaximized { get; set; } = false;
