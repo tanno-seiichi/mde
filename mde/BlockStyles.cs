@@ -155,13 +155,22 @@ namespace mde
         }
 
         /// <summary>不順序リスト（箇条書き）のマーカー種別を、ネストの段数（1始まり）から決める。
-        /// VSCode等と同様、1段目はDisc（・）、2段目はCircle（輪郭だけの丸）、3段目以降は
-        /// Box（塗りつぶしの四角）にする。MarkdownConverter（バッチ変換）とListEditor
-        /// （ライブ編集でのTab字下げ・字下げ解除）の両方から共有で使う。</summary>
+        /// a_uniformFlgがfalse（既定）の場合はWPF標準の割り当て：VSCode等と同様、1段目は
+        /// Disc（・）、2段目はCircle（輪郭だけの丸）、3段目以降はBox（塗りつぶしの四角）にする。
+        /// trueの場合は、段数によらず常にDisc（・）にする（メニュー「表示」→「箇条書きの記号」
+        /// 参照）。MarkdownConverter（バッチ変換）とListEditor（ライブ編集でのTab字下げ・
+        /// 字下げ解除）の両方から共有で使う。</summary>
         /// <param name="a_depth">ネストの段数（1始まり）。</param>
+        /// <param name="a_uniformFlg">true＝段数によらず常にDiscにする（すべての階層に同じ記号を
+        /// 使用する）、false（既定）＝WPF標準の割り当て（1段目Disc・2段目Circle・3段目以降
+        /// Box）。</param>
         /// <returns>対応するTextMarkerStyle。</returns>
-        public static TextMarkerStyle UnorderedMarkerStyleForDepth(int a_depth)
+        public static TextMarkerStyle UnorderedMarkerStyleForDepth(int a_depth, bool a_uniformFlg = false)
         {
+            if (a_uniformFlg)
+            {
+                return TextMarkerStyle.Disc;
+            }
             if (a_depth <= 1)
             {
                 return TextMarkerStyle.Disc;

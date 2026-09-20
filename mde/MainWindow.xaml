@@ -73,6 +73,12 @@
                 </MenuItem>
                 <MenuItem x:Name="m_correctColumnWidthsMenuItem" Header="列幅を補正する(_W)"
                           IsCheckable="True" Click="CorrectColumnWidthsMenuItemChecked"/>
+                <MenuItem Header="箇条書きの記号(_M)">
+                    <MenuItem x:Name="m_markerStyleWpfStandardMenuItem" Header="WPF標準(_W)"
+                              IsCheckable="True" Click="MarkerStyleWpfStandardChecked"/>
+                    <MenuItem x:Name="m_markerStyleUniformMenuItem" Header="すべての階層に同じ記号を使用する(_S)"
+                              IsCheckable="True" Click="MarkerStyleUniformChecked"/>
+                </MenuItem>
                 <Separator/>
                 <MenuItem x:Name="m_debugLogMenuItem" Header="デバッグログを有効にする(_D)"
                           IsCheckable="True" Click="DebugLogMenuItemChecked"/>

@@ -217,6 +217,7 @@ namespace mde
         private readonly Func<bool> m_preserveSourceLineBreaksFlg;
         private readonly Func<bool> m_correctColumnWidthsFlg;
         private readonly Func<double> m_availableTableWidthFunc;
+        private readonly Func<bool> m_uniformMarkerStyleFlg;
 
         /// <summary>
         /// MarkdownConverterを構築する。
@@ -237,15 +238,20 @@ namespace mde
         /// 同じStar比率になる（保存専用の使い捨て文書やPDF書き出し用の一時文書に対する変換など、
         /// 実際の表示幅を持たない・見た目が結果に影響しない呼び出し側向け）。詳細はBlockStyles.
         /// ApplyAutoCalculatedColumnWidthsのコメント参照。</param>
+        /// <param name="a_uniformMarkerStyleFlg">メニュー「表示」→「箇条書きの記号」の
+        /// 現在の状態を返すデリゲート。true＝段数によらずすべての階層で同じ記号（Disc）を使う、
+        /// false＝WPF標準の割り当て（1段目Disc・2段目Circle・3段目以降Box）。省略時（null）は
+        /// false（従来動作）として扱う。詳細はBlockStyles.UnorderedMarkerStyleForDepth参照。</param>
         public MarkdownConverter(OriginalTextTracker a_originalTextTracker, ImageManager a_imageManager,
             Func<bool> a_preserveSourceLineBreaksFlg = null, Func<bool> a_correctColumnWidthsFlg = null,
-            Func<double> a_availableTableWidthFunc = null)
+            Func<double> a_availableTableWidthFunc = null, Func<bool> a_uniformMarkerStyleFlg = null)
         {
             this.m_originalTextTracker = a_originalTextTracker;
             this.m_imageManager = a_imageManager;
             this.m_preserveSourceLineBreaksFlg = a_preserveSourceLineBreaksFlg;
             this.m_correctColumnWidthsFlg = a_correctColumnWidthsFlg;
             this.m_availableTableWidthFunc = a_availableTableWidthFunc;
+            this.m_uniformMarkerStyleFlg = a_uniformMarkerStyleFlg;
         }
 
         // ======================================================================
@@ -1620,7 +1626,8 @@ namespace mde
                             {
                                 MarkerStyle = orderedFlg
                                     ? TextMarkerStyle.Decimal
-                                    : BlockStyles.UnorderedMarkerStyleForDepth(stack.Count + 1),
+                                    : BlockStyles.UnorderedMarkerStyleForDepth(
+                                        stack.Count + 1, m_uniformMarkerStyleFlg?.Invoke() ?? false),
                                 Tag = orderedFlg ? null : bulletMarker,
                                 Margin = new Thickness(0)
                             };

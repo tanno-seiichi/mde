@@ -29,6 +29,11 @@ namespace mde
         public bool RequireCtrlForLinkClickFlg { get; set; } = true;
         public bool PreserveSourceLineBreaksFlg { get; set; } = true;
 
+        /// <summary>メニュー「表示」→「箇条書きの記号」の選択状態。falseなら段数に応じて
+        /// 1段目Disc・2段目Circle・3段目以降BoxとするWPF標準の割り当て（既定）、trueなら
+        /// 段数によらずすべての階層で同じ記号（Disc）を使う。既定はfalse。</summary>
+        public bool UniformMarkerStyleFlg { get; set; } = false;
+
         /// <summary>メニュー「表示」→「列幅を補正する」のチェック状態（表全体の列幅機能の
         /// マスタースイッチ）。オンなら、明示的に調整済みの表はその比率で、未調整の表は内容量
         /// に応じた自動比率で表示する。オフなら両方とも既定の均等幅（Auto）で表示する。

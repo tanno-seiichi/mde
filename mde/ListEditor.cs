@@ -24,6 +24,7 @@ namespace mde
         private readonly RichTextBox m_editor;
         private readonly OriginalTextTracker m_originalTextTracker;
         private readonly Action<Action> m_runAsProgrammaticChange;
+        private readonly Func<bool> m_uniformMarkerStyleFlg;
 
         /// <summary>
         /// ListEditorを構築する。
@@ -31,11 +32,17 @@ namespace mde
         /// <param name="a_editor">編集対象のRichTextBox。</param>
         /// <param name="a_originalTextTracker">「元テキスト保持」の追跡役。</param>
         /// <param name="a_runAsProgrammaticChange">処理を「プログラムによる変更」として実行するdelegate。</param>
-        public ListEditor(RichTextBox a_editor, OriginalTextTracker a_originalTextTracker, Action<Action> a_runAsProgrammaticChange)
+        /// <param name="a_uniformMarkerStyleFlg">メニュー「表示」→「箇条書きの記号」の
+        /// 現在の状態を返すデリゲート。true＝段数によらずすべての階層で同じ記号（Disc）を使う、
+        /// false＝WPF標準の割り当て（1段目Disc・2段目Circle・3段目以降Box）。省略時（null）は
+        /// false（従来動作）として扱う。詳細はBlockStyles.UnorderedMarkerStyleForDepth参照。</param>
+        public ListEditor(RichTextBox a_editor, OriginalTextTracker a_originalTextTracker,
+            Action<Action> a_runAsProgrammaticChange, Func<bool> a_uniformMarkerStyleFlg = null)
         {
             this.m_editor = a_editor;
             this.m_originalTextTracker = a_originalTextTracker;
             this.m_runAsProgrammaticChange = a_runAsProgrammaticChange;
+            this.m_uniformMarkerStyleFlg = a_uniformMarkerStyleFlg;
         }
 
         /// <summary>段落がリスト項目に含まれているかどうかを調べる。</summary>
@@ -828,7 +835,8 @@ namespace mde
                     // マーカーは段数に応じて変える（1段目Disc・2段目Circle・3段目以降Box等）。
                     nestedList.MarkerStyle = parentOrderedFlg
                         ? TextMarkerStyle.Decimal
-                        : BlockStyles.UnorderedMarkerStyleForDepth(GetListNestingDepth(nestedList));
+                        : BlockStyles.UnorderedMarkerStyleForDepth(
+                            GetListNestingDepth(nestedList), m_uniformMarkerStyleFlg?.Invoke() ?? false);
                     nestedList.Tag = parentOrderedFlg ? null : ((a_parentList.Tag as string) ?? "*");
                     // Marginも明示的に0にする（MarkdownConverter.BuildNestedListと同じ理由）。
                     // RichTextBoxのStyle（TargetType="List"）が与える既定の下余白をnestedList
@@ -882,7 +890,8 @@ namespace mde
                 {
                     ownNestedList.MarkerStyle = parentOrderedFlg
                         ? TextMarkerStyle.Decimal
-                        : BlockStyles.UnorderedMarkerStyleForDepth(GetListNestingDepth(ownNestedList));
+                        : BlockStyles.UnorderedMarkerStyleForDepth(
+                            GetListNestingDepth(ownNestedList), m_uniformMarkerStyleFlg?.Invoke() ?? false);
                     ownNestedList.Tag = parentOrderedFlg ? null : ((a_parentList.Tag as string) ?? "*");
                     // Marginも明示的に0にする（IndentListItem・MarkdownConverter.BuildNestedListと
                     // 同じ理由。既定の下余白を残すと字下げを戻した箇所だけ間隔が不自然に広くなる）。
