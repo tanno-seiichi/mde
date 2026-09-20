@@ -1611,12 +1611,18 @@ namespace mde
                             // 決める（ListEditor.IndentListItem等と同じ理由）。この時点で
                             // stack.Count は「これから作る新しいnestedListの1つ手前までの段数」と
                             // 一致するため、新しいnestedList自身の段数はstack.Count + 1になる。
+                            // Marginは明示的に0にする（ListEditor.IndentListItem等と同じ理由）。
+                            // RichTextBoxのStyle（TargetType="List"）はList自身にも既定の下余白を
+                            // 与えるため、それを残すと、入れ子リストの最後の項目自身の段落が持つ
+                            // 下余白と、この入れ子List自身の下余白が二重に加算されてしまい、
+                            // 字下げを戻した直後の間隔だけ他より不自然に広くなる。
                             nestedList = new List
                             {
                                 MarkerStyle = orderedFlg
                                     ? TextMarkerStyle.Decimal
                                     : BlockStyles.UnorderedMarkerStyleForDepth(stack.Count + 1),
-                                Tag = orderedFlg ? null : bulletMarker
+                                Tag = orderedFlg ? null : bulletMarker,
+                                Margin = new Thickness(0)
                             };
                             lastLi.Blocks.Add(nestedList);
                         }

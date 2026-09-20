@@ -830,6 +830,11 @@ namespace mde
                         ? TextMarkerStyle.Decimal
                         : BlockStyles.UnorderedMarkerStyleForDepth(GetListNestingDepth(nestedList));
                     nestedList.Tag = parentOrderedFlg ? null : ((a_parentList.Tag as string) ?? "*");
+                    // Marginも明示的に0にする（MarkdownConverter.BuildNestedListと同じ理由）。
+                    // RichTextBoxのStyle（TargetType="List"）が与える既定の下余白をnestedList
+                    // 自身にも残すと、字下げを戻した際にこのListの下余白と、最後の項目自身の
+                    // 段落が持つ下余白が二重に加算されてしまうため。
+                    nestedList.Margin = new Thickness(0);
                     DebugLogger.Log($"IndentListItem: 字下げ成功（別のListオブジェクトへ移動） " +
                         $"beforeCount={beforeCount} afterParentCount={a_parentList.ListItems.Count}");
                 }
@@ -879,6 +884,9 @@ namespace mde
                         ? TextMarkerStyle.Decimal
                         : BlockStyles.UnorderedMarkerStyleForDepth(GetListNestingDepth(ownNestedList));
                     ownNestedList.Tag = parentOrderedFlg ? null : ((a_parentList.Tag as string) ?? "*");
+                    // Marginも明示的に0にする（IndentListItem・MarkdownConverter.BuildNestedListと
+                    // 同じ理由。既定の下余白を残すと字下げを戻した箇所だけ間隔が不自然に広くなる）。
+                    ownNestedList.Margin = new Thickness(0);
                     DebugLogger.Log("OutdentListItem: 字下げ解除成功（trailing siblingsを入れ子化）");
                 }
                 else
