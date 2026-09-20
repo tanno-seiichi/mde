@@ -470,6 +470,39 @@ Shift+Tabキーでの字下げ解除（`ListEditor.OutdentListItem`）の3箇所
 の付け替え・独自構築は行っていない。両版で同一内容。Roslynによる構文チェックで新規エラーが
 無いことを確認した。
 
+### 14.97 箇条書きの記号（マーカー）の割り当て方式をメニューから選択できるようにする機能を追加
+
+不順序リスト（箇条書き）のマーカー（行頭の記号）の割り当て方式を、メニュー「表示」→
+「箇条書きの記号」から選べるようにした。選択肢は2種類。「WPF標準」（既定。従来通り、1段目
+Disc・2段目Circle・3段目以降Box）と、「DiscとBoxを交互に指定」（1段目から段数の偶奇だけで
+DiscとBoxを交互に割り当てる）。共有ヘルパー`BlockStyles.UnorderedMarkerStyleForDepth`に
+新しい引数（交互指定かどうかのフラグ）を追加し、この設定を参照する`MarkdownConverter`
+（ファイル読み込み時の一括変換）・`ListEditor`（Tab字下げ・Shift+Tab字下げ解除）の3箇所すべて
+に、既存の同種の設定（列幅を補正する・段落中の改行）と同じ「デリゲート（`Func<bool>`）を
+コンストラクタで受け取り、呼び出し時に現在の設定値を都度取得する」方式で配線した。設定は
+`AppSettings`に永続化され、次回起動時にも復元される（既定はfalse＝WPF標準、既存ユーザーの
+動作は変わらない）。メニューで設定を切り替えると、既存の「列幅を補正する」等と同じ方法
+（現在の文書をいったんMarkdownへ変換してから設定を切り替え、再度解析し直す）で、開いている
+文書のマーカーにも即座に反映される。IME入力に影響する`Paragraph`の生きたままの付け替え・
+独自構築は行っていない。両版で同一内容。Roslynによる構文チェックで新規エラーが無いことを
+確認した。
+
+### 14.98 【14.97節の訂正】箇条書きの記号の選択肢を「DiscとBoxを交互に指定」から「すべての階層に同じ記号を使用する（常にDisc）」に変更
+
+14.97節で追加したメニュー「表示」→「箇条書きの記号」の2つ目の選択肢を、「DiscとBoxを交互に
+指定」から「すべての階層に同じ記号を使用する」（段数によらず常にDiscを使う）に変更してほしい
+とのご依頼を受けて対応した。`BlockStyles.UnorderedMarkerStyleForDepth`の追加引数の意味を
+「交互に割り当てるか」から「常にDiscにするか」に変更し、trueの場合は段数によらず常に
+`TextMarkerStyle.Disc`を返すようにした。これに伴い、関連する識別子も意味に合わせて改名した
+（`AlternatingDiscBoxMarkerStyleFlg`→`UniformMarkerStyleFlg`、
+`SetAlternatingDiscBoxMarkerStyleFlg`→`SetUniformMarkerStyleFlg`、
+`MarkerStyleAlternatingChecked`→`MarkerStyleUniformChecked`、
+`m_markerStyleAlternatingMenuItem`→`m_markerStyleUniformMenuItem`等）。メニューの表示文言も
+「DiscとBoxを交互に指定(_A)」から「すべての階層に同じ記号を使用する(_S)」に変更した。
+「WPF標準」側の選択肢・挙動、および設定の永続化（`AppSettings`）・メニュー切り替え時に
+開いている文書へ即座に反映する仕組み自体は14.97節から変更していない。既定値は引き続き
+false（WPF標準）。両版で同一内容。Roslynによる構文チェックで新規エラーが無いことを確認した。
+
 ## 16. 新しい機能を追加する時の指針
 
 1. **どのクラスの責務かを見極める**：4章の表を参照し、既存クラスに機能を追加すべきか、新しい

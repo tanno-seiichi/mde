@@ -8592,6 +8592,237 @@ IME入力の状態に影響する変更ではない。
 - ファイルを開き直した時（バッチ変換経由）と、mde上でTab／Shift+Tabキーにより字下げ操作を
   行った時の両方で、同様に間隔が改善されていること（3箇所すべてに同じ修正を入れているため）。
 
+### 14.97 箇条書きの記号（マーカー）の割り当て方式をメニューから選択できるようにする機能を追加
+
+**経緯**：不順序リスト（箇条書き）のマーカー（行頭の記号）の割り当てについて、以下の2種類を
+メニューから選択できるようにしてほしいとのご依頼をいただいた。
+
+1. WPF標準（既存の`BlockStyles.UnorderedMarkerStyleForDepth`の割り当て。1段目Disc・
+   2段目Circle・3段目以降Box）。
+2. DiscとBoxを交互に指定（1段目から段数の偶奇だけでDiscとBoxを交互に割り当てる）。
+
+**対策**：既存の`BlockStyles.UnorderedMarkerStyleForDepth`に、交互指定を行うかどうかの
+`bool`引数（既定値false＝従来のWPF標準の割り当て）を追加した。
+
+```csharp
+public static TextMarkerStyle UnorderedMarkerStyleForDepth(int a_depth, bool a_alternatingFlg = false)
+{
+    if (a_alternatingFlg)
+    {
+        return 0 == a_depth % 2 ? TextMarkerStyle.Box : TextMarkerStyle.Disc;
+    }
+    if (a_depth <= 1)
+    {
+        return TextMarkerStyle.Disc;
+    }
+    if (2 == a_depth)
+    {
+        return TextMarkerStyle.Circle;
+    }
+    return TextMarkerStyle.Box;
+}
+```
+
+この設定は、メニュー「表示」→「箇条書きの記号」の下に「WPF標準」「DiscとBoxを交互に指定」の
+2項目（ラジオボタンのように片方だけチェックされる）として追加し、`AppSettings`に
+`AlternatingDiscBoxMarkerStyleFlg`（既定false）として永続化、次回起動時にも復元されるように
+した。
+
+この設定値を実際に参照する箇所は、`UnorderedMarkerStyleForDepth`を呼んでいる3箇所
+（`MarkdownConverter.BuildNestedList`・`ListEditor.IndentListItem`・
+`ListEditor.OutdentListItem`。14.96節参照）すべてである。これらのクラスはMainWindowから
+疎結合な設計になっており、既存の類似の設定（「段落中の改行」の`m_preserveSourceLineBreaksFlg`、
+「列幅を補正する」の`m_correctColumnWidthsFlg`）と同じく、コンストラクタで
+`Func<bool>`デリゲートを受け取り、呼び出しの都度MainWindow側の最新の設定値を取得する方式で
+配線した（設定値をコンストラクタ時点の値としてコピーしてしまうと、メニューで後から設定を
+変えても反映されなくなるため）。
+
+```csharp
+// MarkdownConverter.cs（コンストラクタに追加）
+private readonly Func<bool> m_alternatingDiscBoxMarkerStyleFlg;
+public MarkdownConverter(..., Func<bool> a_alternatingDiscBoxMarkerStyleFlg = null) { ... }
+
+// BuildNestedList内の呼び出し
+: BlockStyles.UnorderedMarkerStyleForDepth(
+    stack.Count + 1, m_alternatingDiscBoxMarkerStyleFlg?.Invoke() ?? false),
+```
+
+```csharp
+// ListEditor.cs（コンストラクタに追加）
+private readonly Func<bool> m_alternatingDiscBoxMarkerStyleFlg;
+public ListEditor(..., Func<bool> a_alternatingDiscBoxMarkerStyleFlg = null) { ... }
+
+// IndentListItem・OutdentListItem内の呼び出し（各1箇所）
+: BlockStyles.UnorderedMarkerStyleForDepth(
+    GetListNestingDepth(nestedList), m_alternatingDiscBoxMarkerStyleFlg?.Invoke() ?? false);
+```
+
+`IndentListItem`・`OutdentListItem`は、WPF標準の字下げ/字下げ解除コマンド
+（`EditingCommands.IncreaseIndentation`/`DecreaseIndentation`）が構築済みの`List`オブジェクトへ
+`MarkerStyle`・`Tag`・（14.96節で追加した）`Margin`を設定するのと全く同じ箇所に、今回の
+`UnorderedMarkerStyleForDepth`呼び出しの引数を1つ増やしただけであり、`Paragraph`を生きたまま
+作り替えたり、キャレット位置のある要素を直接操作したりする処理は含まれていない（IME入力の
+不具合対策としてこの方式が採られている理由については14.12節参照）。
+
+メニューで設定を切り替えた際、開いている文書へ即座に反映するため、`MainWindow.xaml.cs`に
+`SetAlternatingDiscBoxMarkerStyleFlg`メソッドを新設した。これは既存の
+`SetPreserveSourceLineBreaksFlg`・`SetCorrectColumnWidthsFlg`と全く同じ方法（現在の文書を
+いったんMarkdownへ変換し、フラグを切り替えた上で再度解析し直す）を踏襲している。既存の
+箇条書きは、作成時に決まった`MarkerStyle`をそのまま持ち続けており、設定を変えただけでは
+自動的には追従しないため、この再構築が必要。
+
+```csharp
+private void SetAlternatingDiscBoxMarkerStyleFlg(bool a_value)
+{
+    if (m_alternatingDiscBoxMarkerStyleFlg != a_value)
+    {
+        if (m_isSourceModeFlg)
+        {
+            m_alternatingDiscBoxMarkerStyleFlg = a_value;
+        }
+        else
+        {
+            string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+            m_alternatingDiscBoxMarkerStyleFlg = a_value;
+            RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
+            m_outlineManager.Refresh();
+            m_editor.CaretPosition = m_editor.Document.ContentStart;
+        }
+    }
+    UpdateMarkerStyleMenuChecks();
+}
+```
+
+なお、トップレベル（1段目）の`List`を新規に作る2箇所（`MarkdownConverter.BuildNestedList`の
+`rootList`、`ListEditor.ConvertParagraphToListItem`の`list`）は変更していない。両方式とも
+1段目は必ずDiscになる（WPF標準はdepth<=1でDisc、交互指定はdepthが奇数でDisc）ため、
+これらの箇所を今回の設定に連動させる必要はなく、従来通り固定のDiscのままにしている。
+
+**検証方法**：`AppSettings.cs`・`BlockStyles.cs`・`MarkdownConverter.cs`・`ListEditor.cs`・
+`MainWindow.xaml.cs`・`MainWindow.xaml`（両版）について、WPF参照を含まない範囲でのRoslyn
+構文チェック（`csc.dll /target:library`）を実施し、新規のコンパイルエラーが無いことを確認
+した（XAMLのx:Nameフィールドはビルド時に生成される部分クラスのため、この軽量チェックでは
+未解決の名前として扱われるが、これは本セッションを通じて他のメニュー項目でも同様であり、
+既知の制約として無視している）。`MainWindow.xaml`は`xmllint`でXMLとしての妥当性
+（well-formed）を確認した。`AppSettings.cs`・`BlockStyles.cs`・`MarkdownConverter.cs`・
+`ListEditor.cs`・`MainWindow.xaml`（今回の変更でいずれも共有・非分岐ファイル）は、変更後も
+nashi／ari間で完全に同一の内容であることを`diff`で確認した。`MainWindow.xaml.cs`
+（PDF書き出しブロックのみ分岐するファイル）は、両版の差分が既知のPDF書き出しブロックの範囲
+（README.md等に記載の分岐箇所一覧参照）にのみ収まっており、今回追加したコードを含むそれ以外の
+部分は両版で完全に同一であることを確認した。nashi／ari間の差分一覧が既知の一覧どおりである
+ことを`diff -rq`で確認した。バージョン番号（1.5.13.0／2.1.13.0）は変更していない。
+
+**今回のご確認について**：今回の修正は、こちらの環境ではWPFの実機ビルド・実際の描画確認が
+できないため、Roslynによる構文レベルの確認に留まっている。お手数ですが、実機でのビルド後、
+以下をご確認いただけると安心。
+- メニュー「表示」→「箇条書きの記号」に「WPF標準」「DiscとBoxを交互に指定」の2項目が表示され、
+  ラジオボタンのように片方だけチェックされること。
+- 「DiscとBoxを交互に指定」を選ぶと、開いている文書の箇条書きが即座に、1段目Disc・2段目Box・
+  3段目Disc・4段目Box…と交互に切り替わること（「WPF標準」に戻すと元の1段目Disc・2段目Circle・
+  3段目以降Boxに戻ること）。
+- ファイルを開き直した時（バッチ変換経由）と、mde上でTab／Shift+Tabキーにより字下げ操作を
+  行った時の両方で、選択中の方式が一貫して使われること。
+- アプリを再起動しても、選択した方式が引き継がれること（`AppSettings`への保存・復元）。
+- 字下げ・字下げ解除の操作時、および日本語入力（IME）の1文字目の変換確定が、これまで通り
+  問題なく動作すること。
+
+### 14.98 【14.97節の訂正】箇条書きの記号の選択肢を「DiscとBoxを交互に指定」から「すべての階層に同じ記号を使用する（常にDisc）」に変更
+
+**経緯**：14.97節で、メニュー「表示」→「箇条書きの記号」に「WPF標準」「DiscとBoxを交互に
+指定」の2択を追加して納品した直後、「すみません、やっぱりWPF標準と階層によって記号を…」
+「「WPF標準」と「すべての階層に同じ記号を使用する」に変更して、階層にかかわらずDiscを表示
+するように変えてください」とのご依頼をいただいた。2つ目の選択肢を、交互配置ではなく
+「段数によらず常にDiscを使う」という、より単純な仕様に変更してほしいというご依頼。
+
+**対策**：`BlockStyles.UnorderedMarkerStyleForDepth`の追加引数のロジックを変更した。
+
+修正前（14.97節）：
+```csharp
+public static TextMarkerStyle UnorderedMarkerStyleForDepth(int a_depth, bool a_alternatingFlg = false)
+{
+    if (a_alternatingFlg)
+    {
+        return 0 == a_depth % 2 ? TextMarkerStyle.Box : TextMarkerStyle.Disc;
+    }
+    if (a_depth <= 1) { return TextMarkerStyle.Disc; }
+    if (2 == a_depth) { return TextMarkerStyle.Circle; }
+    return TextMarkerStyle.Box;
+}
+```
+
+修正後：
+```csharp
+public static TextMarkerStyle UnorderedMarkerStyleForDepth(int a_depth, bool a_uniformFlg = false)
+{
+    if (a_uniformFlg)
+    {
+        return TextMarkerStyle.Disc;
+    }
+    if (a_depth <= 1) { return TextMarkerStyle.Disc; }
+    if (2 == a_depth) { return TextMarkerStyle.Circle; }
+    return TextMarkerStyle.Box;
+}
+```
+
+引数の意味が「交互に割り当てるか」から「常にDiscにするか」に変わったため、これを呼び出す・
+保持する側の識別子も、混乱を避けるためすべて意味に合わせて改名した。
+
+| 変更前（14.97節） | 変更後 |
+|---|---|
+| `AppSettings.AlternatingDiscBoxMarkerStyleFlg` | `AppSettings.UniformMarkerStyleFlg` |
+| `MainWindow.m_alternatingDiscBoxMarkerStyleFlg` | `MainWindow.m_uniformMarkerStyleFlg` |
+| `MainWindow.SetAlternatingDiscBoxMarkerStyleFlg` | `MainWindow.SetUniformMarkerStyleFlg` |
+| `MainWindow.MarkerStyleAlternatingChecked` | `MainWindow.MarkerStyleUniformChecked` |
+| `MainWindow.xaml`の`m_markerStyleAlternatingMenuItem` | `m_markerStyleUniformMenuItem` |
+| `MarkdownConverter`/`ListEditor`の`a_alternatingDiscBoxMarkerStyleFlg`（コンストラクタ引数）・`m_alternatingDiscBoxMarkerStyleFlg`（フィールド） | `a_uniformMarkerStyleFlg`・`m_uniformMarkerStyleFlg` |
+| `BlockStyles.UnorderedMarkerStyleForDepth`の`a_alternatingFlg` | `a_uniformFlg` |
+
+メニューの表示文言も「DiscとBoxを交互に指定(_A)」から「すべての階層に同じ記号を使用する
+(_S)」に変更した。
+
+```xml
+<!-- 修正前 -->
+<MenuItem x:Name="m_markerStyleAlternatingMenuItem" Header="DiscとBoxを交互に指定(_A)"
+          IsCheckable="True" Click="MarkerStyleAlternatingChecked"/>
+<!-- 修正後 -->
+<MenuItem x:Name="m_markerStyleUniformMenuItem" Header="すべての階層に同じ記号を使用する(_S)"
+          IsCheckable="True" Click="MarkerStyleUniformChecked"/>
+```
+
+「WPF標準」側の選択肢・挙動（`SetUniformMarkerStyleFlg(false)`で呼ばれる経路）、設定の
+`AppSettings`への永続化・次回起動時の復元、メニュー切り替え時に開いている文書へ即座に
+反映する仕組み（`DocumentToMarkdown`→フラグ切り替え→`MarkdownToDocument`という、
+14.96節・14.97節から続く既存の方式）自体には変更を加えていない。設定の既定値も引き続き
+false（WPF標準）のまま。
+
+なお、この改名により、`AppSettings`のJSON上のキー名が`AlternatingDiscBoxMarkerStyleFlg`から
+`UniformMarkerStyleFlg`に変わる。14.97節の対応はまだ実機ビルド・ご利用前の段階でのご依頼で
+あったため、実運用上影響のあるsettings.jsonは存在しないと考えられるが、万一14.97節の版を
+一度でも実行して保存している場合は、古いキーは単に無視され、新しい既定値（false＝WPF標準）
+で起動する（保存されていたのがまさにこの既定値と同じ状態のはずであり、実質的な影響は無い）。
+
+**検証方法**：14.97節と同様、`AppSettings.cs`・`BlockStyles.cs`・`MarkdownConverter.cs`・
+`ListEditor.cs`・`MainWindow.xaml.cs`・`MainWindow.xaml`（両版）についてRoslyn構文チェックを
+実施し、新規のコンパイルエラーが無いことを確認した。`grep`で"alternating"（大小文字問わず）の
+文字列が両版のソースにまったく残っていないことを確認した。`MainWindow.xaml`はxmllintで
+XMLとしての妥当性を確認した。共有・非分岐ファイル（`AppSettings.cs`・`BlockStyles.cs`・
+`MarkdownConverter.cs`・`ListEditor.cs`・`MainWindow.xaml`）は、変更後もnashi／ari間で
+完全に同一の内容であることを`diff`で確認した。`MainWindow.xaml.cs`は、両版の差分が既知の
+PDF書き出しブロックの範囲にのみ収まっており、今回変更したコードを含むそれ以外の部分は
+両版で完全に同一であることを確認した。nashi／ari間の差分一覧が既知の一覧どおりであることを
+`diff -rq`で確認した。バージョン番号（1.5.13.0／2.1.13.0）は変更していない。
+
+**今回のご確認について**：14.97節と同じく、こちらの環境ではWPFの実機ビルド・実際の描画確認が
+できないため、Roslynによる構文レベルの確認に留まっている。お手数ですが、実機でのビルド後、
+以下をご確認いただけると安心。
+- メニュー「表示」→「箇条書きの記号」の2つ目の項目が「すべての階層に同じ記号を使用する」と
+  表示されること。
+- これを選ぶと、開いている文書の箇条書きが、段数によらずすべてDiscの記号になること。
+- 「WPF標準」に戻すと、元の1段目Disc・2段目Circle・3段目以降Boxに戻ること。
+- ファイルを開き直した時と、Tab／Shift+Tabキーによる字下げ操作時の両方で、選択中の方式が
+  一貫して使われること。
+- アプリを再起動しても、選択した方式が引き継がれること。
+
 ## 16. 新しい機能を追加する時の指針
 
 1. **どのクラスの責務かを見極める**：4章の表を参照し、既存クラスに機能を追加すべきか、新しい

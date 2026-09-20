@@ -93,6 +93,12 @@ namespace mde
         /// マスタースイッチ）。既定値はtrue。詳細はBlockStyles.ApplyEffectiveColumnWidths参照。</summary>
         private bool m_correctColumnWidthsFlg = true;
 
+        /// <summary>メニュー「表示」→「箇条書きの記号」の状態。falseなら段数に応じて1段目Disc・
+        /// 2段目Circle・3段目以降BoxとするWPF標準の割り当て（既定）、trueなら段数によらず
+        /// すべての階層で同じ記号（Disc）を使う。詳細はBlockStyles.UnorderedMarkerStyleForDepth
+        /// 参照。既定値はfalse。</summary>
+        private bool m_uniformMarkerStyleFlg = false;
+
         /// <summary>PDF書き出し時の、上下左右の余白（px）。メニュー「PDFの余白を設定…」で
         /// 変更でき、次回起動時にも復元される。既定値はAppSettingsのものと揃えてある。</summary>
         private double m_pdfMarginTop = 64;
@@ -221,6 +227,7 @@ namespace mde
             m_preserveSourceLineBreaksFlg = m_savedSettings.PreserveSourceLineBreaksFlg;
             m_correctColumnWidthsFlg = m_savedSettings.CorrectColumnWidthsFlg;
             m_correctColumnWidthsMenuItem.IsChecked = m_correctColumnWidthsFlg;
+            m_uniformMarkerStyleFlg = m_savedSettings.UniformMarkerStyleFlg;
             m_debugLogMenuItem.IsChecked = m_savedSettings.DebugLogEnabledFlg;
             DebugLogger.SetEnabled(m_savedSettings.DebugLogEnabledFlg);
             m_pdfMarginTop = m_savedSettings.PdfMarginTop > 0 ? m_savedSettings.PdfMarginTop : 64;
@@ -234,6 +241,7 @@ namespace mde
             ApplyEditorLineHeight(m_editorLineHeight);
             UpdateLinkModeMenuChecks();
             UpdateLineBreakModeMenuChecks();
+            UpdateMarkerStyleMenuChecks();
             m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
             m_outlinePaneVisibleFlg = m_savedSettings.OutlinePaneVisible;
             if (m_savedSettings.FolderPaneWidth > 0)
@@ -260,8 +268,10 @@ namespace mde
             // m_tableEditorはこの後で構築されるが、呼ばれるのは構築完了後なので問題ない。
             m_markdownConverter = new MarkdownConverter(
                 m_originalTextTracker, m_imageManager, () => m_preserveSourceLineBreaksFlg,
-                () => m_correctColumnWidthsFlg, () => m_tableEditor.GetAvailableTableWidth());
-            m_listEditor = new ListEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange);
+                () => m_correctColumnWidthsFlg, () => m_tableEditor.GetAvailableTableWidth(),
+                () => m_uniformMarkerStyleFlg);
+            m_listEditor = new ListEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange,
+                () => m_uniformMarkerStyleFlg);
             m_headingCodeBlockEditor = new HeadingCodeBlockEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange);
             m_tableEditor = new TableEditor(
                 m_editor, m_originalTextTracker, MarkDirty, RunAsProgrammaticChange, () => m_isSourceModeFlg,
@@ -637,6 +647,7 @@ namespace mde
                 RequireCtrlForLinkClickFlg = m_requireCtrlForLinkClickFlg,
                 PreserveSourceLineBreaksFlg = m_preserveSourceLineBreaksFlg,
                 CorrectColumnWidthsFlg = m_correctColumnWidthsFlg,
+                UniformMarkerStyleFlg = m_uniformMarkerStyleFlg,
                 DebugLogEnabledFlg = DebugLogger.IsEnabled,
                 PdfMarginTop = m_pdfMarginTop,
                 PdfMarginBottom = m_pdfMarginBottom,
@@ -2647,6 +2658,59 @@ namespace mde
                 }
             }
             m_correctColumnWidthsMenuItem.IsChecked = m_correctColumnWidthsFlg;
+        }
+
+        /// <summary>メニュー「表示」→「箇条書きの記号」→「WPF標準」（1段目Disc・2段目Circle・
+        /// 3段目以降Box。既定値）。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void MarkerStyleWpfStandardChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            SetUniformMarkerStyleFlg(false);
+        }
+
+        /// <summary>メニュー「表示」→「箇条書きの記号」→「すべての階層に同じ記号を使用する」
+        /// （段数によらず常にDiscにする）。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void MarkerStyleUniformChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            SetUniformMarkerStyleFlg(true);
+        }
+
+        /// <summary>箇条書きの記号の割り当て方式を変更する。SetPreserveSourceLineBreaksFlg・
+        /// SetCorrectColumnWidthsFlgと同じ理由・同じ方法（現在の文書をいったんMarkdownへ変換し、
+        /// フラグを切り替えた上で再度解析し直す）で、開いている文書全体に即座に反映する
+        /// （既存の箇条書きは、作成時に決まったMarkerStyleをそのまま持ち続けており、設定を
+        /// 変えただけでは自動的には追従しないため）。</summary>
+        /// <param name="a_value">true＝段数によらずすべての階層で同じ記号（Disc）を使う、
+        /// false（既定）＝WPF標準の割り当て（1段目Disc・2段目Circle・3段目以降Box）。</param>
+        private void SetUniformMarkerStyleFlg(bool a_value)
+        {
+            if (m_uniformMarkerStyleFlg != a_value)
+            {
+                if (m_isSourceModeFlg)
+                {
+                    m_uniformMarkerStyleFlg = a_value;
+                }
+                else
+                {
+                    string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+                    m_uniformMarkerStyleFlg = a_value;
+                    RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
+                    m_outlineManager.Refresh();
+                    m_editor.CaretPosition = m_editor.Document.ContentStart;
+                }
+            }
+            UpdateMarkerStyleMenuChecks();
+        }
+
+        /// <summary>「箇条書きの記号」メニューの2項目を、現在の設定に合わせてラジオボタンのように
+        /// 片方だけチェック状態にする。</summary>
+        private void UpdateMarkerStyleMenuChecks()
+        {
+            m_markerStyleWpfStandardMenuItem.IsChecked = !m_uniformMarkerStyleFlg;
+            m_markerStyleUniformMenuItem.IsChecked = m_uniformMarkerStyleFlg;
         }
 
         /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。
