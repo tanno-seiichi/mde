@@ -8397,6 +8397,201 @@ Condition）のみの変更であり、14.92・14.93節で追加したプロパ�
 - 新規インストール時は、これまで通りコンテキストメニュー確認画面の次に
   ライセンス確認画面が表示されること（変更なし）。
 
+### 14.95 ビルド成功後にユーザー側で行った2件の修正をソースへ反映：コンテキストメニュー表示文言の調整、およびMarkdownConverter.csのビルド警告（IDE1006）修正
+
+**経緯**：14.91〜14.94節の対応により、msiビルドが実機で問題なく通るところまで
+確認いただいた（「うまくいきました！ありがとうございました」）。その後、
+ユーザー側で以下の2件の修正を行った（ビルドは成功済み）とのご連絡をいただき、
+こちらで管理しているソース（nashi／ari両版）にも同内容を反映してほしいとの
+ご依頼をいただいた。
+
+1. コンテキストメニュー「mdeで開く」の表示文言を「mde で開く」
+   （"mde"と"で開く"の間に半角スペースを挿入）に変更。
+2. 以前ビルド時警告として報告されていたIDE1006（「名前付けルール違反：
+   存在しないプレフィックス 'm_'」、`MarkdownConverter.cs`160行目）を修正。
+
+**対策1（コンテキストメニュー表示文言の変更）**：`msi/Package.ja-JP.wxl`
+（両版で共有・非分岐ファイル）の中で、実際に右クリックメニューへ表示される
+文言を保持している`OpenWithMdeVerb`ローカライズ文字列を変更した。あわせて、
+同じ文言を引用しているコンテキストメニュー追加確認ダイアログ
+（`ContextMenuOptionDlg`、14.91節で新設）の説明文・チェックボックス文言も、
+表記を統一するため同様に変更した。
+
+修正前：
+```xml
+<String Id="OpenWithMdeVerb" Value="mdeで開く" />
+...
+<String Id="ContextMenuOptionDlgDescription" Value="エクスプローラーの右クリックメニューに「mdeで開く」を追加できます。..." />
+<String Id="ContextMenuOptionCheckBoxText" Value="右クリックメニューに「mdeで開く」を追加する" />
+```
+
+修正後：
+```xml
+<String Id="OpenWithMdeVerb" Value="mde で開く" />
+...
+<String Id="ContextMenuOptionDlgDescription" Value="エクスプローラーの右クリックメニューに「mde で開く」を追加できます。..." />
+<String Id="ContextMenuOptionCheckBoxText" Value="右クリックメニューに「mde で開く」を追加する" />
+```
+
+該当箇所を参照しているコメント（14.90節・14.91節で追加したもの）の文中の
+「mdeで開く」表記もあわせて「mde で開く」に修正し、コメントと実際の文言との
+不一致が生じないようにした。`msi/Package.en-US.wxl`の英語表記（"Open with mde"）
+は変更対象外のため変更していない。
+
+**対策2（MarkdownConverter.csのIDE1006警告修正）**：`mde/MarkdownConverter.cs`
+（両版で共有・非分岐ファイル）内、コメントのグルーピング処理に使う
+`private`な入れ子クラス`CommentGroupInfo`のメンバ変数`Items`を、このコードベース
+共通の命名規則（メンバ変数には`m_`プレフィックスを付ける。例：
+`m_folderTreeManager`）に合わせて`m_items`へ改名した。宣言部分に加え、
+このフィールドを参照している箇所（`AppendCommentGroup`メソッド内、
+`AddCommentGroupOffset`メソッド内、`AttachPendingComments`メソッド内、および
+ファイル末尾の末尾コメントグループ処理の計4箇所）もあわせて更新した。
+
+修正前：
+```csharp
+private class CommentGroupInfo
+{
+    public readonly List<(int BlankLinesBefore, string Text)> Items = new List<(int, string)>();
+}
+```
+
+修正後：
+```csharp
+private class CommentGroupInfo
+{
+    public readonly List<(int BlankLinesBefore, string Text)> m_items = new List<(int, string)>();
+}
+```
+
+参照箇所も`a_group.Items`→`a_group.m_items`、`group.Items.AddRange(...)`→
+`group.m_items.AddRange(...)`、`trailingGroup.Items.AddRange(...)`→
+`trailingGroup.m_items.AddRange(...)`のようにあわせて変更した。フィールド名の
+変更のみであり、処理内容（ロジック）自体には変更が無い。
+
+**検証方法**：`msi/Package.ja-JP.wxl`（両版）について`xmllint`でXMLとしての
+妥当性（well-formed）を確認した。`mde/MarkdownConverter.cs`（両版）について、
+WPF参照を含まない範囲でのRoslyn構文チェック（`csc.dll /target:library`）を
+実施し、今回の変更に起因する新規のコンパイルエラーが無いことを確認した
+（`CommentGroupInfo`クラスやその参照箇所に対する`.Items`表記が残っていない
+ことも`grep`で確認済み）。両ファイルとも、変更後もnashi／ari間で完全に同一の
+内容であることを`diff`で確認した。nashi／ari間の差分が既知の差分一覧どおりで
+あることを`diff -rq`で確認した。バージョン番号（1.5.13.0／2.1.13.0）は
+変更していない。
+
+**今回のご確認について**：今回反映した2件の修正は、いずれもユーザー側で既に
+ビルド成功を確認済みの内容をこちらのソースへ反映（ミラー）したものであり、
+新規の機能追加やロジック変更は含まない。そのため今回はxmllint・Roslynによる
+構文レベルの確認のみを行っており、WiXツールセットによる実機ビルド確認は
+これまで通りこちらの環境では実施できていないが、内容自体はユーザー側で
+ビルド済み・動作確認済みのものと同一のはずである。念のため、今回お渡しする
+ソースが手元の修正済みソースと差異が無いか（特に文言の半角スペースの位置）
+ご確認いただけると安心。
+
+### 14.96 箇条書きの字下げを戻した直後だけ、上の項目との間隔が不自然に広くなる不具合を修正
+
+**経緯**：箇条書きの行間について、「他のソフト（Typora等）では箇条書きの行間の広さは均一
+だが、mdeでは字下げのレベルが同じか、さらに字下げする時は均一なのに、字下げを戻した時だけ
+上の行との間が広くなっている」とのご指摘をいただいた。実機のスクリーンショットで、同じ
+`document.md`をTypora・VSCode・mdeで開いた比較から、mdeだけ字下げを戻した直後の項目間隔が
+広くなっていることを確認した。
+
+**原因**：mdeのプレビュー（編集）側は、Markdownの箇条書きを内部的にWPFの`List`／`ListItem`
+要素として表現している。行間の余白は`MainWindow.xaml`の`EditorBlockSpacing`
+（`Thickness(0,0,0,14)`＝上余白0・下余白14）という固定値で統一されており、これが段落
+（`Paragraph`）だけでなく`List`要素自身にも、`RichTextBox.Resources`内の
+
+```xml
+<Style TargetType="List">
+    <Setter Property="Margin" Value="{DynamicResource EditorBlockSpacing}"/>
+    ...
+</Style>
+```
+
+というスタイルによって適用されていた。すべてのブロックが「上余白0・下余白だけで間隔を作る」
+という考え方で統一されているため、通常は隣接するブロック同士の余白が二重に足されることは
+ない。
+
+ところが、字下げを深くした箇所は、親の箇条書き項目（`ListItem`）が「自分の段落」に加えて、
+子の項目をまとめた**入れ子の`List`要素**を`Blocks`にもう1つ持つ形で表現される
+（`MarkdownConverter.BuildNestedList`の`lastLi.Blocks.Add(nestedList)`等）。この入れ子の
+`List`自身も、上記スタイルにより下余白14を持ってしまう。字下げを戻す（入れ子`List`を抜けて
+浅い階層の項目に戻る）箇所では、
+
+- 入れ子リスト最後の項目自身の段落が持つ下余白（14）
+- その項目を含んでいた入れ子`List`そのものの下余白（14）
+
+の**2つ分**が積み重なり、28相当の間隔になっていた。これに対し、同じ階層内での項目間や、
+字下げを深くする側（親項目の段落の下に、上余白0の入れ子`List`が続くだけ）は14のままのため、
+字下げを戻した箇所だけ間隔が約2倍に広がって見えていた。
+
+**対策**：入れ子`List`が新しく作られる（または、字下げ操作でWPF標準コマンドが構築した
+入れ子`List`をmde側で復元する）3箇所すべてで、その入れ子`List`自身のMarginを明示的に0に
+設定するよう修正した。トップレベルの`List`（文書に直接ぶら下がる、入れ子ではないリスト）は
+対象外のため、スタイルの既定Margin（下14）のまま変更していない。
+
+1. `mde/MarkdownConverter.cs`（`BuildNestedList`、ファイル読み込み時の一括変換）：
+
+```csharp
+nestedList = new List
+{
+    MarkerStyle = orderedFlg
+        ? TextMarkerStyle.Decimal
+        : BlockStyles.UnorderedMarkerStyleForDepth(stack.Count + 1),
+    Tag = orderedFlg ? null : bulletMarker,
+    Margin = new Thickness(0)   // 追加
+};
+```
+
+2. `mde/ListEditor.cs`（`IndentListItem`、Tabキーでの字下げ）：
+
+```csharp
+nestedList.MarkerStyle = parentOrderedFlg ? TextMarkerStyle.Decimal
+    : BlockStyles.UnorderedMarkerStyleForDepth(GetListNestingDepth(nestedList));
+nestedList.Tag = parentOrderedFlg ? null : ((a_parentList.Tag as string) ?? "*");
+nestedList.Margin = new Thickness(0);   // 追加
+```
+
+3. `mde/ListEditor.cs`（`OutdentListItem`、Shift+Tabキーでの字下げ解除。字下げを解除した
+   項目に、後ろの兄弟項目をまとめた入れ子`List`が新設される場合がある）：
+
+```csharp
+ownNestedList.MarkerStyle = parentOrderedFlg ? TextMarkerStyle.Decimal
+    : BlockStyles.UnorderedMarkerStyleForDepth(GetListNestingDepth(ownNestedList));
+ownNestedList.Tag = parentOrderedFlg ? null : ((a_parentList.Tag as string) ?? "*");
+ownNestedList.Margin = new Thickness(0);   // 追加
+```
+
+2.・3.の2箇所は、いずれも既存コードが「`Listオブジェクトをmde側で手作りすると、IME入力で
+最初の1文字目の変換候補が確定されない不具合が起きるため、構造変更はWPF標準のコマンド
+（`EditingCommands.IncreaseIndentation`/`DecreaseIndentation`）に任せ、mde独自の見た目
+（`MarkerStyle`・`Tag`）はコマンド実行後に既存`List`のプロパティだけを変更して復元する」
+という、すでに確立された安全な方式に従っている箇所であり、今回の`Margin`の設定も、
+すぐ隣で行われている`MarkerStyle`・`Tag`の設定と全く同じ場所・同じやり方（WPFコマンドが
+構築済みの`List`オブジェクトへのプロパティ設定のみ）で行っている。`Paragraph`を生きたまま
+作り替えたり、キャレット位置のある要素を直接操作したりする処理は一切含まれておらず、
+IME入力の状態に影響する変更ではない。
+
+**検証方法**：`MarkdownConverter.cs`・`ListEditor.cs`（両版）について、WPF参照を含まない
+範囲でのRoslyn構文チェック（`csc.dll /target:library`）を実施し、今回の変更に起因する新規の
+コンパイルエラーが無いことを確認した。両ファイルとも、変更後もnashi／ari間で完全に同一の
+内容であることを`diff`で確認した。nashi／ari間の差分が既知の差分一覧どおりであることを
+`diff -rq`で確認した。バージョン番号（1.5.13.0／2.1.13.0）は変更していない。
+
+なお、今回の修正は入れ子`List`自身のMarginのみを変更するものであり、トップレベルの`List`
+（文書内で最初にぶら下がるリスト全体）の前後の余白や、段落・表など他のブロック種別の余白には
+一切影響しない。
+
+**今回のご確認について**：今回の修正は、こちらの環境ではWiXのビルド確認と同様、WPFの実機
+ビルド・実際の描画確認ができないため、Roslynによる構文レベルの確認に留まっている。お手数
+ですが、実機でのビルド後、以下をご確認いただけると安心。
+- 箇条書きで字下げを戻した直後の項目間隔が、他の項目間隔（同じ階層内・字下げを深くする時）と
+  同じ広さになっていること。
+- 字下げ・字下げ解除の操作時、および日本語入力（IME）で1文字目を変換確定する際に、これまで
+  通り問題なく動作すること（今回の修正箇所そのものがIMEに関わる既存の安全策の隣接コードで
+  あるため、大きな影響は無いと考えていますが、念のためご確認をお願いします）。
+- ファイルを開き直した時（バッチ変換経由）と、mde上でTab／Shift+Tabキーにより字下げ操作を
+  行った時の両方で、同様に間隔が改善されていること（3箇所すべてに同じ修正を入れているため）。
+
 ## 16. 新しい機能を追加する時の指針
 
 1. **どのクラスの責務かを見極める**：4章の表を参照し、既存クラスに機能を追加すべきか、新しい
