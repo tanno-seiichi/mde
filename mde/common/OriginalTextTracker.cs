@@ -1,0 +1,140 @@
+﻿// OriginalTextTracker.cs
+//
+// mde (Markdown インラインエディタ) の一部。
+// 「編集していないブロックは保存時に元のテキストをそのまま書き戻す」仕組みを担当する。
+// 読み込み時に各ブロックの元ソーステキストを記憶し、編集されたブロックだけ記憶から
+// 除去することで、保存時にどちらを使うか判定する。
+//
+// MarkdownConverter・ListEditor・TableEditor・InlineStyleEditor など、文書構造を直接
+// 操作する複数クラスが共有する協力オブジェクト（状態を持つ実体として渡す）。
+
+using System.Runtime.CompilerServices;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+
+namespace mde.common
+{
+    /// <summary>
+    /// 各トップレベルブロック（FlowDocument.Blocksの直接の子）について読み込み時の元テキストを
+    /// 記憶し、編集されたら破棄する。ブロック参照をキーにしたConditionalWeakTableを使うため、
+    /// 不要になったブロックのエントリは自動的に解放される。
+    /// </summary>
+    public class OriginalTextTracker
+    {
+        private readonly RichTextBox m_editor;
+
+        /// <summary>ブロックごとの元テキストを保持する値クラス（参照型で包むことで、
+        /// ConditionalWeakTableに値を追加/更新できるようにしている）。</summary>
+        private class Holder
+        {
+            public string m_text;
+        }
+
+        private readonly ConditionalWeakTable<Block, Holder> m_table = new ConditionalWeakTable<Block, Holder>();
+
+        /// <summary>
+        /// OriginalTextTrackerを構築する。
+        /// </summary>
+        /// <param name="a_editor">対象のRichTextBox（GetTopLevelBlockでEditor.Documentと比較するために必要）。</param>
+        public OriginalTextTracker(RichTextBox a_editor)
+        {
+            this.m_editor = a_editor;
+        }
+
+        /// <summary>
+        /// 指定位置から上へたどり、FlowDocument.Blocksの直接の子であるトップレベルブロックを
+        /// 見つける（トップレベル段落ならその段落自身、リスト項目や表セル内ならそれを含むList/Table）。
+        /// </summary>
+        /// <param name="a_position">起点となる位置。</param>
+        /// <returns>見つかったトップレベルブロック。positionがnullなら null。</returns>
+        public Block GetTopLevelBlock(TextPointer a_position)
+        {
+            var para = a_position?.Paragraph;
+            if (null == para)
+            {
+                return null;
+            }
+
+            DependencyObject node = para;
+            while (null != node)
+            {
+                if (node is Block block && ReferenceEquals(block.Parent, m_editor.Document))
+                {
+                    return block;
+                }
+
+                node = (node as TextElement)?.Parent;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 指定位置のブロック（を含むトップレベルブロック）を「編集済み」として記憶から取り除く。
+        /// 以降、保存時は元テキストでなく現在の構造から組み立て直したテキストが使われる。
+        /// </summary>
+        /// <param name="a_position">編集が行われた位置。</param>
+        public void Invalidate(TextPointer a_position)
+        {
+            var block = GetTopLevelBlock(a_position);
+            if (null != block)
+            {
+                m_table.Remove(block);
+            }
+        }
+
+        /// <summary>
+        /// Invalidate(TextPointer)と同じことを、位置ではなくBlockの参照から直接行う。
+        /// </summary>
+        /// <param name="a_block">編集されたブロック（またはその子孫の要素）。</param>
+        public void InvalidateForBlock(Block a_block)
+        {
+            DependencyObject node = a_block;
+            while (null != node)
+            {
+                if (node is Block b && ReferenceEquals(b.Parent, m_editor.Document))
+                {
+                    m_table.Remove(b);
+                    return;
+                }
+                node = (node as TextElement)?.Parent;
+            }
+        }
+
+        /// <summary>
+        /// 新しく解析されたブロックについて、それを生成した元のソース行をそのまま記憶する。
+        /// 一度も編集されなければ、保存時にこのテキストがそのまま書き戻される。
+        /// </summary>
+        /// <param name="a_block">直前にドキュメントへ追加されたブロック。</param>
+        /// <param name="a_lines">ファイル全体のソース行配列。</param>
+        /// <param name="a_start">このブロックを生成した最初の行番号（含む）。</param>
+        /// <param name="a_end">このブロックを生成した最後の行番号（含まない）。</param>
+        public void Record(Block a_block, string[] a_lines, int a_start, int a_end)
+        {
+            m_table.AddOrUpdate(a_block, new Holder { m_text = string.Join("\n", a_lines, a_start, a_end - a_start) });
+        }
+
+        /// <summary>
+        /// ブロックの元テキストがまだ記憶されている（＝一度も編集されていない）かどうかを調べる。
+        /// </summary>
+        /// <param name="a_block">調べたいブロック。</param>
+        /// <param name="a_textRf">記憶されていた元テキスト（見つかった場合）。</param>
+        /// <returns>記憶が残っていれば true。</returns>
+        public bool TryGetOriginal(Block a_block, out string a_textRf)
+        {
+            if (m_table.TryGetValue(a_block, out var holder))
+            {
+                a_textRf = holder.m_text;
+                return true;
+            }
+            a_textRf = null;
+            return false;
+        }
+
+        /// <summary>ファイルを新規に読み込む際、それ以前の記憶をすべて破棄する。</summary>
+        public void Clear()
+        {
+            m_table.Clear();
+        }
+    }
+}

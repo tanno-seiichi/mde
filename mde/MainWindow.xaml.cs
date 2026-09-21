@@ -8,6 +8,12 @@
 // 薄いラッパーになっている。ウィンドウ全体・現在のファイル・キーボード入力の振り分けといった
 // 「どのクラスにも属さない」調整の役割もここが担う。
 
+using mde.common;
+using mde.dialog;
+using mde.editor;
+using mde.findreplace;
+using mde.logger;
+using mde.manager;
 using System;
 using System.Collections.Generic;
 using System.IO;
