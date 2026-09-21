@@ -1,0 +1,1086 @@
+﻿// TableEditor.cs
+//
+// mde (Markdown インラインエディタ) の一部。
+// 表(Table)の編集を担当するクラス。行・列の挿入/削除、セル間の矢印キー移動、
+// Excelとのコピー&ペースト連携(TSV/HTML形式)を扱う。
+// MainWindow本体への参照は持たず、必要な操作はコンストラクタで渡されたdelegate経由で行う。
+
+using mde.common;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
+
+namespace mde.editor
+{
+    /// <summary>
+    /// 表の編集機能一式。MainWindowとは疎結合で、Editor本体・「元テキスト保持」の追跡役・
+    /// ダーティ通知/プログラム的変更ラップ用のdelegateだけを受け取って動作する。
+    /// </summary>
+    public class TableEditor
+    {
+        private readonly RichTextBox m_editor;
+        private readonly OriginalTextTracker m_originalTextTracker;
+        private readonly Action m_markDirty;
+        private readonly Action<Action> m_runAsProgrammaticChange;
+        private readonly Func<bool> m_isSourceMode;
+        private readonly Action m_refreshOutline;
+        private readonly Action<string> m_insertPlainTextWithLineBreaks;
+        private readonly Func<bool> m_correctColumnWidthsFlg;
+
+        /// <summary>右クリック時にマウス下にあったセル。右クリックメニューの各項目から参照される。</summary>
+        public TableCell ContextCell { get; set; }
+
+        /// <summary>右クリック時にマウス下にあった段落（表の外に新しい表を挿入する位置の基準）。</summary>
+        public Paragraph ContextParagraph { get; set; }
+
+        /// <summary>
+        /// TableEditorを構築する。
+        /// </summary>
+        /// <param name="a_editor">編集対象のRichTextBox。</param>
+        /// <param name="a_originalTextTracker">「元テキスト保持」の追跡役。</param>
+        /// <param name="a_markDirty">ファイルが変更されたことを通知するdelegate。</param>
+        /// <param name="a_runAsProgrammaticChange">処理を「プログラムによる変更」として実行するdelegate。</param>
+        /// <param name="a_isSourceMode">現在ソースモードかどうかを返すdelegate。</param>
+        /// <param name="a_refreshOutline">アウトラインペインの再構築を依頼するdelegate。</param>
+        /// <param name="a_insertPlainTextWithLineBreaks">コードブロックへの貼り付け時に使う、改行対応のプレーンテキスト挿入delegate。</param>
+        /// <param name="a_correctColumnWidthsFlg">メニュー「表示」→「列幅を補正する」の現在の
+        /// 状態を返すdelegate（省略時はtrueとして扱う）。列幅適用時の見た目を決める
+        /// （BlockStyles.ApplyEffectiveColumnWidths参照）。</param>
+        public TableEditor(
+            RichTextBox a_editor,
+            OriginalTextTracker a_originalTextTracker,
+            Action a_markDirty,
+            Action<Action> a_runAsProgrammaticChange,
+            Func<bool> a_isSourceMode,
+            Action a_refreshOutline,
+            Action<string> a_insertPlainTextWithLineBreaks,
+            Func<bool> a_correctColumnWidthsFlg = null)
+        {
+            this.m_editor = a_editor;
+            this.m_originalTextTracker = a_originalTextTracker;
+            this.m_markDirty = a_markDirty;
+            this.m_runAsProgrammaticChange = a_runAsProgrammaticChange;
+            this.m_isSourceMode = a_isSourceMode;
+            this.m_refreshOutline = a_refreshOutline;
+            this.m_insertPlainTextWithLineBreaks = a_insertPlainTextWithLineBreaks;
+            this.m_correctColumnWidthsFlg = a_correctColumnWidthsFlg;
+        }
+
+        private static readonly Brush m_headerBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
+        private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
+
+        // ---------------- セル間の矢印キー移動 ----------------
+
+        /// <summary>セルの内容の先頭にキャレットがあるかどうかを調べる（左/上キーでのセル移動判定用）。</summary>
+        /// <param name="a_cell">対象のセル。</param>
+        /// <returns>セルの内容の先頭にあればtrue。</returns>
+        public bool IsCaretAtStart(TableCell a_cell)
+        {
+            var firstPara = a_cell.Blocks.FirstBlock as Paragraph;
+            if (null == firstPara)
+            {
+                return true;
+            }
+            return m_editor.CaretPosition.CompareTo(firstPara.ContentStart) <= 0;
+        }
+
+        /// <summary>セルの内容の末尾にキャレットがあるかどうかを調べる（右/下キーでのセル移動判定用）。</summary>
+        /// <param name="a_cell">対象のセル。</param>
+        /// <returns>セルの内容の末尾にあればtrue。</returns>
+        public bool IsCaretAtEnd(TableCell a_cell)
+        {
+            var lastPara = a_cell.Blocks.LastBlock as Paragraph;
+            if (null == lastPara)
+            {
+                return true;
+            }
+            return m_editor.CaretPosition.CompareTo(lastPara.ContentEnd) >= 0;
+        }
+
+        /// <summary>上下キーでの行間移動。キャレットを真上/真下の行の同じ列のセルへ移す。
+        /// 先頭行で上キー・末尾行で下キーが押された場合は、表の外（前後のブロック）へ
+        /// キャレットを移す。前後にブロックが存在しない場合は、新しい空の段落を作って
+        /// そこへ移す。</summary>
+        /// <param name="a_cell">現在のセル。</param>
+        /// <param name="a_dir">-1で上、+1で下。</param>
+        public void MoveVertical(TableCell a_cell, int a_dir)
+        {
+            if (!(a_cell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
+            int rIdx = rg.Rows.IndexOf(row);
+            int cIdx = row.Cells.IndexOf(a_cell);
+            int targetIdx = rIdx + a_dir;
+            if (targetIdx < 0 ||
+                targetIdx >= rg.Rows.Count)
+            {
+                MoveOutOfTable(rg, a_dir);
+                return;
+            }
+            var targetRow = rg.Rows[targetIdx];
+            if (cIdx < targetRow.Cells.Count && targetRow.Cells[cIdx].Blocks.LastBlock is Paragraph tp)
+            {
+                m_editor.CaretPosition = tp.ContentEnd;
+            }
+        }
+
+        /// <summary>表の先頭行で上キー・末尾行で下キーが押された時に、キャレットを表の外
+        /// （直前/直後のブロック）へ移す。前後にブロックが存在しない場合（表がドキュメントの
+        /// 先頭/末尾に隣接ブロックなしで存在する場合）は、新しい空の段落を作ってそこへ移す。</summary>
+        /// <param name="a_rg">現在の表の行グループ。</param>
+        /// <param name="a_dir">-1で上（表の直前へ）、+1で下（表の直後へ）。</param>
+        private void MoveOutOfTable(TableRowGroup a_rg, int a_dir)
+        {
+            if (!(a_rg.Parent is Table table))
+            {
+                return;
+            }
+            Block neighbor = a_dir < 0 ? table.PreviousBlock : table.NextBlock;
+            if (null == neighbor)
+            {
+                var newPara = new Paragraph();
+                if (a_dir < 0)
+                {
+                    m_editor.Document.Blocks.InsertBefore(table, newPara);
+                }
+                else
+                {
+                    m_editor.Document.Blocks.InsertAfter(table, newPara);
+                }
+                m_editor.CaretPosition = newPara.ContentStart;
+                m_markDirty();
+                return;
+            }
+            m_editor.CaretPosition = a_dir < 0 ? neighbor.ContentEnd : neighbor.ContentStart;
+        }
+
+        /// <summary>左右キーでのセル間移動。行の端では隣の行へ折り返す。</summary>
+        /// <param name="a_cell">現在のセル。</param>
+        /// <param name="a_dir">-1で左/前、+1で右/次。</param>
+        public void MoveHorizontal(TableCell a_cell, int a_dir)
+        {
+            if (!(a_cell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
+            int rIdx = rg.Rows.IndexOf(row);
+            int cIdx = row.Cells.IndexOf(a_cell);
+
+            if (1 == a_dir)
+            {
+                if (cIdx + 1 < row.Cells.Count)
+                {
+                    if (row.Cells[cIdx + 1].Blocks.FirstBlock is Paragraph np)
+                    {
+                        m_editor.CaretPosition = np.ContentStart;
+                    }
+                    return;
+                }
+                if (rIdx + 1 < rg.Rows.Count)
+                {
+                    var nr = rg.Rows[rIdx + 1];
+                    if (nr.Cells.Count > 0 && nr.Cells[0].Blocks.FirstBlock is Paragraph np2)
+                    {
+                        m_editor.CaretPosition = np2.ContentStart;
+                    }
+                }
+            }
+            else
+            {
+                if (cIdx - 1 >= 0)
+                {
+                    if (row.Cells[cIdx - 1].Blocks.LastBlock is Paragraph pp)
+                    {
+                        m_editor.CaretPosition = pp.ContentEnd;
+                    }
+                    return;
+                }
+                if (rIdx - 1 >= 0)
+                {
+                    var pr = rg.Rows[rIdx - 1];
+                    if (pr.Cells.Count > 0 && pr.Cells[pr.Cells.Count - 1].Blocks.LastBlock is Paragraph pp2)
+                    {
+                        m_editor.CaretPosition = pp2.ContentEnd;
+                    }
+                }
+            }
+        }
+
+        // ---------------- 表の挿入・行/列の挿入・削除 ----------------
+
+        /// <summary>指定した行数・列数の新しい表を、ContextParagraphの後ろに挿入する。</summary>
+        /// <param name="a_rows">行数（ヘッダー行込み）。</param>
+        /// <param name="a_cols">列数。</param>
+        public void InsertTable(int a_rows, int a_cols)
+        {
+            var table = new Table();
+            for (int c = 0; c < a_cols; c++)
+            {
+                table.Columns.Add(new TableColumn());
+            }
+            var rg = new TableRowGroup();
+            table.RowGroups.Add(rg);
+
+            var headerRow = new TableRow();
+            for (int c = 0; c < a_cols; c++)
+            {
+                // KeepTogether: PDF書き出し時にページを跨ぐとセルの罫線が消えるWPFの制約を
+                // 避けるため、セル内の段落をページ内で分割させない。
+                // LineHeight=double.NaN: 行間設定を継承せず常に自然な高さで表示する
+                // （このファイル内の他のTableCell生成箇所も同様）。
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
+                {
+                    FontWeight = FontWeights.Bold,
+                    Background = m_headerBackground,
+                    // 罫線は、表を組み立て終えた後にApplyTableCellBordersでまとめて設定する。
+                    Padding = new Thickness(8, 6, 8, 6)
+                };
+                headerRow.Cells.Add(cell);
+            }
+            rg.Rows.Add(headerRow);
+
+            for (int r = 0; r < a_rows - 1; r++)
+            {
+                var row = new TableRow();
+                for (int c = 0; c < a_cols; c++)
+                {
+                    var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
+                    {
+                        // 罫線は、表を組み立て終えた後にApplyTableCellBordersでまとめて設定する。
+                        Padding = new Thickness(8, 6, 8, 6)
+                    };
+                    row.Cells.Add(cell);
+                }
+                rg.Rows.Add(row);
+            }
+
+            // 隣接セルの境界線が二重に重ならないよう、表全体へまとめて罫線を設定する
+            // （BlockStyles.ApplyTableCellBorders参照）。
+            BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
+
+            var trailingPara = new Paragraph();
+
+            m_runAsProgrammaticChange(() =>
+            {
+                if (null != ContextParagraph && ContextParagraph.Parent is FlowDocument)
+                {
+                    m_editor.Document.Blocks.InsertAfter(ContextParagraph, table);
+                    m_editor.Document.Blocks.InsertAfter(table, trailingPara);
+                }
+                else
+                {
+                    m_editor.Document.Blocks.Add(table);
+                    m_editor.Document.Blocks.Add(trailingPara);
+                }
+            });
+
+            if (headerRow.Cells[0].Blocks.FirstBlock is Paragraph hp)
+            {
+                m_editor.CaretPosition = hp.ContentStart;
+            }
+            m_editor.Focus();
+            m_markDirty();
+        }
+
+        /// <summary>ContextCellの表に新しい空の行を挿入する。</summary>
+        /// <param name="a_aboveFlg">true なら現在の行の上に、false なら下に挿入する。</param>
+        public void InsertRow(bool a_aboveFlg)
+        {
+            if (null == ContextCell)
+            {
+                return;
+            }
+            m_originalTextTracker.Invalidate(ContextCell.ContentStart);
+            if (!(ContextCell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
+
+            int colCount = row.Cells.Count;
+            var newRow = new TableRow();
+            for (int c = 0; c < colCount; c++)
+            {
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
+                {
+                    // 罫線は挿入後にApplyTableCellBordersで設定し直す
+                    // （最上段への挿入で上辺罫線の対象セルが変わるため）。
+                    Padding = new Thickness(8, 6, 8, 6)
+                };
+                newRow.Cells.Add(cell);
+            }
+
+            int idx = rg.Rows.IndexOf(row);
+            int insertIdx = a_aboveFlg ? idx : idx + 1;
+            rg.Rows.Insert(insertIdx, newRow);
+
+            // 表全体の罫線をApplyTableCellBordersで設定し直す（罫線が消えて見える不具合と
+            // 同じ領域のため、挿入のたびに明示的に設定する。下のDeleteRow参照）。
+            if (rg.Parent is Table refreshTable)
+            {
+                BlockStyles.ApplyTableCellBorders(refreshTable, m_cellBorder);
+            }
+
+            if (newRow.Cells.Count > 0 && newRow.Cells[0].Blocks.FirstBlock is Paragraph np)
+            {
+                m_editor.CaretPosition = np.ContentStart;
+            }
+            m_editor.Focus();
+            m_markDirty();
+        }
+
+        /// <summary>ContextCellの表に新しい空の列を挿入する。</summary>
+        /// <param name="a_leftFlg">true なら現在の列の左に、false なら右に挿入する。</param>
+        public void InsertColumn(bool a_leftFlg)
+        {
+            if (null == ContextCell)
+            {
+                return;
+            }
+            m_originalTextTracker.Invalidate(ContextCell.ContentStart);
+            if (!(ContextCell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
+            if (!(rg.Parent is Table table))
+            {
+                return;
+            }
+
+            int colIdx = row.Cells.IndexOf(ContextCell);
+            int insertIdx = a_leftFlg ? colIdx : colIdx + 1;
+            var rows = rg.Rows.Cast<TableRow>().ToList();
+
+            TableCell firstNewCell = null;
+            for (int r = 0; r < rows.Count; r++)
+            {
+                var targetRow = rows[r];
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
+                {
+                    // 罫線は挿入後にApplyTableCellBordersで設定し直す
+                    // （最左列への挿入で左辺罫線の対象セルが変わるため）。
+                    Padding = new Thickness(8, 6, 8, 6)
+                };
+                if (0 == r)
+                {
+                    cell.FontWeight = FontWeights.Bold;
+                    cell.Background = m_headerBackground;
+                }
+
+                int idxInRow = Math.Min(insertIdx, targetRow.Cells.Count);
+                targetRow.Cells.Insert(idxInRow, cell);
+                if (targetRow == row)
+                {
+                    firstNewCell = cell;
+                }
+            }
+
+            var newColumn = new TableColumn();
+            int colInsertIdx = Math.Min(insertIdx, table.Columns.Count);
+            table.Columns.Insert(colInsertIdx, newColumn);
+
+            // 区切り行のダッシュ数（保存されるべき「本当の値」）の記録も、列の増減に合わせて
+            // 同じ位置に既定値を挿入する（未調整の表には何もしない。
+            // BlockStyles.InsertIntoSourceDashCounts参照）。
+            BlockStyles.InsertIntoSourceDashCounts(table, colInsertIdx);
+
+            // 他の列がすでに明示的な比率幅（Star）なら単位混在を避けるため、新しい列にも
+            // 既定の比率（TABLE_COLUMN_DEFAULT_DASH_COUNT）を明示的に設定する
+            // （単位を混在させない方針。BlockStyles.ApplyExplicitColumnWidths参照）。
+            bool tableAlreadyCustomizedFlg = false;
+            foreach (TableColumn col in table.Columns)
+            {
+                if (col != newColumn && col.Width.IsStar)
+                {
+                    tableAlreadyCustomizedFlg = true;
+                    break;
+                }
+            }
+            if (tableAlreadyCustomizedFlg)
+            {
+                newColumn.Width = new GridLength(BlockStyles.TABLE_COLUMN_DEFAULT_DASH_COUNT, GridUnitType.Star);
+            }
+
+            // 表全体の罫線をApplyTableCellBordersで設定し直す。
+            BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
+
+            if (firstNewCell?.Blocks.FirstBlock is Paragraph np)
+            {
+                m_editor.CaretPosition = np.ContentStart;
+            }
+            m_editor.Focus();
+            m_markDirty();
+        }
+
+        // ---------------- 列幅調整（ステップ2） ----------------
+
+        /// <summary>ContextCellが属する表の、列幅調整ダイアログの初期表示用データ（各列の
+        /// ラベルと現在の幅、「自動計算」チェックボックスの初期状態）を組み立てる。
+        /// ContextCellが無い、または表が見つからない場合はLabelsがnullの値を返す
+        /// （呼び出し側はこれでダイアログの要否を判定する）。</summary>
+        public (List<string> Labels, List<int> DashCounts, bool IsAutoCalculated) GetColumnWidthDialogInfo()
+        {
+            var table = null != ContextCell ? FindEnclosingTable(ContextCell) : null;
+            if (null == table)
+            {
+                return (null, null, false);
+            }
+            return BlockStyles.BuildColumnWidthDialogInfo(table);
+        }
+
+        /// <summary>列幅調整ダイアログでOKが押された後、ContextCellが属する表に、指定された幅
+        /// （区切り行のダッシュ数相当。「自動計算」オン時はすべて既定値）と、現在の「列幅を
+        /// 補正する」の状態から決まる見た目を適用する（BlockStyles.ApplyEffectiveColumnWidths
+        /// 参照）。呼び出し順はダイアログに渡した列の順序と一致していること。</summary>
+        /// <param name="a_dashCounts">列ごとの新しい値（ダッシュ数）。</param>
+        public void ApplyColumnWidths(List<int> a_dashCounts)
+        {
+            if (null == ContextCell)
+            {
+                return;
+            }
+            var table = FindEnclosingTable(ContextCell);
+            if (null == table)
+            {
+                return;
+            }
+            m_originalTextTracker.Invalidate(ContextCell.ContentStart);
+            // 区切り行のダッシュ数（保存されるべき「本当の値」）を先に記録する
+            // （BlockStyles.SetSourceDashCounts参照）。「列幅を補正する」オフ時に表示が
+            // 既定の均等幅へ戻っても、この記録は保持される。
+            BlockStyles.SetSourceDashCounts(table, a_dashCounts);
+            bool correctColumnWidthsFlg = m_correctColumnWidthsFlg?.Invoke() ?? true;
+            BlockStyles.ApplyEffectiveColumnWidths(table, a_dashCounts, correctColumnWidthsFlg, GetAvailableTableWidth());
+            m_markDirty();
+        }
+
+        /// <summary>エディタの現在のサイズとパディングから、表に使える幅を計算する
+        /// （ImageManager.GetAvailableImageWidthと同じ考え方）。</summary>
+        /// <returns>利用可能な幅（ピクセル）。</returns>
+        public double GetAvailableTableWidth()
+        {
+            double w = m_editor.ActualWidth;
+            if (w <= 0)
+            {
+                return 560; // 初回レイアウト前の妥当なフォールバック値
+            }
+            w -= m_editor.Padding.Left + m_editor.Padding.Right;
+            w -= 24; // スクロールバー＋右端が詰まりすぎないための余白
+            return Math.Max(100, w);
+        }
+
+        /// <summary>文書内の表をすべて見つける（表は常に文書の最上位ブロックとして挿入される
+        /// ため、トップレベルのBlocksだけを見れば十分）。</summary>
+        /// <param name="a_doc">対象の文書。</param>
+        public List<Table> FindAllTables(FlowDocument a_doc)
+        {
+            var tables = new List<Table>();
+            foreach (Block b in a_doc.Blocks)
+            {
+                if (b is Table t)
+                {
+                    tables.Add(t);
+                }
+            }
+            return tables;
+        }
+
+        /// <summary>エディタのサイズが変わった時に、すべての表の列幅を、現在の表示幅に合わせて
+        /// 再計算する（未調整・調整済みのどちらも対象。詳細はBlockStyles.
+        /// RefreshAutoCalculatedColumnWidthsのコメント参照）。列幅の変更はRichTextBox.
+        /// TextChangedを発生させるため、呼び出し側（MainWindow.EditorSizeChanged）は
+        /// RunWithoutDirtyMarkingでラップして呼ぶこと。「列幅を補正する」がオフの間は
+        /// 何もしない。</summary>
+        public void RefreshAutoCalculatedColumnWidthsForResize()
+        {
+            bool correctColumnWidthsFlg = m_correctColumnWidthsFlg?.Invoke() ?? true;
+            if (!correctColumnWidthsFlg)
+            {
+                return;
+            }
+            double availableWidth = GetAvailableTableWidth();
+            foreach (var table in FindAllTables(m_editor.Document))
+            {
+                BlockStyles.RefreshAutoCalculatedColumnWidths(table, availableWidth);
+            }
+        }
+
+        /// <summary>ContextCellが属する行を削除する（表の唯一の行なら表ごと削除する）。</summary>
+        public void DeleteRow()
+        {
+            if (null == ContextCell)
+            {
+                return;
+            }
+            m_originalTextTracker.Invalidate(ContextCell.ContentStart);
+            if (!(ContextCell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
+
+            if (rg.Rows.Count <= 1)
+            {
+                if (rg.Parent is Table table)
+                {
+                    m_editor.Document.Blocks.Remove(table);
+                }
+                m_markDirty();
+                return;
+            }
+            rg.Rows.Remove(row);
+            // 削除した行が最上段だった場合、繰り上がった新しい最上段のセルに上辺の罫線が
+            // 必要になるため、表全体の罫線をApplyTableCellBordersで設定し直す。
+            if (rg.Parent is Table refreshTable)
+            {
+                BlockStyles.ApplyTableCellBorders(refreshTable, m_cellBorder);
+            }
+            // 行削除後、残ったセルの枠線が消えて見えることがあるため、念のため
+            // レイアウトを強制再計算する（上の罫線再設定だけでは解消しない場合がある）。
+            m_editor.UpdateLayout();
+            m_markDirty();
+        }
+
+        /// <summary>ContextCellが属する列を削除する（表の唯一の列なら表ごと削除する）。</summary>
+        public void DeleteColumn()
+        {
+            if (null == ContextCell)
+            {
+                return;
+            }
+            m_originalTextTracker.Invalidate(ContextCell.ContentStart);
+            if (!(ContextCell.Parent is TableRow row))
+            {
+                return;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
+            if (!(rg.Parent is Table table))
+            {
+                return;
+            }
+
+            int colIndex = row.Cells.IndexOf(ContextCell);
+
+            if (row.Cells.Count <= 1)
+            {
+                m_editor.Document.Blocks.Remove(table);
+                m_markDirty();
+                return;
+            }
+
+            foreach (TableRow r in rg.Rows)
+            {
+                if (colIndex < r.Cells.Count)
+                {
+                    r.Cells.RemoveAt(colIndex);
+                }
+            }
+            if (table.Columns.Count > colIndex)
+            {
+                table.Columns.RemoveAt(colIndex);
+            }
+            // 区切り行のダッシュ数の記録も列の増減に合わせて同じ位置の要素を取り除く
+            // （InsertColumn側のInsertIntoSourceDashCountsと対になる処理。
+            // BlockStyles.RemoveFromSourceDashCounts参照）。
+            BlockStyles.RemoveFromSourceDashCounts(table, colIndex);
+            // 削除した列が最左列だった場合、繰り上がった新しい最左列のセルに左辺の罫線が
+            // 必要になるため、表全体の罫線を設定し直す（DeleteRow側と同じ理由）。
+            BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
+            // DeleteRow側と同じ理由による対症療法。
+            m_editor.UpdateLayout();
+            m_markDirty();
+        }
+
+        /// <summary>ContextCellが属する表全体を削除する（行・列を1つずつ削除するのではなく、
+        /// 表そのものを右クリックメニューから直接削除したい場合用）。</summary>
+        public void DeleteTable()
+        {
+            if (null == ContextCell)
+            {
+                return;
+            }
+            m_originalTextTracker.Invalidate(ContextCell.ContentStart);
+            var table = FindEnclosingTable(ContextCell);
+            if (null == table)
+            {
+                return;
+            }
+            m_editor.Document.Blocks.Remove(table);
+            m_markDirty();
+        }
+
+        /// <summary>ContextCellが属する表全体を、現在の選択状態とは関係なく、Excelとの連携
+        /// （HandleCopying）と同じ形式（タブ区切りテキスト＋罫線付きHTML）でクリップボードへ
+        /// コピーする（右クリックメニュー「表をコピー」用）。選択範囲を必要とするCopying
+        /// イベントに頼らず、選択が無い状態でも表全体をコピーできる。</summary>
+        public void CopyTable()
+        {
+            if (null == ContextCell)
+            {
+                return;
+            }
+            var table = FindEnclosingTable(ContextCell);
+            if (null == table)
+            {
+                return;
+            }
+            string tsv = TableToTsv(table);
+            string htmlFragment = TableToHtmlFragment(table);
+            var data = new DataObject();
+            data.SetData(DataFormats.Text, tsv);
+            data.SetData(DataFormats.Html, BuildHtmlClipboardFragment(htmlFragment));
+            Clipboard.SetDataObject(data);
+        }
+
+        // ---------------- Excelとのコピー&ペースト連携 ----------------
+
+        private List<TableRow> GetTableRows(Table a_table)
+        {
+            var rows = new List<TableRow>();
+            foreach (TableRowGroup rg in a_table.RowGroups)
+            {
+                foreach (TableRow r in rg.Rows)
+                {
+                    rows.Add(r);
+                }
+            }
+            return rows;
+        }
+
+        private Table FindEnclosingTable(TableCell a_cell)
+        {
+            if (!(a_cell.Parent is TableRow row))
+            {
+                return null;
+            }
+            if (!(row.Parent is TableRowGroup rg))
+            {
+                return null;
+            }
+            return rg.Parent as Table;
+        }
+
+        private class CellRange
+        {
+            public int m_minRow, m_maxRow, m_minCol, m_maxCol;
+        }
+
+        /// <summary>
+        /// startCellとendCellを表の行/列グリッド内で特定し、両方を含む最小の矩形範囲を返す。
+        /// どちらかのセルが見つからなければ null を返す。
+        /// </summary>
+        /// <param name="a_rows">対象の行一覧。</param>
+        /// <param name="a_startCell">選択範囲の開始セル。</param>
+        /// <param name="a_endCell">選択範囲の終了セル。</param>
+        /// <returns>選択されたセル範囲。どちらかのセルが見つからなければnull。</returns>
+        private CellRange GetSelectedCellRange(List<TableRow> a_rows, TableCell a_startCell, TableCell a_endCell)
+        {
+            int startRow = -1, startCol = -1, endRow = -1, endCol = -1;
+            for (int r = 0; r < a_rows.Count; r++)
+            {
+                int c = a_rows[r].Cells.IndexOf(a_startCell);
+                if (c >= 0) { startRow = r; startCol = c; }
+                c = a_rows[r].Cells.IndexOf(a_endCell);
+                if (c >= 0) { endRow = r; endCol = c; }
+            }
+            if (startRow < 0 ||
+                endRow < 0) return null;
+
+            return new CellRange
+            {
+                m_minRow = Math.Min(startRow, endRow),
+                m_maxRow = Math.Max(startRow, endRow),
+                m_minCol = Math.Min(startCol, endCol),
+                m_maxCol = Math.Max(startCol, endCol)
+            };
+        }
+
+        private string RangeToTsv(List<TableRow> a_rows, CellRange a_range)
+        {
+            var lines = new List<string>();
+            for (int r = a_range.m_minRow; r <= a_range.m_maxRow; r++)
+            {
+                var cells = a_rows[r].Cells.Cast<TableCell>().ToList();
+                var rowTexts = new List<string>();
+                for (int c = a_range.m_minCol;
+                     c <= a_range.m_maxCol &&
+                     c < cells.Count;
+                     c++)
+                {
+                    rowTexts.Add(CellPlainText(cells[c]).Replace('\t', ' ').Replace("\r", " ").Replace("\n", " "));
+                }
+                lines.Add(string.Join("\t", rowTexts));
+            }
+            return string.Join("\r\n", lines);
+        }
+
+        private string RangeToHtmlFragment(List<TableRow> a_rows, CellRange a_range)
+        {
+            var sb = new StringBuilder();
+            sb.Append("<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse:collapse;\">");
+            for (int r = a_range.m_minRow; r <= a_range.m_maxRow; r++)
+            {
+                sb.Append("<tr>");
+                var cells = a_rows[r].Cells.Cast<TableCell>().ToList();
+                for (int c = a_range.m_minCol;
+                     c <= a_range.m_maxCol &&
+                     c < cells.Count;
+                     c++)
+                {
+                    // 選択範囲の先頭行が「表そのもののヘッダー行」である場合だけ th として書き出す。
+                    string tag = 0 == r ? "th" : "td";
+                    string text = WebUtility.HtmlEncode(CellPlainText(cells[c])).Replace("\n", "<br>");
+                    sb.Append('<').Append(tag).Append(" style=\"border:1px solid #999999;padding:4px 8px;\">")
+                      .Append(text).Append("</").Append(tag).Append('>');
+                }
+                sb.Append("</tr>");
+            }
+            sb.Append("</table>");
+            return sb.ToString();
+        }
+
+        private string CellPlainText(TableCell a_cell)
+        {
+            var sb = new StringBuilder();
+            // セル内の改行はLineBreakではなく複数のParagraphで表現される（IME位置ずれ対策。
+            // HeadingCodeBlockEditor.InsertParagraphSplitAtCaret参照）。ここで'\n'を挟んで
+            // 連結しないと別々の行が区切りなく連結されてしまう。呼び出し元（RangeToTsv・
+            // RangeToHtmlFragment・TableToTsv・TableToHtmlFragment）がこの'\n'をさらに変換する
+            // （TSVでは半角スペースへ、HTMLでは&lt;br&gt;へ）。
+            bool firstParaFlg = true;
+            foreach (Block b in a_cell.Blocks)
+            {
+                if (b is Paragraph p)
+                {
+                    if (!firstParaFlg)
+                    {
+                        sb.Append('\n');
+                    }
+                    sb.Append(new TextRange(p.ContentStart, p.ContentEnd).Text);
+                    firstParaFlg = false;
+                }
+            }
+            return sb.ToString().Trim();
+        }
+
+        private string TableToTsv(Table a_table)
+        {
+            var lines = new List<string>();
+            foreach (var row in GetTableRows(a_table))
+            {
+                var cellTexts = row.Cells.Cast<TableCell>()
+                    .Select(c => CellPlainText(c).Replace('\t', ' ').Replace("\r", " ").Replace("\n", " "));
+                lines.Add(string.Join("\t", cellTexts));
+            }
+            return string.Join("\r\n", lines);
+        }
+
+        private string TableToHtmlFragment(Table a_table)
+        {
+            var sb = new StringBuilder();
+            sb.Append("<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse:collapse;\">");
+            var rows = GetTableRows(a_table);
+            for (int r = 0; r < rows.Count; r++)
+            {
+                sb.Append("<tr>");
+                foreach (TableCell cell in rows[r].Cells)
+                {
+                    string tag = 0 == r ? "th" : "td";
+                    string text = WebUtility.HtmlEncode(CellPlainText(cell)).Replace("\n", "<br>");
+                    sb.Append('<').Append(tag).Append(" style=\"border:1px solid #999999;padding:4px 8px;\">")
+                      .Append(text).Append("</").Append(tag).Append('>');
+                }
+                sb.Append("</tr>");
+            }
+            sb.Append("</table>");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// HTMLフラグメントを、WindowsのCF_HTMLクリップボード形式が要求するヘッダー
+        /// （Version/StartHTML/EndHTML/StartFragment/EndFragmentのバイトオフセット）で包む。
+        /// これにより、Excel・Word・ブラウザ等への貼り付け時に単なるプレーンテキストではなく
+        /// 本物のHTMLとして認識される。オフセットはUTF-8バイト数で計算しているため、
+        /// 日本語などASCII以外を含むセルでも正しく動作する。
+        /// </summary>
+        /// <param name="a_htmlBodyFragment">HTMLフラグメントの本文。</param>
+        /// <returns>CF_HTML形式のヘッダーを付けて包んだ文字列。</returns>
+        private string BuildHtmlClipboardFragment(string a_htmlBodyFragment)
+        {
+            const string HTML_PREFIX = "<html><body><!--StartFragment-->";
+            const string HTML_SUFFIX = "<!--EndFragment--></body></html>";
+            const string HEADER_TEMPLATE =
+                "Version:0.9\r\n" +
+                "StartHTML:{0:0000000000}\r\n" +
+                "EndHTML:{1:0000000000}\r\n" +
+                "StartFragment:{2:0000000000}\r\n" +
+                "EndFragment:{3:0000000000}\r\n";
+
+            int headerByteLength = Encoding.UTF8.GetByteCount(string.Format(HEADER_TEMPLATE, 0, 0, 0, 0));
+            int startHtml = headerByteLength;
+            int startFragment = startHtml + Encoding.UTF8.GetByteCount(HTML_PREFIX);
+            int endFragment = startFragment + Encoding.UTF8.GetByteCount(a_htmlBodyFragment);
+            int endHtml = endFragment + Encoding.UTF8.GetByteCount(HTML_SUFFIX);
+
+            string header = string.Format(HEADER_TEMPLATE, startHtml, endHtml, startFragment, endFragment);
+            return header + HTML_PREFIX + a_htmlBodyFragment + HTML_SUFFIX;
+        }
+
+        /// <summary>Ctrl+Cでの表セル範囲コピー時に、TSVとCF_HTML形式をクリップボードへ追加し、
+        /// Excelへの貼り付けが正しく表として認識されるようにする。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        public void HandleCopying(object a_sender, DataObjectCopyingEventArgs a_args)
+        {
+            if (m_isSourceMode() || a_args.IsDragDrop)
+            {
+                return;
+            }
+
+            var selection = m_editor.Selection;
+            if (null == selection || selection.IsEmpty)
+            {
+                return;
+            }
+
+            var startCell = selection.Start?.Paragraph?.Parent as TableCell;
+            var endCell = selection.End?.Paragraph?.Parent as TableCell;
+            var anyCell = startCell ?? endCell;
+            if (null == anyCell)
+            {
+                return;
+            }
+
+            var table = FindEnclosingTable(anyCell);
+            if (null == table)
+            {
+                return;
+            }
+
+            var rows = GetTableRows(table);
+            CellRange range = null;
+            if (null != startCell &&
+                null != endCell &&
+                FindEnclosingTable(startCell) == table &&
+                FindEnclosingTable(endCell) == table)
+            {
+                range = GetSelectedCellRange(rows, startCell, endCell);
+            }
+
+            // 正確なセル範囲が特定できればその範囲だけをコピーし、そうでなければ
+            // （選択範囲が表の外にはみ出している場合など）表全体を書き出す。
+            string tsv = null != range ? RangeToTsv(rows, range) : TableToTsv(table);
+            string htmlFragment = null != range ? RangeToHtmlFragment(rows, range) : TableToHtmlFragment(table);
+            a_args.DataObject.SetData(DataFormats.Text, tsv);
+            a_args.DataObject.SetData(DataFormats.Html, BuildHtmlClipboardFragment(htmlFragment));
+        }
+
+        private List<List<string>> TryParseHtmlTable(string a_html)
+        {
+            var tableMatch = Regex.Match(a_html, "<table[^>]*>(.*?)</table>", RegexOptions.Singleline | RegexOptions.IgnoreCase);
+            if (!tableMatch.Success)
+            {
+                return null;
+            }
+
+            var rows = new List<List<string>>();
+            foreach (Match rowMatch in Regex.Matches(tableMatch.Groups[1].Value, "<tr[^>]*>(.*?)</tr>", RegexOptions.Singleline | RegexOptions.IgnoreCase))
+            {
+                var cells = new List<string>();
+                foreach (Match cellMatch in Regex.Matches(rowMatch.Groups[1].Value, "<t[dh][^>]*>(.*?)</t[dh]>", RegexOptions.Singleline | RegexOptions.IgnoreCase))
+                {
+                    cells.Add(StripHtmlToText(cellMatch.Groups[1].Value));
+                }
+                if (cells.Count > 0)
+                {
+                    rows.Add(cells);
+                }
+            }
+            return rows.Count > 0 ? rows : null;
+        }
+
+        private string StripHtmlToText(string a_html)
+        {
+            string text = Regex.Replace(a_html, "<br\\s*/?>", "\n", RegexOptions.IgnoreCase);
+            text = Regex.Replace(text, "<[^>]+>", "");
+            text = WebUtility.HtmlDecode(text);
+            return text.Trim();
+        }
+
+        private bool LooksLikeTsv(string a_text)
+        {
+            return !string.IsNullOrEmpty(a_text) && a_text.Contains('\t');
+        }
+
+        private List<List<string>> ParseTsv(string a_text)
+        {
+            var lines = a_text.Replace("\r\n", "\n").TrimEnd('\n').Split('\n');
+            return lines.Select(line => line.Split('\t').ToList()).ToList();
+        }
+
+        /// <summary>解析済みの行/セルテキストからWPFのTableを組み立てて挿入する（HTMLまたはTSVの貼り付けから）。</summary>
+        /// <param name="a_rows">解析済みの行データ（先頭行がヘッダーとして扱われる）。</param>
+        public void InsertParsedTable(List<List<string>> a_rows)
+        {
+            if (null == a_rows ||
+                0 == a_rows.Count) return;
+            int colCount = a_rows.Max(r => r.Count);
+            if (0 == colCount)
+            {
+                return;
+            }
+
+            var table = new Table();
+            for (int c = 0; c < colCount; c++)
+            {
+                table.Columns.Add(new TableColumn());
+            }
+            var rg = new TableRowGroup();
+            table.RowGroups.Add(rg);
+
+            for (int r = 0; r < a_rows.Count; r++)
+            {
+                var row = new TableRow();
+                for (int c = 0; c < colCount; c++)
+                {
+                    string text = c < a_rows[r].Count ? a_rows[r][c] : "";
+                    var cell = new TableCell(new Paragraph(new Run(text)) { LineHeight = double.NaN, KeepTogether = true })
+                    {
+                        // 罫線は、表を組み立て終えた後にApplyTableCellBordersでまとめて設定する。
+                        Padding = new Thickness(8, 6, 8, 6)
+                    };
+                    if (0 == r)
+                    {
+                        cell.FontWeight = FontWeights.Bold;
+                        cell.Background = m_headerBackground;
+                    }
+                    row.Cells.Add(cell);
+                }
+                rg.Rows.Add(row);
+            }
+
+            // 隣接セルの境界線が二重に重ならないよう、表全体へまとめて罫線を設定する
+            // （BlockStyles.ApplyTableCellBorders参照）。
+            BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
+
+            // MarkdownConverter.csと同じ理由で一時的に無効化（BlockStyles.ApplyContentBasedColumnWidths参照）。
+            // BlockStyles.ApplyContentBasedColumnWidths(table);
+
+            m_runAsProgrammaticChange(() =>
+            {
+                var para = m_editor.CaretPosition?.Paragraph;
+                var trailingPara = new Paragraph();
+                if (null != para && para.Parent is FlowDocument)
+                {
+                    m_editor.Document.Blocks.InsertAfter(para, table);
+                    m_editor.Document.Blocks.InsertAfter(table, trailingPara);
+                    if (string.IsNullOrWhiteSpace(new TextRange(para.ContentStart, para.ContentEnd).Text))
+                    {
+                        m_editor.Document.Blocks.Remove(para);
+                    }
+                }
+                else
+                {
+                    m_editor.Document.Blocks.Add(table);
+                    m_editor.Document.Blocks.Add(trailingPara);
+                }
+
+                if (rg.Rows.Count > 0 &&
+                    rg.Rows[0].Cells.Count > 0 &&
+                    rg.Rows[0].Cells[0].Blocks.FirstBlock is Paragraph fp)
+                    m_editor.CaretPosition = fp.ContentStart;
+            });
+
+            m_refreshOutline();
+            m_editor.Focus();
+            m_markDirty();
+        }
+
+        /// <summary>貼り付け処理の入口。Excelなどからの表（HTML/TSV）を検出してTableへ変換し、
+        /// コードブロック内へのプレーンテキスト貼り付けにも対応する。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        public void HandlePasting(object a_sender, DataObjectPastingEventArgs a_args)
+        {
+            if (m_isSourceMode())
+            {
+                return;
+            }
+
+            // コードブロックへの貼り付けは、既定動作だと新しい段落に分割されてしまうため、
+            // 常にリテラルなテキストとして同じフェンス内に挿入する。
+            var currentPara = m_editor.CaretPosition?.Paragraph;
+            if (null != currentPara && currentPara.Tag is CodeBlockInfo && a_args.SourceDataObject.GetDataPresent(DataFormats.Text))
+            {
+                string codeText = (string)a_args.SourceDataObject.GetData(DataFormats.Text);
+                a_args.CancelCommand();
+                m_insertPlainTextWithLineBreaks(codeText);
+                return;
+            }
+
+            // Excel（および大半のリッチなコピー元）は、クリップボードにHTMLの<m_table>を乗せてくる。
+            // これが「表がコピーされた」ことを検出する最も確実な方法。
+            if (a_args.SourceDataObject.GetDataPresent(DataFormats.Html))
+            {
+                string html = (string)a_args.SourceDataObject.GetData(DataFormats.Html);
+                var tableData = TryParseHtmlTable(html);
+                if (null != tableData)
+                {
+                    a_args.CancelCommand();
+                    InsertParsedTable(tableData);
+                    return;
+                }
+            }
+
+            // フォールバック：タブ区切りのプレーンテキスト（コピー時にHTMLを出さないアプリ向け）。
+            // Xaml/Rtf形式が付いている場合はこのフォールバックを試みず、WPF標準のリッチテキスト
+            // 貼り付けに任せる（mdeの箇条書きはプレーンテキスト抽出で「マーカー\t本文」という
+            // タブ区切りになるため、リッチな文書全体を誤って表と認識してしまう不具合があった）。
+            if (!a_args.SourceDataObject.GetDataPresent(DataFormats.Xaml) &&
+                !a_args.SourceDataObject.GetDataPresent(DataFormats.Rtf) &&
+                a_args.SourceDataObject.GetDataPresent(DataFormats.Text))
+            {
+                string text = (string)a_args.SourceDataObject.GetData(DataFormats.Text);
+                if (LooksLikeTsv(text))
+                {
+                    var tableData = ParseTsv(text);
+                    if (null != tableData &&
+                        tableData.Any(r => r.Count > 1))
+                    {
+                        a_args.CancelCommand();
+                        InsertParsedTable(tableData);
+                    }
+                }
+            }
+        }
+    }
+}

@@ -5,6 +5,7 @@
 // message box instead of silently crashing the app. Also registers a Window-wide class handler so
 // F1 opens README.md from anywhere in the application (see GlobalPreviewKeyDown below).
 
+using mde.chromium;
 using System;
 using System.Threading.Tasks;
 using System.Windows;
