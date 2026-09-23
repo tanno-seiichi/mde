@@ -292,6 +292,15 @@ namespace mde.manager
         /// file:// URIは参照できることが多い。コピーのたびに、十分古い（既定で10分以上前の）
         /// 一時ファイルを機会的に削除する（貼り付けが完了した後もファイル自体は残ってしまうが、
         /// 明示的な削除タイミングが無いための妥協。詳細はDEVELOPMENT_LOG.md参照）。
+        ///
+        /// 【実機で内容が完全に同一の画像だけが消える不具合が報告された件への対応】同じ画像
+        /// （バイト列として完全に同一）を1回のコピー操作で複数箇所に貼り付けた場合に、後者の
+        /// 画像だけがExcelへの貼り付け結果に反映されない（消えてしまう）現象が実機で報告
+        /// された。ファイル名（一時ファイルのGUID部分）は毎回一意にしていたにもかかわらず
+        /// 発生したことから、Excel側が画像そのものの内容（バイト列）を基準に重複と判定して
+        /// いる可能性を疑い、書き出す一時ファイルのバイト列そのものを必ず一意にするよう
+        /// 変更した（末尾に無害な乱数バイト列を追記する。詳細は下記コメント参照）。ただし
+        /// この対応は未確認の推測に基づくものであり、実機での確認が必要。
         /// </summary>
         /// <param name="a_img">対象の画像。</param>
         /// <returns>一時ファイルのfile:// URI文字列。書き出せなければnull。</returns>
@@ -308,6 +317,24 @@ namespace mde.manager
                 CleanupOldClipboardTempFiles();
                 string destPath = Path.Combine(m_clipboardTempDir, Guid.NewGuid().ToString("N") + Path.GetExtension(sourcePath));
                 File.Copy(sourcePath, destPath, true);
+
+                // 末尾へランダムなバイト列を追記し、コピー元が同一の画像であっても、書き出す
+                // 一時ファイルのバイト列は毎回必ず異なるようにする。PNG（IENDチャンクで終端）・
+                // JPEG（EOIマーカーで終端）・GIF（トレーラーバイトで終端）・WebP（RIFFヘッダーの
+                // 宣言済みチャンク長で終端）はいずれも、データ本体の終わりが形式内部で明示的に
+                // 分かる構造になっており、対応するデコーダは通常そこで読み込みを止めるため、
+                // 末尾に無害なバイト列を追記しても見た目には影響しない。BMPは一部の実装で
+                // ファイルサイズ全体を厳密に検証することがあり得るため対象外とする。
+                string ext = Path.GetExtension(destPath).ToLowerInvariant();
+                if (".bmp" != ext)
+                {
+                    byte[] uniqueMarker = Guid.NewGuid().ToByteArray();
+                    using (var stream = new FileStream(destPath, FileMode.Append, FileAccess.Write))
+                    {
+                        stream.Write(uniqueMarker, 0, uniqueMarker.Length);
+                    }
+                }
+
                 return new Uri(destPath).AbsoluteUri;
             }
             catch

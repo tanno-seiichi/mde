@@ -2,13 +2,19 @@
 //
 // mde (Markdown インラインエディタ) の一部。
 // 見出し・段落・箇条書き・タスクリスト・コードブロック・水平線・画像・表など、選択した
-// 内容全般を選択してコピーした際、Excel等へ貼り付けたときに見た目（書式）を保ったまま
-// 展開されるよう、クリップボード用のHTML断片（CF_HTML）とプレーンテキストを組み立てる。
-// 表のセル範囲だけをきっちり選択したコピー（TableEditor.HandleCopying）と対になる処理で、
-// 両方ともMainWindowでDataObject.AddCopyingHandlerに登録し、TableEditorの方を先に登録する
-// ことで、表のセル範囲選択時はそちらが優先されるようにしている（詳細はHandleCopyingの
-// コメント参照）。見出しや段落と表が混在する選択範囲（表全体を含むがセル範囲としては
-// 綺麗に特定できないもの）は、このクラスが表も含めて展開する。
+// 内容全般を右クリックメニュー「Excel用にコピー」でコピーした際、Excel等へ貼り付けたときに
+// 見た目（書式）を保ったまま展開されるよう、クリップボード用のHTML断片（CF_HTML）と
+// プレーンテキストを組み立てる。表のセル範囲だけをきっちり選択したコピー（TableEditor.
+// TryCopySelectionForExcel）と対になる処理で、MainWindow.CopyForExcelItemClickが
+// TableEditor側を先に呼び、そちらがtrueを返さなかった場合（表のセル範囲にきっちり収まる
+// 選択ではなかった場合）にこちらを呼ぶ（詳細はTryCopySelectionForExcelのコメント参照）。
+// 見出しや段落と表が混在する選択範囲（表全体を含むがセル範囲としては綺麗に特定できない
+// もの）は、このクラスが表も含めて展開する。
+//
+// 以前はCtrl+C自体をDataObject.AddCopyingHandlerで乗っ取り、自動的にこの処理を行っていたが、
+// クリップボードに常時HTML形式が載るようになった結果、mde同士のCtrl+C→Ctrl+V（本来Xaml/Rtf
+// 形式で構造をそのまま復元するはずの貼り付け）まで壊れてしまうことが実機で判明したため撤回し、
+// 右クリックメニューからの明示的な呼び出しのみにした（詳細はDEVELOPMENT_LOG.md参照）。
 //
 // Excelは、貼り付けるHTMLに<table>タグが無いと、複数の段落や見出しを1つのセルへ改行区切りで
 // まとめて貼り付けてしまい、行ごとに別セルへは分かれない。表のコピーと同じ感覚（1項目1行）で
@@ -46,7 +52,7 @@ namespace mde.editor
         /// <summary>Excelの既定の行の高さ（ピクセル）。既定値15pt（Excelの標準フォント・
         /// 標準の行の高さ）を、96dpiでのピクセル換算（1pt = 96/72px）で表した値。画像を
         /// 含む行の後に挿入する空白行の数（画像の高さが何行分に相当するか）の計算に使う
-        /// （HandleCopying参照）。</summary>
+        /// （TryCopySelectionForExcel参照）。</summary>
         private const double ExcelDefaultRowHeightPx = 20.0;
 
         /// <param name="a_editor">編集対象のRichTextBox。</param>
@@ -78,7 +84,7 @@ namespace mde.editor
             /// <summary>段落・見出し・コードブロック・水平線・画像など、独立したブロックとして
             /// 扱う行はtrue（BuildParagraphRow参照）、箇条書きの項目や表の行はfalseのまま。
             /// true の行の前後には、Excel上でも編集画面に近い余白を再現するため、高さ1行分の
-            /// 空白行を挟む（箇条書きの項目同士・表の行同士は詰めたままにする。HandleCopying
+            /// 空白行を挟む（箇条書きの項目同士・表の行同士は詰めたままにする。TryCopySelectionForExcel
             /// 参照）。</summary>
             public bool ParagraphKindFlg;
 
@@ -87,38 +93,41 @@ namespace mde.editor
             /// 広げてくれず、セルのheightスタイルを指定するだけでも次の行と重なって表示されて
             /// しまうことがあるため、この高さが実際のExcelの行何行分に相当するかを計算し、
             /// その行数分の空白行を後ろに挿入することで重なりを防ぐ（AppendImage・
-            /// HandleCopying・ExcelDefaultRowHeightPx参照）。</summary>
+            /// TryCopySelectionForExcel・ExcelDefaultRowHeightPx参照）。</summary>
             public double ImageHeightPx;
         }
 
         /// <summary>
-        /// Ctrl+Cでの表以外の部分（見出し・段落・箇条書き等）のコピー時に、TSV代わりの
-        /// プレーンテキストとCF_HTML形式をクリップボードへ追加し、Excelへの貼り付けが
-        /// 見た目を保ったまま行として展開されるようにする。TableEditor.HandleCopyingが
-        /// このハンドラより先に登録されており、表のセル範囲を選択していた場合は既にHTML形式
-        /// をセット済みのはずなので、その場合は何もしない（二重に上書きしない）。
+        /// 右クリックメニュー「Excel用にコピー」用。表以外の部分（見出し・段落・箇条書き等）を
+        /// 含む選択範囲について、TSV代わりのプレーンテキストとCF_HTML形式でクリップボードへ
+        /// コピーし、Excelへの貼り付けが見た目を保ったまま行として展開されるようにする。
+        /// TableEditor.TryCopySelectionForExcelが先に呼ばれ、選択範囲が表のセル範囲にきっちり
+        /// 収まっていた場合はそちらがtrueを返して既にコピー済みのため、このメソッドは呼ばれない
+        /// （MainWindow.CopyForExcelItemClick参照）。
+        /// 以前はCtrl+C自体をDataObject.AddCopyingHandlerで乗っ取って自動的に行っていたが、
+        /// クリップボードに常時HTML形式（&lt;table&gt;を含む）が載るようになった結果、mde同士の
+        /// Ctrl+C→Ctrl+V（本来Xaml/Rtf形式で構造をそのまま復元するはずの貼り付け）まで、
+        /// TableEditor.HandlePastingの「HTMLに&lt;table&gt;があれば表として解釈する」分岐に
+        /// 誤って捕まってしまい、画像等が失われる形で壊れてしまうことが実機で判明したため撤回し、
+        /// 明示的なメニュー操作からのみ呼び出す方式にした（詳細はDEVELOPMENT_LOG.md参照）。
         /// </summary>
-        /// <param name="a_sender">イベントの発生元。</param>
-        /// <param name="a_args">イベントの引数。</param>
-        public void HandleCopying(object a_sender, DataObjectCopyingEventArgs a_args)
+        /// <returns>クリップボードへコピーした場合はtrue。選択が空、コピー対象の内容が
+        /// 無かった場合等はfalseを返す。</returns>
+        public bool TryCopySelectionForExcel()
         {
-            if (m_isSourceMode() || a_args.IsDragDrop)
+            if (m_isSourceMode())
             {
-                return;
-            }
-            if (a_args.DataObject.GetDataPresent(DataFormats.Html))
-            {
-                return;
+                return false;
             }
 
             var selection = m_editor.Selection;
             if (null == selection || selection.IsEmpty)
             {
-                return;
+                return false;
             }
 
             // 選択範囲が単一の段落（箇条書き項目・見出し含む）内に完全に収まっており、
-            // かつその段落の一部分だけを選択している場合は、このハンドラでは何もしない
+            // かつその段落の一部分だけを選択している場合は、このメソッドでは何もしない
             // （単語の一部を選択しただけのコピーまで、書式付きの1行貼り付けに変えてしまうと、
             // 他アプリへの通常のコピー&ペーストの挙動まで変わってしまうため）。段落全体を
             // 選択している場合（トリプルクリック等）は対象に含める。
@@ -130,7 +139,7 @@ namespace mde.editor
                 string wholeText = new TextRange(startPara.ContentStart, startPara.ContentEnd).Text;
                 if (selectedText.Trim() != wholeText.Trim())
                 {
-                    return;
+                    return false;
                 }
             }
 
@@ -139,7 +148,7 @@ namespace mde.editor
             var contentRows = rows.Where(r => r.HasContent).ToList();
             if (0 == contentRows.Count)
             {
-                return;
+                return false;
             }
 
             // 外側の<table>自体は、表以外の部分（見出し・段落・箇条書き等）をExcelで1行1セルに
@@ -214,8 +223,11 @@ namespace mde.editor
             }
             html.Append("</table>");
 
-            a_args.DataObject.SetData(DataFormats.Text, string.Join("\r\n", textLines));
-            a_args.DataObject.SetData(DataFormats.Html, TableEditor.BuildHtmlClipboardFragment(html.ToString()));
+            var data = new DataObject();
+            data.SetData(DataFormats.Text, string.Join("\r\n", textLines));
+            data.SetData(DataFormats.Html, TableEditor.BuildHtmlClipboardFragment(html.ToString()));
+            Clipboard.SetDataObject(data);
+            return true;
         }
 
         // ======================================================================
@@ -269,9 +281,9 @@ namespace mde.editor
                 }
                 else if (block is Table table)
                 {
-                    // 表を単独で選択してコピーした場合は、既存のTableEditor.HandleCopyingが
-                    // 先に処理する（登録順。このハンドラが呼ばれる時点では既にHTML形式が
-                    // セット済みで、HandleCopying冒頭でreturnしている）。ここに来るのは、
+                    // 表のセル範囲にきっちり収まる選択は、既存のTableEditor.
+                    // TryCopySelectionForExcelが先に処理し、その場合このメソッド自体が
+                    // 呼ばれない（MainWindow.CopyForExcelItemClick参照）。ここに来るのは、
                     // 見出しや段落と表が混在する選択範囲のうち、表を含む部分。m_tableEditorが
                     // 無い場合（通常は無いはずだが念のため）は対象外とする。
                     previousRow = null;
@@ -335,7 +347,7 @@ namespace mde.editor
                         }
                         if (null != itemRow)
                         {
-                            AppendParagraphContinuation(itemRow, contPara);
+                            AppendParagraphContinuation(itemRow, contPara, true);
                         }
                         else
                         {
@@ -360,7 +372,7 @@ namespace mde.editor
         {
             // 段落・見出し・コードブロック・水平線・画像は、いずれも編集画面上では独立した
             // ブロックとして前後に余白を持つため、ParagraphKindFlgをtrueにしておく
-            // （HandleCopyingでの空白行の挿入判定に使う。Row.ParagraphKindFlg参照）。
+            // （TryCopySelectionForExcelでの空白行の挿入判定に使う。Row.ParagraphKindFlg参照）。
             var row = new Row { HasContent = true, ParagraphKindFlg = true };
             if (a_p.Tag is HorizontalRuleInfo)
             {
@@ -399,13 +411,32 @@ namespace mde.editor
             return row;
         }
 
-        private void AppendParagraphContinuation(Row a_row, Paragraph a_contPara)
+        /// <param name="a_row">追記先の行。</param>
+        /// <param name="a_contPara">継続段落（Shift+Enterによる改行後の段落）。</param>
+        /// <param name="a_indentFlg">true の場合、行頭に半角スペース2つ分のインデントを付ける
+        /// （箇条書きの項目内での継続行だと分かるようにするユーザー依頼。段落・見出し等、
+        /// 箇条書きの外での継続行では付けない）。</param>
+        private void AppendParagraphContinuation(Row a_row, Paragraph a_contPara, bool a_indentFlg = false)
         {
             a_row.Html.Append("<br>");
             a_row.Text.Append('\n');
-            foreach (Inline inline in a_contPara.Inlines)
+            if (a_indentFlg)
             {
-                AppendInline(a_row, inline);
+                // 通常の半角スペースのままだと、HTMLとして解釈される際に連続する空白が
+                // 1つに詰められてしまい、Excelへの貼り付け時にインデントが消えてしまう
+                // ことがあるため、HTML側は&nbsp;で書き出す（BlankRowHtmlの空白セルと
+                // 同じ理由）。プレーンテキスト側は通常の半角スペースのままでよい。
+                a_row.Html.Append("&nbsp;&nbsp;");
+                a_row.Text.Append("  ");
+            }
+            var inlineList = new List<Inline>();
+            foreach (Inline inl in a_contPara.Inlines)
+            {
+                inlineList.Add(inl);
+            }
+            for (int i = 0; i < inlineList.Count; i++)
+            {
+                AppendInline(a_row, inlineList[i], i + 1 < inlineList.Count);
             }
         }
 
@@ -416,20 +447,30 @@ namespace mde.editor
                 a_row.Html.Append(WebUtility.HtmlEncode(a_prefixText));
                 a_row.Text.Append(a_prefixText);
             }
-            bool firstFlg = true;
-            foreach (Inline inline in a_inlines)
+            var inlineList = new List<Inline>();
+            foreach (Inline inl in a_inlines)
             {
-                bool skipThisFlg = a_skipFirstInlineFlg && firstFlg;
-                firstFlg = false;
-                if (skipThisFlg)
+                inlineList.Add(inl);
+            }
+            for (int i = 0; i < inlineList.Count; i++)
+            {
+                if (a_skipFirstInlineFlg && 0 == i)
                 {
                     continue;
                 }
-                AppendInline(a_row, inline);
+                AppendInline(a_row, inlineList[i], i + 1 < inlineList.Count);
             }
         }
 
-        private void AppendInline(Row a_row, Inline a_inline)
+        /// <summary>1つのInlineをHTML/プレーンテキストへ変換して追記する。</summary>
+        /// <param name="a_row">追記先の行。</param>
+        /// <param name="a_inline">対象のInline。</param>
+        /// <param name="a_hasMoreFlg">この呼び出し元の並びの中で、このInlineの後にさらに
+        /// 内容が続くかどうか。画像の直後に他の内容（テキスト等）が同じ&lt;td&gt;内で
+        /// 続くと、Excelへの貼り付け時に画像そのものが表示されなくなることが実機で
+        /// 判明したため（AppendImage参照）、画像を独立した行にするための&lt;br&gt;を
+        /// 挿入するかどうかの判断に使う。</param>
+        private void AppendInline(Row a_row, Inline a_inline, bool a_hasMoreFlg)
         {
             if (a_inline is LineBreak)
             {
@@ -438,7 +479,7 @@ namespace mde.editor
             }
             else if (a_inline is InlineUIContainer iuc && iuc.Child is Image img)
             {
-                AppendImage(a_row, img);
+                AppendImage(a_row, img, a_hasMoreFlg);
             }
             else if (a_inline is InlineUIContainer cbIuc && cbIuc.Child is CheckBox)
             {
@@ -451,9 +492,17 @@ namespace mde.editor
             }
             else if (a_inline is Span span)
             {
+                var nestedList = new List<Inline>();
                 foreach (Inline nested in span.Inlines)
                 {
-                    AppendInline(a_row, nested);
+                    nestedList.Add(nested);
+                }
+                for (int i = 0; i < nestedList.Count; i++)
+                {
+                    // Spanの末尾の要素については、Span自体の後にさらに内容が続くかどうか
+                    // （呼び出し元から渡されたa_hasMoreFlg）も引き継ぐ。
+                    bool childHasMoreFlg = i + 1 < nestedList.Count || a_hasMoreFlg;
+                    AppendInline(a_row, nestedList[i], childHasMoreFlg);
                 }
             }
         }
@@ -524,7 +573,7 @@ namespace mde.editor
             a_row.Html.Append(encodedText);
         }
 
-        private void AppendImage(Row a_row, Image a_img)
+        private void AppendImage(Row a_row, Image a_img, bool a_hasMoreFlg)
         {
             // data URI（Base64埋め込み）での実装を試したところ、実機でのExcelへの貼り付けで
             // 画像が表示されないことが判明したため、一時ファイルへコピーしてfile://で参照する
@@ -539,12 +588,28 @@ namespace mde.editor
                 return;
             }
 
+            // セルの左・上の罫線と画像が接して重なって見える点について、右下へずらす表示位置
+            // 調整を試みたが（§14.115〜14.117。style="margin:...;"のショートハンド・
+            // ロングハンド指定、<img>直前への&amp;nbsp;挿入のいずれも実機で全く効果が
+            // 見られなかった）、ユーザー判断によりこの調整自体を断念した。Excelは、HTML
+            // 貼り付けで挿入した<img>を、CSSのボックスモデルにもHTML上の出現位置にも
+            // 影響されず、独自の埋め込みPictureオブジェクトとしてセルの左上へ固定的に
+            // 配置しているとみられ、この経路での位置調整は行えない模様（詳細はDEVELOPMENT_LOG
+            // §14.115〜14.118参照）。同じ調整を再度試みないよう記録しておく。
             a_row.Html.Append("<img src=\"").Append(WebUtility.HtmlEncode(fileUri)).Append('"');
             if (!double.IsNaN(a_img.Width) && a_img.Width > 0)
             {
                 a_row.Html.Append(" width=\"").Append((int)a_img.Width).Append('"');
             }
             a_row.Html.Append('>');
+            // 画像の直後に他の内容（テキスト等）が同じ<td>内で続く場合、Excelへの貼り付け時に
+            // 画像そのものが表示されなくなる（画像が丸ごと消えてしまう）ことが実機で判明した。
+            // 画像単体だけが<td>の内容である場合は問題なく表示されるため、画像を他の内容から
+            // 独立した行にする（TableEditor.AppendCellInlinesの同じ対応も参照）。
+            if (a_hasMoreFlg)
+            {
+                a_row.Html.Append("<br>");
+            }
             a_row.Text.Append("[画像]");
 
             // 画像の実際の高さを覚えておき、後ろに何行分の空白行を挿入するかの計算に使う

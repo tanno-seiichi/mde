@@ -320,11 +320,17 @@ namespace mde
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version;
             m_outlineTree.ItemsSource = m_outlineManager.Items;
             m_folderTree.ItemsSource = m_folderTreeManager.Roots;
-            DataObject.AddCopyingHandler(m_editor, m_tableEditor.HandleCopying);
-            // 表以外の部分（見出し・段落・箇条書き等）のコピー用ハンドラ。表のセル範囲コピー
-            // （上のm_tableEditor.HandleCopying）を必ず先に登録し、表のセル範囲を選択していた
-            // 場合はそちらが優先されるようにする（ClipboardHtmlBuilder.HandleCopying参照）。
-            DataObject.AddCopyingHandler(m_editor, m_clipboardHtmlBuilder.HandleCopying);
+            // Excel向けのコピー形式（TSV・CF_HTML）は、以前はCtrl+C自体をDataObject.
+            // AddCopyingHandlerで乗っ取って自動生成していたが、その結果クリップボードに
+            // HTML形式（<table>を含む）が常時載るようになり、mde同士でのCtrl+C→Ctrl+V（本来
+            // Xaml/Rtf形式で構造をそのまま復元するはずの貼り付け）まで、TableEditor.
+            // HandlePastingの「HTMLに<table>があれば表として解釈する」分岐に誤って捕まって
+            // しまい、画像等が失われる形で壊れてしまうことが実機で判明した（詳細はDEVELOPMENT_
+            // LOG.md参照）。Ctrl+Cは元通りWPF標準のコピー（Xaml/Rtf/Text）に戻し、Excel向けの
+            // コピーは右クリックメニュー「Excel用にコピー」（CopyForExcelItemClick）から明示的に
+            // 呼び出す方式に変更した。TableEditor.TryCopySelectionForExcel・
+            // ClipboardHtmlBuilder.TryCopySelectionForExcelが、それぞれのHandleCopyingが
+            // 持っていた組み立てロジックをそのまま引き継いでいる。
             // 画像貼り付けハンドラを表・テキスト向けハンドラより先に登録する：ブラウザ等から
             // コピーした画像はHTML/テキストも同時に持つことがあるため、画像なら他に渡る前に
             // ここで処理する（詳細はEditorHandleInlineMarkdownPasting参照）。
@@ -1550,6 +1556,7 @@ namespace mde
             m_deleteTableMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_copyTableMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_copyCodeBlockMenuItem.Visibility = inCodeBlockFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_copyForExcelMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
             m_openImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_saveImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_deleteImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
@@ -1642,6 +1649,21 @@ namespace mde
         private void DeleteColumnItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteColumn();
         private void DeleteTableItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.DeleteTable();
         private void CopyTableItemClick(object a_sender, RoutedEventArgs a_args) => m_tableEditor.CopyTable();
+
+        /// <summary>右クリックメニュー「Excel用にコピー」。選択範囲を、見た目を保ったまま
+        /// Excelへ貼り付けられる形式（TSV・CF_HTML）でクリップボードへコピーする。表のセル
+        /// 範囲にきっちり収まる選択はTableEditor側、それ以外（見出し・段落・箇条書き・表が
+        /// 混在する選択等）はClipboardHtmlBuilder側が担当する（登録順ではなく、戻り値による
+        /// 判定に変更した点を除き、以前Ctrl+Cを乗っ取っていた頃と同じ優先順位）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void CopyForExcelItemClick(object a_sender, RoutedEventArgs a_args)
+        {
+            if (!m_tableEditor.TryCopySelectionForExcel())
+            {
+                m_clipboardHtmlBuilder.TryCopySelectionForExcel();
+            }
+        }
 
         // ---- 画像 ----
 
