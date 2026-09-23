@@ -156,6 +156,7 @@ namespace mde
         private readonly ListEditor m_listEditor;
         private readonly HeadingCodeBlockEditor m_headingCodeBlockEditor;
         private readonly TableEditor m_tableEditor;
+        private readonly ClipboardHtmlBuilder m_clipboardHtmlBuilder;
         private readonly InlineStyleEditor m_inlineStyleEditor;
         private readonly SearchReplaceService m_searchReplaceService;
         private readonly OutlineManager m_outlineManager;
@@ -282,7 +283,9 @@ namespace mde
             m_headingCodeBlockEditor = new HeadingCodeBlockEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange);
             m_tableEditor = new TableEditor(
                 m_editor, m_originalTextTracker, MarkDirty, RunAsProgrammaticChange, () => m_isSourceModeFlg,
-                m_outlineManager.Refresh, InsertPlainTextWithLineBreaksForCodeBlock, () => m_correctColumnWidthsFlg);
+                m_outlineManager.Refresh, InsertPlainTextWithLineBreaksForCodeBlock, () => m_correctColumnWidthsFlg,
+                m_imageManager);
+            m_clipboardHtmlBuilder = new ClipboardHtmlBuilder(m_editor, m_imageManager, m_tableEditor, () => m_isSourceModeFlg);
             m_folderTreeManager = new FolderTreeManager(
                 LoadFile, () => m_currentFilePath, () => m_currentFileIsDirtyFlg,
                 () => m_pendingFileEdits.Keys, PathsReferToSameFile, m_folderTree,
@@ -319,6 +322,10 @@ namespace mde
             m_outlineTree.ItemsSource = m_outlineManager.Items;
             m_folderTree.ItemsSource = m_folderTreeManager.Roots;
             DataObject.AddCopyingHandler(m_editor, m_tableEditor.HandleCopying);
+            // 表以外の部分（見出し・段落・箇条書き等）のコピー用ハンドラ。表のセル範囲コピー
+            // （上のm_tableEditor.HandleCopying）を必ず先に登録し、表のセル範囲を選択していた
+            // 場合はそちらが優先されるようにする（ClipboardHtmlBuilder.HandleCopying参照）。
+            DataObject.AddCopyingHandler(m_editor, m_clipboardHtmlBuilder.HandleCopying);
             // 画像貼り付けハンドラを表・テキスト向けハンドラより先に登録する：ブラウザ等から
             // コピーした画像はHTML/テキストも同時に持つことがあるため、画像なら他に渡る前に
             // ここで処理する（詳細はEditorHandleInlineMarkdownPasting参照）。

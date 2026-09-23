@@ -281,6 +281,69 @@ namespace mde.manager
             return File.Exists(full) ? full : null;
         }
 
+        private static readonly string m_clipboardTempDir = Path.Combine(Path.GetTempPath(), "mde_clipboard_images");
+
+        /// <summary>
+        /// Excel等へのコピー&amp;ペースト（TableEditor.AppendCellImage・ClipboardHtmlBuilder.
+        /// AppendImage参照）用に、画像を一時フォルダへコピーし、file://で参照できるようにする。
+        /// data URI（Base64埋め込み）で試したところ、多くのExcelのバージョンでHTML貼り付け時に
+        /// 画像が表示されない実機での報告があったための代替策。Office系アプリのHTML貼り付け
+        /// エンジンは、data URIのimg要素には対応していないことがあるが、実ファイルへの
+        /// file:// URIは参照できることが多い。コピーのたびに、十分古い（既定で10分以上前の）
+        /// 一時ファイルを機会的に削除する（貼り付けが完了した後もファイル自体は残ってしまうが、
+        /// 明示的な削除タイミングが無いための妥協。詳細はDEVELOPMENT_LOG.md参照）。
+        /// </summary>
+        /// <param name="a_img">対象の画像。</param>
+        /// <returns>一時ファイルのfile:// URI文字列。書き出せなければnull。</returns>
+        public string WriteTempFileForClipboard(Image a_img)
+        {
+            string sourcePath = GetExportableFilePath(a_img);
+            if (string.IsNullOrEmpty(sourcePath))
+            {
+                return null;
+            }
+            try
+            {
+                Directory.CreateDirectory(m_clipboardTempDir);
+                CleanupOldClipboardTempFiles();
+                string destPath = Path.Combine(m_clipboardTempDir, Guid.NewGuid().ToString("N") + Path.GetExtension(sourcePath));
+                File.Copy(sourcePath, destPath, true);
+                return new Uri(destPath).AbsoluteUri;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void CleanupOldClipboardTempFiles()
+        {
+            try
+            {
+                DateTime cutoff = DateTime.Now.AddMinutes(-10);
+                foreach (string file in Directory.GetFiles(m_clipboardTempDir))
+                {
+                    try
+                    {
+                        if (File.GetLastWriteTime(file) < cutoff)
+                        {
+                            File.Delete(file);
+                        }
+                    }
+                    catch
+                    {
+                        // 貼り付け待ちで使用中の可能性があるファイルを無理に削除しようとしない。
+                        // 次回以降のコピー時に改めて削除を試みる。
+                    }
+                }
+            }
+            catch
+            {
+                // 一時フォルダの列挙自体に失敗しても、画像のコピー&ペースト自体には支障が
+                // ないため無視する。
+            }
+        }
+
         /// <summary>
         /// 右クリック「画像を保存…」。エクスプローラーへのドラッグ（同名ファイルはエクスプローラー
         /// 自身が上書き確認する）とは異なり、ここでは書き込みを自前で制御するため、同名の既存

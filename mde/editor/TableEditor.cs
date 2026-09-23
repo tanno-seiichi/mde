@@ -6,6 +6,7 @@
 // MainWindow本体への参照は持たず、必要な操作はコンストラクタで渡されたdelegate経由で行う。
 
 using mde.common;
+using mde.manager;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,6 +34,7 @@ namespace mde.editor
         private readonly Action m_refreshOutline;
         private readonly Action<string> m_insertPlainTextWithLineBreaks;
         private readonly Func<bool> m_correctColumnWidthsFlg;
+        private readonly ImageManager m_imageManager;
 
         /// <summary>右クリック時にマウス下にあったセル。右クリックメニューの各項目から参照される。</summary>
         public TableCell ContextCell { get; set; }
@@ -53,6 +55,9 @@ namespace mde.editor
         /// <param name="a_correctColumnWidthsFlg">メニュー「表示」→「列幅を補正する」の現在の
         /// 状態を返すdelegate（省略時はtrueとして扱う）。列幅適用時の見た目を決める
         /// （BlockStyles.ApplyEffectiveColumnWidths参照）。</param>
+        /// <param name="a_imageManager">Excelへのコピー時、セル内に埋め込まれた画像を
+        /// 一時ファイルへ書き出して参照するために使う（省略可。省略時はセル内の画像は
+        /// 「[画像]」のプレースホルダー文字列になる）。</param>
         public TableEditor(
             RichTextBox a_editor,
             OriginalTextTracker a_originalTextTracker,
@@ -61,7 +66,8 @@ namespace mde.editor
             Func<bool> a_isSourceMode,
             Action a_refreshOutline,
             Action<string> a_insertPlainTextWithLineBreaks,
-            Func<bool> a_correctColumnWidthsFlg = null)
+            Func<bool> a_correctColumnWidthsFlg = null,
+            ImageManager a_imageManager = null)
         {
             this.m_editor = a_editor;
             this.m_originalTextTracker = a_originalTextTracker;
@@ -71,6 +77,7 @@ namespace mde.editor
             this.m_refreshOutline = a_refreshOutline;
             this.m_insertPlainTextWithLineBreaks = a_insertPlainTextWithLineBreaks;
             this.m_correctColumnWidthsFlg = a_correctColumnWidthsFlg;
+            this.m_imageManager = a_imageManager;
         }
 
         private static readonly Brush m_headerBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
@@ -758,9 +765,8 @@ namespace mde.editor
                 {
                     // 選択範囲の先頭行が「表そのもののヘッダー行」である場合だけ th として書き出す。
                     string tag = 0 == r ? "th" : "td";
-                    string text = WebUtility.HtmlEncode(CellPlainText(cells[c])).Replace("\n", "<br>");
                     sb.Append('<').Append(tag).Append(" style=\"border:1px solid #999999;padding:4px 8px;\">")
-                      .Append(text).Append("</").Append(tag).Append('>');
+                      .Append(CellHtmlContent(cells[c])).Append("</").Append(tag).Append('>');
                 }
                 sb.Append("</tr>");
             }
@@ -792,7 +798,88 @@ namespace mde.editor
             return sb.ToString().Trim();
         }
 
-        private string TableToTsv(Table a_table)
+        /// <summary>
+        /// セルの内容を、Excelへのコピー用HTML断片として組み立てる。CellPlainTextと違い、
+        /// セル内に埋め込まれた画像（InlineUIContainer+Image）も一時ファイルへ書き出して
+        /// 埋め込む（m_imageManagerが無い場合、または画像の実ファイルが解決できない場合は
+        /// 「[画像]」のプレースホルダー文字列にする。ClipboardHtmlBuilder.AppendImageと
+        /// 同じ考え方）。文字の書式（太字等）まではここでは対象にしていない
+        /// （CellPlainText同様、既存の表コピー機能の範囲を大きく超えないよう、画像の欠落
+        /// 対策に絞っている）。
+        /// </summary>
+        /// <param name="a_cell">対象のセル。</param>
+        /// <returns>組み立てたHTML断片（セルの中身のみ。th/td自体のタグは含まない）。</returns>
+        private string CellHtmlContent(TableCell a_cell)
+        {
+            var sb = new StringBuilder();
+            bool firstParaFlg = true;
+            foreach (Block b in a_cell.Blocks)
+            {
+                if (b is Paragraph p)
+                {
+                    if (!firstParaFlg)
+                    {
+                        sb.Append("<br>");
+                    }
+                    AppendCellInlines(sb, p.Inlines);
+                    firstParaFlg = false;
+                }
+            }
+            return sb.ToString();
+        }
+
+        private void AppendCellInlines(StringBuilder a_sb, InlineCollection a_inlines)
+        {
+            foreach (Inline inline in a_inlines)
+            {
+                if (inline is LineBreak)
+                {
+                    a_sb.Append("<br>");
+                }
+                else if (inline is InlineUIContainer iuc && iuc.Child is System.Windows.Controls.Image img)
+                {
+                    AppendCellImage(a_sb, img);
+                }
+                else if (inline is Run run)
+                {
+                    if (!string.IsNullOrEmpty(run.Text))
+                    {
+                        a_sb.Append(WebUtility.HtmlEncode(run.Text));
+                    }
+                }
+                else if (inline is Span span)
+                {
+                    AppendCellInlines(a_sb, span.Inlines);
+                }
+            }
+        }
+
+        private void AppendCellImage(StringBuilder a_sb, System.Windows.Controls.Image a_img)
+        {
+            // data URI（Base64埋め込み）での実装を試したところ、実機でのExcelへの貼り付けで
+            // 画像が表示されないことが判明したため、一時ファイルへコピーしてfile://で参照する
+            // 方式にしている（ImageManager.WriteTempFileForClipboard参照。ClipboardHtmlBuilder.
+            // AppendImageと同じ理由・同じ方式）。
+            string fileUri = m_imageManager?.WriteTempFileForClipboard(a_img);
+            if (string.IsNullOrEmpty(fileUri))
+            {
+                a_sb.Append("[画像]");
+                return;
+            }
+            a_sb.Append("<img src=\"").Append(WebUtility.HtmlEncode(fileUri)).Append('"');
+            if (!double.IsNaN(a_img.Width) && a_img.Width > 0)
+            {
+                a_sb.Append(" width=\"").Append((int)a_img.Width).Append('"');
+            }
+            a_sb.Append('>');
+        }
+
+        /// <summary>表全体をタブ区切りテキスト（TSV）へ変換する。選択範囲コピー
+        /// （HandleCopying）の他、表を含む選択範囲のコピー（ClipboardHtmlBuilder）からも
+        /// 使うため、internalにしている。</summary>
+        /// <param name="a_table">対象の表。</param>
+        /// <returns>TSV形式の文字列。</returns>
+        internal string TableToTsv(Table a_table)
         {
             var lines = new List<string>();
             foreach (var row in GetTableRows(a_table))
@@ -804,10 +891,19 @@ namespace mde.editor
             return string.Join("\r\n", lines);
         }
 
-        private string TableToHtmlFragment(Table a_table)
+        /// <summary>
+        /// 表全体の行（&lt;tr&gt;...&lt;/tr&gt;の並び。外側の&lt;table&gt;タグは含まない）を
+        /// HTMLとして組み立てる。表を含む選択範囲のコピー時（ClipboardHtmlBuilder）に、
+        /// 選択範囲全体で組み立てている1つの&lt;table&gt;へ、表の行をそのまま展開して
+        /// 差し込むために使う（ネストした&lt;table&gt;にすると、貼り付け先での見え方が
+        /// 不確実なため、行として平らに展開する方式にしている）。TableToHtmlFragment
+        /// （単体の表としてコピーする場合）とはこの部分を共有する。
+        /// </summary>
+        /// <param name="a_table">対象の表。</param>
+        /// <returns>組み立てたHTML（&lt;tr&gt;...&lt;/tr&gt;の並びのみ）。</returns>
+        internal string BuildTableRowsHtml(Table a_table)
         {
             var sb = new StringBuilder();
-            sb.Append("<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse:collapse;\">");
             var rows = GetTableRows(a_table);
             for (int r = 0; r < rows.Count; r++)
             {
@@ -815,14 +911,18 @@ namespace mde.editor
                 foreach (TableCell cell in rows[r].Cells)
                 {
                     string tag = 0 == r ? "th" : "td";
-                    string text = WebUtility.HtmlEncode(CellPlainText(cell)).Replace("\n", "<br>");
                     sb.Append('<').Append(tag).Append(" style=\"border:1px solid #999999;padding:4px 8px;\">")
-                      .Append(text).Append("</").Append(tag).Append('>');
+                      .Append(CellHtmlContent(cell)).Append("</").Append(tag).Append('>');
                 }
                 sb.Append("</tr>");
             }
-            sb.Append("</table>");
             return sb.ToString();
+        }
+
+        private string TableToHtmlFragment(Table a_table)
+        {
+            return "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse:collapse;\">"
+                + BuildTableRowsHtml(a_table) + "</table>";
         }
 
         /// <summary>
@@ -830,11 +930,12 @@ namespace mde.editor
         /// （Version/StartHTML/EndHTML/StartFragment/EndFragmentのバイトオフセット）で包む。
         /// これにより、Excel・Word・ブラウザ等への貼り付け時に単なるプレーンテキストではなく
         /// 本物のHTMLとして認識される。オフセットはUTF-8バイト数で計算しているため、
-        /// 日本語などASCII以外を含むセルでも正しく動作する。
+        /// 日本語などASCII以外を含むセルでも正しく動作する。表以外の部分のコピー
+        /// （ClipboardHtmlBuilder）からも共通で使うため、internal staticにしている。
         /// </summary>
         /// <param name="a_htmlBodyFragment">HTMLフラグメントの本文。</param>
         /// <returns>CF_HTML形式のヘッダーを付けて包んだ文字列。</returns>
-        private string BuildHtmlClipboardFragment(string a_htmlBodyFragment)
+        internal static string BuildHtmlClipboardFragment(string a_htmlBodyFragment)
         {
             const string HTML_PREFIX = "<html><body><!--StartFragment-->";
             const string HTML_SUFFIX = "<!--EndFragment--></body></html>";
