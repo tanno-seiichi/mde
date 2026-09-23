@@ -646,7 +646,7 @@ namespace mde.editor
         }
 
         /// <summary>ContextCellが属する表全体を、現在の選択状態とは関係なく、Excelとの連携
-        /// （HandleCopying）と同じ形式（タブ区切りテキスト＋罫線付きHTML）でクリップボードへ
+        /// （TryCopySelectionForExcel）と同じ形式（タブ区切りテキスト＋罫線付きHTML）でクリップボードへ
         /// コピーする（右クリックメニュー「表をコピー」用）。選択範囲を必要とするCopying
         /// イベントに頼らず、選択が無い状態でも表全体をコピーできる。</summary>
         public void CopyTable()
@@ -775,10 +775,12 @@ namespace mde.editor
                     // 個別の色として認識されてしまう（実機で「色(C)」欄がスウォッチ表示になり、
                     // 「自動」という文字列にならないと報告されたため変更）。windowtextという
                     // 色キーワードを指定すると「自動」として認識される。太さもpx単位ではなく
-                    // pt単位（0.5pt。Excelの標準の罫線の太さ）にしている。表のセルについては
-                    // 「折り返して全体を表示する」を有効のままにしたいとのご要望があったため、
-                    // white-space:nowrap;（ClipboardHtmlBuilderの表以外の行に付けているもの。
-                    // §14.108参照）はここでは付けていない。
+                    // pt単位（0.5pt。Excelの標準の罫線の太さ）にしている。表以外の部分では、
+                    // 貼り付け時に「折り返して全体を表示する」を無効化しようとwhite-space:
+                    // nowrap;を試したことがあったが（§14.108・§14.109）、長い行が見た目上
+                    // 途中で切れて表示される問題が実機で見つかり撤回した（§14.110）。表の
+                    // セルには元々このプロパティを付けていない（表のセルは「折り返して全体を
+                    // 表示する」を有効のままにしたいとのご要望のため）。
                     sb.Append('<').Append(tag).Append(" style=\"border:0.5pt solid windowtext;padding:4px 8px;\">")
                       .Append(CellHtmlContent(cells[c])).Append("</").Append(tag).Append('>');
                 }
@@ -842,17 +844,27 @@ namespace mde.editor
             return sb.ToString();
         }
 
-        private void AppendCellInlines(StringBuilder a_sb, InlineCollection a_inlines)
+        /// <param name="a_outerHasMoreFlg">呼び出し元（Spanの入れ子からの再帰呼び出しの場合、
+        /// その外側）で、このInlineCollectionの後にさらに内容が続くかどうか。Span内の最後の
+        /// 要素が画像かどうかを判定する際に使う（AppendCellImageのa_hasMoreFlg参照）。</param>
+        private void AppendCellInlines(StringBuilder a_sb, InlineCollection a_inlines, bool a_outerHasMoreFlg = false)
         {
-            foreach (Inline inline in a_inlines)
+            var inlineList = new List<Inline>();
+            foreach (Inline inl in a_inlines)
             {
+                inlineList.Add(inl);
+            }
+            for (int i = 0; i < inlineList.Count; i++)
+            {
+                Inline inline = inlineList[i];
+                bool hasMoreFlg = i + 1 < inlineList.Count || a_outerHasMoreFlg;
                 if (inline is LineBreak)
                 {
                     a_sb.Append("<br>");
                 }
                 else if (inline is InlineUIContainer iuc && iuc.Child is System.Windows.Controls.Image img)
                 {
-                    AppendCellImage(a_sb, img);
+                    AppendCellImage(a_sb, img, hasMoreFlg);
                 }
                 else if (inline is Run run)
                 {
@@ -863,12 +875,17 @@ namespace mde.editor
                 }
                 else if (inline is Span span)
                 {
-                    AppendCellInlines(a_sb, span.Inlines);
+                    AppendCellInlines(a_sb, span.Inlines, hasMoreFlg);
                 }
             }
         }
 
-        private void AppendCellImage(StringBuilder a_sb, System.Windows.Controls.Image a_img)
+        /// <param name="a_hasMoreFlg">このセル内で、この画像の後にさらに他の内容（テキスト等）が
+        /// 続くかどうか。画像の直後に他の内容が同じ&lt;td&gt;内で続くと、Excelへの貼り付け時に
+        /// 画像そのものが表示されなくなる（丸ごと消えてしまう）ことが実機で判明したため、
+        /// 画像単体だけの行になるよう、後ろに&lt;br&gt;を挿入して他の内容から切り離す
+        /// （ClipboardHtmlBuilder.AppendImageの同じ対応も参照）。</param>
+        private void AppendCellImage(StringBuilder a_sb, System.Windows.Controls.Image a_img, bool a_hasMoreFlg)
         {
             // data URI（Base64埋め込み）での実装を試したところ、実機でのExcelへの貼り付けで
             // 画像が表示されないことが判明したため、一時ファイルへコピーしてfile://で参照する
@@ -880,16 +897,28 @@ namespace mde.editor
                 a_sb.Append("[画像]");
                 return;
             }
+            // セルの左・上の罫線と画像が接して重なって見える点について、右下へずらす表示位置
+            // 調整を試みたが（§14.115〜14.117。style="margin:...;"のショートハンド・
+            // ロングハンド指定、<img>直前への&amp;nbsp;挿入のいずれも実機で全く効果が
+            // 見られなかった）、ユーザー判断によりこの調整自体を断念した。Excelは、HTML
+            // 貼り付けで挿入した<img>を、CSSのボックスモデルにもHTML上の出現位置にも
+            // 影響されず、独自の埋め込みPictureオブジェクトとしてセルの左上へ固定的に
+            // 配置しているとみられ、この経路での位置調整は行えない模様（詳細はDEVELOPMENT_LOG
+            // §14.115〜14.118参照）。同じ調整を再度試みないよう記録しておく。
             a_sb.Append("<img src=\"").Append(WebUtility.HtmlEncode(fileUri)).Append('"');
             if (!double.IsNaN(a_img.Width) && a_img.Width > 0)
             {
                 a_sb.Append(" width=\"").Append((int)a_img.Width).Append('"');
             }
             a_sb.Append('>');
+            if (a_hasMoreFlg)
+            {
+                a_sb.Append("<br>");
+            }
         }
 
         /// <summary>表全体をタブ区切りテキスト（TSV）へ変換する。選択範囲コピー
-        /// （HandleCopying）の他、表を含む選択範囲のコピー（ClipboardHtmlBuilder）からも
+        /// （TryCopySelectionForExcel）の他、表を含む選択範囲のコピー（ClipboardHtmlBuilder）からも
         /// 使うため、internalにしている。</summary>
         /// <param name="a_table">対象の表。</param>
         /// <returns>TSV形式の文字列。</returns>
@@ -927,9 +956,8 @@ namespace mde.editor
                     string tag = 0 == r ? "th" : "td";
                     // 罫線は、Excelの「セルの書式設定」で色が「自動」・太さが標準（細い実線）に
                     // なるよう、windowtextキーワード・pt単位を使っている（RangeToHtmlFragmentと
-                    // 同じ理由）。表のセルは「折り返して全体を表示する」を有効のままにしたいと
-                    // のご要望があったため、white-space:nowrap;はここでは付けていない
-                    // （RangeToHtmlFragmentと同じ理由。§14.108参照）。
+                    // 同じ理由）。表のセルの折り返しについてもRangeToHtmlFragmentと同じ理由
+                    // （§14.108〜§14.110参照）。
                     sb.Append('<').Append(tag).Append(" style=\"border:0.5pt solid windowtext;padding:4px 8px;\">")
                       .Append(CellHtmlContent(cell)).Append("</").Append(tag).Append('>');
                 }
@@ -978,21 +1006,21 @@ namespace mde.editor
             return header + HTML_PREFIX + a_htmlBodyFragment + HTML_SUFFIX;
         }
 
-        /// <summary>Ctrl+Cでの表セル範囲コピー時に、TSVとCF_HTML形式をクリップボードへ追加し、
-        /// Excelへの貼り付けが正しく表として認識されるようにする。</summary>
-        /// <param name="a_sender">イベントの発生元。</param>
-        /// <param name="a_args">イベントの引数。</param>
-        public void HandleCopying(object a_sender, DataObjectCopyingEventArgs a_args)
+        /// <summary>右クリックメニュー「Excel用にコピー」用。選択範囲が表のセル範囲に
+        /// きっちり収まっている場合に、TSVとCF_HTML形式でクリップボードへコピーし、Excelへの
+        /// 貼り付けが正しく表として認識されるようにする（以前はCtrl+C自体をDataObject.
+        /// AddCopyingHandlerで乗っ取って自動的に行っていたが、mde同士のCtrl+C→Ctrl+V（Xaml/
+        /// Rtf形式での構造復元）まで壊れてしまったため撤回し、明示的なメニュー操作からのみ
+        /// 呼び出す方式にした。詳細はDEVELOPMENT_LOG.md参照）。</summary>
+        /// <returns>表のセル範囲としてコピーできた場合はtrue。それ以外（選択が空、表のセル内
+        /// ではない等）はfalseを返し、呼び出し元がClipboardHtmlBuilder.
+        /// TryCopySelectionForExcelで表以外の内容も含めて処理できるようにする。</returns>
+        public bool TryCopySelectionForExcel()
         {
-            if (m_isSourceMode() || a_args.IsDragDrop)
-            {
-                return;
-            }
-
             var selection = m_editor.Selection;
             if (null == selection || selection.IsEmpty)
             {
-                return;
+                return false;
             }
 
             var startCell = selection.Start?.Paragraph?.Parent as TableCell;
@@ -1000,13 +1028,13 @@ namespace mde.editor
             var anyCell = startCell ?? endCell;
             if (null == anyCell)
             {
-                return;
+                return false;
             }
 
             var table = FindEnclosingTable(anyCell);
             if (null == table)
             {
-                return;
+                return false;
             }
 
             var rows = GetTableRows(table);
@@ -1023,8 +1051,11 @@ namespace mde.editor
             // （選択範囲が表の外にはみ出している場合など）表全体を書き出す。
             string tsv = null != range ? RangeToTsv(rows, range) : TableToTsv(table);
             string htmlFragment = null != range ? RangeToHtmlFragment(rows, range) : TableToHtmlFragment(table);
-            a_args.DataObject.SetData(DataFormats.Text, tsv);
-            a_args.DataObject.SetData(DataFormats.Html, BuildHtmlClipboardFragment(htmlFragment));
+            var data = new DataObject();
+            data.SetData(DataFormats.Text, tsv);
+            data.SetData(DataFormats.Html, BuildHtmlClipboardFragment(htmlFragment));
+            Clipboard.SetDataObject(data);
+            return true;
         }
 
         private List<List<string>> TryParseHtmlTable(string a_html)
