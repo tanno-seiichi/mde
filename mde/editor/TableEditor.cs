@@ -775,7 +775,10 @@ namespace mde.editor
                     // 個別の色として認識されてしまう（実機で「色(C)」欄がスウォッチ表示になり、
                     // 「自動」という文字列にならないと報告されたため変更）。windowtextという
                     // 色キーワードを指定すると「自動」として認識される。太さもpx単位ではなく
-                    // pt単位（0.5pt。Excelの標準の罫線の太さ）にしている。
+                    // pt単位（0.5pt。Excelの標準の罫線の太さ）にしている。表のセルについては
+                    // 「折り返して全体を表示する」を有効のままにしたいとのご要望があったため、
+                    // white-space:nowrap;（ClipboardHtmlBuilderの表以外の行に付けているもの。
+                    // §14.108参照）はここでは付けていない。
                     sb.Append('<').Append(tag).Append(" style=\"border:0.5pt solid windowtext;padding:4px 8px;\">")
                       .Append(CellHtmlContent(cells[c])).Append("</").Append(tag).Append('>');
                 }
@@ -924,7 +927,9 @@ namespace mde.editor
                     string tag = 0 == r ? "th" : "td";
                     // 罫線は、Excelの「セルの書式設定」で色が「自動」・太さが標準（細い実線）に
                     // なるよう、windowtextキーワード・pt単位を使っている（RangeToHtmlFragmentと
-                    // 同じ理由）。
+                    // 同じ理由）。表のセルは「折り返して全体を表示する」を有効のままにしたいと
+                    // のご要望があったため、white-space:nowrap;はここでは付けていない
+                    // （RangeToHtmlFragmentと同じ理由。§14.108参照）。
                     sb.Append('<').Append(tag).Append(" style=\"border:0.5pt solid windowtext;padding:4px 8px;\">")
                       .Append(CellHtmlContent(cell)).Append("</").Append(tag).Append('>');
                 }
