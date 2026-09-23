@@ -753,7 +753,11 @@ namespace mde.editor
         private string RangeToHtmlFragment(List<TableRow> a_rows, CellRange a_range)
         {
             var sb = new StringBuilder();
-            sb.Append("<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse:collapse;\">");
+            // 外側の<table>自体はborder="0"にしている。border="1"を指定すると、各<td>が個別に
+            // 持つ罫線スタイル（次の行）と二重に重なり、Excelへの貼り付け時に罫線が実際より
+            // 太く・不揃いに見えることがあったため（ClipboardHtmlBuilderの外側<table>と同じ
+            // 理由）。
+            sb.Append("<table border=\"0\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse:collapse;\">");
             for (int r = a_range.m_minRow; r <= a_range.m_maxRow; r++)
             {
                 sb.Append("<tr>");
@@ -765,7 +769,14 @@ namespace mde.editor
                 {
                     // 選択範囲の先頭行が「表そのもののヘッダー行」である場合だけ th として書き出す。
                     string tag = 0 == r ? "th" : "td";
-                    sb.Append('<').Append(tag).Append(" style=\"border:1px solid #999999;padding:4px 8px;\">")
+                    // 罫線は、Excelの「セルの書式設定」で色が「自動」・太さが標準（細い実線）に
+                    // なるよう、Excel自身がHTMLとして書き出す際の表現に合わせている。色を
+                    // #000000のような明示的なRGB値にすると、黒であっても「自動」ではなく
+                    // 個別の色として認識されてしまう（実機で「色(C)」欄がスウォッチ表示になり、
+                    // 「自動」という文字列にならないと報告されたため変更）。windowtextという
+                    // 色キーワードを指定すると「自動」として認識される。太さもpx単位ではなく
+                    // pt単位（0.5pt。Excelの標準の罫線の太さ）にしている。
+                    sb.Append('<').Append(tag).Append(" style=\"border:0.5pt solid windowtext;padding:4px 8px;\">")
                       .Append(CellHtmlContent(cells[c])).Append("</").Append(tag).Append('>');
                 }
                 sb.Append("</tr>");
@@ -911,7 +922,10 @@ namespace mde.editor
                 foreach (TableCell cell in rows[r].Cells)
                 {
                     string tag = 0 == r ? "th" : "td";
-                    sb.Append('<').Append(tag).Append(" style=\"border:1px solid #999999;padding:4px 8px;\">")
+                    // 罫線は、Excelの「セルの書式設定」で色が「自動」・太さが標準（細い実線）に
+                    // なるよう、windowtextキーワード・pt単位を使っている（RangeToHtmlFragmentと
+                    // 同じ理由）。
+                    sb.Append('<').Append(tag).Append(" style=\"border:0.5pt solid windowtext;padding:4px 8px;\">")
                       .Append(CellHtmlContent(cell)).Append("</").Append(tag).Append('>');
                 }
                 sb.Append("</tr>");
@@ -921,7 +935,10 @@ namespace mde.editor
 
         private string TableToHtmlFragment(Table a_table)
         {
-            return "<table border=\"1\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse:collapse;\">"
+            // 外側の<table>自体はborder="0"にしている。border="1"を指定すると、各<td>が個別に
+            // 持つ罫線スタイルと二重に重なり、Excelへの貼り付け時に罫線が実際より太く見える
+            // ことがあったため（RangeToHtmlFragmentと同じ理由）。
+            return "<table border=\"0\" cellspacing=\"0\" cellpadding=\"4\" style=\"border-collapse:collapse;\">"
                 + BuildTableRowsHtml(a_table) + "</table>";
         }
 
