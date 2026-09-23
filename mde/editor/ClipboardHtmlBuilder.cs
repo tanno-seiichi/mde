@@ -180,7 +180,18 @@ namespace mde.editor
                 {
                     // 表ではない行には罫線を付けない（水平線の行は例外として、TdStyleExtra
                     // 自身がborder-topを指定している。BuildParagraphRow参照）。
-                    html.Append("<tr><td style=\"padding:4px 8px;")
+                    //
+                    // 「折り返して全体を表示する」を貼り付け時に無効化するため、white-space:
+                    // nowrap;を付けている（表のセル自体には付けない。TableEditor.cs参照。
+                    // §14.108でのユーザー指摘により、表のセル内は引き続き有効のままにする）。
+                    // §14.109でこれを追加した際、箇条書きの本文が途中で切れて見えるという
+                    // report があり、当時はnowrapによる見た目上のオーバーフロー切り捨てが
+                    // 原因と判断していったん撤回した（§14.110）。しかしその後、実際の原因は
+                    // nowrapとは無関係に、箇条書き項目内でShift+Enterによる継続段落が
+                    // BrContinuationInfoタグ不足によりコピー処理から丸ごと欠落していたこと
+                    // であると判明し、CollectListRows側を修正済み（§14.111）。原因が別にあった
+                    // ことが確認できたため、改めてnowrap指定を付け直している。
+                    html.Append("<tr><td style=\"padding:4px 8px;white-space:nowrap;")
                         .Append(row.TdStyleExtra).Append("\">")
                         .Append(row.Html).Append("</td></tr>");
                 }
@@ -304,8 +315,20 @@ namespace mde.editor
                     {
                         continue;
                     }
-                    if (b is Paragraph contPara && contPara.Tag is BrContinuationInfo)
+                    if (b is Paragraph contPara)
                     {
+                        // BrContinuationInfoタグでは判定しない。Shift+Enterによる項目内の
+                        // 段落分割（HeadingCodeBlockEditor.InsertParagraphSplitAtCaret）は
+                        // 生成する段落に元の段落のTagをそのままコピーするだけでBrContinuationInfo
+                        // を設定せず、Markdown読み込み時の箇条書き項目（MarkdownConverter.
+                        // BuildNestedList内のFlushPendingItem）も同様に新しい段落へTagを設定
+                        // しないため、このタグはライブ入力・ファイル読み込みのどちらの経路でも
+                        // 箇条書き項目内の継続段落には確実には付いていない。li.Blocks内では
+                        // 先頭のmainPara・入れ子のList以外は必ず（Shift+Enterによる）項目自身の
+                        // 継続段落であるという構造上の前提に基づき、MarkdownConverter.
+                        // ListToMarkdown（Markdown書き出し側）・TableEditor.CellPlainText/
+                        // CellHtmlContent（表セルのコピー）と同じく、タグを見ずに構造上の位置
+                        // だけで継続段落と判定する。
                         if (!Intersects(contPara, a_selStart, a_selEnd))
                         {
                             continue;
@@ -538,10 +561,12 @@ namespace mde.editor
         // ======================================================================
 
         /// <summary>組み立てている表へ挿入する、中身が空の1行分（&lt;tr&gt;...&lt;/tr&gt;）の
-        /// HTML。段落間の余白・画像の高さ分の空白行のどちらにも同じものを使う。</summary>
+        /// HTML。段落間の余白・画像の高さ分の空白行のどちらにも同じものを使う。上記の
+        /// 通常行と同じ理由でwhite-space:nowrap;を付けている（中身が&amp;nbsp;のみのため
+        /// 実質的な影響は無いが、スタイルの一貫性のため揃えている）。</summary>
         private static string BlankRowHtml()
         {
-            return "<tr><td style=\"padding:4px 8px;\">&nbsp;</td></tr>";
+            return "<tr><td style=\"padding:4px 8px;white-space:nowrap;\">&nbsp;</td></tr>";
         }
 
         private static bool Intersects(Block a_block, TextPointer a_selStart, TextPointer a_selEnd)
