@@ -1,7 +1,7 @@
 ﻿<Project Sdk="WixToolset.Sdk/4.0.5">
   <PropertyGroup>
     <OutputType>Package</OutputType>
-    <OutputName>mde</OutputName>
+    <OutputName>mde_light</OutputName>
     <!-- .wixpdb（デバッグ・パッチ生成用シンボルファイル）を出力せず、.msi単体になるようにする -->
     <SuppressPdbOutput>true</SuppressPdbOutput>
   </PropertyGroup>

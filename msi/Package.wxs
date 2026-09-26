@@ -1,10 +1,10 @@
 ﻿<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
-	  Name="mde"
+	  Name="mde_light"
 	  Manufacturer="tanno-seiichi"
 	  Version="0.0.0"
-	  UpgradeCode="{AF84DAC2-4F15-4286-9979-7694751AAA89}"
+	  UpgradeCode="{BF84DAC2-4F15-4286-9979-7694751AAA89}"
 	  Scope="perMachine">
 	  
     <MajorUpgrade
@@ -20,7 +20,7 @@
     <MediaTemplate EmbedCab="yes" />
 
     <Feature Id="Main">
-      <ComponentGroupRef Id="mde" />
+      <ComponentGroupRef Id="mde_light" />
     </Feature>
   </Package>
 </Wix>

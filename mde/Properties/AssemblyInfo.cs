@@ -7,11 +7,11 @@ using System.Windows;
 // アセンブリに関する一般的な情報は、次の方法で制御されます
 // アセンブリに関連付けられている情報を変更するには、
 // これらの属性値を変更してください。
-[assembly: AssemblyTitle( "mde" )]
+[assembly: AssemblyTitle( "mde_light" )]
 [assembly: AssemblyDescription( "" )]
 [assembly: AssemblyConfiguration( "" )]
 [assembly: AssemblyCompany( "" )]
-[assembly: AssemblyProduct( "mde" )]
+[assembly: AssemblyProduct( "mde_light" )]
 [assembly: AssemblyCopyright( "Copyright ©  2026 tanno-seiichi" )]
 [assembly: AssemblyTrademark( "" )]
 [assembly: AssemblyCulture( "" )]

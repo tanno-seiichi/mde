@@ -10,7 +10,7 @@
   アップグレード時だけ SetProperty で文言を切り替えています。
 
   WelcomeDlg の [次へ] ボタンの遷移先も、アップグレード時（かつ右クリックメニュー
-  「mdeで開く」が既に追加済みの時）だけ、コンテキストメニュー追加確認画面
+  「mde_lightで開く」が既に追加済みの時）だけ、コンテキストメニュー追加確認画面
   （ContextMenuOptionDlg）・ライセンス確認画面（LicenseAgreementDlg）のいずれも
   経由せず、直接インストールを実行するように配線を分けています（詳細は
   ContextMenuOptionDlg・CONTEXTMENU_ALREADY_ADDEDまわりのコメント、および
@@ -77,18 +77,18 @@
       Value="!(loc.WelcomeDlgDescriptionUpgrade)" />
 
     <!--
-      右クリックメニュー「mdeで開く」（.mdファイル・フォルダ背景、msi/File.wxs参照）を
+      右クリックメニュー「mde_lightで開く」（.mdファイル・フォルダ背景、msi/File.wxs参照）を
       追加するかどうかのユーザー選択を保持するプロパティ。既定値を設定していないため
       既定は「追加しない」（未設定）で、ContextMenuOptionDlgのチェックボックスに
       チェックを入れた場合だけ"1"になる。チェックを外すとMSIのCheckBoxコントロールの
       標準動作により再びプロパティが未設定に戻る。Secure="yes"により、
-      msiexec /i mde.msi ADDCONTEXTMENU=1 のようにサイレントインストール時にも
+      msiexec /i mde_light.msi ADDCONTEXTMENU=1 のようにサイレントインストール時にも
       コマンドラインから指定できる。
     -->
     <Property Id="ADDCONTEXTMENU" Secure="yes" />
 
     <!--
-      アップグレード時に、右クリックメニュー「mdeで開く」が既に追加済み（前回の
+      アップグレード時に、右クリックメニュー「mde_lightで開く」が既に追加済み（前回の
       インストールでチェックを入れていた、または14.88〜14.90節の時点のバージョンで
       無条件に追加されていた）かどうかを、実際のレジストリの状態から判定する
       プロパティ。AppSearch（RegistrySearchの標準動作）により、UI・実行の両
@@ -172,7 +172,7 @@
       <Publish Dialog="LicenseAgreementDlg" Control="Print" Event="DoAction" Value="WixUIPrintEula_X64" Condition="1" />
 
       <!--
-        コンテキストメニュー「mdeで開く」を追加するかどうかの確認画面。WelcomeDlgと
+        コンテキストメニュー「mde_lightで開く」を追加するかどうかの確認画面。WelcomeDlgと
         LicenseAgreementDlgの間に表示する。新規インストール時は必ず表示し、
         アップグレード時は右クリックメニューがまだ追加されていない場合のみ表示する
         （既に追加済みの場合は表示せず、確認するまでもなくそのまま維持する。

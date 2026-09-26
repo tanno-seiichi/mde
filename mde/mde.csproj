@@ -8,6 +8,7 @@
     <Nullable>disable</Nullable>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <ApplicationIcon>images\mde.ico</ApplicationIcon>
+    <AssemblyName>mde_light</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>

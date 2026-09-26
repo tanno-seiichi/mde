@@ -21,13 +21,13 @@ This file contains the declaration of all the localizable strings.
   <!-- アップグレード完了時に ExitDialog に表示するメッセージ -->
   <String Id="ExitMessageUpgradeComplete" Value="アップグレードが完了しました。" />
 
-  <!-- エクスプローラー右クリックメニューの「mde で開く」 -->
-  <String Id="OpenWithMdeVerb" Value="mde で開く" />
+  <!-- エクスプローラー右クリックメニューの「mde_light で開く」 -->
+  <String Id="OpenWithMdeVerb" Value="mde_light で開く" />
 
   <!-- ContextMenuOptionDlg（UpgradeConfirmDlg.wxs）：新規インストール時に、右クリック
-       メニュー「mdeで開く」を追加するかどうかを確認するダイアログの文言。 -->
+       メニュー「mde_lightで開く」を追加するかどうかを確認するダイアログの文言。 -->
   <String Id="ContextMenuOptionDlgTitle" Value="エクスプローラーの右クリックメニュー" />
-  <String Id="ContextMenuOptionDlgDescription" Value="エクスプローラーの右クリックメニューに「mde で開く」を追加できます。.mdファイルを選択した時と、フォルダの何もない場所を右クリックした時の両方に表示されます。" />
-  <String Id="ContextMenuOptionCheckBoxText" Value="右クリックメニューに「mde で開く」を追加する" />
+  <String Id="ContextMenuOptionDlgDescription" Value="エクスプローラーの右クリックメニューに「mde_light で開く」を追加できます。.mdファイルを選択した時と、フォルダの何もない場所を右クリックした時の両方に表示されます。" />
+  <String Id="ContextMenuOptionCheckBoxText" Value="右クリックメニューに「mde_light で開く」を追加する" />
 
 </WixLocalization>
