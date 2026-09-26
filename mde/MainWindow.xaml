@@ -50,9 +50,6 @@
                 <MenuItem Header="名前を付けて保存…" Click="SaveAsBtnClick" InputGestureText="Shift+Ctrl+S"/>
                 <MenuItem Header="すべて保存(_A)" Click="SaveAllBtnClick"/>
                 <Separator/>
-                <MenuItem Header="PDFに書き出し…(_P)" Click="ExportPdfBtnClick" InputGestureText="Ctrl+P"/>
-                <MenuItem Header="PDFの余白を設定…(_M)" Click="PdfMarginBtnClick"/>
-                <Separator/>
                 <MenuItem Header="閉じる(_W)" Click="CloseBtnClick" InputGestureText="Ctrl+W"/>
             </MenuItem>
             <MenuItem Header="検索と置換(_F)" Click="FindReplaceBtnClick" InputGestureText="Ctrl+F"/>
