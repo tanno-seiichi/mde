@@ -52,7 +52,6 @@
                 <Separator/>
                 <MenuItem Header="閉じる(_W)" Click="CloseBtnClick" InputGestureText="Ctrl+W"/>
             </MenuItem>
-            <MenuItem Header="検索と置換(_F)" Click="FindReplaceBtnClick" InputGestureText="Ctrl+F"/>
             <MenuItem Header="表示(_V)">
                 <MenuItem Header="行間を設定…(_L)" Click="LineHeightBtnClick"/>
                 <Separator/>
@@ -151,29 +150,6 @@
                                         BorderThickness="1,1,1,1" BorderBrush="Transparent" Margin="-1,0,0,0">
                                     <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{StaticResource InkBrush}"/>
                                 </Border>
-                                <HierarchicalDataTemplate.Triggers>
-                                    <!-- 選択中(IsSelected)・検索一致(IsSearchMatch)は同時に成立しうる
-                                         組み合わせで、どちらもBackgroundを取り合うと片方の情報が
-                                         見えなくなる（DEVELOPMENT_LOG.md 14.7参照）。選択は枠線
-                                         （BorderBrush）、検索一致は背景色（Background）と、別々の
-                                         プロパティで表現することで両立させる。「選択中だが検索一致
-                                         ではない」場合だけ、従来どおりの塗りつぶし背景も付ける
-                                         （単なる選択だけでも見やすいように）。 -->
-                                    <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
-                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#FFE166"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
-                                        <Setter TargetName="m_matchHighlightBorder" Property="BorderBrush" Value="#26A0DA"/>
-                                        <Setter TargetName="m_matchHighlightBorder" Property="CornerRadius" Value="0"/>
-                                    </DataTrigger>
-                                    <MultiDataTrigger>
-                                        <MultiDataTrigger.Conditions>
-                                            <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True"/>
-                                            <Condition Binding="{Binding IsSearchMatch}" Value="False"/>
-                                        </MultiDataTrigger.Conditions>
-                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#CBE8F6"/>
-                                    </MultiDataTrigger>
-                                </HierarchicalDataTemplate.Triggers>
                             </HierarchicalDataTemplate>
                         </TreeView.ItemTemplate>
                     </TreeView>
@@ -215,25 +191,6 @@
                                         BorderThickness="1,1,1,1" BorderBrush="Transparent" Margin="-1,0,0,0">
                                     <TextBlock Text="{Binding Text}" FontSize="{Binding FontSizeValue}" Foreground="{StaticResource InkBrush}"/>
                                 </Border>
-                                <HierarchicalDataTemplate.Triggers>
-                                    <!-- フォルダペインと同じ理由・同じ対策（DEVELOPMENT_LOG.md 14.7、
-                                         MainWindow.xamlのm_folderTree側のコメント参照）。選択は
-                                         枠線、検索一致は背景色と別プロパティにして両立させる。 -->
-                                    <DataTrigger Binding="{Binding IsSearchMatch}" Value="True">
-                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#FFE166"/>
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
-                                        <Setter TargetName="m_matchHighlightBorder" Property="BorderBrush" Value="#26A0DA"/>
-                                        <Setter TargetName="m_matchHighlightBorder" Property="CornerRadius" Value="0"/>
-                                    </DataTrigger>
-                                    <MultiDataTrigger>
-                                        <MultiDataTrigger.Conditions>
-                                            <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True"/>
-                                            <Condition Binding="{Binding IsSearchMatch}" Value="False"/>
-                                        </MultiDataTrigger.Conditions>
-                                        <Setter TargetName="m_matchHighlightBorder" Property="Background" Value="#CBE8F6"/>
-                                    </MultiDataTrigger>
-                                </HierarchicalDataTemplate.Triggers>
                             </HierarchicalDataTemplate>
                         </TreeView.ItemTemplate>
                     </TreeView>

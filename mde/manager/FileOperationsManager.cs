@@ -11,7 +11,6 @@
 // delegateまたは協力オブジェクト（他の各機能クラス）経由で行う。
 
 using mde.common;
-using mde.findreplace;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -37,7 +36,6 @@ namespace mde.manager
         private readonly LineEndingTracker m_lineEndingTracker;
         private readonly OutlineManager m_outlineManager;
         private readonly FolderTreeManager m_folderTreeManager;
-        private readonly SearchReplaceService m_searchReplaceService;
         private readonly MenuItem m_recentFilesMenu;
         private readonly List<string> m_recentFiles;
         private readonly Dictionary<string, string> m_pendingFileEdits;
@@ -54,8 +52,6 @@ namespace mde.manager
         private readonly Action m_openNewWindow;
         private readonly Action m_closeWindow;
         private readonly Action<string> m_setWindowTitle;
-        private readonly Func<FindReplaceWindow> m_getOpenFindReplaceWindow;
-
         private readonly Func<string> m_getCurrentFilePath;
         private readonly Action<string> m_setCurrentFilePath;
         private readonly Func<string> m_getCurrentFileDirectory;
@@ -87,7 +83,6 @@ namespace mde.manager
         /// <param name="a_lineEndingTracker">改行コードの検出・記憶・適用。</param>
         /// <param name="a_outlineManager">アウトラインペイン（文書差し替え後の再構築に使う）。</param>
         /// <param name="a_folderTreeManager">フォルダペイン。</param>
-        /// <param name="a_searchReplaceService">検索と置換（文書差し替え通知に使う）。</param>
         /// <param name="a_recentFilesMenu">「最近使ったファイル」サブメニュー。</param>
         /// <param name="a_recentFiles">最近使ったファイル一覧（MainWindow.OnClosedでの設定保存と
         /// 同じリストを共有する）。</param>
@@ -108,9 +103,6 @@ namespace mde.manager
         /// <param name="a_openNewWindow">空の新しいウィンドウを開くdelegate。</param>
         /// <param name="a_closeWindow">このウィンドウを閉じるdelegate。</param>
         /// <param name="a_setWindowTitle">ウィンドウタイトルを設定するdelegate。</param>
-        /// <param name="a_getOpenFindReplaceWindow">現在開いている検索と置換ウィンドウ（無ければ
-        /// null）を返すdelegate。呼ばれるたびに最新の値を取得できるよう、スナップショットでは
-        /// なくdelegateとして受け取る。</param>
         /// <param name="a_getCurrentFilePath">現在のファイルパスを返すdelegate。</param>
         /// <param name="a_setCurrentFilePath">現在のファイルパスを設定するdelegate。</param>
         /// <param name="a_getCurrentFileDirectory">現在のファイルの保存先フォルダを返すdelegate。</param>
@@ -130,7 +122,6 @@ namespace mde.manager
             LineEndingTracker a_lineEndingTracker,
             OutlineManager a_outlineManager,
             FolderTreeManager a_folderTreeManager,
-            SearchReplaceService a_searchReplaceService,
             MenuItem a_recentFilesMenu,
             List<string> a_recentFiles,
             Dictionary<string, string> a_pendingFileEdits,
@@ -146,7 +137,6 @@ namespace mde.manager
             Action a_openNewWindow,
             Action a_closeWindow,
             Action<string> a_setWindowTitle,
-            Func<FindReplaceWindow> a_getOpenFindReplaceWindow,
             Func<string> a_getCurrentFilePath,
             Action<string> a_setCurrentFilePath,
             Func<string> a_getCurrentFileDirectory,
@@ -163,7 +153,6 @@ namespace mde.manager
             this.m_lineEndingTracker = a_lineEndingTracker;
             this.m_outlineManager = a_outlineManager;
             this.m_folderTreeManager = a_folderTreeManager;
-            this.m_searchReplaceService = a_searchReplaceService;
             this.m_recentFilesMenu = a_recentFilesMenu;
             this.m_recentFiles = a_recentFiles;
             this.m_pendingFileEdits = a_pendingFileEdits;
@@ -179,7 +168,6 @@ namespace mde.manager
             this.m_openNewWindow = a_openNewWindow;
             this.m_closeWindow = a_closeWindow;
             this.m_setWindowTitle = a_setWindowTitle;
-            this.m_getOpenFindReplaceWindow = a_getOpenFindReplaceWindow;
             this.m_getCurrentFilePath = a_getCurrentFilePath;
             this.m_setCurrentFilePath = a_setCurrentFilePath;
             this.m_getCurrentFileDirectory = a_getCurrentFileDirectory;
@@ -371,17 +359,11 @@ namespace mde.manager
                     m_outlineManager.Refresh();
                     // 文書を丸ごと差し替えた直後は、キャレット位置が未確定・不定なままになる
                     // ことがある（古い位置を指したままになるなど）。ここで明示的に文書の先頭へ
-                    // 設定しておくことで、その直後に検索の「次を検索」等がCaretPositionを基準に
+                    // 設定しておくことで、CaretPositionを基準に
                     // 開始位置を計算する際、信頼できる値になるようにする。
                     m_editor.CaretPosition = m_editor.Document.ContentStart;
                     ClearEditorUndoHistory();
                 }
-                // このブランチは「同じファイルを、保存済みの内容で開き直す」場合であり、別の
-                // ファイルへの切り替えではないため、スクロール位置には触れない（今どこを見て
-                // いたかがそのまま保たれる方が、保存し忘れた変更を破棄して開き直すという
-                // 操作の性質上、自然な挙動になる）。
-                m_searchReplaceService.OnDocumentReplaced();
-                m_getOpenFindReplaceWindow()?.ReapplyHighlightForCurrentFile();
 
                 m_setCurrentFileIsDirty(false);
                 m_folderTreeManager.RefreshDirtyMarkers();
@@ -427,7 +409,7 @@ namespace mde.manager
                 m_outlineManager.Refresh();
                 // 文書を丸ごと差し替えた直後は、キャレット位置が未確定・不定なままになる
                 // ことがある（古い位置を指したままになるなど）。ここで明示的に文書の先頭へ
-                // 設定しておくことで、その直後に検索の「次を検索」等がCaretPositionを基準に
+                // 設定しておくことで、その直後にCaretPositionを基準に
                 // 開始位置を計算する際、信頼できる値になるようにする。
                 m_editor.CaretPosition = m_editor.Document.ContentStart;
                 ClearEditorUndoHistory();
@@ -435,8 +417,6 @@ namespace mde.manager
             // このファイルを以前この session 内で開いたことがあり、スクロール位置を覚えて
             // いれば、そこへ戻す（無ければ先頭へ）。
             m_restoreOrResetScrollPosition(a_path);
-            m_searchReplaceService.OnDocumentReplaced();
-            m_getOpenFindReplaceWindow()?.ReapplyHighlightForCurrentFile();
 
             m_setCurrentFileIsDirty(false);
 

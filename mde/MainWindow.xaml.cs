@@ -2,7 +2,7 @@
 //
 // mde (Markdown インラインエディタ) の一部。
 // アプリのメインウィンドウ。ここでは各機能クラス（MarkdownConverter、TableEditor、
-// ListEditor、HeadingCodeBlockEditor、InlineStyleEditor、ImageManager、SearchReplaceService、
+// ListEditor、HeadingCodeBlockEditor、InlineStyleEditor、ImageManager、
 // OutlineManager、FolderTreeManager）をすべて構築し、コンストラクタで必要なdelegateを配線する。
 // XAML側から呼ばれるイベントハンドラの多くは、実際の処理を各クラスへそのまま橋渡しする
 // 薄いラッパーになっている。ウィンドウ全体・現在のファイル・キーボード入力の振り分けといった
@@ -11,7 +11,6 @@
 using mde.common;
 using mde.dialog;
 using mde.editor;
-using mde.findreplace;
 using mde.logger;
 using mde.manager;
 using System;
@@ -54,14 +53,10 @@ namespace mde
         /// フィールドとして保持しておく。</summary>
         private System.Windows.Threading.DispatcherTimer m_imeDebugHeartbeatTimer;
 
-        /// <summary>検索結果のハイライト（背景色）を適用/解除している間だけtrueにするガード
-        /// フラグ。TextChangedがこれを見て、ダーティ扱いにしないようにする。</summary>
-        private bool m_isApplyingHighlightFlg = false;
-
         /// <summary>アウトラインペインの再構築（ScheduleOutlineRefresh）を間引くためのデバウンス用
         /// タイマー。フィールドとして保持しGCされないようにする。EditorTextChangedから呼ばれる
         /// たびにStop()→Start()し直し、最後の編集からInterval経過後に1回だけRefresh()する
-        /// （詳細はScheduleOutlineRefresh参照）。LoadFile・検索置換など連続発生しない呼び出し元は
+        /// （詳細はScheduleOutlineRefresh参照）。LoadFileなど連続発生しない呼び出し元は
         /// 従来通り同期的にm_outlineManager.Refresh()を直接呼ぶ。</summary>
         private System.Windows.Threading.DispatcherTimer m_outlineRefreshDebounceTimer;
 
@@ -157,11 +152,9 @@ namespace mde
         private readonly TableEditor m_tableEditor;
         private readonly ClipboardHtmlBuilder m_clipboardHtmlBuilder;
         private readonly InlineStyleEditor m_inlineStyleEditor;
-        private readonly SearchReplaceService m_searchReplaceService;
         private readonly OutlineManager m_outlineManager;
         private readonly FolderTreeManager m_folderTreeManager;
         private readonly FileOperationsManager m_fileOperationsManager;
-        private readonly FindReplaceLauncher m_findReplaceLauncher;
 
         /// <summary>
         /// 既定の（引数なしの）コンストラクタ。App.xamlのStartupUriによりWPFがアプリ起動時に
@@ -293,22 +286,15 @@ namespace mde
                 m_editor, m_originalTextTracker, RunAsProgrammaticChange, MarkDirty, m_outlineManager.Refresh,
                 m_markdownConverter.BlockToMarkdown, () => m_currentFileDirectory, LoadFile,
                 m_folderTreeManager.IsWithinLoadedFolder, OpenFileInNewWindow, () => m_requireCtrlForLinkClickFlg);
-            m_searchReplaceService = new SearchReplaceService(
-                m_editor, m_sourceEditor, m_markdownConverter, m_originalTextTracker, m_lineEndingTracker,
-                () => m_isSourceModeFlg, RunAsProgrammaticChange, m_outlineManager.Refresh, p => OutlineManager.ScrollParagraphToTop(p, m_editor),
-                () => m_folderTreeManager.LoadedFolderRootPath, GetCurrentContentForFile,
-                SetFileContentForReplaceImpl, LoadFile, RunWithoutDirtyMarking, m_outlineManager.MarkSearchMatches,
-                m_outlineManager.SelectHeadingForPosition);
-            m_findReplaceLauncher = new FindReplaceLauncher(() => new FindReplaceWindow(this) { Owner = this });
             m_fileOperationsManager = new FileOperationsManager(
                 m_editor, m_sourceEditor, m_markdownConverter, m_imageManager, m_lineEndingTracker,
-                m_outlineManager, m_folderTreeManager, m_searchReplaceService, m_recentFilesMenu,
+                m_outlineManager, m_folderTreeManager, m_recentFilesMenu,
                 m_recentFiles, m_pendingFileEdits,
                 () => m_isSourceModeFlg, () => m_preserveSourceLineBreaksFlg, () => m_correctColumnWidthsFlg,
                 RunAsProgrammaticChange, GetCurrentContentForFile, PathsReferToSameFile,
                 RememberCurrentScrollPosition, RestoreOrResetScrollPosition, OpenFileInNewWindow,
                 () => { var newWindow = new MainWindow(this); newWindow.Show(); }, Close,
-                title => this.Title = title, () => m_findReplaceLauncher.CurrentWindow,
+                title => this.Title = title,
                 () => m_currentFilePath, v => m_currentFilePath = v,
                 () => m_currentFileDirectory, v => m_currentFileDirectory = v,
                 () => m_currentFileIsDirtyFlg, v => m_currentFileIsDirtyFlg = v,
@@ -692,17 +678,6 @@ namespace mde
             finally { m_isProgrammaticChangeFlg = false; }
         }
 
-        /// <summary>渡された処理を「ハイライトの適用/解除のみ」として実行する。実行中は
-        /// Editor_TextChangedがダーティ扱い・アウトライン再構築・元テキスト保持の破棄を
-        /// 行わないようにする（検索結果の背景色変更は実際の編集ではないため）。</summary>
-        /// <param name="a_action">実行する処理。</param>
-        private void RunWithoutDirtyMarking(Action a_action)
-        {
-            m_isApplyingHighlightFlg = true;
-            try { a_action(); }
-            finally { m_isApplyingHighlightFlg = false; }
-        }
-
         /// <summary>現在のファイルに未保存の変更があることを記録し、フォルダツリーの表示も
         /// 更新する。</summary>
         private void MarkDirty()
@@ -839,31 +814,6 @@ namespace mde
             return null;
         }
 
-        /// <summary>検索・置換の結果をファイルへ反映する：現在開いているファイルならライブな
-        /// エディタへ直接、そうでなければ保留中の編集として記憶する。</summary>
-        /// <param name="a_path">対象のファイルパス。</param>
-        /// <param name="a_newContent">新しい内容。</param>
-        private void SetFileContentForReplaceImpl(string a_path, string a_newContent)
-        {
-            if (!string.IsNullOrEmpty(m_currentFilePath) && PathsReferToSameFile(a_path, m_currentFilePath))
-            {
-                if (m_isSourceModeFlg)
-                {
-                    m_sourceEditor.Text = a_newContent;
-                }
-                else
-                {
-                    RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(a_newContent, m_editor.Document));
-                    m_outlineManager.Refresh();
-                }
-            }
-            else
-            {
-                m_pendingFileEdits[a_path] = a_newContent;
-                m_folderTreeManager.RefreshDirtyMarkers();
-            }
-        }
-
         // ======================================================================
         //  入力中の自動変換の起点（EditorTextChanged）
         // ======================================================================
@@ -901,14 +851,6 @@ namespace mde
                 null == m_originalTextTracker) return;
 
             if (m_isSourceModeFlg)
-            {
-                return;
-            }
-
-            // 検索結果のハイライト（背景色）の適用/解除も、WPFの仕様上TextChangedを発生させて
-            // しまうが、これは実際の編集ではないため、ダーティ扱いにしたり元テキスト保持の
-            // 記憶を破棄したりしてはいけない。
-            if (m_isApplyingHighlightFlg)
             {
                 return;
             }
@@ -2039,10 +1981,6 @@ namespace mde
             {
                 m_imageManager.ApplyImageSizingConsideringTable(img);
             }
-            // 列幅の変更はRichTextBox.TextChangedを発生させるため（ChromiumPdfExporter呼び出し側の
-            // 既存コメント参照）、ウインドウのリサイズだけでファイルがダーティ扱いになってしまわない
-            // よう、RunWithoutDirtyMarkingでラップする。
-            RunWithoutDirtyMarking(() => m_tableEditor.RefreshAutoCalculatedColumnWidthsForResize());
         }
 
         // ======================================================================
@@ -2053,43 +1991,13 @@ namespace mde
         private void EditorDragOver(object a_sender, DragEventArgs a_args) => m_imageManager.HandleDragOver(a_sender, a_args);
         private void EditorDrop(object a_sender, DragEventArgs a_args) => m_imageManager.HandleDrop(a_sender, a_args);
 
-        // ======================================================================
-        //  検索と置換（ウィンドウを開く処理の実体はFindReplaceLauncherへ移動。以下の
-        //  公開プロパティは、FindReplaceWindow.xaml.cs側がMainWindowを直接参照して
-        //  使うAPIのため、引き続きここに残す）
-        // ======================================================================
-
-        /// <summary>検索・置換の公開API。FindReplaceWindowから使う。</summary>
-        public SearchReplaceService SearchReplace => m_searchReplaceService;
-
-        /// <summary>現在開いているファイルの絶対パス（未保存なら null）。FindReplaceWindowが
-        /// 「今開いているファイルから検索を始める」ために参照する。</summary>
-        public string CurrentFilePath => m_currentFilePath;
-
-        /// <summary>アウトラインペインの管理役。検索結果の反映などにFindReplaceWindowから使う。</summary>
-        public OutlineManager OutlinePane => m_outlineManager;
-
-        /// <summary>フォルダツリーペインの管理役。検索結果の反映などにFindReplaceWindowから使う。</summary>
-        public FolderTreeManager FolderTreePane => m_folderTreeManager;
-
-        private void FindReplaceBtnClick(object a_sender, RoutedEventArgs a_args)
-        {
-            m_findReplaceLauncher.Open();
-        }
-
         /// <summary>メインウインドウのキーボードショートカットの実装。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         private void MainWindowPreviewKeyDown(object a_sender, KeyEventArgs a_args)
         {
-            if (a_args.Key == Key.F &&
-                Keyboard.Modifiers == ModifierKeys.Control)
-            {
-                a_args.Handled = true;
-                m_findReplaceLauncher.Open();
-            }
             // Ctrl+Nは「新規作成」のショートカットとして扱う（Windows標準のCtrl+Nは「新しいウィンドウ」なので、そちらは無効化する）。
-            else if (a_args.Key == Key.N &&
+            if (a_args.Key == Key.N &&
                      Keyboard.Modifiers == ModifierKeys.Control)
             {
                 a_args.Handled = true;

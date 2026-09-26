@@ -154,24 +154,6 @@ namespace mde.common
         public System.Collections.ObjectModel.ObservableCollection<OutlineEntry> Children { get; }
             = new System.Collections.ObjectModel.ObservableCollection<OutlineEntry>();
 
-        private bool m_isSearchMatchFlg;
-
-        /// <summary>「すべて検索」の結果、この見出しの区間（または、折りたたまれている場合は
-        /// その子孫の見出しの区間）に一致箇所があるかどうか。アウトラインペインでの強調表示に使う。</summary>
-        public bool IsSearchMatch
-        {
-            get => m_isSearchMatchFlg;
-            set
-            {
-                if (m_isSearchMatchFlg == value)
-                {
-                    return;
-                }
-                m_isSearchMatchFlg = value;
-                OnPropertyChanged(nameof(IsSearchMatch));
-            }
-        }
-
         private void OnPropertyChanged(string a_propertyName) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(a_propertyName));
     }
@@ -251,24 +233,6 @@ namespace mde.common
                 m_isDirtyFlg = value;
                 OnPropertyChanged(nameof(IsDirty));
                 OnPropertyChanged(nameof(DisplayName));
-            }
-        }
-
-        private bool m_isSearchMatchFlg;
-
-        /// <summary>「すべて検索」（フォルダ全体）の結果、このファイル（または、これを含む
-        /// フォルダ）に一致箇所があるかどうか。フォルダツリーペインでの強調表示に使う。</summary>
-        public bool IsSearchMatch
-        {
-            get => m_isSearchMatchFlg;
-            set
-            {
-                if (m_isSearchMatchFlg == value)
-                {
-                    return;
-                }
-                m_isSearchMatchFlg = value;
-                OnPropertyChanged(nameof(IsSearchMatch));
             }
         }
 

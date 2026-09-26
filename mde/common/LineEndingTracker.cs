@@ -2,7 +2,7 @@
 //
 // mde (Markdown インラインエディタ) の一部。
 // 各ファイルの改行コード（CRLF/LF）を検出・記憶し、保存時に元の改行コードを維持するための
-// クラス。SearchReplaceService（ファイル読み込み時）とMainWindow（保存時）の両方から
+// クラス。MainWindow（保存時）から
 // 共有される協力オブジェクトとして使う。
 
 using System.Collections.Generic;

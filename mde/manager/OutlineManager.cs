@@ -65,14 +65,11 @@ namespace mde.manager
         /// <summary>現在の文書から見出しを収集し、一覧を作り直す。フォルダツリーペインと同じ
         /// 折りたたみ可能なツリー構造にするため、見出しレベルに応じた入れ子（親子関係）を
         /// 組み立てる（レベルが浅い見出しほど上位）。同じ見出し（Paragraphが同一）については、
-        /// 作り直す前の展開状態（IsExpanded）と検索一致の強調表示（IsSearchMatch）を引き継ぐ。
-        /// EditorTextChangedはプログラム側の変更（LoadFile等）でも発火しRefresh()を呼び直すため、
-        /// IsSearchMatchも引き継がないと検索結果の強調表示が消えてしまう。</summary>
+        /// 作り直す前の展開状態（IsExpanded）を引き継ぐ。</summary>
         public void Refresh()
         {
             var expandedStateByTarget = new Dictionary<Paragraph, bool>();
-            var searchMatchStateByTarget = new Dictionary<Paragraph, bool>();
-            CollectPreservedState(Items, expandedStateByTarget, searchMatchStateByTarget);
+            CollectPreservedState(Items, expandedStateByTarget);
 
             var flatEntries = new List<OutlineEntry>();
             foreach (Block block in m_editor.Document.Blocks)
@@ -88,10 +85,6 @@ namespace mde.manager
                     if (expandedStateByTarget.TryGetValue(p, out bool prevExpandedFlg))
                     {
                         entry.IsExpanded = prevExpandedFlg;
-                    }
-                    if (searchMatchStateByTarget.TryGetValue(p, out bool prevSearchMatchFlg))
-                    {
-                        entry.IsSearchMatch = prevSearchMatchFlg;
                     }
                     flatEntries.Add(entry);
                 }
@@ -119,27 +112,22 @@ namespace mde.manager
                 }
                 ancestorStack.Add(entry);
             }
-
-            // 祖先への強調伝播は、再構築後の親子関係に対して念のため再計算しておく。
-            PropagateSearchMatchToAncestors(Items);
         }
 
-        /// <summary>ツリー全体を走査し、各見出しの展開状態（IsExpanded）・検索一致の強調表示
-        /// （IsSearchMatch）を、対応する段落（Target）をキーにして集める。Refreshで一覧を
+        /// <summary>ツリー全体を走査し、各見出しの展開状態（IsExpanded）を、
+        /// 対応する段落（Target）をキーにして集める。Refreshで一覧を
         /// 作り直す前に呼び、作り直した後の同じ見出しへ状態を引き継ぐために使う。</summary>
         private void CollectPreservedState(
             IEnumerable<OutlineEntry> a_entries,
-            Dictionary<Paragraph, bool> a_expandedResult,
-            Dictionary<Paragraph, bool> a_searchMatchResult)
+            Dictionary<Paragraph, bool> a_expandedResult)
         {
             foreach (var entry in a_entries)
             {
                 if (null != entry.Target)
                 {
                     a_expandedResult[entry.Target] = entry.IsExpanded;
-                    a_searchMatchResult[entry.Target] = entry.IsSearchMatch;
                 }
-                CollectPreservedState(entry.Children, a_expandedResult, a_searchMatchResult);
+                CollectPreservedState(entry.Children, a_expandedResult);
             }
         }
 
@@ -164,125 +152,11 @@ namespace mde.manager
             return null;
         }
 
-        /// <summary>指定した文書内の位置より手前にある、一番近い見出しの段落を探す
-        /// （SelectHeadingForPosition・MarkSearchMatchesで共通に使う）。</summary>
-        /// <param name="a_position">対象の文書内の位置。</param>
-        /// <returns>見つかった見出しの段落。見つからなければnull。</returns>
-        private Paragraph FindNearestHeadingBefore(TextPointer a_position)
-        {
-            Paragraph nearestHeading = null;
-            foreach (Block block in m_editor.Document.Blocks)
-            {
-                if (block is Paragraph p && p.Tag is int level && level > 0)
-                {
-                    if (p.ContentStart.CompareTo(a_position) <= 0)
-                    {
-                        nearestHeading = p;
-                    }
-                    else
-                    {
-                        break; // ブロックは文書順に並んでいるので、超えた時点で打ち切ってよい
-                    }
-                }
-            }
-            return nearestHeading;
-        }
-
         /// <summary>
-        /// 検索で見つかった一致箇所の一覧を受け取り、それぞれが属する見出しの区間（その一致箇所
-        /// より手前にある、一番近い見出し）を強調表示する。呼び出し前の強調表示はクリアされる。
-        /// </summary>
-        /// <param name="a_matches">強調表示したい一致箇所（ライブなTextRange）。</param>
-
-        /// <summary>
-        /// 指定した文書内の位置が属する見出し（その位置より手前にある、一番近い見出し）を探し、
-        /// 見つかればアウトラインペイン上でその項目を選択状態にしてスクロールする。検索結果への
-        /// ジャンプなど、エディタ内の特定の位置へ移動した時に、アウトラインペイン側の選択状態も
-        /// 追従させるために使う。
-        /// </summary>
-        /// <param name="a_position">対象の文書内の位置。</param>
-        public void SelectHeadingForPosition(TextPointer a_position)
-        {
-            Paragraph nearestHeading = FindNearestHeadingBefore(a_position);
-            if (null == nearestHeading)
-            {
-                return;
-            }
-            var entry = FindEntryByTarget(Items, nearestHeading);
-            if (null != entry)
-            {
-                ScrollOutlineTreeToEntry(entry);
-            }
-        }
-
-        /// <summary>検索で見つかった一致箇所の一覧を受け取り、それぞれが属する見出しの区間を
-        /// 強調表示する。フォルダツリーペインと同じく、一致箇所を含む見出しが折りたたまれた
-        /// 祖先見出しの中にある場合、その祖先見出しも強調する（展開しなくても、内部に一致箇所が
-        /// あることが分かるようにするため）。</summary>
-        /// <param name="a_matches">強調表示したい一致箇所（ライブなTextRange）。</param>
-        public void MarkSearchMatches(IEnumerable<TextRange> a_matches)
-        {
-            ClearSearchMatches();
-            foreach (var range in a_matches)
-            {
-                Paragraph nearestHeading = FindNearestHeadingBefore(range.Start);
-                if (null == nearestHeading)
-                {
-                    continue;
-                }
-                var entry = FindEntryByTarget(Items, nearestHeading);
-                if (null != entry)
-                {
-                    entry.IsSearchMatch = true;
-                }
-            }
-            PropagateSearchMatchToAncestors(Items);
-        }
-
-        /// <summary>子孫のいずれかにIsSearchMatchが立っている見出しへ、その祖先見出しにも
-        /// IsSearchMatchを伝播させる（フォルダツリーペインのMarkSearchMatchRecursiveと同じ
-        /// 考え方）。</summary>
-        /// <param name="a_entries">走査対象の一覧（このレベルの兄弟項目）。</param>
-        /// <returns>この一覧の中に、自分自身または子孫にIsSearchMatchが立っている項目が
-        /// 1つ以上あればtrue。</returns>
-        private bool PropagateSearchMatchToAncestors(IEnumerable<OutlineEntry> a_entries)
-        {
-            bool anyMatchFlg = false;
-            foreach (var entry in a_entries)
-            {
-                if (PropagateSearchMatchToAncestors(entry.Children))
-                {
-                    entry.IsSearchMatch = true;
-                }
-                if (entry.IsSearchMatch)
-                {
-                    anyMatchFlg = true;
-                }
-            }
-            return anyMatchFlg;
-        }
-
-        /// <summary>検索結果の強調表示をすべて解除する。</summary>
-        public void ClearSearchMatches()
-        {
-            ClearSearchMatchesRecursive(Items);
-        }
-
-        private void ClearSearchMatchesRecursive(IEnumerable<OutlineEntry> a_entries)
-        {
-            foreach (var entry in a_entries)
-            {
-                entry.IsSearchMatch = false;
-                ClearSearchMatchesRecursive(entry.Children);
-            }
-        }
-
-        /// <summary>
-        /// プログラム側から（検索結果に合わせてなど）アウトラインペインのSelectedItemを
+        /// プログラム側からアウトラインペインのSelectedItemを
         /// 変更する時に立てるフラグ。SelectionChangedはユーザークリックとプログラム変更の
         /// 両方で発生するため、このフラグで区別し、プログラム側からの変更ではエディタの
-        /// キャレット・スクロールを動かさないようにする（動かすと検索結果ジャンプ直後に
-        /// キャレットが見出し先頭へ引き戻されてしまう）。
+        /// キャレット・スクロールを動かさないようにする。
         /// </summary>
         private bool m_suppressSelectionNavigationFlg;
 

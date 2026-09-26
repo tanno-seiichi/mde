@@ -165,7 +165,7 @@ namespace mde.manager
 
         /// <summary>
         /// フォルダツリー全体を走査し、各ファイルノードに未保存マーカーを付ける。現在開いている
-        /// ファイルで未保存の変更があるもの、または検索・置換による保留中の編集があるものが対象。
+        /// ファイルで未保存の変更があるものが対象。
         /// </summary>
         public void RefreshDirtyMarkers()
         {
@@ -191,97 +191,10 @@ namespace mde.manager
             }
         }
 
-        /// <summary>
-        /// 「すべて検索」（フォルダ全体）で一致箇所が見つかったファイルの一覧を受け取り、
-        /// そのファイル自身と、それを含むフォルダを強調表示する。呼び出し前の強調表示は
-        /// クリアされる。
-        /// </summary>
-        /// <param name="a_matchedFilePaths">一致箇所があったファイルの絶対パス一覧。</param>
-        public void MarkSearchMatches(IEnumerable<string> a_matchedFilePaths)
-        {
-            ClearSearchMatches();
-            var matchedSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var p in a_matchedFilePaths)
-            {
-                try { matchedSet.Add(Path.GetFullPath(p)); }
-                catch { /* 無効なパスは無視する */ }
-            }
-            foreach (var root in Roots)
-            {
-                MarkSearchMatchRecursive(root, matchedSet);
-            }
-        }
-
-        private bool MarkSearchMatchRecursive(FileSystemItem a_node, HashSet<string> a_matchedFullPaths)
-        {
-            if (a_node.IsDirectory && IsUnloadedPlaceholder(a_node))
-            {
-                // 「すべて検索」（フォルダ全体）はサブフォルダの中身も含めて対象にする
-                // （SearchReplaceService.GetAllMarkdownFilesInRootがDirectory.GetFiles(...,
-                // AllDirectories)で全階層を見ている）が、フォルダツリーペイン側は表示の都合上、
-                // 一度も展開されていないフォルダの子をまだ読み込んでいない（「読み込み中…」の
-                // 仮ノードのまま）。ここで読み込んでおかないと、その中に一致するファイルが
-                // あってもトラバースできず、ファイル自身はもちろん、それを含むフォルダも
-                // 強調表示できないままになってしまう。
-                a_node.Children.Clear();
-                PopulateChildren(a_node);
-            }
-
-            bool anyMatchBelowFlg = false;
-            if (!a_node.IsDirectory && null != a_node.FullPath)
-            {
-                try
-                {
-                    if (a_matchedFullPaths.Contains(Path.GetFullPath(a_node.FullPath)))
-                    {
-                        a_node.IsSearchMatch = true;
-                        anyMatchBelowFlg = true;
-                    }
-                }
-                catch { /* 無効なパスは無視する */ }
-            }
-            foreach (var child in a_node.Children)
-            {
-                if (MarkSearchMatchRecursive(child, a_matchedFullPaths))
-                {
-                    anyMatchBelowFlg = true;
-                }
-            }
-            if (anyMatchBelowFlg)
-            {
-                a_node.IsSearchMatch = true; // フォルダ自身も、含むファイルに一致があれば強調する
-                if (a_node.IsDirectory)
-                {
-                    // 一致を含むフォルダが折りたたまれたままだと、中の強調表示が見えない
-                    // （SelectFileNodeが選択対象のファイルまでの経路を展開するのと同じ考え方）。
-                    a_node.IsExpanded = true;
-                }
-            }
-            return anyMatchBelowFlg;
-        }
-
         /// <summary>子がまだ遅延読み込みされていない（「読み込み中…」の仮ノード1件だけの）
         /// フォルダかどうか。HandleTreeViewItemExpandedの判定条件と同じ。</summary>
         private static bool IsUnloadedPlaceholder(FileSystemItem a_node) =>
             1 == a_node.Children.Count && null == a_node.Children[0].FullPath;
-
-        /// <summary>検索結果の強調表示をすべて解除する。</summary>
-        public void ClearSearchMatches()
-        {
-            foreach (var root in Roots)
-            {
-                ClearSearchMatchRecursive(root);
-            }
-        }
-
-        private void ClearSearchMatchRecursive(FileSystemItem a_node)
-        {
-            a_node.IsSearchMatch = false;
-            foreach (var child in a_node.Children)
-            {
-                ClearSearchMatchRecursive(child);
-            }
-        }
 
         /// <summary>
         /// 保存によって新しく作られたファイルを、既存のフォルダツリーへ追加する（ツリー全体の
@@ -624,8 +537,8 @@ namespace mde.manager
 
         /// <summary>
         /// 指定したファイルノードが、フォルダペイン上で見える位置になるようスクロールする
-        /// （すでに見えていれば何もしない）。すべて検索の結果一覧・次を検索/前を検索から
-        /// ファイルを開いた時など、フォルダペインで選択状態にしたファイルへ、必要な祖先フォルダの
+        /// （すでに見えていれば何もしない）。
+        /// フォルダペインで選択状態にしたファイルへ、必要な祖先フォルダの
         /// 展開・コンテナ生成が完了してからスクロールするために、アプリケーションが完全に
         /// アイドル状態になってから処理を始める（エディタ側の移動処理と干渉しないようにするため）。
         /// </summary>
