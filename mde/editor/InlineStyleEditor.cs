@@ -323,15 +323,40 @@ namespace mde.editor
         /// <summary>
         /// コードブロック全体を、```フェンスと言語タグを含む、そのまま貼り付け可能な
         /// Markdownとしてコピーする。選択テキストの通常のCtrl+Cとは異なり、コード内容だけでなく
-        /// フェンス自体もコピーされる。
+        /// フェンス自体もコピーされる。コードブロックが複数行（先頭行のCodeBlockInfo＋続きの行
+        /// のCodeBlockContinuationInfo。HeadingCodeBlockEditor.InsertCodeBlockContinuation
+        /// Paragraph参照）に分かれている場合、右クリックされたのがどの行であってもブロック
+        /// 全体をコピーできるよう、まず先頭行まで遡ってから、そこから続く行をすべて集めて
+        /// 1つのMarkdown文字列に組み立て直す（m_blockToMarkdownは1行分の断片しか返さない
+        /// ため。開き/閉じフェンスの有無は各行のBlockToMarkdown自身が次の行の有無から判定
+        /// する）。
         /// </summary>
         public void CopyCodeBlockAsMarkdown()
         {
-            if (null == ContextParagraph || !(ContextParagraph.Tag is CodeBlockInfo))
+            if (null == ContextParagraph ||
+                !(ContextParagraph.Tag is CodeBlockInfo || ContextParagraph.Tag is CodeBlockContinuationInfo))
             {
                 return;
             }
-            string md = m_blockToMarkdown(ContextParagraph);
+            Paragraph firstLinePara = ContextParagraph;
+            while (firstLinePara.PreviousBlock is Paragraph prevPara && prevPara.Tag is CodeBlockContinuationInfo)
+            {
+                firstLinePara = prevPara;
+            }
+            var sb = new StringBuilder();
+            Block linePara = firstLinePara;
+            bool firstLineFlg = true;
+            while (linePara is Paragraph p && (p.Tag is CodeBlockInfo || p.Tag is CodeBlockContinuationInfo))
+            {
+                if (!firstLineFlg)
+                {
+                    sb.Append("\n");
+                }
+                sb.Append(m_blockToMarkdown(p));
+                firstLineFlg = false;
+                linePara = p.NextBlock;
+            }
+            string md = sb.ToString();
             if (!string.IsNullOrEmpty(md))
             {
                 Clipboard.SetText(md);
@@ -632,7 +657,7 @@ namespace mde.editor
         {
             var caret = m_editor.CaretPosition;
             var para = caret.Paragraph;
-            if (null == para || para.Tag is CodeBlockInfo)
+            if (null == para || para.Tag is CodeBlockInfo || para.Tag is CodeBlockContinuationInfo)
             {
                 return false;
             }

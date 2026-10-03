@@ -29,6 +29,11 @@ namespace mde.common
         private const double HEADER_VERTICAL_BORDER_THICKNESS = 1.75;
         // ハイライト（==text==）の背景色。
         private static readonly Brush m_highlightBackground = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0x8A));
+        // 引用（&gt; ）の背景色・文字色。コードブロックの背景色（暖色系のベージュ）とは
+        // 区別できるよう、無彩色のごく薄いグレーにしている。
+        private static readonly Brush m_quoteBackground = new SolidColorBrush(Color.FromRgb(0xF2, 0xF2, 0xF2));
+        // 引用の文字色（本文より少し薄いグレー。引用らしい「落ち着いた」印象にするため）。
+        private static readonly Brush m_quoteForeground = new SolidColorBrush(Color.FromRgb(0x59, 0x59, 0x59));
 
         /// <summary>コードブロックの背景色（他クラスからも参照できるよう公開）。</summary>
         public static Brush CodeBlockBackgroundBrush => m_codeBlockBackground;
@@ -45,6 +50,10 @@ namespace mde.common
             a_p.BorderThickness = new Thickness(0);
             a_p.BorderBrush = null;
             a_p.ClearValue(TextElement.FontFamilyProperty);
+            // 引用スタイル（ApplyQuoteStyle）が設定するForegroundを、他の種類へ変換した際や
+            // 本文へ戻した際に確実に解除する。見出し・コードブロック・水平線はForegroundを
+            // 設定しないため、この行を追加してもそれらの動作には影響しない。
+            a_p.ClearValue(TextElement.ForegroundProperty);
         }
 
         /// <summary>段落に見出しスタイルを適用する（a_level=0 なら本文スタイルに戻す）。</summary>
@@ -87,7 +96,13 @@ namespace mde.common
         /// <summary>段落にコードブロックスタイル（等幅フォント・背景色・枠線）を適用する。</summary>
         /// <param name="a_p">対象の段落。</param>
         /// <param name="a_language">```の直後の言語タグ（ツールチップに表示される）。</param>
-        public static void ApplyCodeBlockStyle(Paragraph a_p, string a_language = "")
+        /// <param name="a_isLastLine">true（既定値）: このコードブロックの最後の行（単独の
+        /// 1行だけのコードブロックの場合はこれがそのまま使われる。下側の枠線・余白を持つ）。
+        /// false: Enterによる続きの行（CodeBlockContinuationInfo）が後ろに続く場合。箱の
+        /// 下側は続きの段落側が担当するため、この段落自身の下側の枠線・余白は無くす
+        /// （HeadingCodeBlockEditor.InsertCodeBlockContinuationParagraph・
+        /// MarkdownConverter.MarkdownToDocument参照）。</param>
+        public static void ApplyCodeBlockStyle(Paragraph a_p, string a_language = "", bool a_isLastLine = true)
         {
             ClearSpecialStyling(a_p);
             a_p.Tag = new CodeBlockInfo { Language = a_language ?? "" };
@@ -95,11 +110,54 @@ namespace mde.common
             a_p.FontSize = 13.5;
             a_p.FontWeight = FontWeights.Normal;
             a_p.Background = m_codeBlockBackground;
-            a_p.Padding = new Thickness(14, 10, 14, 10);
-            a_p.Margin = new Thickness(0, 4, 0, 14);
             a_p.BorderBrush = m_cellBorder;
-            a_p.BorderThickness = new Thickness(1);
+            if (a_isLastLine)
+            {
+                a_p.Padding = new Thickness(14, 10, 14, 10);
+                a_p.Margin = new Thickness(0, 4, 0, 14);
+                a_p.BorderThickness = new Thickness(1);
+            }
+            else
+            {
+                a_p.Padding = new Thickness(14, 10, 14, 0);
+                a_p.Margin = new Thickness(0, 4, 0, 0);
+                a_p.BorderThickness = new Thickness(1, 1, 1, 0);
+            }
             ToolTipService.SetToolTip(a_p, string.IsNullOrEmpty(a_language) ? "コードブロック" : "コードブロック (" + a_language + ")");
+        }
+
+        /// <summary>段落に、コードブロックの2行目以降（Enterによる続きの行）のスタイルを適用する。
+        /// フォント・背景色等はApplyCodeBlockStyleと同じだが、Tagには先頭行と区別するため
+        /// CodeBlockContinuationInfoを設定する。引用（ApplyQuoteContinuationStyle）と異なり、
+        /// コードブロックは四辺を枠線で囲んだ箱の見た目のため、グループ内での位置（このIME
+        /// 続き行が今、グループの最後の行かどうか）に応じて、上下の枠線・パディング・
+        /// マージンをここで直接出し分ける（左右の枠線・背景色はどの位置でも共通）。これにより、
+        /// 複数のParagraphに分かれていても、1つの継ぎ目のない箱に見える。</summary>
+        /// <param name="a_p">対象の段落。</param>
+        /// <param name="a_isLastLine">true: このグループの最後の行（下側の枠線・パディング・
+        /// 余白を持つ）。false: まだ後ろに続きの行がある途中の行（上下とも枠線・パディングを
+        /// 持たず、前後の行と隙間なくつながって見える）。</param>
+        public static void ApplyCodeBlockContinuationStyle(Paragraph a_p, bool a_isLastLine)
+        {
+            ClearSpecialStyling(a_p);
+            a_p.Tag = new CodeBlockContinuationInfo();
+            a_p.FontFamily = new FontFamily("Consolas");
+            a_p.FontSize = 13.5;
+            a_p.FontWeight = FontWeights.Normal;
+            a_p.Background = m_codeBlockBackground;
+            a_p.BorderBrush = m_cellBorder;
+            if (a_isLastLine)
+            {
+                a_p.Padding = new Thickness(14, 0, 14, 10);
+                a_p.Margin = new Thickness(0, 0, 0, 14);
+                a_p.BorderThickness = new Thickness(1, 0, 1, 1);
+            }
+            else
+            {
+                a_p.Padding = new Thickness(14, 0, 14, 0);
+                a_p.Margin = new Thickness(0);
+                a_p.BorderThickness = new Thickness(1, 0, 1, 0);
+            }
         }
 
         /// <summary>段落に水平線（&lt;hr&gt;相当）スタイルを適用する。</summary>
@@ -113,6 +171,77 @@ namespace mde.common
             a_p.BorderThickness = new Thickness(0, 1, 0, 0);
             a_p.Margin = new Thickness(0, 14, 0, 14);
             a_p.Padding = new Thickness(0);
+        }
+
+        /// <summary>段落に引用（&gt; 相当）スタイルを適用する（a_quoted=falseなら本文スタイルに
+        /// 戻す）。見出し（ApplyHeadingStyle）と同じ「a_levelの代わりにbool、ClearSpecialStyling
+        /// を先に呼んでから改めて設定する」パターンに従う。</summary>
+        /// <param name="a_p">対象の段落。</param>
+        /// <param name="a_quoted">true: 引用スタイルを適用。false: 本文スタイルに戻す。</param>
+        /// <param name="a_isLastLine">true（既定値）: この引用グループの最後の行（続きの行が
+        /// 無い、単独の1行だけの引用の場合はこれがそのまま使われる。下方向のパディングを
+        /// 持つ）。false: 後ろにQuoteContinuationInfoの続きの行がある場合。コードブロック
+        /// （ApplyCodeBlockStyleのa_isLastLine）と同じ考え方で、下方向のパディングを無くし、
+        /// 次の行と行間が詰まって見えるようにする（a_quoted=falseの場合は無視される）。</param>
+        public static void ApplyQuoteStyle(Paragraph a_p, bool a_quoted, bool a_isLastLine = true)
+        {
+            ClearSpecialStyling(a_p);
+            a_p.Tag = a_quoted ? (object)new QuoteInfo() : null;
+            if (!a_quoted)
+            {
+                // ApplyHeadingStyleのa_level=0の場合と同じ値に戻す。
+                a_p.FontSize = 16;
+                a_p.FontWeight = FontWeights.Normal;
+                a_p.ClearValue(Paragraph.MarginProperty);
+            }
+            else
+            {
+                a_p.FontSize = 16;
+                a_p.FontWeight = FontWeights.Normal;
+                a_p.Foreground = m_quoteForeground;
+                a_p.Background = m_quoteBackground;
+                // 左側だけに太い縦線を引く、一般的な引用（blockquote）の見た目。
+                a_p.BorderBrush = m_cellBorder;
+                a_p.BorderThickness = new Thickness(3, 0, 0, 0);
+                // この段落は常に引用グループの先頭行であるため、上方向のパディングは常に
+                // 持たせる。下方向のパディングだけ、グループ最後の行かどうかで出し分ける
+                // （コードブロックのApplyCodeBlockStyleと同じ考え方。これが無いと、複数行の
+                // 引用で1行ごとに上下6pxずつ、計12pxの余計な隙間ができ、行間がコードブロックや
+                // 箇条書きより不自然に広く見えてしまう）。
+                a_p.Padding = new Thickness(12, 6, 8, a_isLastLine ? 6 : 0);
+                // 下マージンは、この段落が引用の最後の行である場合の値（続きの行が無い、
+                // 単独の1行だけの引用の場合はこれがそのまま使われる）。Enterで続きの行が
+                // 追加される場合は、呼び出し元（HeadingCodeBlockEditor.
+                // InsertQuoteContinuationParagraph・MarkdownConverter.MarkdownToDocument）が
+                // この下マージンを新しい最後の行の段落へ付け替え、この段落自身の下マージンを
+                // 0にする。
+                a_p.Margin = new Thickness(0, 4, 0, 10);
+            }
+        }
+
+        /// <summary>段落に、引用の2行目以降（Enterによる続きの行）のスタイルを適用する。
+        /// 見た目（文字色・背景・左の縦線）はApplyQuoteStyleのa_quoted=trueの場合と同じだが、
+        /// Tagには先頭行と区別するためQuoteContinuationInfoを設定する。Marginは呼び出し元が
+        /// 前後の段落との関係（この段落が今グループ内で最後の行かどうか）を見て個別に設定する
+        /// ため、ここでは触れない（BrContinuationInfoの続き段落と同じ考え方。MarkdownConverter.
+        /// MarkdownToDocumentのbrSegments処理、HeadingCodeBlockEditor.
+        /// InsertQuoteContinuationParagraph参照）。</summary>
+        /// <param name="a_p">対象の段落。</param>
+        /// <param name="a_isLastLine">true: このグループの最後の行（下方向のパディングを持つ）。
+        /// false: まだ後ろに続きの行がある途中の行（上下ともパディングを持たず、前後の行と
+        /// 隙間なくつながって見える）。続きの行は先頭行ではないため、上方向のパディングは
+        /// 常に0にする（ApplyCodeBlockContinuationStyleと同じ考え方）。</param>
+        public static void ApplyQuoteContinuationStyle(Paragraph a_p, bool a_isLastLine)
+        {
+            ClearSpecialStyling(a_p);
+            a_p.Tag = new QuoteContinuationInfo();
+            a_p.FontSize = 16;
+            a_p.FontWeight = FontWeights.Normal;
+            a_p.Foreground = m_quoteForeground;
+            a_p.Background = m_quoteBackground;
+            a_p.BorderBrush = m_cellBorder;
+            a_p.BorderThickness = new Thickness(3, 0, 0, 0);
+            a_p.Padding = new Thickness(12, 0, 8, a_isLastLine ? 6 : 0);
         }
 
         /// <summary>タスクリスト用チェックボックスを生成する。MarkdownConverter（バッチ変換）と

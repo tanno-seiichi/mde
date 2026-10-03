@@ -907,6 +907,96 @@ CSSのボックスモデルにもHTML上の出現位置にも従わせず、セ�
 
 nashi・ari両版で完全に同一の実装。
 
+### 14.119 nashiとの完全な機能同期：引用（Quote）機能・コードブロック複数行編集
+（CodeBlockContinuationInfo）・通常段落でのShift+Enter修正（nashi §14.125相当）を
+ariへ移植した
+
+【経緯】
+ユーザーより「nashi版の方もお願いします」との依頼を受け、ari版のソースを調査した
+ところ、以下が丸ごと欠落していることが判明した。
+
+  - 引用（`QuoteInfo`/`QuoteContinuationInfo`）機能そのもの（`BlockStyles.cs`に
+    `ApplyQuoteStyle`/`ApplyQuoteContinuationStyle`が存在せず、`Models.cs`に
+    `QuoteInfo`/`QuoteContinuationInfo`が存在しない）
+  - コードブロックの複数行編集を段落分割方式で行う仕組み（`CodeBlockContinuationInfo`。
+    `Models.cs`に存在せず、`MainWindow.xaml.cs`のEnterキー分岐も旧来の
+    `InsertLineBreakAtCaret`（LineBreak要素によるIME不具合のある実装）のままだった）
+  - 通常の段落内でのShift+Enter修正（nashi §14.125。`InsertBrContinuationParagraph`）
+
+ユーザーに移植範囲をAskUserQuestionで確認したところ、「nashiとの完全な機能同期
+（推奨）」を選択いただいたため、単発の修正のみでなく、nashiとariの間で許容されている
+既知の差分（PDF出力関連ファイル・App.xaml.cs・MainWindow.xaml.cs・AssemblyInfo.cs・
+csproj・msi関連）を除き、完全に同一の実装へ揃える作業として実施した。
+
+【調査方法】
+nashi・ari双方の該当ファイルをデバイスから取得し、`diff`で全ファイル横断的に比較した。
+その結果、以下のことが機械的に確認できた。
+
+  - `common/BlockStyles.cs`・`common/Models.cs`・`common/MarkdownConverter.cs`・
+    `editor/HeadingCodeBlockEditor.cs`・`editor/ClipboardHtmlBuilder.cs`・
+    `editor/InlineStyleEditor.cs`・`editor/TableEditor.cs`の7ファイルは、ari側に
+    nashiに無い独自の内容が無い（ari側がnashiの単純な部分集合である）ことを確認した。
+    つまりariだけの機能・分岐は一切含まれておらず、安全にnashiの現在の内容で丸ごと
+    上書きできると判断した。
+  - `MainWindow.xaml.cs`のみ、PDF書き出し機能（`ExportPdfBtnClick`とその関連処理。
+    ariはheadless Chromiumベース、nashiは「Microsoft Print to PDF」仮想プリンタ
+    ベースで、実装方式自体が別物）という正当な既知の差分を含むため、全体diffを
+    14個のハンクに分解し、PDF関連の2ハンク（`using mde.chromium;`の有無、
+    `ExportPdfBtnClick`本体）はariの実装のまま残し、残り12ハンク（引用・コード
+    ブロック複数行編集・Shift+Enter関連の機能差分）のみを抽出してariへ適用する
+    手術的なマージを行った。マージ後、nashiとの再diffで差分が上記2ハンク
+    （PDF関連の正当な差分）のみに戻ったことを確認している。
+
+【移植作業中に発覚した問題と対応】
+最初の移植・ビルドでは22件のコンパイルエラー（`CodeBlockContinuationInfo`が
+見つからない、`BlockStyles.ApplyQuoteStyle`等のオーバーロードが無い、等）が発生した。
+原因を調査した結果、作業用にローカルへ保持していたnashiの`Models.cs`・
+`BlockStyles.cs`・`MarkdownConverter.cs`のキャッシュが、同時に使っていた
+`HeadingCodeBlockEditor.cs`等より古い時点のものであり、互いに整合しない状態で
+移植してしまっていたことが判明した（`CodeBlockContinuationInfo`クラス定義が
+`Models.cs`に存在しないのに、他のファイルがそれを参照している状態）。デバイスから
+該当3ファイルを再取得し、クラス定義・メソッド定義の存在をgrepで相互確認してから
+再度移植したところ、ビルドは正常終了（0エラー・0警告）した。
+
+また、`BlockStyles.cs`の書き込みでは、`device_commit_files`が成功を報告したにも
+関わらず、再取得して比較すると実際には書き込み前の内容のまま変化していないという
+事象が再発した（nashi側の§14.126参照の既知の問題と同種）。`force: true`を付けて
+再送信し、再取得・バイト比較で一致を確認して解決した。以後、全ファイルの書き込み後に
+必ず再取得してバイト単位で一致を確認する運用を徹底した。
+
+【ビルドと構造的な検証】
+Visual Studioでのリビルドは0エラー・0警告で成功した。実機でビルド出力のexeを
+直接起動し、デバッグログを有効にした状態で以下を操作し、構造的な動作確認を行った。
+
+  - 「> 引用1行目」と入力して引用へのライブ変換を確認し、Enterキーで2行目
+    「引用2行目」を続けて入力。デバッグログに`ConvertParagraphToQuote`・
+    `InsertQuoteContinuationParagraph`の呼び出しが記録され、保存したMarkdownが
+    `> 引用1行目\n> 引用2行目`と正しくシリアライズされることを確認した。
+  - 「```python」と入力してコードブロックへのライブ変換を確認し、Enterキーで
+    複数行（`print("line1")`・`print("line2")`）を入力。デバッグログに
+    `InsertCodeBlockContinuationParagraph`の呼び出しが記録され、保存した
+    Markdownがフェンス付きで正しくシリアライズされることを確認した。
+  - 通常の段落で「AAAA」+Shift+Enter+「BBBB」と入力し、デバッグログに
+    `InsertBrContinuationParagraph`の呼び出しが記録され、保存したMarkdownが
+    `AAAA<br>\nBBBB`（nashi側の確認時と同一のバイト数）となることを確認した。
+
+ただし、これらはいずれもプログラムによるキー送信での確認であり、§14.125の際に
+判明した通り、実際の日本語IME入力（変換確定のタイミング等）を自動化ツールで
+再現することはできない。実機・実際のIME入力での最終確認をユーザーにお願いする
+必要がある。
+
+【変更したファイル】
+`common/BlockStyles.cs`・`common/Models.cs`・`common/MarkdownConverter.cs`・
+`editor/HeadingCodeBlockEditor.cs`・`editor/ClipboardHtmlBuilder.cs`・
+`editor/InlineStyleEditor.cs`・`editor/TableEditor.cs`（nashiの内容で全体を置換）・
+`MainWindow.xaml.cs`（引用・コードブロック複数行編集・Shift+Enter関連の12ハンクのみ
+手術的に適用、PDF書き出し関連はariの実装を維持）。
+
+nashi・ari間で、既知の差分（PDF出力関連ファイル・App.xaml.cs・MainWindow.xaml.cs・
+AssemblyInfo.cs・csproj・msi関連）を除き、完全に同一の実装になったことを、全共有
+ファイルの`diff`で確認済み。
+
+
 ## 16. 新しい機能を追加する時の指針
 
 1. **どのクラスの責務かを見極める**：4章の表を参照し、既存クラスに機能を追加すべきか、新しい

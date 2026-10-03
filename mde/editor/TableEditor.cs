@@ -1193,7 +1193,9 @@ namespace mde.editor
             // コードブロックへの貼り付けは、既定動作だと新しい段落に分割されてしまうため、
             // 常にリテラルなテキストとして同じフェンス内に挿入する。
             var currentPara = m_editor.CaretPosition?.Paragraph;
-            if (null != currentPara && currentPara.Tag is CodeBlockInfo && a_args.SourceDataObject.GetDataPresent(DataFormats.Text))
+            if (null != currentPara &&
+                (currentPara.Tag is CodeBlockInfo || currentPara.Tag is CodeBlockContinuationInfo) &&
+                a_args.SourceDataObject.GetDataPresent(DataFormats.Text))
             {
                 string codeText = (string)a_args.SourceDataObject.GetData(DataFormats.Text);
                 a_args.CancelCommand();
