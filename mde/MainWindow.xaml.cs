@@ -106,6 +106,12 @@ namespace mde
         /// 参照。既定値はfalse。</summary>
         private bool m_uniformMarkerStyleFlg = false;
 
+        /// <summary>メニュー「表示」→「表示フォント」の状態。falseなら既定の表示フォント
+        /// （Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI。既定）、trueならフォント変更前の以前の
+        /// 表示フォント（Yu Gothic UI, Segoe UI）を使う。詳細はSetUseLegacyFontFlg参照。
+        /// 既定値はfalse。</summary>
+        private bool m_useLegacyFontFlg = false;
+
         /// <summary>PDF書き出し時の、上下左右の余白（px）。メニュー「PDFの余白を設定…」で
         /// 変更でき、次回起動時にも復元される。既定値はAppSettingsのものと揃えてある。</summary>
         private double m_pdfMarginTop = 64;
@@ -236,6 +242,8 @@ namespace mde
             m_correctColumnWidthsFlg = m_savedSettings.CorrectColumnWidthsFlg;
             m_correctColumnWidthsMenuItem.IsChecked = m_correctColumnWidthsFlg;
             m_uniformMarkerStyleFlg = m_savedSettings.UniformMarkerStyleFlg;
+            m_useLegacyFontFlg = m_savedSettings.UseLegacyFontFlg;
+            ApplyEditorFontFamily(m_useLegacyFontFlg);
             m_debugLogMenuItem.IsChecked = m_savedSettings.DebugLogEnabledFlg;
             DebugLogger.SetEnabled(m_savedSettings.DebugLogEnabledFlg);
             m_pdfMarginTop = m_savedSettings.PdfMarginTop > 0 ? m_savedSettings.PdfMarginTop : 64;
@@ -250,6 +258,7 @@ namespace mde
             UpdateLinkModeMenuChecks();
             UpdateLineBreakModeMenuChecks();
             UpdateMarkerStyleMenuChecks();
+            UpdateFontModeMenuChecks();
             m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
             m_outlinePaneVisibleFlg = m_savedSettings.OutlinePaneVisible;
             if (m_savedSettings.FolderPaneWidth > 0)
@@ -668,6 +677,7 @@ namespace mde
                 PreserveSourceLineBreaksFlg = m_preserveSourceLineBreaksFlg,
                 CorrectColumnWidthsFlg = m_correctColumnWidthsFlg,
                 UniformMarkerStyleFlg = m_uniformMarkerStyleFlg,
+                UseLegacyFontFlg = m_useLegacyFontFlg,
                 DebugLogEnabledFlg = DebugLogger.IsEnabled,
                 PdfMarginTop = m_pdfMarginTop,
                 PdfMarginBottom = m_pdfMarginBottom,
@@ -2668,6 +2678,75 @@ namespace mde
         {
             m_markerStyleWpfStandardMenuItem.IsChecked = !m_uniformMarkerStyleFlg;
             m_markerStyleUniformMenuItem.IsChecked = m_uniformMarkerStyleFlg;
+        }
+
+        /// <summary>メニュー「表示」→「表示フォント」→「新しいフォント（Yu Gothic）」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void FontModeNewChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            SetUseLegacyFontFlg(false);
+        }
+
+        /// <summary>メニュー「表示」→「表示フォント」→「以前のフォント（Yu Gothic UI）」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void FontModeLegacyChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            SetUseLegacyFontFlg(true);
+        }
+
+        /// <summary>表示フォントの設定を変更する。エディタ自体のフォントは、DynamicResource
+        /// "EditorFontFamily"（ApplyEditorFontFamily参照）を更新することで即座に切り替わる。
+        /// 一方、表の列幅はMarkdown変換時にしか再計測されないため、SetPreserveSourceLineBreaksFlg
+        /// 等と同じ理由・同じ方法（現在の文書をいったんMarkdownへ変換し、フラグを切り替えた上で
+        /// 再度解析し直す）で、開いている文書全体を再変換し、新しいフォントでの幅に追従させる。</summary>
+        /// <param name="a_value">true＝フォント変更前の以前のフォント（Yu Gothic UI, Segoe UI）、
+        /// false（既定）＝現在の既定フォント（Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI）。</param>
+        private void SetUseLegacyFontFlg(bool a_value)
+        {
+            if (m_useLegacyFontFlg != a_value)
+            {
+                ApplyEditorFontFamily(a_value);
+                if (m_isSourceModeFlg)
+                {
+                    m_useLegacyFontFlg = a_value;
+                }
+                else
+                {
+                    string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+                    m_useLegacyFontFlg = a_value;
+                    RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
+                    m_outlineManager.Refresh();
+                    m_editor.CaretPosition = m_editor.Document.ContentStart;
+                }
+            }
+            UpdateFontModeMenuChecks();
+        }
+
+        /// <summary>「表示フォント」メニューの2項目を、現在の設定に合わせてラジオボタンのように
+        /// 片方だけチェック状態にする。</summary>
+        private void UpdateFontModeMenuChecks()
+        {
+            m_fontModeNewMenuItem.IsChecked = !m_useLegacyFontFlg;
+            m_fontModeLegacyMenuItem.IsChecked = m_useLegacyFontFlg;
+        }
+
+        /// <summary>エディタの表示フォントを、指定した設定へ反映する。DynamicResource
+        /// "EditorFontFamily"（MainWindow.xamlのWindow.Resources参照）を更新することで、
+        /// m_editorDocument（FlowDocument）・m_sourceEditor（TextBox）双方のFontFamilyへ、
+        /// WPFの通常のプロパティ継承・DynamicResourceの仕組みで即座に反映される
+        /// （ApplyEditorLineHeightと同じパターン）。表のセル幅計測用フォント
+        /// （BlockStyles.SetTableMeasureFontFamily）も合わせて更新するが、既存の表の列幅自体は、
+        /// SetUseLegacyFontFlgでの再変換が実行されて初めて新しいフォントでの幅に更新される。</summary>
+        /// <param name="a_useLegacyFontFlg">true＝以前のフォント、false＝既定の新しいフォント。</param>
+        private void ApplyEditorFontFamily(bool a_useLegacyFontFlg)
+        {
+            var fontFamily = a_useLegacyFontFlg
+                ? BlockStyles.LegacyEditorFontFamily
+                : BlockStyles.DefaultEditorFontFamily;
+            Resources["EditorFontFamily"] = fontFamily;
+            BlockStyles.SetTableMeasureFontFamily(fontFamily);
         }
 
         /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。

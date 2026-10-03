@@ -378,10 +378,29 @@ namespace mde.common
         //  表の列幅（内容に合わせたコンパクトな列幅）
         // ======================================================================
 
+        /// <summary>エディタの表示フォント（既定）。Typoraの実際の描画フォント（Yu Gothic、
+        /// UI版ではない通常版）に合わせた設定。メニュー「表示」→「表示フォント」参照。</summary>
+        public static readonly FontFamily DefaultEditorFontFamily = new FontFamily("Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI");
+
+        /// <summary>エディタの表示フォント（フォント変更前の以前の設定）。メニュー「表示」→
+        /// 「表示フォント」で切り替えられる。</summary>
+        public static readonly FontFamily LegacyEditorFontFamily = new FontFamily("Yu Gothic UI, Segoe UI");
+
         /// <summary>表のセルの計測に使うフォント（MainWindow.xamlのFlowDocumentの設定と
-        /// 合わせてある）。</summary>
-        private static readonly FontFamily m_tableMeasureFontFamily = new FontFamily("Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI");
+        /// 合わせてある）。メニュー「表示」→「表示フォント」の切り替えに応じて
+        /// SetTableMeasureFontFamilyで更新される。</summary>
+        private static FontFamily m_tableMeasureFontFamily = DefaultEditorFontFamily;
         private const double TABLE_MEASURE_FONT_SIZE = 16;
+
+        /// <summary>表のセル幅計測に使うフォントを変更する。メニュー「表示」→「表示フォント」の
+        /// 切り替え時にMainWindowから呼ばれる（表のセル自体の表示フォントは、FlowDocumentの
+        /// FontFamily変更がWPFの通常のプロパティ継承で自動的に反映されるため、ここでは計測用の
+        /// 値だけを更新すればよい）。</summary>
+        /// <param name="a_fontFamily">新しい計測用フォント。</param>
+        public static void SetTableMeasureFontFamily(FontFamily a_fontFamily)
+        {
+            m_tableMeasureFontFamily = a_fontFamily;
+        }
 
         /// <summary>この幅（px）を超える内容を持つ列は固定幅にせず、残りの幅を分け合って
         /// 折り返す列として扱う（ApplyContentBasedColumnWidths、現在は無効化）。

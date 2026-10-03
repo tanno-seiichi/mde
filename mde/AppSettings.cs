@@ -34,6 +34,12 @@ namespace mde
         /// 段数によらずすべての階層で同じ記号（Disc）を使う。既定はfalse。</summary>
         public bool UniformMarkerStyleFlg { get; set; } = false;
 
+        /// <summary>メニュー「表示」→「表示フォント」の選択状態。falseなら既定の表示フォント
+        /// （Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI。Typoraの実際の描画フォントに合わせた
+        /// 設定。既定）、trueならフォント変更前の以前の表示フォント（Yu Gothic UI, Segoe UI）を
+        /// 使う。既定はfalse。</summary>
+        public bool UseLegacyFontFlg { get; set; } = false;
+
         /// <summary>メニュー「表示」→「列幅を補正する」のチェック状態（表全体の列幅機能の
         /// マスタースイッチ）。オンなら、明示的に調整済みの表はその比率で、未調整の表は内容量
         /// に応じた自動比率で表示する。オフなら両方とも既定の均等幅（Auto）で表示する。
