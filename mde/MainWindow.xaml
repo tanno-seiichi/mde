@@ -23,6 +23,11 @@
              それに合わせておく（実際にはMainWindowコンストラクタのApplyEditorLineHeight
              呼び出しで、起動直後にこの値で上書きされる）。 -->
         <Thickness x:Key="EditorBlockSpacing">0,0,0,14</Thickness>
+        <!-- エディタの表示フォント。メニュー「表示」→「表示フォント」で切り替えられる。
+             ここでの初期値は既定（フォント変更後）のものだが、実際にはMainWindow
+             コンストラクタで保存済み設定に応じて新しいフォント／以前のフォントのどちらかに
+             起動直後に上書きされる（EditorLineHeightと同じパターン）。 -->
+        <FontFamily x:Key="EditorFontFamily">Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI</FontFamily>
         <Style TargetType="MenuItem" x:Key="CtxMenuItem">
             <Setter Property="Padding" Value="6,4"/>
         </Style>
@@ -70,6 +75,12 @@
                               IsCheckable="True" Click="LineBreakModeSourceChecked"/>
                     <MenuItem x:Name="m_lineBreakModeBlankOnlyMenuItem" Header="空行が入るまで改行しない(_B)"
                               IsCheckable="True" Click="LineBreakModeBlankOnlyChecked"/>
+                </MenuItem>
+                <MenuItem Header="表示フォント">
+                    <MenuItem x:Name="m_fontModeNewMenuItem" Header="新しいフォント（Yu Gothic）(_N)"
+                              IsCheckable="True" Click="FontModeNewChecked"/>
+                    <MenuItem x:Name="m_fontModeLegacyMenuItem" Header="以前のフォント（Yu Gothic UI）(_L)"
+                              IsCheckable="True" Click="FontModeLegacyChecked"/>
                 </MenuItem>
                 <MenuItem x:Name="m_correctColumnWidthsMenuItem" Header="列幅を補正する(_W)"
                           IsCheckable="True" Click="CorrectColumnWidthsMenuItemChecked"/>
@@ -362,7 +373,7 @@
                                           Style="{StaticResource CtxMenuItem}" Click="ToggleModeBtnClick"/>
                             </ContextMenu>
                         </RichTextBox.ContextMenu>
-                        <FlowDocument x:Name="m_editorDocument" FontFamily="Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI"/>
+                        <FlowDocument x:Name="m_editorDocument" FontFamily="{DynamicResource EditorFontFamily}"/>
                     </RichTextBox>
 
                     <TextBox x:Name="m_sourceEditor"
@@ -371,7 +382,7 @@
                              Background="#F0F0F0"
                              Foreground="#000000"
                              Padding="40,32"
-                             FontFamily="Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI"
+                             FontFamily="{DynamicResource EditorFontFamily}"
                              FontSize="16"
                              AcceptsReturn="True"
                              AcceptsTab="True"
