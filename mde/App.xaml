@@ -76,5 +76,43 @@
             </Setter>
         </Style>
 
+        <!-- タスクリストのチェックボックス用スタイル。既定のCheckBoxはOSテーマに応じて
+             未チェック時の内側がグレーで塗りつぶされるため、枠と白い背景だけの単純な
+             見た目に差し替える。チェック時も背景は白のまま変えず、チェックマークだけ
+             青色（#0075FF）で表示する。
+             BlockStyles.CreateTaskCheckboxからTag="task-checkbox"のチェックボックスにのみ
+             適用され、ダイアログ内の通常のCheckBox（例：ColumnWidthDialogの「自動計算」）
+             には影響しない。 -->
+        <Style x:Key="TaskCheckboxStyle" TargetType="CheckBox">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="Box"
+                                Background="White"
+                                BorderBrush="#B0B0B0"
+                                BorderThickness="1.3"
+                                CornerRadius="3"
+                                SnapsToDevicePixels="True">
+                            <Path x:Name="CheckMark"
+                                  Margin="0.5, 0.5, 1.5, 0.5"
+                                  Stretch="Uniform"
+                                  Data="M 1,6 L 5,11 L 13,1"
+                                  Stroke="#0075FF"
+                                  StrokeThickness="2.8"
+                                  StrokeStartLineCap="Flat"
+                                  StrokeEndLineCap="Square"
+                                  StrokeLineJoin="Round"
+                                  Visibility="Collapsed"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
     </Application.Resources>
 </Application>

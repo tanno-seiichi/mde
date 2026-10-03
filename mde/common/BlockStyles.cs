@@ -248,23 +248,30 @@ namespace mde.common
         /// ListEditor（ライブ入力変換）の両方から共有で使い、見た目が食い違わないようにする
         /// 共通ヘルパー。幅・高さを固定しているのは、既定のCheckBoxはOSテーマ等で描画サイズが
         /// わずかに変わり、行の高さが不安定に見えるため（Paragraph.LineHeightは最低高さでしか
-        /// なく、埋め込みUIElementが大きいと行全体が伸びる）。Marginの上側4pxは、行頭マーカー
-        /// （「・」）に対してチェックボックスの位置を下げる見た目上の微調整で、段落の文字位置・
-        /// TextPointer・IME関連の処理には関わらない。
+        /// なく、埋め込みUIElementが大きいと行全体が伸びる）。Marginの上側は、行頭マーカー
+        /// （「・」）に対するチェックボックスの縦位置を微調整するための値（エディタの既定
+        /// フォント実測に合わせて調整済み。フォントを変更した場合は再調整が必要）で、段落の
+        /// 文字位置・TextPointer・IME関連の処理には関わらない。見た目はApp.xamlの
+        /// TaskCheckboxStyle（白地＋枠線、Typoraの表示に合わせたもの）を適用する。
         /// </summary>
         /// <param name="a_checked">チェック済み状態（[x]）かどうか。</param>
         public static CheckBox CreateTaskCheckbox(bool a_checked)
         {
-            return new CheckBox
+            var checkbox = new CheckBox
             {
                 IsChecked = a_checked,
                 Width = 15,
                 Height = 15,
                 VerticalAlignment = VerticalAlignment.Center,
                 VerticalContentAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 4, 4, 0),
+                Margin = new Thickness(0, 0, 4, 0),
                 Tag = "task-checkbox"
             };
+            if (Application.Current?.Resources["TaskCheckboxStyle"] is Style taskCheckboxStyle)
+            {
+                checkbox.Style = taskCheckboxStyle;
+            }
+            return checkbox;
         }
 
         /// <summary>CreateTaskCheckboxで生成したチェックボックスを、行頭の箇条書きマーカー
