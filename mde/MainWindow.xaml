@@ -362,7 +362,7 @@
                                           Style="{StaticResource CtxMenuItem}" Click="ToggleModeBtnClick"/>
                             </ContextMenu>
                         </RichTextBox.ContextMenu>
-                        <FlowDocument x:Name="m_editorDocument" FontFamily="Yu Gothic UI, Segoe UI"/>
+                        <FlowDocument x:Name="m_editorDocument" FontFamily="Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI"/>
                     </RichTextBox>
 
                     <TextBox x:Name="m_sourceEditor"
@@ -371,7 +371,7 @@
                              Background="#F0F0F0"
                              Foreground="#000000"
                              Padding="40,32"
-                             FontFamily="Segoe UI, Yu Gothic UI"
+                             FontFamily="Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI"
                              FontSize="16"
                              AcceptsReturn="True"
                              AcceptsTab="True"

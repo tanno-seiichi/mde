@@ -373,7 +373,7 @@ namespace mde.common
 
         /// <summary>表のセルの計測に使うフォント（MainWindow.xamlのFlowDocumentの設定と
         /// 合わせてある）。</summary>
-        private static readonly FontFamily m_tableMeasureFontFamily = new FontFamily("Yu Gothic UI, Segoe UI");
+        private static readonly FontFamily m_tableMeasureFontFamily = new FontFamily("Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI");
         private const double TABLE_MEASURE_FONT_SIZE = 16;
 
         /// <summary>この幅（px）を超える内容を持つ列は固定幅にせず、残りの幅を分け合って
