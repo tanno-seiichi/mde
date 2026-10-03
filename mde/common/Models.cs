@@ -44,6 +44,32 @@ namespace mde.common
     }
 
     /// <summary>
+    /// 引用（&gt; で始まる行）の先頭行の段落（Paragraph）のTagに設定するマーカー用クラス。
+    /// 中身を持たない目印としてのみ使う（見出しのint levelと同じ役割だが、引用には
+    /// レベルの区別が無いため、boolではなくHorizontalRuleInfoと同種の空クラスにしている）。
+    /// Shift+Enterによる2行目以降は、LineBreakではなく別のParagraph（QuoteContinuationInfo
+    /// 参照）として表現する。LineBreakを使わない理由はQuoteContinuationInfoのコメントを参照。
+    /// </summary>
+    public class QuoteInfo
+    {
+    }
+
+    /// <summary>
+    /// 引用の2行目以降（Shift+Enterによる続きの行）の段落（Paragraph）のTagに設定する
+    /// マーカー用クラス。BrContinuationInfo（通常の段落中の&lt;br&gt;による続き段落）と同種の
+    /// 目印用の空クラス。引用の2行目以降をLineBreakで表現しなかったのは、箇条書き項目・表の
+    /// セルと同じ理由（WPFのLineBreakとIMEの組み合わせの不具合。Shift+Enterで行を増やした後、
+    /// 新しい行にカーソルを移動して入力すると1行目の末尾に入力されてしまう、という実機での
+    /// ご報告により確認済み。HeadingCodeBlockEditor.InsertParagraphSplitAtCaretのコメント
+    /// 参照）。段落を分割し、間のMarginを0にすることで、見た目には1つの引用ブロック内の
+    /// 複数行にしか見えないようにしている（MarkdownConverter.MarkdownToDocument・
+    /// DocumentToMarkdown、HeadingCodeBlockEditor.InsertQuoteContinuationParagraph参照）。
+    /// </summary>
+    public class QuoteContinuationInfo
+    {
+    }
+
+    /// <summary>
     /// カスタムジャンプ先（&lt;a id="mytag"&gt;&lt;/a&gt; で作られる、見出し以外の任意の場所への
     /// ジャンプ先マーカー）の、目印用の空のRunのTagに設定するメタデータ。
     /// </summary>
@@ -60,6 +86,23 @@ namespace mde.common
     {
         /// <summary>```の直後に書かれた言語名（例: "csharp"）。未指定なら空文字。</summary>
         public string Language { get; set; } = "";
+    }
+
+    /// <summary>
+    /// コードブロックの2行目以降（Enterによる続きの行）の段落（Paragraph）のTagに設定する
+    /// マーカー用クラス。中身を持たない目印としてのみ使う（QuoteContinuationInfo・
+    /// BrContinuationInfoと同種）。コードブロックの2行目以降も、従来のLineBreakではなく
+    /// 別のParagraphとして表現する。LineBreakを使わない理由はQuoteContinuationInfoの
+    /// コメントと同じ（WPFのLineBreakとIMEの組み合わせの不具合。実機で、コードブロック内で
+    /// Enterを押して行を増やした後、新しい行にカーソルを移動して入力すると前の行の末尾に
+    /// 入力されてしまう、という形で確認された）。段落を分割し、間のMargin・BorderThicknessを
+    /// 調整することで、見た目には1つのコードブロックの箱の中の複数行にしか見えないように
+    /// している（BlockStyles.ApplyCodeBlockStyle・ApplyCodeBlockContinuationStyle、
+    /// MarkdownConverter.MarkdownToDocument・DocumentToMarkdown、HeadingCodeBlockEditor.
+    /// InsertCodeBlockContinuationParagraph・MergeCodeBlockContinuationIntoPrevious参照）。
+    /// </summary>
+    public class CodeBlockContinuationInfo
+    {
     }
 
     /// <summary>

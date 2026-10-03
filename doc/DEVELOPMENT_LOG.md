@@ -901,6 +901,525 @@ CSSのボックスモデルにもHTML上の出現位置にも従わせず、セ�
 
 nashi・ari両版で完全に同一の実装。
 
+### 14.119 Markdownの引用（"> "で始まる行）に対応した
+
+ユーザーから、見出しの"# "と同じように、"> "で段落の先頭に入力すると引用に変換される
+機能の追加を依頼された。要件は以下の3点：(1) "> "の入力をきっかけに、見出しの"# "と
+全く同じ操作感（行頭での入力がトリガー。既に文字列がある行の先頭に後から書き足した
+場合にも変換される）で引用に変換する。(2) 保存するMarkdownでは、引用の各行すべてに
+"> "を付ける（CommonMarkの「緩い引用」のような、2行目以降のマーカー省略には対応しない）。
+(3) Shift+Enterでは、見出しとは異なり同じ引用の続きとして次の行へ進める（見出しとの
+唯一の挙動差。Enter単独では見出しと同じく引用を抜ける）。
+
+**データモデル・見た目**：`common/Models.cs`に、見出しのint Tagに相当する目印用クラス
+`QuoteInfo`を追加した（`HorizontalRuleInfo`と同種の、中身を持たない空クラス）。
+`common/BlockStyles.cs`には`ApplyQuoteStyle(Paragraph, bool)`を追加し、
+`ApplyHeadingStyle`と同じ「`ClearSpecialStyling`を呼んでからTag・見た目を設定し直す」
+パターンに従った。見た目は、左側に太い縦線（`BorderThickness(3,0,0,0)`）・薄いグレーの
+背景・やや薄いグレーの文字色という、一般的な引用（blockquote）の表現にしている。なお、
+引用スタイルで初めて段落に`Foreground`を設定することになったため、`ClearSpecialStyling`
+に`Foreground`の`ClearValue`を追加した（見出し・コードブロック・水平線はForegroundを
+設定しないため、この追加による既存動作への影響は無い）。
+
+**編集時の挙動（段落の表現方法）**：引用はトップレベルの1つの`Paragraph`として表現する
+（箇条書き項目・表のセルとは異なり、囲いとなるコンテナが無いため）。Shift+Enterによる
+「続きの行」は、段落を分割せず、コードブロックのEnterと同じ`HeadingCodeBlockEditor.
+InsertLineBreakAtCaret`（`LineBreak`要素＋`ImeCaretMoveHelper`によるIME対策）で同じ
+段落内に追加する。これにより、見出しでは「Shift+Enterも含めてEnterキーは常に引用/見出し
+を抜ける」という動作だったのに対し、引用だけ「Shift+Enterは続ける、Enter単独は抜ける」
+という要件通りの差を実現した（`MainWindow.EditorPreviewKeyDown`のEnter処理に
+`para.Tag is QuoteInfo`の分岐を追加し、Shift修飾の有無で`InsertLineBreakAtCaret`と
+新設の`HandleQuoteEnter`（`HandleHeadingEnter`と全く同じロジック）を振り分けている）。
+
+`editor/HeadingCodeBlockEditor.cs`には、見出し向けの既存メソッドと1対1に対応する4つの
+メソッドを追加した：`ConvertParagraphToQuote`（`ConvertParagraphToHeading`と同じ
+パターンでマーカー文字列を除去して変換）、`HandleQuoteEnter`（`HandleHeadingEnter`と
+全く同じロジックの複製。引用自体を分割せず、キャレット位置に応じて前後に新しい通常の
+段落を挿入する）、`RevertEmptyQuoteOnBackspace`・`DeleteLastCharInQuote`（それぞれ
+`RevertEmptyHeadingOnBackspace`・`DeleteLastCharInHeading`と同じ理由・同じパターン）。
+既存コードが見出し・コードブロック・水平線のそれぞれに専用メソッドを用意して重複を
+許容している既存の設計方針に合わせ、あえて共通化（ヘルパーへの抽出）はせず、見出し側と
+同じ構造のメソッドを別名で追加する形にした。
+
+`MainWindow.xaml.cs`には3箇所の変更を加えた。(1) `EditorTextChanged`に、見出しの
+`"^(#{1,6})[  ]"`と同じ先頭一致の正規表現`"^>[  ]"`を追加し、トップレベル
+段落でこのパターンに一致したら`ConvertParagraphToQuote`を呼ぶ。(2) `EditorPreviewKeyDown`
+のEnter処理に、見出し向けの`para.Tag is int level && level > 0`の直後として
+`para.Tag is QuoteInfo`の分岐を追加（上記のShift+Enter分岐を含む）。(3) 同じく
+`EditorPreviewKeyDown`のBackspace処理に、見出し向けの分岐の直後として、同じ判定方法
+（空判定・キャレット末尾判定はいずれもTextRangeの文字列長で行う）の引用向け分岐を追加した。
+
+**Markdownとの相互変換（`common/MarkdownConverter.cs`）**：既存コードには引用関連の
+処理が全く存在しなかったため（検索しても"Quote"/"引用"等の該当箇所が無いことを確認済み）、
+ファイル読み込み・保存の両方を新規に実装した。
+
+`MarkdownToDocument`に、見出しの解析直後の位置に、連続する"> "行をまとめて1つの
+`Paragraph`にする処理を追加した。各行の先頭の"> "（正規表現`"^>\\s?(.*)$"`。1個以上の
+空白文字を許容する点は、同ファイル内の見出し解析が`\s+`を使っているのに合わせた）を
+取り除いた残りを、行ごとに"\n"で連結してから`AppendInlineMarkdownToParagraph`へ渡す。
+同メソッドは埋め込まれた"\n"を実際の`LineBreak`へ変換する既存の仕組みを持つため、
+結果的にエディタ上でShift+Enterを使って入力した場合と全く同じ、1つの`Paragraph`内に
+複数行を持つ構造になる（インライン装飾・リンク等も行ごとに正しく解釈される）。
+
+`BlockToMarkdown`には、`CodeBlockInfo`の直後に`p.Tag is QuoteInfo`の分岐を追加した。
+`ParagraphInlineToMarkdown`（内部の`LineBreak`を"\n"へ変換する既存メソッド）の結果を
+"\n"で行ごとに分割し、各行の先頭に"> "を付け直して連結する。これにより、Shift+Enterで
+入力した複数行の引用も、各行に"> "が付いた標準的な複数行の引用記法として保存される。
+
+**実装時に発見・修正した誤り**：実装の途中、Roslynによる構文チェック（WPF参照なしの
+軽量チェック。実機でビルドできない環境のため、代わりにこの方法で構文エラーの有無を
+確認している）で、`MarkdownConverter.cs`の上記正規表現に`"^>\s?(.*)$"`（バックスラッシュ
+1個）と書いてしまっており、通常の文字列リテラル内では`\s`が無効なエスケープシーケンス
+として構文エラー（CS1009）になっていたことが見つかった。既存コードの同種の正規表現が
+すべて`"\\s"`（バックスラッシュ2個）と書いていることに合わせ、`"^>\\s?(.*)$"`へ修正した。
+修正後、再度Roslynチェックを行い、ari・nashi両版とも、新規追加したコードの範囲には構文
+エラーが無く、残っているエラーはすべて元々存在していた「WPF参照が無いことによる型解決
+エラー」（本チェック方式で常に発生する既知のエラー群）のみであることを確認した。
+
+**未実装・既知の制約**：右クリックメニューの「見出し」項目に相当する、引用のオン/オフを
+切り替えるメニュー項目は追加していない（ご依頼の内容に含まれていなかったため）。
+右クリックメニューを引用段落上で開いても、見出しメニューは「見出し」（レベル0扱い）の
+まま表示されるだけで、動作に問題は無い。
+
+**実機での確認が必要な点**：本環境にはWPFランタイムが無く実行確認ができないため、以下は
+すべて実機でのご確認が必要：(1) "> "の入力で引用に変換されること、既に文字列がある行の
+先頭に書き足した場合も変換されること。(2) Shift+Enterで同じ引用内に行が続き、Enter単独
+では引用を抜けること。(3) 引用の末尾でのBackSpace（空の引用を本文に戻す、末尾の1文字を
+消す）が見出しと同様に動作すること（特に、Shift+Enterで作った空の続きの行でBackSpaceを
+押した際、改行だけが取り除かれて前の行末につながる自然な動作になっているか）。
+(4) 複数行の引用を含むファイルを保存し、再度開いた際に内容・見た目が保持されること
+（保存→読み込みの往復）。(5) 見た目（左側の縦線・背景色・文字色）が意図通りに表示される
+こと。
+
+nashi・ari両版で完全に同一の実装。
+
+### 14.120 §14.119の引用機能で、Shift+Enterの続きの行にLineBreakを使っていたため
+IMEのキャレット不具合が発生していたことが実機で判明し、段落分割方式へ作り直した
+
+§14.119でお届けした引用機能について、実機でご確認いただいたところ、「Shift+Enterで
+次の行を追加しても、次の行にカーソルを移動して入力を始めると1行目の末尾に戻ってしまい
+ます」というご報告をいただいた。
+
+§14.119の実装では、引用の2行目以降（Shift+Enterによる続きの行）を、コードブロックの
+Enterと同じ`HeadingCodeBlockEditor.InsertLineBreakAtCaret`（LineBreak要素を1つの
+Paragraph内に挿入する方式）で表現していた。この方式は、`InsertLineBreakAtCaret`
+自身のコメント（「行内改行の挿入後、IME（TSF）側が新しいキャレット位置をすぐには
+認識できず、直後の入力が改行の1つ手前に入ってしまう競合状態がある…この対策は発生
+確率を下げるものであり、100%の解消を保証するものではない」）に明記されている、
+既知の・解消が保証されないIMEとの競合状態そのものであり、ご報告の症状（新しい行へ
+移動して入力すると1行前に入ってしまう）とも完全に一致する。実際、このコードベースは
+過去に箇条書き項目・表のセルのShift+Enterで同じ問題に遭遇し、その際は「LineBreakを
+一切使わず、段落（Paragraph）そのものを2つに分割する」方式（`InsertParagraphSplitAtCaret`）
+へ切り替えることで解決している（同メソッドのコメント参照）。つまり今回は、既に
+このプロジェクト自身が一度解決済みの問題を、引用の実装時に（LineBreakで問題ないと
+誤って判断し）再び踏んでしまっていたことになる。
+
+対応として、引用の2行目以降の表現方法を、1つのParagraph内のLineBreakから、
+箇条書き項目・表のセルと同じ「段落分割方式」へ作り直した。
+
+- `common/Models.cs`：引用の2行目以降専用のマーカークラス`QuoteContinuationInfo`を
+  新設した（通常の段落中の`<br>`による続き段落用の`BrContinuationInfo`と同種の、中身を
+  持たない空クラス）。引用の先頭行は従来通り`QuoteInfo`のまま。
+- `common/BlockStyles.cs`：`ApplyQuoteContinuationStyle(Paragraph)`を追加した。見た目
+  （文字色・背景・左の縦線・パディング）は`ApplyQuoteStyle`のa_quoted=trueの場合と同じ
+  だが、Marginは呼び出し元が前後の段落との関係を見て個別に設定するため、ここでは
+  触れない。
+- `editor/HeadingCodeBlockEditor.cs`：`InsertQuoteContinuationParagraph(Paragraph)`を
+  新設した。`InsertParagraphSplitAtCaret`と同じ考え方（`ListEditor.SplitInlinesAtCaret`
+  でキャレットより後ろの内容を書式ごと新しい段落へ移す）で、キャレット位置で段落を
+  2つに分割する。分割後の2つの段落の間のMarginは0にし、元の段落が持っていた下マージン
+  （＝それまでグループ内の最後の行として持っていた余白）は新しくできた段落（今後の
+  最後の行になる）へ引き継ぐことで、見た目には複数の段落が1つの引用ブロック内の複数行
+  にしか見えないようにしている。`DeleteLastCharInQuote`・`HandleQuoteEnter`は、元々
+  特定のParagraphを引数に取る汎用的な実装だったため変更不要で、先頭行・続きの行の
+  どちらからも共通して呼べる。
+- `MainWindow.xaml.cs`：Enterキー処理のShift+Enter分岐を、`InsertLineBreakAtCaret`
+  から`InsertQuoteContinuationParagraph`の呼び出しへ変更した（`para.Tag is QuoteInfo`
+  の判定も、続きの行自身の上でキーが押された場合に対応するため
+  `para.Tag is QuoteInfo || para.Tag is QuoteContinuationInfo`へ拡張）。BackSpace処理も
+  同様に対象をQuoteContinuationInfoまで広げたが、「空の引用を本文へ戻す」処理
+  （`RevertEmptyQuoteOnBackspace`）は先頭行（QuoteInfo）の場合のみ行うようにした。
+  続きの行が空の状態でBackSpaceが押された場合は何もせず、WPF標準の動作（前の段落の
+  末尾へ段落を結合する＝続きの行を消す）に任せている。続きの行には必ず「前の行」が
+  存在するため、見出しのように本文へ戻す先が無いという状況にならず、標準動作のままで
+  自然な挙動になるはずという判断による（この部分は実機で要確認）。
+- `common/MarkdownConverter.cs`：ファイル読み込み（`MarkdownToDocument`）側を、連続する
+  "> "行を1つのParagraph＋内部LineBreakにまとめる方式から、1行につき1つのParagraph
+  （先頭行はQuoteInfo、2行目以降はQuoteContinuationInfo）を作る方式へ作り直した
+  （`<br>`続き段落のbrSegments処理と同じパターン）。保存（`BlockToMarkdown`）側は
+  `p.Tag is QuoteInfo`の判定を`p.Tag is QuoteInfo || p.Tag is QuoteContinuationInfo`へ
+  拡張し、どちらも同じ「自分の内容の先頭に"> "を付ける」処理で書き出せるようにした。
+  `DocumentToMarkdown`・`GetMarkdownOffsetForBlock`には、`BrContinuationInfo`の分岐と
+  全く同じ考え方で、QuoteContinuationInfoの段落を通常のブロック区切り（空行）ではなく
+  単純な"\n"で直前の行へ連結する分岐を追加した。
+
+既知の制約として、引用の先頭行（QuoteInfo）を空にしてBackSpaceを押すと本文へ戻す
+処理が働くが、その時点で後ろに続きの行（QuoteContinuationInfo）が残っていた場合
+（先頭行だけを選択して削除してから空の状態でBackSpaceを押すなど）、続きの行が
+本文になった段落の後ろに取り残され、見た目・保存内容が崩れる可能性がある。これは
+§14.119時点でも同様の構造的な難しさがあった箇所で、今回のご指摘（Shift+Enter直後の
+入力位置のずれ）とは別の、比較的まれな操作時の制約として残している。
+
+nashi・ari両版で完全に同一の実装。Roslynによる構文チェック（WPF参照なしの軽量チェック）
+を再度実施し、新規追加・変更したコードの範囲には構文エラーが無く、残っているエラーは
+すべて元々存在していた「WPF参照が無いことによる型解決エラー」のみであることを確認した。
+
+実機での確認が必要な点：(1) Shift+Enterで行を増やした後、新しい行にカーソルを移動して
+入力しても、その行に正しく入力されること（今回のご報告の直接の再現確認）。(2) 続きの行
+が空の状態でBackSpaceを押すと、改行だけが取り除かれて前の行末につながること。
+(3) 複数行の引用を含むファイルを保存し、再度開いた際に内容・見た目が保持されること。
+(4) 見た目（複数の段落にまたがっているが、1つの引用ブロックとして継ぎ目なく見えるか）。
+
+### 14.121 §14.120で既知の制約として残していた「引用の先頭行だけを空にしてBackSpace
+を押すと、後ろに続きの行が残っている場合に見た目が崩れる可能性」について精査し、
+対応した。精査の過程で、引用に関する別の、より根本的な不具合も見つかり合わせて修正した
+
+§14.120で既知の制約として記録していた「引用の先頭行（QuoteInfo）を空にしてBackSpaceを
+押すと本文へ戻す処理が働くが、その時点で後ろに続きの行（QuoteContinuationInfo）が
+残っていた場合、見た目・保存内容が崩れる可能性がある」という点について、詳しく調査して
+ほしいというご依頼をいただいた。
+
+**実際に崩れる内容の精査**：この状態になると、`RevertEmptyQuoteOnBackspace`は引数で
+渡された「空になった先頭段落」だけを本文の書式へ戻し、後ろに続くQuoteContinuationInfoの
+段落には何も手を加えないことが分かった。そのため、画面上は「本文の段落」の直後に
+「先頭を示すQuoteInfoの無い、引用の書式（縦線・背景色）だけが残った段落」が取り残される
+形になり、見た目が引用として成立しなくなる。さらに保存（`DocumentToMarkdown`）では、
+本文に戻った段落が空であるため出力から丸ごと省かれ、取り残された続きの行は
+`QuoteContinuationInfo`用の結合処理により、直前に実際に出力された行へ単純な改行だけで
+連結されてしまう。結果として、保存→再読み込みを行うと、空になったはずの先頭行という
+情報自体が失われ、続きの行だけが（本来あるべき空行や段落の区切りを欠いた状態で）残る
+という、見た目だけでなくデータの往復にも影響する問題であることが確認できた。
+
+**調査中に見つかった、より根本的な別の不具合**：上記を調べる過程で、`MarkdownToDocument`
+内の通常の段落（本文）のテキスト収集ループが行の継続を打ち切るタイミングを判定する
+`IsBlockBoundaryLine`に、引用（"> "）行を検出する分岐が無いことに気付いた。見出し・
+箇条書き・表・水平線・HTMLコメントにはそれぞれ対応する判定があるにもかかわらず、引用には
+無かった。この判定が無いと、今回ご指摘のBackSpace操作の場面に限らず、一般に「空行を
+挟まずに本文の段落の直後へ引用を書いた場合」すべてで、引用行が本文側のループに文字列
+としてそのまま取り込まれてしまい、引用として認識されなくなるという、より広い範囲に
+影響する不具合だった（§14.120時点の実装でも、§14.119の最初の実装でも、この判定漏れは
+最初から存在していた）。`common/MarkdownConverter.cs`の`IsBlockBoundaryLine`に、既存の
+水平線判定の直後、HTMLコメント判定の直前として、引用の解析分岐自体（`MarkdownToDocument`
+内の"qMatch"）と同じ正規表現`"^>\\s?"`による判定を追加し、この不具合を修正した。
+
+**BackSpaceの見た目崩れそのものへの対応**：`editor/HeadingCodeBlockEditor.cs`に
+`PromoteQuoteContinuationOnEmptyFirstLineBackspace(Paragraph a_emptyQuotePara, Paragraph
+a_nextContinuationPara)`を新設した。空になった先頭段落を本文へ戻すのではなく、
+その段落自体を文書から取り除き、代わりに直後の続きの行（QuoteContinuationInfo）を
+新しい先頭行（QuoteInfo。`BlockStyles.ApplyQuoteStyle(..., true)`を適用し、上マージンを
+先頭行らしく4へ設定）へ格上げする。引用はBrContinuationInfoと同じ「段落分割」方式で
+表現されているため、先頭の役目を1つ後ろの段落へずらすだけで、残りの続きの行の連なり・
+下マージン（最後の行かどうかの情報）はそのまま保たれる。`MainWindow.xaml.cs`の
+BackSpace処理では、`para.Tag is QuoteInfo`かつ空かつ選択なしの既存の分岐の中で、
+`para.NextBlock is Paragraph nextQuoteContPara && nextQuoteContPara.Tag is
+QuoteContinuationInfo`を満たす場合のみ新しい`PromoteQuoteContinuationOnEmptyFirstLineBackspace`
+を呼び、続きの行が無い（その引用ブロック全体の最後の行である）場合は従来通り
+`RevertEmptyQuoteOnBackspace`を呼ぶように分岐した。
+
+nashi・ari両版で完全に同一の実装。Roslynによる構文チェック（WPF参照なしの軽量チェック）
+を再度実施し、新規追加・変更したコード（`PromoteQuoteContinuationOnEmptyFirstLineBackspace`
+本体・呼び出し側の分岐・`IsBlockBoundaryLine`の追加判定）の範囲には構文エラーが無く、
+残っているエラーはすべて元々存在していた「WPF参照が無いことによる型解決エラー」のみで
+あることを確認した。
+
+実機での確認が必要な点：(1) 引用の先頭行だけを空にしてBackSpaceを押した時、続きの行が
+残っている場合は新しい先頭行として自然に引用の書式を保ったまま見た目が崩れないこと
+（縦線・背景色・マージンが継ぎ目なく見えること）。(2) その操作後、保存して再度開いても
+内容・見た目が保持されること。(3) 続きの行が無い（これが引用ブロック最後の1行である）
+状態で先頭行を空にしてBackSpaceを押すと、従来通り本文へ戻ること（今回の分岐追加による
+既存動作への影響が無いことの確認）。(4) 空行を挟まずに本文の段落の直後に引用を書いた
+場合に、引用として正しく認識されること（`IsBlockBoundaryLine`の修正の確認）。
+
+### 14.122 コードブロック内でEnterを押して行を増やした際、引用で発生していたのと同じ
+IMEのキャレット不具合が起きることが実機で判明し、引用と同じ段落分割方式へ作り直した。
+あわせて、実機での実際のビルドで初めて検出できた既存の構文エラー（Roslynの軽量構文
+チェックでは検出できない種類のもの）も見つかり、修正した
+
+引用のShift+Enter不具合（§14.120）を修正した後、「コードブロック内の改行でも同じ不具合が
+起きるのではないか」とのご指摘をいただき、実機で確認いただいたところ、コードブロック内で
+Enterを押して行を増やした後、新しい行にカーソルを移動して入力すると前の行の末尾に入力
+されてしまう、全く同じ症状が確認された。
+
+原因は引用の時と同じで、コードブロックのEnter処理（`HeadingCodeBlockEditor.
+InsertLineBreakAtCaret`）が、複数行を1つのParagraph内のLineBreakで表現する方式のままに
+なっていたため（§14.120で引用・箇条書き項目・表のセルは段落分割方式へ切り替え済みだった
+が、コードブロックだけ取り残されていた）。
+
+対応として、コードブロックの2行目以降の表現方法を、引用と同じ「段落分割方式」へ作り
+直した。
+
+- `common/Models.cs`：コードブロックの2行目以降専用のマーカークラス
+  `CodeBlockContinuationInfo`を新設した（`QuoteContinuationInfo`と同種）。
+- `common/BlockStyles.cs`：`ApplyCodeBlockStyle`に`a_isLastLine`引数を追加した（既定値
+  `true`で、呼び出し側を増やさない限り既存の挙動のまま）。コードブロックは引用と異なり
+  四辺を囲む箱の見た目のため、`a_isLastLine=false`の場合は下側の枠線・パディング・
+  マージンを無くし、次の段落と継ぎ目なくつながるようにしている。新設した
+  `ApplyCodeBlockContinuationStyle(Paragraph, bool a_isLastLine)`も同じ考え方。
+- `editor/HeadingCodeBlockEditor.cs`：段落分割そのものを行う内部ヘルパー
+  `SplitCodeBlockParagraphAtCaret`、Enterキー1回分の処理`InsertCodeBlockContinuation
+  Paragraph`、続きの行の先頭でBackSpaceが押された時に自前で前の段落へ結合する
+  `MergeCodeBlockContinuationIntoPrevious`（結合により最後の行が変わった場合に、箱の
+  下側の枠線・余白を付け替える）を新設し、`InsertLineBreakAtCaret`（他に呼び出し元が
+  無くなったため）を削除した。
+- `MainWindow.xaml.cs`：Enter・BackSpace・Tab・自動整形・貼り付け・右クリックメニュー
+  関連の各箇所で、`para.Tag is CodeBlockInfo`の判定を`CodeBlockContinuationInfo`も
+  含むよう拡張した。貼り付け時の複数行挿入（`InsertPlainTextWithLineBreaksForCodeBlock`）
+  も、LineBreakではなく段落分割を使うよう作り直した。
+- `common/MarkdownConverter.cs`：`MarkdownToDocument`のコードブロック解析を、引用と
+  同じ「1行につき1つのParagraph」方式へ作り直した。`BlockToMarkdown`・
+  `DocumentToMarkdown`・`GetMarkdownOffsetForBlock`も、開き/閉じフェンスの位置を
+  「自分がグループの最初/最後の行かどうか」で判定するよう対応した。
+- `editor/TableEditor.cs`・`editor/InlineStyleEditor.cs`・`editor/ClipboardHtmlBuilder.cs`：
+  コードブロックへの貼り付け検出、右クリックの「コードブロックをコピー」、インライン
+  書式トリガーの抑制、「Excel用にコピー」でのコードブロック行の連結が、2行目以降
+  （`CodeBlockContinuationInfo`）でも正しく働くよう、判定・集計ロジックを拡張した。
+  特に「コードブロックをコピー」は、複数行に分かれたコードブロックのどの行で右クリック
+  されても、先頭行まで遡ってからブロック全体を組み立て直すようにした。
+
+この一連の修正を進める中で、`HeadingCodeBlockEditor.cs`に`using System.Windows;`が
+無いにもかかわらず`Thickness`型を直接使っているコード（§14.120で追加した
+`InsertQuoteContinuationParagraph`・`PromoteQuoteContinuationOnEmptyFirstLineBackspace`。
+いずれも今回の変更対象ではない、既存のコード）が既に存在していたことが判明した。この
+環境にはWPFランタイムが無いため、これまでの検証はWPF参照を一切解決できないRoslynの
+軽量構文チェックに頼っており、その方式では「using/参照が無くて型が見つからない」エラーと
+「WPF参照自体が無くて型が見つからない」エラーを区別できず、後者に紛れて見逃していた。
+今回、実機のPCへ直接ファイルを書き込めるようになったことを活かし、Visual Studioでの
+実際のビルドを行ったところ、この`using`不足によるコンパイルエラー（CS0246）が3件
+検出されたため、`using System.Windows;`を追加して修正した。実際のビルドでしか検出
+できない種類の問題が見つかった意義は大きく、今後もこの環境から実機でビルド確認が
+行えるのであれば、積極的に行うべきと考えられる。
+
+nashi版にて、Visual Studioでの実際のビルド（ソリューションのビルド）が成功することを
+確認した（エラー0、警告8件。警告はいずれも本件と無関係な、既存の命名規則に関するもの）。
+ari版への反映はまだ行っていない。
+
+実機での確認が必要な点：(1) コードブロック内でEnterを押して行を増やした後、新しい行に
+カーソルを移動して入力しても、その行に正しく入力されること（今回のご報告の直接の再現
+確認）。(2) 複数行のコードブロックの見た目が、上下に継ぎ目なく1つの箱として表示される
+こと。(3) 続きの行の先頭でBackSpaceを押すと、前の行へ自然に結合されること（結合により
+最後の行が変わった場合、箱の下側の枠線・余白が正しく付け替わること）。(4) コードブロック
+への複数行貼り付け、Tab/Shift+Tabによるインデント調整が、これまで通り動作すること。
+(5) 複数行のコードブロックを保存して再度開いても、内容・見た目が保持されること。
+(6) 右クリックメニューの「コードブロックをコピー」が、どの行で右クリックしてもブロック
+全体を正しくコピーできること。
+
+### 14.123 引用とコードブロックとでEnter/抜ける操作が異なっていたため、コードブロック側の
+操作に統一した（§14.120での「引用はShift+Enterで続け、Enterで抜ける」という仕様自体が
+誤りだったとのご指摘）
+
+§14.120（引用）・§14.122（コードブロック）の両方の修正が完了した後、実際に両方を
+操作して比較したところ、次のように操作方法が異なっていることにお気づきいただいた。
+
+- 引用：Shift+Enterを押すと同じ引用の続きの行が増え、（修飾キーなしの）通常のEnterを
+  押すと引用を抜けて新しい行に移る。
+- コードブロック：（修飾キーの区別なく）Enterを押すと常に同じコードブロックの続きの行が
+  増え、コードブロックを抜けるには下矢印キーなどでカーソルを外へ移動する必要がある。
+
+§14.120時点ではこの「引用だけEnterに2通りの意味を持たせる」仕様自体をご要望として
+実装したが、実際に両方を触り比べた結果、「その指示自体が誤りだった」として、コードブロック
+側の操作（Enterは常に続きの行を増やすだけで、抜ける操作は専用に持たせず、矢印キーや
+クリックといった通常のカーソル移動に委ねる）へ統一してほしいとのご依頼をいただいた。
+
+**対応内容**：`editor/HeadingCodeBlockEditor.cs`の`ConvertParagraphToQuote`を、
+`ConvertParagraphToCodeBlock`と同じパターンへ変更し、引用への変換が完了した直後に、
+引用段落の後ろへ新しい空の通常の段落（`trailingPara`）を1つ挿入するようにした。これが、
+矢印キーやクリックで引用の外へ移動する時の行き先になる（コードブロックが
+`ConvertParagraphToCodeBlock`の時点で既に同じことを行っていたのと同じ考え方）。
+
+次に、`MainWindow.xaml.cs`のEnterキー処理のうち、引用（`QuoteInfo`・
+`QuoteContinuationInfo`）の分岐を、`Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)`による
+場合分けをやめ、修飾キーに関係なく常に`InsertQuoteContinuationParagraph`（段落分割方式で
+続きの行を増やす処理。§14.120で新設済み）を呼ぶよう単純化した。これにより、コードブロック
+のEnter処理（`CodeBlockInfo`・`CodeBlockContinuationInfo`の分岐。こちらも元々修飾キーを
+見ていない）と全く同じ形になった。
+
+この変更により、「通常のEnterで引用を抜けて次の段落へ移る」という専用処理だった
+`HandleQuoteEnter`は、呼び出し元が無くなったため削除した（§14.122で`InsertLineBreakAtCaret`
+を、使われなくなった時点で削除したのと同じ考え方）。
+
+引用のBackSpace関連処理（`RevertEmptyQuoteOnBackspace`・
+`PromoteQuoteContinuationOnEmptyFirstLineBackspace`。§14.121参照）は、Enter/抜ける操作とは
+独立した別の機能（空になった引用をBackSpaceで本文へ戻す機能。コードブロックには元々
+対応する機能が無い）であるため、今回は変更していない。引用の変換時に新しく後ろへ
+挿入されるようになった`trailingPara`（空の通常の段落）は、これらのBackSpace処理が直接
+参照・操作する対象ではなく、通常の段落として独立して存在するだけなので、副作用は無いと
+判断した。
+
+nashi版にて、Visual Studioでの実際のビルド（ソリューションのビルド）が成功することを
+確認した（エラー0、警告8件。警告はいずれも本件と無関係な、§14.122から引き続き存在する
+既存の命名規則に関するもの）。ari版への反映はまだ行っていない。
+
+実機での確認が必要な点：(1) 引用内でEnterを押すと、Shift+Enterかどうかに関わらず常に
+同じ引用の続きの行が増えること。(2) 引用を抜けるには、コードブロックと同じく、下矢印
+キーやクリックで引用の外（変換時に自動的に用意される後続の通常の段落、または既存の後続
+段落）へ移動すればよいこと。(3) 引用の先頭行を空にしてBackSpaceを押す、BackSpaceで
+空の引用を本文へ戻す、といった既存のBackSpace関連の挙動（§14.121）に変化が無いこと。
+(4) 保存して再度開いても、引用の内容・見た目が保持されること。
+
+§14.123の動作確認の結果、「動作はOK」とのご確認をいただいた。あわせて、§14.122時点で
+残っていた既存の命名規則の警告8件はご自身で修正いただいた（本ログでは詳細は割愛する）。
+
+### 14.124 複数行の引用で、行と行の間（行間）がコードブロックや箇条書きに比べて不自然に
+広く見える不具合を修正した
+
+§14.123の動作確認と合わせて、「引用内の行間が広すぎるので、コードブロックやリスト表示と
+同じくらいにしてほしい」とのご指摘をいただいた。
+
+**原因**：引用の各行は、先頭行（`QuoteInfo`）・続きの行（`QuoteContinuationInfo`）を問わず、
+`BlockStyles.ApplyQuoteStyle`・`ApplyQuoteContinuationStyle`が、グループ内での位置に関わらず
+常に上下とも`Padding`を6pxずつ持たせていた。そのため、2行以上にまたがる引用では、ある行の
+下Padding6px＋次の行の上Padding6pxで、行と行の間に常に12pxの余計な隙間ができていた。
+一方コードブロック（§14.122）は、`ApplyCodeBlockStyle`・`ApplyCodeBlockContinuationStyle`の
+`a_isLastLine`引数により、グループ内の途中の行は上下ともPaddingを持たない（箱の内側の
+継ぎ目にだけ隙間が無い）設計になっており、これが「コードブロックの方が行間が詰まって
+見える」という印象の正体だった。引用だけ、この「位置に応じてPaddingを出し分ける」対応が
+漏れていた。
+
+**対応**：コードブロックと同じ考え方を引用にも適用した。
+- `common/BlockStyles.cs`：`ApplyQuoteStyle`に`a_isLastLine`引数（既定値`true`。コードブロック
+  の`ApplyCodeBlockStyle`と同じ構え）を追加した。引用の先頭行は常にグループの先頭であるため
+  上Paddingは常に6pxのままだが、下Paddingは、まだ後ろに続きの行がある場合（`a_isLastLine=
+  false`）は0にする。`ApplyQuoteContinuationStyle`にも同様に`a_isLastLine`引数を追加し
+  （こちらは必須引数。呼び出し側に出し分けを必ず意識させるため、コードブロックの
+  `ApplyCodeBlockContinuationStyle`と揃えた）、続きの行は先頭行ではないため上Paddingは常に
+  0、下Paddingだけグループ最後の行かどうかで6px／0pxを出し分ける。
+- `editor/HeadingCodeBlockEditor.cs`：`InsertQuoteContinuationParagraph`（Enterで続きの行を
+  増やす処理）で、新しくできる段落には`ApplyQuoteContinuationStyle(newPara, true)`（常に
+  新しい最後の行になるため）を適用し、分割元の段落（`a_para`）はもう最後の行ではなくなる
+  ため、下Paddingだけを直接0にする（Marginの付け替えと全く同じパターン）。
+  `PromoteQuoteContinuationOnEmptyFirstLineBackspace`（空になった先頭行をBackSpaceで消し、
+  続きの行を新しい先頭行へ格上げする処理）では、格上げ前の`a_nextContinuationPara`が既に
+  グループ最後の行だったかどうかを、下Paddingが付いていたか（&gt;0）で判定し
+  （`bottomMargin`と全く同じ「既存の状態をそのまま引き継ぐ」考え方）、`ApplyQuoteStyle`の
+  `a_isLastLine`へそのまま渡す。
+- `common/MarkdownConverter.cs`：`MarkdownToDocument`の引用解析（連続する"&gt; "行をまとめて
+  1行につき1つのParagraphにする処理）で、先頭行には`1 == quoteLineTexts.Count`（続きの行が
+  無ければ単独で最後の行）を、各続きの行には、元々ループ内で算出済みだった`lastLineFlg`
+  （区切り行判定用に使っていたローカル変数をそのまま流用）を、それぞれ`a_isLastLine`として
+  渡すようにした。
+
+変更は見た目（Padding）のみで、Markdownの保存・読み込み内容やBackSpace／Enterの動作自体
+（§14.120・§14.123）には影響しない。
+
+nashi版にて、Visual Studioでの実際のビルド（ソリューションのビルド）が成功することを
+確認した（エラー0、警告0件）。ari版への反映はまだ行っていない。
+
+実機での確認が必要な点：(1) 複数行の引用で、行と行の間の隙間がコードブロック・箇条書きと
+同程度の詰まり具合に見えること。(2) 単独の1行だけの引用の上下の余白（Padding）が、これまで
+通り保たれていること（a_isLastLine=trueのケースで変化が無いことの確認）。(3) Enterで続きの
+行を増やす、BackSpaceで先頭行を空にして続きの行を繰り上げる、といった§14.120・§14.123の
+既存の操作を行った後も、見た目（行間・縦線・背景色）が崩れないこと。(4) 保存して再度開いても
+内容・見た目が保持されること。
+
+### 14.125 通常の段落でもShift+Enterで改行した後に入力すると前の行の末尾に戻ってしまう、
+引用・コードブロック・箇条書き項目・表のセルと全く同じIME不具合が残っていたのを修正した
+
+§14.124の動作確認と合わせて、「通常の段落でもShift+Enterで改行した後で入力を始めると
+元の行の行末に戻ってしまう症状を確認した」とのご報告をいただいた。あわせて、「Shift+Enter
+での改行は段落内の改行、Enterでの改行は新しい段落への移動なので、Shift+Enterの時に行間が
+狭いのはそのままで」というご要望（＝修正後も、Shift+Enterによる段落内の複数行は、Enterに
+よる段落と段落の間より行間を詰めたまま保つこと）をいただいた。
+
+**原因**：これまでの一連の修正（§14.120〜§14.124）は、見出し・引用・コードブロック・
+箇条書き項目・表のセルのそれぞれについて、LineBreak要素ではなく段落分割方式へ個別に
+作り直してきたが、「それらのいずれでもない、ただの通常の段落」でのShift+Enterだけは
+対応が漏れていた。`MainWindow.xaml.cs`のEnterキー処理を調べたところ、`para.Parent is
+FlowDocument`の分岐（コードフェンス変換・表の直後の段落の処理）を通り抜けた場合、
+Shift+Enterかどうかに関わらず単純に`return`し、WPF標準の動作（LineBreak要素の挿入）に
+任せていることが分かった。これが、他の種類のブロックでは既に解消済みの「Shift+Enterで
+行を増やしても、次の行にカーソルを移動して入力すると前の行の末尾に入力されてしまう」
+不具合が、通常の段落だけに残っていた原因だった。
+なお、実は段落分割の土台となる仕組み自体（`BrContinuationInfo`、通常の段落中に書かれた
+`<br>`による行内改行の「続き」段落を表すマーカークラス）はMarkdownの"読み込み"側
+（`MarkdownConverter.MarkdownToDocument`・保存側の`DocumentToMarkdown`）には既に存在して
+いたが、ライブ編集でのShift+Enterキー処理からこれを生成する経路がこれまで一度も
+配線されていなかった（存在に気付かず見落としていた）。
+
+**対応**：`editor/HeadingCodeBlockEditor.cs`に`InsertBrContinuationParagraph(Paragraph
+a_para)`を新設した。引用の`InsertQuoteContinuationParagraph`と全く同じパターン（LineBreak
+を使わず、`ListEditor.SplitInlinesAtCaret`でキャレット位置から段落を2つに分割し、分割元が
+持っていた下マージンを新しい段落（今後の最後の行）へ付け替え、分割元自身の下マージンは
+0にする）で、新しくできる段落にはMarkdownの読み込み側と同じ`BrContinuationInfo`を設定する。
+これにより、保存時には`DocumentToMarkdown`の既存のBrContinuationInfo分岐がそのまま働き、
+`<br>`として書き出される（読み込み側の表現とライブ編集での表現が一致する）。
+箇条書き項目・表のセル用の`InsertParagraphSplitAtCaret`を流用しなかったのは、あちらは
+「内部の段落は常にMargin=0」という前提（表のセル・箇条書き項目に特有の事情）で作られて
+おり、分割元の下マージンを付け替える処理を持たないため。通常の段落は見出し・引用と同じく
+「段落と段落の間の余白（EditorBlockSpacing）」を持つため、その余白を正しく付け替える
+専用のメソッドが必要だった。
+`MainWindow.xaml.cs`のEnterキー処理では、`para.Parent is FlowDocument`の分岐の中、
+コードフェンス変換・表の直後の段落の処理のいずれにも該当しなかった場合に、Shift+Enterで
+あれば新設の`InsertBrContinuationParagraph`を呼ぶよう追加した（該当しなければ、これまで
+通りWPF標準の動作＝新しい段落の作成に任せる）。
+ご要望の「Shift+Enterの行間は詰まったまま」は、引用・コードブロックの各種Continuation
+Paragraphと全く同じ「分割元の段落どうしの間のMarginを0にする」設計そのものが実現しており、
+今回も同じ設計を踏襲しているため、通常のEnterによる段落間の余白（14px）より詰まった見た目
+のまま変わらない。
+箇条書き項目・表のセルの同種の段落分割（`InsertParagraphSplitAtCaret`）と同じく、続きの行の
+先頭でのBackSpaceによる結合は、WPF標準の動作に委ねており、専用の結合処理（コードブロックの
+`MergeCodeBlockContinuationIntoPrevious`のような）は設けていない。これは今回新設した
+分だけの制約ではなく、既存の箇条書き項目・表のセルの実装から踏襲した仕様であり、結合後の
+下マージンの見た目が完全ではない可能性がある（実機確認項目(4)参照）。
+
+nashi版にて、Visual Studioでの実際のビルド（ソリューションのビルド）が成功することを
+確認した（エラー0、警告0件）。ari版への反映はまだ行っていない。
+
+実機での確認が必要な点：(1) 通常の段落でShift+Enterを押した後、新しい行にカーソルを
+移動して入力しても、その行に正しく入力されること（今回のご報告の直接の再現確認）。
+(2) Shift+Enterによる段落内の複数行の行間が、通常のEnterによる段落と段落の間の行間より
+詰まったまま（ご要望通り）に見えること。(3) 保存・再読み込みで、Shift+Enterによる行が
+`<br>`として正しく書き出され、読み込み直しても同じ見た目・構造に戻ること。(4) Shift+Enterで
+増やした行の先頭でBackSpaceを押して前の行へ結合した時、見た目（特に最後の行の下余白）に
+不自然な点が無いか（無ければそのまま、崩れが見つかった場合は追加対応を検討する）。
+(5) コードフェンス（&#96;&#96;&#96;）変換や、表の直後の段落でのEnter・Shift+Enterの既存の
+挙動に変化が無いこと。
+
+### 14.126 §14.125の修正が「ビルド成功」確認後も実機に反映されていなかった不具合の原因究明と
+再修正（デバイス側ソースファイルへの反映漏れ）
+
+§14.125の対応後、「なおっていませんでした」とのご報告をいただいた。当初は、別途インストール
+済みの`C:\Program Files\mde\mde.exe`（v2.1.30.0）という、今回の修正を含まない別のコピーを
+検証していたのではないかと疑ったが、ビルド結果の実行ファイル
+（`C:\src\mde_refactor\nashi\mde\bin\Release\net8.0-windows\mde.exe`）に対して確認して
+いただいているとのご指摘を受け、調査方法を改めた。
+
+**原因**：実際にビルドされた`mde.exe`を直接起動し、File → 名前を付けて保存で動作確認用の
+ファイルを保存したところ、`<br>`タグが書き出されず、単純な改行文字のみが保存されることを
+確認した。これは「Shift+Enterが素のWPF標準動作（LineBreak要素の挿入）のまま処理されている」
+ことを示す結果であり、§14.125のコードが実際には呼ばれていないことを意味していた。
+
+デバイス上の実際のソースファイル（`MainWindow.xaml.cs`・`editor/HeadingCodeBlockEditor.cs`）
+を本セッションのローカルの作業コピーと直接比較したところ、§14.125で追加したはずの
+`InsertBrContinuationParagraph`メソッド本体（`HeadingCodeBlockEditor.cs`）と、その呼び出し
+（`MainWindow.xaml.cs`のEnterキー処理内のShift判定分岐）が、デバイス上の実際のファイルには
+一切存在しないことが判明した。つまり、§14.125の対応時点で「ビルド成功」を確認してはいたが、
+その直前の`device_commit_files`によるデバイス側ファイルへの反映が何らかの理由で実際には
+行われておらず（またはその後何らかの事情で失われており）、ビルドされていたのは§14.125の
+変更を含まない古いソースだった。同時期に行った§14.124（引用の行間修正）の内容はデバイス側に
+正しく反映されていたため、反映漏れは§14.125の2ファイルに限られていた。
+
+**対応**：ローカルの作業コピー（§14.125時点の正しい内容）を`device_commit_files`で
+再度デバイスへ書き込み、書き込み後の内容を再度読み出して一致することを確認した上で、
+Visual Studioでソリューションの再ビルドを行った（エラー0、警告0件）。
+
+再ビルド後、実行ファイルを直接起動し、アプリ自身が持つデバッグログ機能（表示→
+「デバッグログを有効にする」。デスクトップの`mdelog`フォルダへ出力される）を有効にした上で
+Shift+Enterを行い、ログに`InsertBrContinuationParagraph: 呼び出し`が実際に記録されることを
+確認した。さらに、動作確認用ファイルを保存し、`<br>`タグが正しく書き出されることも確認した。
+これにより、§14.125のコード自体の設計・実装に誤りがあったのではなく、純粋にデバイスへの
+反映漏れが原因だったことを確認できた。
+
+この経緯を踏まえ、以後「ビルド成功」の確認だけでなく、`device_commit_files`実行後に
+書き込み先の内容を読み出して意図した内容と一致することを都度確認する（または、本節で
+行ったようにアプリ自身のデバッグログで実際の挙動を確認する）ことが望ましい。
+
+なお、本調査・修正の過程で気付いた制約として、自動化された操作（`computer_type`等）は
+英数字をそのまま送信するだけであり、実際の日本語IME（Windows標準のIME、変換・確定の
+タイミングを伴うもの）による入力は再現できない。このため、今回のログ・保存内容による確認は
+あくまで「Shift+Enterの処理経路が正しく動作しているか」という構造的な検証に留まり、
+実際の日本語IME使用時の挙動（当初ご報告いただいた症状そのもの）の最終確認は、引き続き
+実機・実際のIMEでの操作による確認をお願いする必要がある。
+
 ## 16. 新しい機能を追加する時の指針
 
 1. **どのクラスの責務かを見極める**：4章の表を参照し、既存クラスに機能を追加すべきか、新しい

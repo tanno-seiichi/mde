@@ -777,7 +777,14 @@ namespace mde
         }
 
         /// <summary>コードブロックへの貼り付け時に使う、改行を保ったプレーンテキスト挿入。
-        /// TableEditorの貼り付け処理から呼ばれる。</summary>
+        /// TableEditorの貼り付け処理から呼ばれる。かつては行内改行（LineBreak要素）で行を
+        /// つないでいたが、引用・箇条書き項目・表のセルと同じIME不具合の対策として、行ごとに
+        /// 段落を分割する方式（HeadingCodeBlockEditor.SplitCodeBlockParagraphAtCaret）に作り
+        /// 直した。Enterキー1回分のInsertCodeBlockContinuationParagraphと異なり、貼り付けの
+        /// 行数ぶん連続してSplitCodeBlockParagraphAtCaretを呼ぶため、UpdateLayout・
+        /// ClearFocus/Focusの前後処理は1回のRunAsProgrammaticChangeの外側（貼り付け全体）で
+        /// まとめて行う（行ごとに行うと、行数が多い貼り付けで重く・ちらつく原因になるため、
+        /// 元のLineBreak版と同じく「1回のプログラム的変更としてまとめて行う」方針を踏襲する）。</summary>
         /// <param name="a_text">対象の文字列。</param>
         private void InsertPlainTextWithLineBreaksForCodeBlock(string a_text)
         {
@@ -789,12 +796,16 @@ namespace mde
                 m_editor.CaretPosition = m_editor.Selection.End;
                 for (int i = 1; i < lines.Length; i++)
                 {
-                    m_editor.CaretPosition = m_editor.CaretPosition.InsertLineBreak();
+                    var currentPara = m_editor.CaretPosition.Paragraph;
+                    m_headingCodeBlockEditor.SplitCodeBlockParagraphAtCaret(currentPara);
                     m_editor.Selection.Select(m_editor.CaretPosition, m_editor.CaretPosition);
                     m_editor.Selection.Text = lines[i];
                     m_editor.CaretPosition = m_editor.Selection.End;
                 }
             });
+            m_editor.UpdateLayout();
+            Keyboard.ClearFocus();
+            m_editor.Focus();
         }
 
         /// <summary>
@@ -929,7 +940,7 @@ namespace mde
             {
                 return;
             }
-            if (para.Tag is CodeBlockInfo)
+            if (para.Tag is CodeBlockInfo || para.Tag is CodeBlockContinuationInfo)
             {
                 return; // コードブロック内は自動整形しない
             }
@@ -1010,6 +1021,14 @@ namespace mde
                 m_headingCodeBlockEditor.ConvertParagraphToHeading(para, m.Groups[1].Value.Length);
                 return;
             }
+            // 引用（"> "）のライブ入力変換。見出しと同じ理由で、末尾（$）ではなく先頭一致のみで
+            // 判定する（行の先頭に既に文字列がある状態で後から"> "を書き足した場合にも対応）。
+            var quoteMatch = Regex.Match(text, "^>[ \u00A0]");
+            if (quoteMatch.Success)
+            {
+                m_headingCodeBlockEditor.ConvertParagraphToQuote(para, quoteMatch.Value.Length);
+                return;
+            }
             // 水平線（---/***/___）のライブ入力変換。バッチ変換（MarkdownConverter）と同じ
             // 正規表現を使い、両者の判定基準を一致させている。見出しと異なりトリガーとなる
             // 区切り文字（スペース等）が存在しないため、段落のテキストがパターンに完全一致
@@ -1056,7 +1075,8 @@ namespace mde
             }
 
             var para = m_editor.CaretPosition?.Paragraph;
-            if (null == para || !(para.Parent is FlowDocument) || para.Tag is CodeBlockInfo)
+            if (null == para || !(para.Parent is FlowDocument) ||
+                para.Tag is CodeBlockInfo || para.Tag is CodeBlockContinuationInfo)
             {
                 return;
             }
@@ -1275,7 +1295,7 @@ namespace mde
                 return; // リッチな形式が付いている場合はWPF標準の貼り付けに任せる
             }
             var para = ResolveParagraph(m_editor.CaretPosition, m_editor.Document);
-            if (null != para && para.Tag is CodeBlockInfo)
+            if (null != para && (para.Tag is CodeBlockInfo || para.Tag is CodeBlockContinuationInfo))
             {
                 return; // コードブロックへの貼り付けはTableEditor.HandlePastingが処理する
             }
@@ -1356,8 +1376,9 @@ namespace mde
                         a_args.Handled = true;
                         // 箇条書き項目内での行内改行は、LineBreak要素ではなく段落分割方式を使う
                         // （HeadingCodeBlockEditor.InsertParagraphSplitAtCaretのコメント参照。
-                        // IMEの入力位置がずれる不具合の対策）。コードブロックは対象外のため、
-                        // その場合はInsertLineBreakAtCaretのまま（下のCodeBlockInfo分岐参照）。
+                        // IMEの入力位置がずれる不具合の対策）。コードブロックも同じ理由で
+                        // 段落分割方式（InsertCodeBlockContinuationParagraph。下のCodeBlockInfo
+                        // 分岐参照）を使う。
                         m_headingCodeBlockEditor.InsertParagraphSplitAtCaret(para);
                         return;
                     }
@@ -1372,10 +1393,32 @@ namespace mde
                     m_headingCodeBlockEditor.HandleHeadingEnter(para);
                     return;
                 }
-                if (para.Tag is CodeBlockInfo)
+                if (para.Tag is QuoteInfo || para.Tag is QuoteContinuationInfo)
                 {
                     a_args.Handled = true;
-                    m_headingCodeBlockEditor.InsertLineBreakAtCaret();
+                    // 引用内のEnterは、コードブロックと同じく常に「同じ引用の続きの行」として
+                    // 次の行へ進める（Shift+Enterとの区別は無い）。以前はShift+Enterの時だけ
+                    // 続きの行を増やし、通常のEnterでは引用を抜けていたが、引用とコードブロックの
+                    // 操作が異なっていて分かりにくいとのご指摘を受けて、コードブロック側の操作
+                    // （Enterは常に続きの行を増やすだけで、抜けるには矢印キーやクリックで
+                    // 後続の段落へ移動する）に統一した。引用から抜けるための後続の通常の段落は
+                    // ConvertParagraphToQuoteが変換時に用意している。箇条書き項目・表のセルの
+                    // Shift+Enterと同じ理由（LineBreak要素とIMEの組み合わせによる、キャレット
+                    // 位置がずれる不具合。実機で確認済み）で、LineBreakベースのInsertLineBreak
+                    // AtCaretは使わず、段落分割方式のInsertQuoteContinuationParagraphを使う。
+                    m_headingCodeBlockEditor.InsertQuoteContinuationParagraph(para);
+                    return;
+                }
+                if (para.Tag is CodeBlockInfo || para.Tag is CodeBlockContinuationInfo)
+                {
+                    a_args.Handled = true;
+                    // コードブロック内のEnterは常に「同じコードブロックの続きの行」として
+                    // 次の行へ進める（Shift+Enterとの区別は無い。元々このブロックはEnterの
+                    // 修飾キーを見ていなかった）。引用・箇条書き項目・表のセルと同じ理由
+                    // （LineBreak要素とIMEの組み合わせによる、キャレット位置がずれる不具合。
+                    // 実機で確認済み）で、段落分割方式のInsertCodeBlockContinuationParagraph
+                    // を使う。
+                    m_headingCodeBlockEditor.InsertCodeBlockContinuationParagraph(para);
                     return;
                 }
                 if (para.Parent is TableCell cellForEnter)
@@ -1423,8 +1466,20 @@ namespace mde
                         m_headingCodeBlockEditor.InsertParagraphSplitAtCaret(para);
                         return;
                     }
+                    if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                    {
+                        a_args.Handled = true;
+                        // 通常の段落内でのShift+Enter（行内改行）も、引用・コードブロック・
+                        // 箇条書き項目・表のセルと全く同じ理由（LineBreak要素とIMEの組み合わせに
+                        // よる、キャレット位置がずれる不具合。実機で「Shift+Enterで行を増やしても、
+                        // 次の行にカーソルを移動して入力すると前の行の末尾に入力されてしまう」と
+                        // いう形で確認された）で、WPF標準のLineBreak挿入には任せず、段落分割方式の
+                        // InsertBrContinuationParagraphを使う。
+                        m_headingCodeBlockEditor.InsertBrContinuationParagraph(para);
+                        return;
+                    }
                 }
-                return; // 通常の段落: WPF標準の動作（新しい段落の作成）に任せる
+                return; // 通常の段落、Enter単独: WPF標準の動作（新しい段落の作成）に任せる
             }
 
             // 見出し段落が空の状態でBackSpaceが押された場合、見出しの書式だけを本文へ戻す
@@ -1462,6 +1517,68 @@ namespace mde
                 }
             }
 
+            // 引用段落でのBackSpace処理。上の見出し向けの分岐と同じ判定方法（空判定・
+            // キャレット末尾判定はTextRangeの文字列長で行う）。
+            if (a_args.Key == Key.Back &&
+                (para.Tag is QuoteInfo || para.Tag is QuoteContinuationInfo))
+            {
+                bool isQuoteEmptyFlg = 0 == new TextRange(para.ContentStart, para.ContentEnd).Text.TrimEnd('\r', '\n').Length;
+                bool isQuoteSelectionEmptyFlg = m_editor.Selection.IsEmpty;
+                bool isQuoteCaretAtEndFlg = isQuoteSelectionEmptyFlg &&
+                    0 == new TextRange(m_editor.Selection.Start, para.ContentEnd).Text.Length;
+                DebugLogger.Log(
+                    $"QuoteBackspaceCheck: tag={para.Tag.GetType().Name} isEmpty={isQuoteEmptyFlg} " +
+                    $"isSelectionEmpty={isQuoteSelectionEmptyFlg} isCaretAtEnd={isQuoteCaretAtEndFlg}");
+                // 空の引用を本文へ戻す処理は、先頭行（QuoteInfo）の場合のみ行う。続きの行
+                // （QuoteContinuationInfo）が空の状態でBackSpaceが押された場合は、何もせず
+                // WPF標準の動作（前の段落の末尾へ段落を結合する＝続きの行を消す）に任せる。
+                // 続きの行には「前の行」が必ず存在するため、見出しのように本文へ戻す先が
+                // 無いということがなく、標準動作のままで自然な挙動になる。
+                if (isQuoteEmptyFlg && isQuoteSelectionEmptyFlg && para.Tag is QuoteInfo)
+                {
+                    a_args.Handled = true;
+                    // 空になった先頭行の直後に続きの行（QuoteContinuationInfo）が残っている
+                    // 場合、先頭行をそのまま本文へ戻すと続きの行だけが取り残されて見た目・
+                    // 保存内容が崩れるため、続きの行を新しい先頭行へ格上げする専用処理を使う。
+                    // 続きの行が無い（これが引用ブロック全体の最後の行）場合のみ、従来通り
+                    // 本文へ戻す。
+                    if (para.NextBlock is Paragraph nextQuoteContPara && nextQuoteContPara.Tag is QuoteContinuationInfo)
+                    {
+                        m_headingCodeBlockEditor.PromoteQuoteContinuationOnEmptyFirstLineBackspace(para, nextQuoteContPara);
+                    }
+                    else
+                    {
+                        m_headingCodeBlockEditor.RevertEmptyQuoteOnBackspace(para);
+                    }
+                    return;
+                }
+                if (!isQuoteEmptyFlg && isQuoteCaretAtEndFlg)
+                {
+                    a_args.Handled = true;
+                    m_headingCodeBlockEditor.DeleteLastCharInQuote(para);
+                    return;
+                }
+            }
+
+            // コードブロックの続きの行（CodeBlockContinuationInfo）の先頭でBackSpaceが押された
+            // 場合のみ、自前の結合処理（MergeCodeBlockContinuationIntoPrevious）を使う。箱の
+            // 下側の枠線・余白が、結合で最後の行が変わった時に正しく付け替わるようにするため
+            // （詳細は同メソッドのコメント参照）。先頭行（CodeBlockInfo）の先頭でのBackSpace、
+            // および続きの行でもキャレットが先頭以外にある場合（通常の1文字削除）は、元々
+            // コードブロックに専用のBackSpace処理が無かった時と同じく、WPF標準の動作に任せる
+            // （挙動を変えない）。
+            if (a_args.Key == Key.Back && para.Tag is CodeBlockContinuationInfo)
+            {
+                bool isCodeCaretAtStartFlg = m_editor.Selection.IsEmpty &&
+                    0 == new TextRange(para.ContentStart, m_editor.Selection.Start).Text.Length;
+                if (isCodeCaretAtStartFlg)
+                {
+                    a_args.Handled = true;
+                    m_headingCodeBlockEditor.MergeCodeBlockContinuationIntoPrevious(para);
+                    return;
+                }
+            }
+
             if (a_args.Key == Key.Tab && m_listEditor.IsInListItem(para, out ListItem tabLi, out List tabList))
             {
                 a_args.Handled = true;
@@ -1476,7 +1593,7 @@ namespace mde
                 return;
             }
 
-            if (a_args.Key == Key.Tab && para.Tag is CodeBlockInfo)
+            if (a_args.Key == Key.Tab && (para.Tag is CodeBlockInfo || para.Tag is CodeBlockContinuationInfo))
             {
                 a_args.Handled = true;
                 if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
@@ -1543,7 +1660,7 @@ namespace mde
             m_inlineStyleEditor.ContextLinkRun = linkRun?.Tag is LinkInfo ? linkRun : null;
 
             bool inTableFlg = null != m_tableEditor.ContextCell;
-            bool inCodeBlockFlg = m_ctxParagraph?.Tag is CodeBlockInfo;
+            bool inCodeBlockFlg = m_ctxParagraph?.Tag is CodeBlockInfo || m_ctxParagraph?.Tag is CodeBlockContinuationInfo;
             m_headingMenuItem.Visibility = inTableFlg ? Visibility.Collapsed : Visibility.Visible;
             m_insertTableMenuItem.Visibility = inTableFlg ? Visibility.Collapsed : Visibility.Visible;
             m_insertRowAboveMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;

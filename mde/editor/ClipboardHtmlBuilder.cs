@@ -53,7 +53,7 @@ namespace mde.editor
         /// 標準の行の高さ）を、96dpiでのピクセル換算（1pt = 96/72px）で表した値。画像を
         /// 含む行の後に挿入する空白行の数（画像の高さが何行分に相当するか）の計算に使う
         /// （TryCopySelectionForExcel参照）。</summary>
-        private const double ExcelDefaultRowHeightPx = 20.0;
+        private const double EXCEL_DEFAULT_ROW_HEIGHT_PX = 20.0;
 
         /// <param name="a_editor">編集対象のRichTextBox。</param>
         /// <param name="a_imageManager">画像の実ファイルパス解決用。</param>
@@ -71,22 +71,22 @@ namespace mde.editor
         /// <summary>組み立て中の1行分の内容（プレーンテキストとHTML断片）。</summary>
         private class Row
         {
-            public readonly StringBuilder Text = new StringBuilder();
-            public readonly StringBuilder Html = new StringBuilder();
-            public bool HasContent;
-            public string TdStyleExtra = "";
+            public readonly StringBuilder m_text = new StringBuilder();
+            public readonly StringBuilder m_html = new StringBuilder();
+            public bool m_hasContent;
+            public string m_tdStyleExtra = "";
 
             /// <summary>選択範囲に含まれる表を展開する場合に使う、&lt;tr&gt;...&lt;/tr&gt;の
             /// 並び（表全体分。複数行になり得る）。nullでなければ、このRowはHtml/TdStyleExtraを
             /// 使わず、この内容をそのまま（&lt;td&gt;で包まずに）出力する。</summary>
-            public string RawTrHtml;
+            public string m_rawTrHtml;
 
             /// <summary>段落・見出し・コードブロック・水平線・画像など、独立したブロックとして
             /// 扱う行はtrue（BuildParagraphRow参照）、箇条書きの項目や表の行はfalseのまま。
             /// true の行の前後には、Excel上でも編集画面に近い余白を再現するため、高さ1行分の
             /// 空白行を挟む（箇条書きの項目同士・表の行同士は詰めたままにする。TryCopySelectionForExcel
             /// 参照）。</summary>
-            public bool ParagraphKindFlg;
+            public bool m_paragraphKindFlg;
 
             /// <summary>行内に画像が含まれる場合、その画像の実際の高さ（ピクセル）。0の場合は
             /// 画像が無い、またはサイズ未確定。Excelでは&lt;img&gt;が行（セル）の高さを自動的に
@@ -94,7 +94,7 @@ namespace mde.editor
             /// しまうことがあるため、この高さが実際のExcelの行何行分に相当するかを計算し、
             /// その行数分の空白行を後ろに挿入することで重なりを防ぐ（AppendImage・
             /// TryCopySelectionForExcel・ExcelDefaultRowHeightPx参照）。</summary>
-            public double ImageHeightPx;
+            public double m_imageHeightPx;
         }
 
         /// <summary>
@@ -145,7 +145,7 @@ namespace mde.editor
 
             var rows = new List<Row>();
             CollectRows(m_editor.Document.Blocks, selection.Start, selection.End, rows);
-            var contentRows = rows.Where(r => r.HasContent).ToList();
+            var contentRows = rows.Where(r => r.m_hasContent).ToList();
             if (0 == contentRows.Count)
             {
                 return false;
@@ -172,18 +172,18 @@ namespace mde.editor
                 // 表示されるものなので空白行を挟まない。ただし、直前の行が画像を含む行だった
                 // 場合は、その画像の分の空白行（ImageHeightPx参照。下記）に既に余白1行分が
                 // 含まれているため、ここでは重ねて挿入しない。
-                bool previousRowHadImageFlg = 0 < i && 0 < contentRows[i - 1].ImageHeightPx;
-                if (0 < i && !previousRowHadImageFlg && (row.ParagraphKindFlg || contentRows[i - 1].ParagraphKindFlg))
+                bool previousRowHadImageFlg = 0 < i && 0 < contentRows[i - 1].m_imageHeightPx;
+                if (0 < i && !previousRowHadImageFlg && (row.m_paragraphKindFlg || contentRows[i - 1].m_paragraphKindFlg))
                 {
                     html.Append(BlankRowHtml());
                 }
 
-                if (null != row.RawTrHtml)
+                if (null != row.m_rawTrHtml)
                 {
                     // 選択範囲に含まれていた表は、ネストした<table>にすると貼り付け先での
                     // 見え方が不確実なため、その表自身の行をそのままこの外側の<table>へ
                     // 平らに展開する（Row.RawTrHtmlのコメント参照）。
-                    html.Append(row.RawTrHtml);
+                    html.Append(row.m_rawTrHtml);
                 }
                 else
                 {
@@ -201,12 +201,12 @@ namespace mde.editor
                     // であると判明し、CollectListRows側を修正済み（§14.111）。原因が別にあった
                     // ことが確認できたため、改めてnowrap指定を付け直している。
                     html.Append("<tr><td style=\"padding:4px 8px;white-space:nowrap;")
-                        .Append(row.TdStyleExtra).Append("\">")
-                        .Append(row.Html).Append("</td></tr>");
+                        .Append(row.m_tdStyleExtra).Append("\">")
+                        .Append(row.m_html).Append("</td></tr>");
                 }
-                textLines.Add(row.Text.ToString());
+                textLines.Add(row.m_text.ToString());
 
-                if (0 < row.ImageHeightPx)
+                if (0 < row.m_imageHeightPx)
                 {
                     // Excelは<img>に合わせて行の高さを自動的に広げてくれるとは限らず、
                     // セルのheightスタイルを指定するだけでは次の行と重なって表示されて
@@ -214,7 +214,7 @@ namespace mde.editor
                     // ×96/72dpi）を基準に、画像の高さが何行分に相当するかを計算し、
                     // その行数だけ実際に空白行を挿入する（＋余白として、さらに1行追加する。
                     // これが前後の段落用の空白行を兼ねる。上記previousRowHadImageFlg参照）。
-                    int rowsForImage = (int)Math.Max(1.0, Math.Ceiling(row.ImageHeightPx / ExcelDefaultRowHeightPx));
+                    int rowsForImage = (int)Math.Max(1.0, Math.Ceiling(row.m_imageHeightPx / EXCEL_DEFAULT_ROW_HEIGHT_PX));
                     for (int n = 0; n < rowsForImage + 1; n++)
                     {
                         html.Append(BlankRowHtml());
@@ -263,6 +263,30 @@ namespace mde.editor
                     continue;
                 }
 
+                // コードブロックの2行目以降の続き段落（CodeBlockContinuationInfo）も、上の
+                // BrContinuationInfoと同じ考え方で、新しい行として別の行（Row）にはせず、
+                // 直前の行（コードブロックの先頭行、またはその続きの行）のセルへ改行として
+                // 連結する。これが無いと、複数行のコードブロックをExcel用にコピーした際、
+                // 1行ごとに別々のセルへ分かれてしまう。
+                if (block is Paragraph codeContPara && codeContPara.Tag is CodeBlockContinuationInfo)
+                {
+                    if (!Intersects(block, a_selStart, a_selEnd))
+                    {
+                        continue;
+                    }
+                    if (null != previousRow)
+                    {
+                        AppendParagraphContinuation(previousRow, codeContPara);
+                    }
+                    else
+                    {
+                        var row = BuildParagraphRow(codeContPara);
+                        a_rows.Add(row);
+                        previousRow = row;
+                    }
+                    continue;
+                }
+
                 if (block is Paragraph p)
                 {
                     if (!Intersects(p, a_selStart, a_selEnd))
@@ -289,9 +313,9 @@ namespace mde.editor
                     previousRow = null;
                     if (null != m_tableEditor && Intersects(table, a_selStart, a_selEnd))
                     {
-                        var row = new Row { HasContent = true };
-                        row.RawTrHtml = m_tableEditor.BuildTableRowsHtml(table);
-                        row.Text.Append(m_tableEditor.TableToTsv(table));
+                        var row = new Row { m_hasContent = true };
+                        row.m_rawTrHtml = m_tableEditor.BuildTableRowsHtml(table);
+                        row.m_text.Append(m_tableEditor.TableToTsv(table));
                         a_rows.Add(row);
                     }
                 }
@@ -373,25 +397,29 @@ namespace mde.editor
             // 段落・見出し・コードブロック・水平線・画像は、いずれも編集画面上では独立した
             // ブロックとして前後に余白を持つため、ParagraphKindFlgをtrueにしておく
             // （TryCopySelectionForExcelでの空白行の挿入判定に使う。Row.ParagraphKindFlg参照）。
-            var row = new Row { HasContent = true, ParagraphKindFlg = true };
+            var row = new Row { m_hasContent = true, m_paragraphKindFlg = true };
             if (a_p.Tag is HorizontalRuleInfo)
             {
-                row.TdStyleExtra = "border-top:2px solid #999999;padding:2px 8px;";
-                row.Html.Append("&nbsp;");
-                row.Text.Append("----------------------------------------");
+                row.m_tdStyleExtra = "border-top:2px solid #999999;padding:2px 8px;";
+                row.m_html.Append("&nbsp;");
+                row.m_text.Append("----------------------------------------");
                 return row;
             }
-            if (a_p.Tag is CodeBlockInfo)
+            if (a_p.Tag is CodeBlockInfo || a_p.Tag is CodeBlockContinuationInfo)
             {
+                // 選択範囲がコードブロックの途中の行（CodeBlockContinuationInfo）から
+                // 始まっていた場合（先頭行が選択範囲の外にあり、呼び出し元のpreviousRowが
+                // nullの場合）も、ここに直接来ることがある。その場合でもコード用の見た目
+                // （等幅フォント等）にする。
                 string codeText = new TextRange(a_p.ContentStart, a_p.ContentEnd).Text;
-                row.TdStyleExtra = "font-family:Consolas,monospace;font-size:9.5pt;white-space:pre-wrap;";
-                row.Html.Append(WebUtility.HtmlEncode(codeText).Replace("\n", "<br>"));
-                row.Text.Append(codeText);
+                row.m_tdStyleExtra = "font-family:Consolas,monospace;font-size:9.5pt;white-space:pre-wrap;";
+                row.m_html.Append(WebUtility.HtmlEncode(codeText).Replace("\n", "<br>"));
+                row.m_text.Append(codeText);
                 return row;
             }
             if (a_p.Tag is int level && level > 0)
             {
-                row.TdStyleExtra = "font-weight:bold;font-size:" + HeadingFontSizePt(level).ToString(
+                row.m_tdStyleExtra = "font-weight:bold;font-size:" + HeadingFontSizePt(level).ToString(
                     "0.#", System.Globalization.CultureInfo.InvariantCulture) + "pt;";
                 AppendInlinesToRow(row, a_p.Inlines, "");
                 return row;
@@ -402,7 +430,7 @@ namespace mde.editor
 
         private Row BuildListItemRow(Paragraph a_mainPara, int a_depth, bool a_orderedFlg, int a_index, bool a_isTaskItemFlg)
         {
-            var row = new Row { HasContent = true };
+            var row = new Row { m_hasContent = true };
             string marker = a_isTaskItemFlg
                 ? (IsChecked(a_mainPara) ? "☑ " : "☐ ")
                 : (a_orderedFlg ? a_index + ". " : "・ ");
@@ -418,16 +446,16 @@ namespace mde.editor
         /// 箇条書きの外での継続行では付けない）。</param>
         private void AppendParagraphContinuation(Row a_row, Paragraph a_contPara, bool a_indentFlg = false)
         {
-            a_row.Html.Append("<br>");
-            a_row.Text.Append('\n');
+            a_row.m_html.Append("<br>");
+            a_row.m_text.Append('\n');
             if (a_indentFlg)
             {
                 // 通常の半角スペースのままだと、HTMLとして解釈される際に連続する空白が
                 // 1つに詰められてしまい、Excelへの貼り付け時にインデントが消えてしまう
                 // ことがあるため、HTML側は&nbsp;で書き出す（BlankRowHtmlの空白セルと
                 // 同じ理由）。プレーンテキスト側は通常の半角スペースのままでよい。
-                a_row.Html.Append("&nbsp;&nbsp;");
-                a_row.Text.Append("  ");
+                a_row.m_html.Append("&nbsp;&nbsp;");
+                a_row.m_text.Append("  ");
             }
             var inlineList = new List<Inline>();
             foreach (Inline inl in a_contPara.Inlines)
@@ -444,8 +472,8 @@ namespace mde.editor
         {
             if (!string.IsNullOrEmpty(a_prefixText))
             {
-                a_row.Html.Append(WebUtility.HtmlEncode(a_prefixText));
-                a_row.Text.Append(a_prefixText);
+                a_row.m_html.Append(WebUtility.HtmlEncode(a_prefixText));
+                a_row.m_text.Append(a_prefixText);
             }
             var inlineList = new List<Inline>();
             foreach (Inline inl in a_inlines)
@@ -474,8 +502,8 @@ namespace mde.editor
         {
             if (a_inline is LineBreak)
             {
-                a_row.Html.Append("<br>");
-                a_row.Text.Append('\n');
+                a_row.m_html.Append("<br>");
+                a_row.m_text.Append('\n');
             }
             else if (a_inline is InlineUIContainer iuc && iuc.Child is Image img)
             {
@@ -523,46 +551,46 @@ namespace mde.editor
                 return;
             }
 
-            a_row.Text.Append(a_run.Text);
+            a_row.m_text.Append(a_run.Text);
             string encoded = WebUtility.HtmlEncode(a_run.Text);
             string styleTag = a_run.Tag as string;
             if ("bold" == styleTag)
             {
-                a_row.Html.Append("<b>").Append(encoded).Append("</b>");
+                a_row.m_html.Append("<b>").Append(encoded).Append("</b>");
             }
             else if ("strikethrough" == styleTag)
             {
-                a_row.Html.Append("<s>").Append(encoded).Append("</s>");
+                a_row.m_html.Append("<s>").Append(encoded).Append("</s>");
             }
             else if ("underline" == styleTag)
             {
-                a_row.Html.Append("<u>").Append(encoded).Append("</u>");
+                a_row.m_html.Append("<u>").Append(encoded).Append("</u>");
             }
             else if ("inline-code" == styleTag)
             {
-                a_row.Html.Append("<code style=\"font-family:Consolas,monospace;background:#f0efe9;padding:0 3pt;\">")
+                a_row.m_html.Append("<code style=\"font-family:Consolas,monospace;background:#f0efe9;padding:0 3pt;\">")
                     .Append(encoded).Append("</code>");
             }
             else if ("highlight" == styleTag)
             {
-                a_row.Html.Append("<mark>").Append(encoded).Append("</mark>");
+                a_row.m_html.Append("<mark>").Append(encoded).Append("</mark>");
             }
             else
             {
-                a_row.Html.Append(encoded);
+                a_row.m_html.Append(encoded);
             }
         }
 
         private void AppendLinkRun(Row a_row, string a_text, string a_url)
         {
-            a_row.Text.Append(a_text);
+            a_row.m_text.Append(a_text);
             string encodedText = WebUtility.HtmlEncode(a_text);
             bool isExternalFlg = !string.IsNullOrWhiteSpace(a_url) &&
                 Regex.IsMatch(a_url, "^[a-zA-Z][a-zA-Z0-9+.-]*:") &&
                 !Regex.IsMatch(a_url, "^[a-zA-Z]:[\\\\/]");
             if (isExternalFlg)
             {
-                a_row.Html.Append("<a href=\"").Append(WebUtility.HtmlEncode(a_url)).Append("\">")
+                a_row.m_html.Append("<a href=\"").Append(WebUtility.HtmlEncode(a_url)).Append("\">")
                     .Append(encodedText).Append("</a>");
                 return;
             }
@@ -570,7 +598,7 @@ namespace mde.editor
             // コピーした断片の中には、見出しへのジャンプ先（アンカー）や、リンク先の他ファイルが
             // 含まれるとは限らないため、文書内のアンカーリンク（#始まり）・他ファイルを開く
             // リンクは、リンクとしては機能しないプレーンテキストとして書き出す。
-            a_row.Html.Append(encodedText);
+            a_row.m_html.Append(encodedText);
         }
 
         private void AppendImage(Row a_row, Image a_img, bool a_hasMoreFlg)
@@ -583,8 +611,8 @@ namespace mde.editor
             {
                 string alt = (a_img.Tag as ImageInfo)?.Alt;
                 string placeholder = "[画像" + (string.IsNullOrEmpty(alt) ? "" : ": " + alt) + "]";
-                a_row.Text.Append(placeholder);
-                a_row.Html.Append(WebUtility.HtmlEncode(placeholder));
+                a_row.m_text.Append(placeholder);
+                a_row.m_html.Append(WebUtility.HtmlEncode(placeholder));
                 return;
             }
 
@@ -596,28 +624,28 @@ namespace mde.editor
             // 影響されず、独自の埋め込みPictureオブジェクトとしてセルの左上へ固定的に
             // 配置しているとみられ、この経路での位置調整は行えない模様（詳細はDEVELOPMENT_LOG
             // §14.115〜14.118参照）。同じ調整を再度試みないよう記録しておく。
-            a_row.Html.Append("<img src=\"").Append(WebUtility.HtmlEncode(fileUri)).Append('"');
+            a_row.m_html.Append("<img src=\"").Append(WebUtility.HtmlEncode(fileUri)).Append('"');
             if (!double.IsNaN(a_img.Width) && a_img.Width > 0)
             {
-                a_row.Html.Append(" width=\"").Append((int)a_img.Width).Append('"');
+                a_row.m_html.Append(" width=\"").Append((int)a_img.Width).Append('"');
             }
-            a_row.Html.Append('>');
+            a_row.m_html.Append('>');
             // 画像の直後に他の内容（テキスト等）が同じ<td>内で続く場合、Excelへの貼り付け時に
             // 画像そのものが表示されなくなる（画像が丸ごと消えてしまう）ことが実機で判明した。
             // 画像単体だけが<td>の内容である場合は問題なく表示されるため、画像を他の内容から
             // 独立した行にする（TableEditor.AppendCellInlinesの同じ対応も参照）。
             if (a_hasMoreFlg)
             {
-                a_row.Html.Append("<br>");
+                a_row.m_html.Append("<br>");
             }
-            a_row.Text.Append("[画像]");
+            a_row.m_text.Append("[画像]");
 
             // 画像の実際の高さを覚えておき、後ろに何行分の空白行を挿入するかの計算に使う
             // （次の行と重ならないようにするため。Row.ImageHeightPx参照）。1つの行に
             // 複数の画像が含まれる場合は、最も高いものに合わせる。
             if (!double.IsNaN(a_img.Height) && a_img.Height > 0)
             {
-                a_row.ImageHeightPx = Math.Max(a_row.ImageHeightPx, a_img.Height);
+                a_row.m_imageHeightPx = Math.Max(a_row.m_imageHeightPx, a_img.Height);
             }
         }
 

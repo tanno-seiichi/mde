@@ -2,13 +2,15 @@
 //
 // mde (Markdown インラインエディタ) の一部。
 // 見出しとコードブロックの編集を担当するクラス。段落から見出し/コードブロックへの変換、
-// Enterキーでの挙動（見出しは通常段落へ抜ける、コードブロックは行内改行）、
-// コードブロック内でのTab/Shift+Tabによるインデント調整を扱う。
+// Enterキーでの挙動（見出しは通常段落へ抜ける、コードブロックは段落分割による続きの行の
+// 追加。CodeBlockContinuationInfo参照）、コードブロック内でのTab/Shift+Tabによる
+// インデント調整を扱う。
 
 using mde.common;
 using mde.logger;
 using System;
 using System.Collections.Generic;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
@@ -98,6 +100,42 @@ namespace mde.editor
             m_editor.Focus();
         }
 
+        /// <summary>段落を引用に変換する。マーカー文字列だけを先頭から取り除き、それ以降に
+        /// 既にあった内容は書式ごとそのまま引用の内容として引き継ぐ点はConvertParagraphToHeading
+        /// と同じ。ただし、引用を抜ける操作をコードブロックと統一した（通常のEnterは常に
+        /// 引用の続きの行を増やすだけで、引用から「抜ける」専用の操作は持たない。
+        /// InsertQuoteContinuationParagraph・MainWindow.EditorPreviewKeyDown参照）ため、
+        /// ConvertParagraphToCodeBlockと同様、変換した直後に後ろへ新しい通常の段落を
+        /// 1つ追加しておく。これが、矢印キーやクリックで引用の外へ移動する時の行き先になる。</summary>
+        /// <param name="a_p">変換する段落。</param>
+        /// <param name="a_markerCharCount">取り除くマーカー文字数（"&gt; "の場合は2）。</param>
+        public void ConvertParagraphToQuote(Paragraph a_p, int a_markerCharCount)
+        {
+            DebugLogger.Log("ConvertParagraphToQuote: 呼び出し");
+            // ConvertParagraphToHeadingと同じ理由で、ImeCaretMoveHelper経由の
+            // Dispatcher.BeginInvoke遅延は使わず、同期的に書き換えてその場でUpdateLayout・
+            // ClearFocus/Focusを行うパターンにする。
+            m_runAsProgrammaticChange(() =>
+            {
+                // 変換のきっかけとなった"> "（a_markerCharCount文字）の部分だけを段落の
+                // 先頭から取り除く。ConvertParagraphToHeadingと同じ理由で、単純なオフセット
+                // 指定ではなくAdvanceByCharCountで実際の文字数を数える。
+                TextPointer markerEnd = AdvanceByCharCount(a_p.ContentStart, a_markerCharCount);
+                new TextRange(a_p.ContentStart, markerEnd).Text = "";
+                BlockStyles.ApplyQuoteStyle(a_p, true);
+
+                // ConvertParagraphToCodeBlockと同じく、引用から「抜ける」ための行き先として、
+                // 後ろに新しい通常の段落を1つ用意しておく。
+                var trailingPara = new Paragraph();
+                m_editor.Document.Blocks.InsertAfter(a_p, trailingPara);
+
+                m_editor.CaretPosition = a_p.ContentStart;
+            });
+            m_editor.UpdateLayout();
+            Keyboard.ClearFocus();
+            m_editor.Focus();
+        }
+
         /// <summary>右クリックメニューから見出しレベルを変更する（本文に戻す場合も含む）。
         /// スタイル変更はTextChangedを発生させないため、明示的に「元テキスト保持」の記憶を破棄する。</summary>
         /// <param name="a_p">対象の段落。</param>
@@ -130,6 +168,60 @@ namespace mde.editor
             Keyboard.ClearFocus();
             m_editor.Focus();
             DebugLogger.Log($"RevertEmptyHeadingOnBackspace: 完了 Tag={a_p.Tag ?? "null"}");
+        }
+
+        /// <summary>引用段落の中身をBackSpaceで空にした状態から、もう一度BackSpaceが
+        /// 押された時の処理。RevertEmptyHeadingOnBackspaceと全く同じ理由・同じパターンで、
+        /// 引用の書式だけを本文へ戻す。</summary>
+        /// <param name="a_p">対象の引用段落（既に空であること）。</param>
+        public void RevertEmptyQuoteOnBackspace(Paragraph a_p)
+        {
+            DebugLogger.Log("RevertEmptyQuoteOnBackspace: 呼び出し");
+            m_originalTextTracker.InvalidateForBlock(a_p);
+            m_runAsProgrammaticChange(() =>
+            {
+                BlockStyles.ApplyQuoteStyle(a_p, false);
+                m_editor.CaretPosition = a_p.ContentStart;
+            });
+            m_editor.UpdateLayout();
+            Keyboard.ClearFocus();
+            m_editor.Focus();
+            DebugLogger.Log($"RevertEmptyQuoteOnBackspace: 完了 Tag={a_p.Tag ?? "null"}");
+        }
+
+        /// <summary>引用の先頭行（QuoteInfo）がBackSpaceで空になった時点で、直後に続きの行
+        /// （QuoteContinuationInfo）が残っている場合に呼ばれる。RevertEmptyQuoteOnBackspaceを
+        /// そのまま使うと、空になった先頭段落だけが本文に戻り、後ろのQuoteContinuationInfo
+        /// 段落が「先頭を示すQuoteInfoの無い、引用の書式だけが残った段落」として取り残されて
+        /// しまい、見た目が崩れる（保存時には、本文に戻った空段落は出力されず、取り残された
+        /// 続きの行だけが前の内容へ改行だけでつながってしまうため、空行や見た目も再現できない）。
+        /// この問題を避けるため、空になった先頭段落を本文へ戻すのではなく削除し、代わりに
+        /// 直後の続きの行を新しい先頭行（QuoteInfo）へ格上げする（箇条書き・表のセルとは異なり、
+        /// 引用はBrContinuationInfoと同じ「段落分割」方式のため、先頭を1つ後ろへずらすだけで
+        /// 残りの続きの行の連なりはそのまま保たれる）。</summary>
+        /// <param name="a_emptyQuotePara">空になった引用の先頭段落。</param>
+        /// <param name="a_nextContinuationPara">その直後にある、引用の続きの段落
+        /// （QuoteContinuationInfoが設定されていること）。</param>
+        public void PromoteQuoteContinuationOnEmptyFirstLineBackspace(Paragraph a_emptyQuotePara, Paragraph a_nextContinuationPara)
+        {
+            DebugLogger.Log("PromoteQuoteContinuationOnEmptyFirstLineBackspace: 呼び出し");
+            m_originalTextTracker.InvalidateForBlock(a_emptyQuotePara);
+            m_runAsProgrammaticChange(() =>
+            {
+                double bottomMargin = a_nextContinuationPara.Margin.Bottom;
+                // 格上げ前の時点でa_nextContinuationParaが既にグループ最後の行だったかどうかは、
+                // 下方向のパディングが付いていたか（>0）で判別できる（ApplyQuoteContinuationStyle
+                // のa_isLastLineと対応）。bottomMarginと同じく、既存の状態をそのまま引き継ぐ。
+                bool wasLastLineFlg = a_nextContinuationPara.Padding.Bottom > 0;
+                BlockStyles.ApplyQuoteStyle(a_nextContinuationPara, true, wasLastLineFlg);
+                a_nextContinuationPara.Margin = new Thickness(0, 4, 0, bottomMargin);
+                m_editor.Document.Blocks.Remove(a_emptyQuotePara);
+                m_editor.CaretPosition = a_nextContinuationPara.ContentStart;
+            });
+            m_editor.UpdateLayout();
+            Keyboard.ClearFocus();
+            m_editor.Focus();
+            DebugLogger.Log($"PromoteQuoteContinuationOnEmptyFirstLineBackspace: 完了 Tag={a_nextContinuationPara.Tag?.GetType().Name ?? "null"}");
         }
 
         /// <summary>指定した位置から、実際の文字数で数えてa_charCount文字分だけ後ろへ戻った
@@ -178,6 +270,31 @@ namespace mde.editor
             DebugLogger.Log(
                 "DeleteLastCharInHeading: 完了 text=[" +
                 new TextRange(a_p.ContentStart, a_p.ContentEnd).Text.Replace(" ", "[SP]").Replace("\u00A0", "[NBSP]").Replace("\r", "[CR]").Replace("\n", "[LF]") + "]");
+        }
+
+        /// <summary>引用段落（先頭行・続きの行のいずれも対象）の末尾（キャレット位置）から、
+        /// 実際の文字1つ分だけを自前で削除する。DeleteLastCharInHeadingと全く同じ理由・同じ
+        /// パターン（IME合成によるRun分割でWPF標準のBackSpaceが無反応になる問題への対策）。
+        /// 引用の2行目以降はQuoteContinuationInfoを持つ別のParagraphとして表現しており
+        /// （LineBreakは使わない。QuoteContinuationInfoのコメント参照）、このメソッド自体は
+        /// 渡された1つのParagraphの末尾だけを見るので、先頭行・続きの行のどちらであっても
+        /// そのまま使える。</summary>
+        /// <param name="a_p">対象の引用段落。キャレットは段落末尾にあり、中身は空でないこと。</param>
+        public void DeleteLastCharInQuote(Paragraph a_p)
+        {
+            DebugLogger.Log("DeleteLastCharInQuote: 呼び出し");
+            m_runAsProgrammaticChange(() =>
+            {
+                TextPointer deleteFrom = RetreatByCharCount(a_p.ContentEnd, 1);
+                new TextRange(deleteFrom, a_p.ContentEnd).Text = "";
+                m_editor.CaretPosition = a_p.ContentEnd;
+            });
+            m_editor.UpdateLayout();
+            Keyboard.ClearFocus();
+            m_editor.Focus();
+            DebugLogger.Log(
+                "DeleteLastCharInQuote: 完了 text=[" +
+                new TextRange(a_p.ContentStart, a_p.ContentEnd).Text.Replace(" ", "[SP]").Replace(" ", "[NBSP]").Replace("\r", "[CR]").Replace("\n", "[LF]") + "]");
         }
 
         /// <summary>見出し内でのEnterキー処理。見出しの文字列の先頭（1文字目より左）に
@@ -229,6 +346,68 @@ namespace mde.editor
             m_editor.Focus();
         }
 
+        /// <summary>
+        /// 引用内でEnterが押された時の処理。引用の先頭行・続きの行のどちらで呼ばれても、
+        /// 常にこのメソッドが呼ばれる（コードブロックのInsertCodeBlockContinuationParagraphと
+        /// 同じく、Enterに特別な「抜ける」機能は持たせず、通常のEnterは常に続きの行を
+        /// 増やすだけにする。引用から抜けるには、矢印キーやクリックで
+        /// ConvertParagraphToQuoteが用意した後続の通常の段落へ移動する。
+        /// MainWindow.EditorPreviewKeyDown参照）。
+        /// 以前はShift+Enterの時だけ呼ばれていたが、ユーザーからの指摘を受けて、
+        /// コードブロックと操作を統一するため、通常のEnterでも常にこちらを呼ぶように変更した
+        /// （以前の「通常のEnterで引用を抜ける」専用処理だったHandleQuoteEnterは削除した）。
+        /// 箇条書き項目・表のセル内のShift+Enterと全く同じ理由（LineBreak要素とIMEの組み合わせ
+        /// による、キャレット位置がずれる不具合。実機で「Enterで行を増やしても、次の行に
+        /// カーソルを移動して入力すると1行目の末尾に入力されてしまう」という形で確認された。
+        /// InsertParagraphSplitAtCaretのコメント参照）で、LineBreakは使わず、キャレット位置で
+        /// 段落そのものを2つに分割する（ListEditor.SplitInlinesAtCaretで、キャレットより後ろの
+        /// 内容を書式ごと新しい段落へ移す、実績のあるロジックを共有する）。
+        /// 分割後の2つの段落の間のMarginを0にし、元々a_paraが持っていた（＝このグループの
+        /// 最後の行として持っていた）下マージンは、新しくできた方の段落（今後の最後の行に
+        /// なる）へ引き継ぐ。これにより、見た目には複数の段落が1つの引用ブロック内の複数行に
+        /// しか見えないようにする（BrContinuationInfoの続き段落・MarkdownConverter.
+        /// MarkdownToDocumentのbrSegments処理と同じ考え方）。下方向のパディングも、新しくできた
+        /// 方の段落（今後の最後の行になる）だけが持つようにし、a_para自身は無くす（コードブロック
+        /// のSplitCodeBlockParagraphAtCaretと同じ考え方。行間が不自然に広くならないようにするため
+        /// に必要で、これが無いと分割直後、a_paraの下パディングが残ったままになってしまう）。
+        /// </summary>
+        /// <param name="a_para">分割対象の段落（現在キャレットがある、QuoteInfoまたは
+        /// QuoteContinuationInfoが設定された引用の段落）。</param>
+        public void InsertQuoteContinuationParagraph(Paragraph a_para)
+        {
+            DebugLogger.Log("InsertQuoteContinuationParagraph: 呼び出し");
+            m_runAsProgrammaticChange(() =>
+            {
+                TextPointer caret = m_editor.CaretPosition;
+
+                var newPara = new Paragraph();
+                // newParaは常にこのグループの新しい最後の行になるため、a_isLastLine=trueで
+                // 下方向のパディングを持たせる。
+                BlockStyles.ApplyQuoteContinuationStyle(newPara, true);
+                // a_paraが分割前に持っていた下マージンを新しい段落（今後の最後の行）へ引き継ぎ、
+                // a_para自身の下マージンは0にする（もう最後の行ではなくなるため）。上マージンは
+                // どちらも常に0（続きの行には上の余白を持たせない）。
+                newPara.Margin = new Thickness(0, 0, 0, a_para.Margin.Bottom);
+                a_para.Margin = new Thickness(a_para.Margin.Left, a_para.Margin.Top, a_para.Margin.Right, 0);
+                // a_paraはもう最後の行ではなくなるため、下方向のパディングを無くす（上方向の
+                // パディングは、a_paraが元々先頭行だったか続きの行だったかで異なる値のままに
+                // しておきたいため、ここでは触れない）。
+                a_para.Padding = new Thickness(a_para.Padding.Left, a_para.Padding.Top, a_para.Padding.Right, 0);
+
+                foreach (Inline movedInline in ListEditor.SplitInlinesAtCaret(a_para.Inlines, caret))
+                {
+                    newPara.Inlines.Add(movedInline);
+                }
+
+                m_editor.Document.Blocks.InsertAfter(a_para, newPara);
+                m_editor.CaretPosition = newPara.ContentStart;
+                DebugLogger.Log("InsertQuoteContinuationParagraph: 段落を分割し、新しい段落の先頭へキャレットを移動した");
+            });
+            m_editor.UpdateLayout();
+            Keyboard.ClearFocus();
+            m_editor.Focus();
+        }
+
         /// <summary>段落をコードブロックに変換し、その後ろに新しい通常の段落を追加する。</summary>
         /// <param name="a_p">変換する段落。</param>
         /// <param name="a_language">```の直後に書かれた言語名。</param>
@@ -272,26 +451,122 @@ namespace mde.editor
             m_editor.Focus();
         }
 
-        /// <summary>コードブロック内でのEnterキー処理（新しい段落を作らず、行内改行を挿入する）。
-        /// 箇条書き項目内でのShift+Enter、表のセル内でのEnter/Shift+Enterでも共通して使われる
-        /// （MainWindow.EditorPreviewKeyDown参照）。
-        /// 行内改行（LineBreak）の挿入後、IME（TSF）側が新しいキャレット位置をすぐには認識できず、
-        /// 直後の入力が改行の1つ手前に入ってしまう競合状態があるため、キャレット移動を
-        /// ImeCaretMoveHelper.ScheduleCaretMoveでキー入力処理から1テンポ切り離して行う
-        /// （調査の経緯はDEVELOPMENT_LOG.md参照）。この対策は発生確率を下げるものであり、
-        /// 100%の解消を保証するものではない。
-        /// </summary>
-        public void InsertLineBreakAtCaret()
+        /// <summary>コードブロック内でキャレット位置の段落を2つに分割する、分割そのものだけを
+        /// 行う内部ヘルパー。RunAsProgrammaticChange・UpdateLayout・Focus等の前後処理は
+        /// 呼び出し元が担当する（1回のEnterキー処理につき1回だけ呼ぶInsertCodeBlock
+        /// ContinuationParagraphと、複数行のテキスト貼り付けで行の数だけ連続して呼ぶ
+        /// MainWindow.InsertPlainTextWithLineBreaksForCodeBlockの両方から使うため、前後処理を
+        /// 分離してある。後者でループのたびにUpdateLayout・ClearFocus/Focusを行うと、貼り付け
+        /// 行数が多い場合に重く・ちらつく原因になる）。
+        /// 分割元の段落（a_para）がコードブロックの先頭行（CodeBlockInfo）・続きの行
+        /// （CodeBlockContinuationInfo）のどちらであっても使える。分割後、a_paraは「後ろに
+        /// 続きの行がある」状態のスタイル（下側の枠線・余白を持たない）に、新しく作る段落は
+        /// 「このグループの最後の行」のスタイル（下側の枠線・余白を持つ）にする。a_paraが
+        /// それまで実際に最後の行だったかどうかに関わらず、分割後は必ずa_paraの後ろに新しい
+        /// 段落が来るため、この決め方でよい。</summary>
+        /// <param name="a_para">分割するコードブロックの段落（先頭行・続きの行のいずれか）。</param>
+        /// <returns>新しく作られた、分割後の段落（このグループの新しい最後の行）。</returns>
+        public Paragraph SplitCodeBlockParagraphAtCaret(Paragraph a_para)
         {
-            ImeCaretMoveHelper.ScheduleCaretMove(
-                m_editor,
-                () =>
+            TextPointer caret = m_editor.CaretPosition;
+            var newPara = new Paragraph();
+            if (a_para.Tag is CodeBlockInfo codeInfo)
+            {
+                BlockStyles.ApplyCodeBlockStyle(a_para, codeInfo.Language, false);
+            }
+            else
+            {
+                BlockStyles.ApplyCodeBlockContinuationStyle(a_para, false);
+            }
+            BlockStyles.ApplyCodeBlockContinuationStyle(newPara, true);
+
+            foreach (Inline movedInline in ListEditor.SplitInlinesAtCaret(a_para.Inlines, caret))
+            {
+                newPara.Inlines.Add(movedInline);
+            }
+
+            m_editor.Document.Blocks.InsertAfter(a_para, newPara);
+            m_editor.CaretPosition = newPara.ContentStart;
+            return newPara;
+        }
+
+        /// <summary>コードブロック内でのEnterキー処理。かつては行内改行（LineBreak要素）を
+        /// 1つの段落の中に挿入する方式だったが、引用・箇条書き項目・表のセルと同じ理由
+        /// （WPFのLineBreakとIMEの組み合わせの不具合。実機で「Enterで行を増やしても、新しい
+        /// 行にカーソルを移動して入力すると前の行の末尾に入力されてしまう」という形で確認
+        /// 済み）で、LineBreakは一切使わず、段落（Paragraph）そのものを2つに分割する
+        /// SplitCodeBlockParagraphAtCaretに作り直した（CodeBlockContinuationInfoのコメント
+        /// 参照）。</summary>
+        /// <param name="a_para">キャレットがあるコードブロックの段落（先頭行・続きの行の
+        /// いずれか）。</param>
+        public void InsertCodeBlockContinuationParagraph(Paragraph a_para)
+        {
+            DebugLogger.Log("InsertCodeBlockContinuationParagraph: 呼び出し");
+            m_runAsProgrammaticChange(() =>
+            {
+                SplitCodeBlockParagraphAtCaret(a_para);
+            });
+            m_editor.UpdateLayout();
+            Keyboard.ClearFocus();
+            m_editor.Focus();
+            DebugLogger.Log("InsertCodeBlockContinuationParagraph: 完了");
+        }
+
+        /// <summary>コードブロックの続きの行（CodeBlockContinuationInfo）の先頭でBackSpaceが
+        /// 押された時、WPF標準の「前の段落の末尾へ結合する」動作に相当する処理を、自前で
+        /// 行う。標準動作に任せないのは、結合後に残る段落のBorderThickness・Padding・Margin
+        /// （箱の下側の枠線・余白）を、結合によって変わった「このグループの最後の行かどうか」
+        /// に応じて正しく設定し直す必要があるため（標準の段落結合はPgetMargin等のスタイルを
+        /// 再計算してくれない。引用の左側の縦線のような位置に依存しない飾りとは異なり、
+        /// コードブロックは四辺を囲む箱のため、結合で末尾の行が変わると見た目が崩れる）。
+        /// a_paraが結合前の時点でこのグループの最後の行だった場合、結合先（前の段落）を
+        /// 新しい最後の行として再スタイルする。そうでなければ（まだ後ろに続きの行がある
+        /// 場合）、結合先の段落は元々「最後の行ではない」スタイルのままで変わらない。</summary>
+        /// <param name="a_para">BackSpaceが押された、空でない続きの行。この段落は結合後に
+        /// 文書から取り除かれる。</param>
+        public void MergeCodeBlockContinuationIntoPrevious(Paragraph a_para)
+        {
+            DebugLogger.Log("MergeCodeBlockContinuationIntoPrevious: 呼び出し");
+            if (!(a_para.PreviousBlock is Paragraph prevPara))
+            {
+                DebugLogger.Log("MergeCodeBlockContinuationIntoPrevious: 前の段落が無いため何もしなかった");
+                return;
+            }
+            m_originalTextTracker.InvalidateForBlock(prevPara);
+            m_runAsProgrammaticChange(() =>
+            {
+                bool wasLastLineFlg = !(a_para.NextBlock is Paragraph nextPara && nextPara.Tag is CodeBlockContinuationInfo);
+                TextPointer joinPoint = prevPara.ContentEnd;
+
+                var movedInlines = new List<Inline>();
+                foreach (Inline inl in a_para.Inlines)
                 {
-                    m_runAsProgrammaticChange(() =>
+                    movedInlines.Add(inl);
+                }
+                foreach (Inline inl in movedInlines)
+                {
+                    prevPara.Inlines.Add(inl);
+                }
+                m_editor.Document.Blocks.Remove(a_para);
+
+                if (wasLastLineFlg)
+                {
+                    if (prevPara.Tag is CodeBlockInfo prevCodeInfo)
                     {
-                        m_editor.CaretPosition = m_editor.CaretPosition.InsertLineBreak();
-                    });
-                });
+                        BlockStyles.ApplyCodeBlockStyle(prevPara, prevCodeInfo.Language, true);
+                    }
+                    else
+                    {
+                        BlockStyles.ApplyCodeBlockContinuationStyle(prevPara, true);
+                    }
+                }
+
+                m_editor.CaretPosition = joinPoint;
+            });
+            m_editor.UpdateLayout();
+            Keyboard.ClearFocus();
+            m_editor.Focus();
+            DebugLogger.Log("MergeCodeBlockContinuationIntoPrevious: 完了");
         }
 
         /// <summary>
@@ -372,6 +647,69 @@ namespace mde.editor
                 m_editor.CaretPosition = newPara.ContentStart;
                 DebugLogger.Log("InsertParagraphSplitAtCaret: 段落を分割し、新しい段落の先頭へキャレットを移動した");
             });
+        }
+
+        /// <summary>
+        /// 通常の段落（FlowDocument直下の、見出し・引用・コードブロック・箇条書き項目・表の
+        /// セルのいずれでもないただの段落）内でShift+Enterが押された時の処理。引用
+        /// （InsertQuoteContinuationParagraph）・コードブロック（InsertCodeBlockContinuation
+        /// Paragraph）と全く同じ理由（WPFのLineBreak要素とIMEの組み合わせの不具合。実機で
+        /// 「Shift+Enterで行を増やしても、次の行にカーソルを移動して入力すると前の行の末尾に
+        /// 入力されてしまう」という形で確認された）で、LineBreakは使わず、キャレット位置で
+        /// 段落そのものを2つに分割する。InsertParagraphSplitAtCaret（箇条書き項目・表のセル用）
+        /// とは別にこのメソッドを分けているのは、箇条書き項目・表のセルの内部段落は常にMargin=0
+        /// で位置による出し分けが不要なのに対し、通常の段落は「段落と段落の間の余白
+        /// （EditorBlockSpacing）」を持つため、引用・コードブロックと同じ「分割元の下マージンを
+        /// 新しい段落（今後の最後の行）へ付け替え、分割元自身は0にする」という位置依存の調整が
+        /// 必要なため。
+        /// 新しくできる段落には、通常の段落中の&lt;br&gt;による行内改行の「続き」段落
+        /// （MarkdownConverter.MarkdownToDocumentが読み込み時に既に生成していたのと同じ
+        /// BrContinuationInfo）を設定する。これにより、保存時にはDocumentToMarkdownの
+        /// BrContinuationInfo分岐により&lt;br&gt;として書き出され、「&lt;br&gt;による段落内改行」の
+        /// 読み込み側の表現と、ライブ編集でのShift+Enterの表現が一致する。
+        /// 分割後の2つの段落の間のMarginは0にし、元々a_paraが持っていた（＝このグループの
+        /// 最後の行として持っていた）下マージンは、新しくできた方の段落（今後の最後の行に
+        /// なる）へ引き継ぐ。これにより、見た目には複数の段落が1つの段落内の複数行にしか
+        /// 見えないようにする（InsertQuoteContinuationParagraph・MarkdownToDocumentの
+        /// brSegments処理と全く同じ考え方）。Shift+Enterによるこの行内の行間を、通常のEnterに
+        /// よる段落と段落の間の行間より詰まったまま保つのはご要望通りの挙動であり、意図的に
+        /// 変更していない。
+        /// </summary>
+        /// <param name="a_para">分割対象の段落（現在キャレットがある、通常の段落。Tagはnull
+        /// （まだ一度もShift+Enterしていない最初の行）、またはBrContinuationInfo（既に続きの
+        /// 行）のいずれか）。</param>
+        public void InsertBrContinuationParagraph(Paragraph a_para)
+        {
+            DebugLogger.Log("InsertBrContinuationParagraph: 呼び出し");
+            m_runAsProgrammaticChange(() =>
+            {
+                TextPointer caret = m_editor.CaretPosition;
+
+                var newPara = new Paragraph
+                {
+                    Margin = new Thickness(0, 0, 0, a_para.Margin.Bottom),
+                    LineHeight = a_para.LineHeight,
+                    KeepTogether = a_para.KeepTogether,
+                    TextAlignment = a_para.TextAlignment,
+                    Tag = new BrContinuationInfo()
+                };
+                // a_paraが分割前に持っていた下マージンは、上でnewParaへ引き継ぎ済みのため、
+                // a_para自身の下マージンは0にする（もう最後の行ではなくなるため）。上マージンには
+                // 触れない（a_paraが元々このグループの何行目だったかによらず、そのままの値を保つ）。
+                a_para.Margin = new Thickness(a_para.Margin.Left, a_para.Margin.Top, a_para.Margin.Right, 0);
+
+                foreach (Inline movedInline in ListEditor.SplitInlinesAtCaret(a_para.Inlines, caret))
+                {
+                    newPara.Inlines.Add(movedInline);
+                }
+
+                m_editor.Document.Blocks.InsertAfter(a_para, newPara);
+                m_editor.CaretPosition = newPara.ContentStart;
+                DebugLogger.Log("InsertBrContinuationParagraph: 段落を分割し、新しい段落の先頭へキャレットを移動した");
+            });
+            m_editor.UpdateLayout();
+            Keyboard.ClearFocus();
+            m_editor.Focus();
         }
 
         /// <summary>

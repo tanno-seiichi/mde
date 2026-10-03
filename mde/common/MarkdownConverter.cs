@@ -330,6 +330,47 @@ namespace mde.common
                     }
                     continue;
                 }
+                // 引用の2行目以降の続き段落（QuoteContinuationInfo。MarkdownToDocument・
+                // HeadingCodeBlockEditor.InsertQuoteContinuationParagraph参照）も、上の
+                // BrContinuationInfoと同じ考え方で、通常のブロック区切り（空行）ではなく、
+                // 単純な"\n"で直前の行へ連結する（それぞれの行は既にBlockToMarkdown側で
+                // "> "が付くため、ここでは行区切りの"\n"だけを挟めばよい）。
+                if (block is Paragraph quoteContPara && quoteContPara.Tag is QuoteContinuationInfo)
+                {
+                    string quoteContS = BlockToMarkdown(block);
+                    if (!firstFlg)
+                    {
+                        sb.Append("\n");
+                    }
+                    sb.Append(quoteContS);
+                    firstFlg = false;
+                    if (m_trailingComments.TryGetValue(block, out var trailingGroupForQuoteCont))
+                    {
+                        AppendCommentGroup(trailingGroupForQuoteCont);
+                    }
+                    continue;
+                }
+                // コードブロックの2行目以降の続き段落（CodeBlockContinuationInfo。
+                // MarkdownToDocument・HeadingCodeBlockEditor.InsertCodeBlockContinuation
+                // Paragraph参照）も、上のQuoteContinuationInfoと全く同じ考え方で、通常の
+                // ブロック区切り（空行）ではなく、単純な"\n"で直前の行へ連結する（閉じ
+                // フェンスの有無はBlockToMarkdown側で、自分がグループの最後の行かどうかに
+                // 応じて付けるため、ここでは行区切りの"\n"だけを挟めばよい）。
+                if (block is Paragraph codeContPara && codeContPara.Tag is CodeBlockContinuationInfo)
+                {
+                    string codeContS = BlockToMarkdown(block);
+                    if (!firstFlg)
+                    {
+                        sb.Append("\n");
+                    }
+                    sb.Append(codeContS);
+                    firstFlg = false;
+                    if (m_trailingComments.TryGetValue(block, out var trailingGroupForCodeCont))
+                    {
+                        AppendCommentGroup(trailingGroupForCodeCont);
+                    }
+                    continue;
+                }
                 // このBlockの直前にあったHTMLコメント（Blockとしては存在しない。
                 // m_leadingComments参照）を、元のソースにあった空行の数を再現しながら先に出力する。
                 if (m_leadingComments.TryGetValue(block, out var leadingGroup))
@@ -415,6 +456,48 @@ namespace mde.common
                     }
                     continue;
                 }
+                // DocumentToMarkdownの引用の続き段落の連結規則（直前の行へ単純な"\n"で連結）と
+                // 一致させる。
+                if (block is Paragraph quoteContPara && quoteContPara.Tag is QuoteContinuationInfo)
+                {
+                    if (!firstFlg)
+                    {
+                        offset += "\n".Length;
+                    }
+                    string quoteContS = BlockToMarkdown(block);
+                    if (ReferenceEquals(block, a_targetBlock))
+                    {
+                        return offset;
+                    }
+                    offset += quoteContS.Length;
+                    firstFlg = false;
+                    if (m_trailingComments.TryGetValue(block, out var trailingGroupForQuoteCont))
+                    {
+                        AddCommentGroupOffset(trailingGroupForQuoteCont);
+                    }
+                    continue;
+                }
+                // DocumentToMarkdownのコードブロックの続き段落の連結規則（直前の行へ単純な
+                // "\n"で連結）と一致させる。
+                if (block is Paragraph codeContPara && codeContPara.Tag is CodeBlockContinuationInfo)
+                {
+                    if (!firstFlg)
+                    {
+                        offset += "\n".Length;
+                    }
+                    string codeContS = BlockToMarkdown(block);
+                    if (ReferenceEquals(block, a_targetBlock))
+                    {
+                        return offset;
+                    }
+                    offset += codeContS.Length;
+                    firstFlg = false;
+                    if (m_trailingComments.TryGetValue(block, out var trailingGroupForCodeCont))
+                    {
+                        AddCommentGroupOffset(trailingGroupForCodeCont);
+                    }
+                    continue;
+                }
                 // DocumentToMarkdownと同じく、このBlockの直前のHTMLコメント分もオフセットに
                 // 加算してから本体へ進む（対象ブロック自身がコメントになることはない）。
                 if (m_leadingComments.TryGetValue(block, out var leadingGroup))
@@ -448,8 +531,8 @@ namespace mde.common
             return -1;
         }
 
-        /// <summary>1つのトップレベルブロックを、種類（見出し/段落・コードブロック・箇条書き・表）に
-        /// 応じて適切な変換関数へ振り分ける。コードブロック丸ごとコピー機能からも利用される。</summary>
+        /// <summary>1つのトップレベルブロックを、種類（見出し/段落・コードブロック・引用・箇条書き・
+        /// 表）に応じて適切な変換関数へ振り分ける。コードブロック丸ごとコピー機能からも利用される。</summary>
         /// <param name="a_block">対象のブロック。</param>
         /// <returns>変換後のMarkdown文字列。</returns>
         public string BlockToMarkdown(Block a_block)
@@ -462,10 +545,47 @@ namespace mde.common
                 }
                 if (p.Tag is CodeBlockInfo codeInfo)
                 {
+                    // コードブロックの先頭行。1つのParagraphは常に1行分の内容だけを持つ
+                    // （Enterによる続きの行は別のParagraph＝CodeBlockContinuationInfoとして
+                    // 表現しており、LineBreakは使わない。CodeBlockContinuationInfoのコメント
+                    // 参照）。後ろに続きの行が無ければ（単独の1行だけのコードブロックなら）
+                    // ここで閉じフェンスまで書き出す。続きの行がある場合は閉じフェンスを
+                    // 書かず、グループの最後の行（下のCodeBlockContinuationInfo分岐）に
+                    // 任せる。続き行どうしの間（コメント・空行を挟まない、単純な"\n"での
+                    // 連結）はDocumentToMarkdown・GetMarkdownOffsetForBlockのCodeBlock
+                    // ContinuationInfo分岐が担当する。
                     var sb = new StringBuilder();
                     AppendInlinesMarkdown(p.Inlines, sb);
-                    string codeText = sb.ToString().Trim('\r', '\n');
-                    return "```" + codeInfo.Language + "\n" + codeText + "\n```";
+                    string codeLineText = sb.ToString().Trim('\r', '\n');
+                    bool codeHasContinuationFlg = p.NextBlock is Paragraph nextCodePara && nextCodePara.Tag is CodeBlockContinuationInfo;
+                    string opening = "```" + codeInfo.Language + "\n" + codeLineText;
+                    return codeHasContinuationFlg ? opening : opening + "\n```";
+                }
+                if (p.Tag is CodeBlockContinuationInfo)
+                {
+                    // コードブロックの2行目以降。自分がグループの最後の行であれば閉じフェンスを
+                    // 付け、まだ後ろに続きの行があれば付けない（上のCodeBlockInfo分岐と同じ
+                    // 考え方）。
+                    var sb = new StringBuilder();
+                    AppendInlinesMarkdown(p.Inlines, sb);
+                    string codeLineText = sb.ToString().Trim('\r', '\n');
+                    bool codeHasMoreContinuationFlg = p.NextBlock is Paragraph nextCodeContPara && nextCodeContPara.Tag is CodeBlockContinuationInfo;
+                    return codeHasMoreContinuationFlg ? codeLineText : codeLineText + "\n```";
+                }
+                if (p.Tag is QuoteInfo || p.Tag is QuoteContinuationInfo)
+                {
+                    // 引用の先頭行（QuoteInfo）・続きの行（QuoteContinuationInfo）のいずれも、
+                    // 1つのParagraphは常に1行分の内容だけを持つ（Shift+Enterによる続きの行は
+                    // 別のParagraphとして表現しており、LineBreakは使わない。QuoteContinuation
+                    // Infoのコメント参照）。このParagraph自身の内容の先頭に"> "を付けるだけで
+                    // よく、複数行への分割は不要だが、念のためParagraphInlineToMarkdownの
+                    // 結果に"\n"が含まれていた場合（想定外の経路で混入した場合）にも対応できる
+                    // よう、行ごとに分割してそれぞれへ"> "を付ける処理のままにしている。
+                    // 続き行どうしの間（コメント・空行を挟まない、単純な"\n"での連結）は
+                    // DocumentToMarkdown・GetMarkdownOffsetForBlockのQuoteContinuationInfo
+                    // 分岐が担当する。
+                    string quoteText = ParagraphInlineToMarkdown(p);
+                    return string.Join("\n", quoteText.Split('\n').Select(l => "> " + l));
                 }
                 int level = p.Tag is int lv ? lv : 0;
                 string text = ParagraphInlineToMarkdown(p);
@@ -897,20 +1017,42 @@ namespace mde.common
                         i++; // 閉じフェンスを読み飛ばす
                     }
 
+                    // 複数行のコードブロックは、1行につき1つのParagraphにする（先頭行は
+                    // CodeBlockInfo、2行目以降はCodeBlockContinuationInfo）。LineBreakでは
+                    // なく別々のParagraphにするのは、引用・箇条書き項目・表のセルと同じ理由
+                    // （WPFのLineBreakとIMEの組み合わせの不具合。実機で「コードブロック内で
+                    // Enterを押して行を増やしても、新しい行にカーソルを移動して入力すると
+                    // 前の行の末尾に入力されてしまう」という形で確認された。
+                    // CodeBlockContinuationInfoのコメント参照）。書き出し側はBlockToMarkdown・
+                    // DocumentToMarkdownのCodeBlockContinuationInfo分岐を参照。
+                    bool codeHasContinuationFlg = codeLines.Count > 1;
                     var codePara = new Paragraph();
-                    BlockStyles.ApplyCodeBlockStyle(codePara, language);
-                    for (int k = 0; k < codeLines.Count; k++)
+                    BlockStyles.ApplyCodeBlockStyle(codePara, language, !codeHasContinuationFlg);
+                    if (codeLines.Count > 0)
                     {
-                        if (k > 0)
-                        {
-                            codePara.Inlines.Add(new LineBreak());
-                        }
-                        codePara.Inlines.Add(new Run(codeLines[k]));
+                        codePara.Inlines.Add(new Run(codeLines[0]));
                     }
                     RecordBlankLinesBeforeBlock(codePara);
                     AttachPendingComments(codePara);
                     a_doc.Blocks.Add(codePara);
-                    m_originalTextTracker.Record(codePara, lines, blockStart, i);
+                    if (!codeHasContinuationFlg)
+                    {
+                        m_originalTextTracker.Record(codePara, lines, blockStart, i);
+                    }
+                    else
+                    {
+                        // <br>続き段落（brSegments処理）・引用の続き段落（quoteLineTexts処理）
+                        // と同じ理由で、複数行に分かれる場合は元テキストの丸ごと保存を使わず、
+                        // 常に現在の構造から書き出し直す。
+                        for (int lineIdx = 1; lineIdx < codeLines.Count; lineIdx++)
+                        {
+                            bool lastLineFlg = lineIdx == codeLines.Count - 1;
+                            var contPara = new Paragraph();
+                            BlockStyles.ApplyCodeBlockContinuationStyle(contPara, lastLineFlg);
+                            contPara.Inlines.Add(new Run(codeLines[lineIdx]));
+                            a_doc.Blocks.Add(contPara);
+                        }
+                    }
                     continue;
                 }
 
@@ -952,6 +1094,62 @@ namespace mde.common
                     a_doc.Blocks.Add(p);
                     i++;
                     m_originalTextTracker.Record(p, lines, blockStart, i);
+                    continue;
+                }
+
+                // 引用（"> "で始まる行）。連続する"> "行をまとめて、1行につき1つのParagraphに
+                // する（先頭行はQuoteInfo、2行目以降はQuoteContinuationInfo）。LineBreakでは
+                // なく別々のParagraphにするのは、箇条書き項目・表のセルと同じ理由（WPFの
+                // LineBreakとIMEの組み合わせの不具合。実機で「Shift+Enterで行を増やしても、
+                // 次の行にカーソルを移動して入力すると1行目の末尾に入力されてしまう」という
+                // 形で確認された。QuoteContinuationInfoのコメント参照）。書き出し側は
+                // BlockToMarkdown・DocumentToMarkdownのQuoteContinuationInfo分岐を参照。
+                var qMatch = Regex.Match(line, "^>\\s?(.*)$");
+                if (qMatch.Success)
+                {
+                    var quoteLineTexts = new List<string> { qMatch.Groups[1].Value };
+                    i++;
+                    while (i < lines.Length)
+                    {
+                        var nextQMatch = Regex.Match(lines[i], "^>\\s?(.*)$");
+                        if (!nextQMatch.Success)
+                        {
+                            break;
+                        }
+                        quoteLineTexts.Add(nextQMatch.Groups[1].Value);
+                        i++;
+                    }
+                    var qp = new Paragraph();
+                    BlockStyles.ApplyQuoteStyle(qp, true, 1 == quoteLineTexts.Count);
+                    AppendInlineMarkdownToParagraph(qp, quoteLineTexts[0], false);
+                    RecordBlankLinesBeforeBlock(qp);
+                    AttachPendingComments(qp);
+                    a_doc.Blocks.Add(qp);
+                    if (1 == quoteLineTexts.Count)
+                    {
+                        m_originalTextTracker.Record(qp, lines, blockStart, i);
+                    }
+                    else
+                    {
+                        // <br>続き段落（brSegments処理）と同じ理由で、複数行に分かれる場合は
+                        // 元テキストの丸ごと保存を使わず、常に現在の構造から書き出し直す。
+                        // 先頭の段落（qp）の下マージンも0にする（続きの段落との間を詰め、
+                        // 1つの引用ブロック内の複数行に見せるため）。
+                        qp.Margin = new Thickness(qp.Margin.Left, qp.Margin.Top, qp.Margin.Right, 0);
+                        for (int lineIdx = 1; lineIdx < quoteLineTexts.Count; lineIdx++)
+                        {
+                            bool lastLineFlg = lineIdx == quoteLineTexts.Count - 1;
+                            var contPara = new Paragraph();
+                            BlockStyles.ApplyQuoteContinuationStyle(contPara, lastLineFlg);
+                            // グループ内の段落どうしの間は0にして1つの引用ブロックの複数行に
+                            // 見せるが、グループの最後の段落だけは、次のブロックとの間の余白
+                            // （ApplyQuoteStyleのa_quoted=trueの場合の下マージンと同じ値）を
+                            // 持たせる。
+                            contPara.Margin = lastLineFlg ? new Thickness(0, 0, 0, 10) : new Thickness(0);
+                            AppendInlineMarkdownToParagraph(contPara, quoteLineTexts[lineIdx], false);
+                            a_doc.Blocks.Add(contPara);
+                        }
+                    }
                     continue;
                 }
 
@@ -1388,6 +1586,17 @@ namespace mde.common
                 return true;
             }
             if (Regex.IsMatch(a_line, "^ {0,3}([-*_])\\1{2,}\\s*$"))
+            {
+                return true;
+            }
+            // 引用（"> "）。この判定が無いと、空行を挟まずに段落の直後へ引用を書いた場合、
+            // 通常の段落側の継続スキャン（この関数を使う側のwhileループ）が"> "で始まる行を
+            // そのまま本文として取り込んでしまい、引用として認識されなくなってしまう
+            // （見出し・箇条書き・表・水平線と同じ理由。MarkdownToDocumentの引用解析分岐は、
+            // トップレベルの新しいブロックを探すタイミングでのみ働くため）。判定に使う
+            // 正規表現は、引用の解析分岐自体（MarkdownToDocumentの"qMatch"）と同じ
+            // "^>\\s?"にそろえている。
+            if (Regex.IsMatch(a_line, "^>\\s?"))
             {
                 return true;
             }
