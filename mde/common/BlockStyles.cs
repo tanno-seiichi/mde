@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -54,6 +55,11 @@ namespace mde.common
             // 本文へ戻した際に確実に解除する。見出し・コードブロック・水平線はForegroundを
             // 設定しないため、この行を追加してもそれらの動作には影響しない。
             a_p.ClearValue(TextElement.ForegroundProperty);
+            // 見出しスタイル（ApplyHeadingStyle）が設定するLineHeightのローカル値を、他の種類へ
+            // 変換した際や本文へ戻した際に確実に解除する。これが無いと、見出しだった段落を
+            // 本文や引用へ変換した後も、見出し用の大きいLineHeightがローカル値として残ってしまい、
+            // RichTextBoxのStyle側のLineHeight（EditorLineHeight）が効かなくなる。
+            a_p.ClearValue(Paragraph.LineHeightProperty);
         }
 
         /// <summary>段落に見出しスタイルを適用する（a_level=0 なら本文スタイルに戻す）。</summary>
@@ -80,6 +86,16 @@ namespace mde.common
                 a_p.FontSize = sizes[a_level];
                 a_p.FontWeight = FontWeights.Bold;
                 a_p.Margin = new Thickness(0, a_level <= 2 ? 20 : 14, 0, 10);
+                // 見出しのLineHeightは、本文用のEditorLineHeight（既定26。メニュー「表示」→
+                // 「行間を設定」で変更可）をそのまま使うのではなく、見出しのFontSizeに応じた
+                // 専用の値をローカル値として指定する（RichTextBoxのStyle側のLineHeightより、
+                // ここで設定するローカル値の方が優先される）。本文と同じ1行の目安（約1.2倍）に
+                // 揃えることで、見出しの文字から下線までの余白が、本文の行間と不釣り合いに
+                // 広がらないようにしている（LineStackingStrategy=BlockLineHeightと組み合わせる
+                // ことで、フォント（新しいフォント／以前のフォント）が変わってもこの値がそのまま
+                // 使われる。MainWindow.xamlのStyle TargetType="Paragraph"参照）。
+                double[] lineHeights = { 0, 36, 28.8, 24, 21.6, 19.8, 18.6 };
+                a_p.LineHeight = lineHeights[a_level];
                 if (a_level <= 2)
                 {
                     a_p.BorderBrush = m_cellBorder;
@@ -427,6 +443,16 @@ namespace mde.common
         private const double TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX = 8;
 
         /// <summary>
+        /// DistributeSlackToCappedColumnsで頭打ちされた列を伸ばす際、表の右端（最後の列の
+        /// 右辺の罫線。ApplyTableCellBorders参照）をavailableWidthPxぎりぎりまで使い切らず、
+        /// この分だけ手前で止めておく余裕（px）。ぴったりavailableWidthPxまで埋めてしまうと、
+        /// 測定値と実際の描画幅のわずかな差（DPIやレイアウトのタイミングによる）で表が
+        /// わずかにはみ出し、表の右端の罫線だけが編集領域の外側へ見切れて消えてしまう不具合が
+        /// 実機で確認されたため、この余裕を残して防いでいる。
+        /// </summary>
+        private const double TABLE_RIGHT_EDGE_SAFETY_MARGIN_PX = 8;
+
+        /// <summary>
         /// 表の各列の幅を、実際のセル内容に合わせて設定する。WPFの既定のTable列幅
         /// アルゴリズムは内容量に関わらず利用可能な幅いっぱいに広がるため、GitHub等の
         /// 一般的なMarkdownビューアのような「短い列はコンパクトに、長い列だけ折り返す」
@@ -518,8 +544,37 @@ namespace mde.common
             var typeface = new Typeface(m_tableMeasureFontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
             var formatted = new FormattedText(
                 "0", CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface,
-                TABLE_MEASURE_FONT_SIZE, Brushes.Black, 1.0);
+                TABLE_MEASURE_FONT_SIZE, Brushes.Black, GetMeasurementPixelsPerDip());
             return formatted.Width;
+        }
+
+        /// <summary>FormattedTextでの文字列幅測定に使う、実際の画面のPixelsPerDip（1デバイス
+        /// 非依存ピクセルあたりの実ピクセル数。DPI拡大率に対応する値で、100%なら1.0、
+        /// 125%なら1.25等）を取得する。
+        /// 以前はこの値を常に1.0固定で渡していたが、Windowには既定でUseLayoutRounding="True"
+        /// （MainWindow.xaml）が設定されており、実際の描画ではこのPixelsPerDipに基づいて
+        /// 文字の送り幅がデバイスピクセル単位に丸められる。拡大率が100%でない環境（Windowsの
+        /// 既定設定で多い125%・150%等）では、1.0固定で測定した幅と実際の描画幅がわずかに
+        /// ずれ、そのずれが1行の文字数ぶん積み重なることで、列幅としては足りているはずの
+        /// セルで単語単位の折り返しが発生する不具合の原因になっていた。
+        /// メインウィンドウ（Visual）から実際のPixelsPerDipを取得し、取得できない場合
+        /// （アプリ起動前後の一時的な文書など）は安全側として1.0にフォールバックする。</summary>
+        private static double GetMeasurementPixelsPerDip()
+        {
+            Window mainWindow = Application.Current?.MainWindow;
+            if (null == mainWindow)
+            {
+                return 1.0;
+            }
+            try
+            {
+                return VisualTreeHelper.GetDpi(mainWindow).PixelsPerDip;
+            }
+            catch (InvalidOperationException)
+            {
+                // まだ画面に表示されていない（PresentationSourceが無い）場合はここに来る。
+                return 1.0;
+            }
         }
 
         /// <summary>ダッシュ数（列幅調整ダイアログ・Markdownの区切り行の両方で使う単位）を、
@@ -574,19 +629,34 @@ namespace mde.common
 
         /// <summary>
         /// 1つのセルの内容を、実際に使われているRunごとのフォント（太字・インラインコード等の
-        /// 装飾で明示的に指定されているフォントファミリー・サイズ・太さ）で個別に測定し、
-        /// 合計した幅（px）を返す。セル全体を単一フォント（m_tableMeasureFontFamily・
-        /// TABLE_MEASURE_FONT_SIZE）で一括測定すると、インラインコード（Consolas・13.5px。
-        /// AppendStyledRunsWithLineBreaks参照）等は実際より小さく見積もられ、列全体としては
-        /// 余白が残るのに該当セルだけ折り返される不具合が起きるため、Run単位で測る。
+        /// 装飾で明示的に指定されているフォントファミリー・サイズ・太さ）を反映して測定し、
+        /// 幅（px）を返す。
+        /// 以前は、Runごとに別々のFormattedTextで個別に幅を測定し、それを単純に足し算して
+        /// いた。しかしWPFが実際に1行を描画する際は、複数のRunを1つながりの文字列として
+        /// レイアウト（シェーピング）するため、文字どうしの間隔（特に日本語と半角英数字が
+        /// 隣り合う境界）のつき方が、Runごとに切り離して測った幅の単純合計よりも広くなる
+        /// ことがある。通常の文章とインラインコード（`Shift+Ctrl+N`等。Consolas・13.5px。
+        /// AppendStyledRunsWithLineBreaks参照）のように複数のRunが混在するセルほどこの
+        /// 誤差が積み重なりやすく、「列幅としては計算上ぴったり収まっているはずなのに、
+        /// 実際の表示ではそのセルだけ折り返される（＝他の列や表の右側には余白が残る）」という
+        /// 不具合の原因になっていた（TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PXの8pxだけでは
+        /// 吸収しきれないケースが実機で確認された）。
+        /// この誤差を避けるため、1つの段落のRun列をいったん1本の文字列へ連結し、単一の
+        /// FormattedTextとして測定した上で、既定（m_tableMeasureFontFamily・
+        /// TABLE_MEASURE_FONT_SIZE・セルのFontWeight）と異なるRun（インラインコード等）の
+        /// 区間だけSetFontFamily/SetFontSize/SetFontWeightで部分的に上書きする。これにより、
+        /// 実際の描画と同じ「1行としてのシェーピング」を再現した幅が得られる。
         /// 各Runは、ローカルに設定されたFontFamily/FontSize/FontWeightがあればそれを使い、
-        /// 無ければセルの既定（m_tableMeasureFontFamily・TABLE_MEASURE_FONT_SIZE・セルの
-        /// FontWeight）を使う（ローカル値の有無で判定するのは、まだFlowDocumentに組み込まれる
-        /// 前のRunでも、親子関係に左右されず同じ結果を得るため）。
+        /// 無ければセルの既定を使う（ローカル値の有無で判定するのは、まだFlowDocumentに
+        /// 組み込まれる前のRunでも、親子関係に左右されず同じ結果を得るため）。
         /// </summary>
         /// <param name="a_cell">対象のセル。</param>
         private static double MeasureCellContentWidthPx(TableCell a_cell)
         {
+            FontFamily defaultFamily = m_tableMeasureFontFamily;
+            double defaultSize = TABLE_MEASURE_FONT_SIZE;
+            FontWeight defaultWeight = a_cell.FontWeight;
+
             double maxParaWidth = 0;
             foreach (Block block in a_cell.Blocks)
             {
@@ -594,7 +664,10 @@ namespace mde.common
                 {
                     continue;
                 }
-                double paraWidth = 0;
+
+                var sb = new StringBuilder();
+                var ranges = new List<(int Start, int Length, FontFamily Family, double Size, FontWeight Weight)>();
+
                 foreach (Inline inline in p.Inlines)
                 {
                     // セルの画像（InlineUIContainerで包まれたImage）は、列幅の自動計算には
@@ -616,20 +689,48 @@ namespace mde.common
                         continue;
                     }
                     FontFamily fontFamily = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontFamilyProperty)
-                        ? run.FontFamily : m_tableMeasureFontFamily;
+                        ? run.FontFamily : defaultFamily;
                     double fontSize = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontSizeProperty)
-                        ? run.FontSize : TABLE_MEASURE_FONT_SIZE;
+                        ? run.FontSize : defaultSize;
                     FontWeight fontWeight = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontWeightProperty)
-                        ? run.FontWeight : a_cell.FontWeight;
-                    var typeface = new Typeface(fontFamily, FontStyles.Normal, fontWeight, FontStretches.Normal);
-                    var formatted = new FormattedText(
-                        text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface,
-                        fontSize, Brushes.Black, 1.0);
-                    paraWidth += formatted.Width;
+                        ? run.FontWeight : defaultWeight;
+
+                    int start = sb.Length;
+                    sb.Append(text);
+                    ranges.Add((start, text.Length, fontFamily, fontSize, fontWeight));
                 }
-                if (paraWidth > maxParaWidth)
+
+                if (0 == sb.Length)
                 {
-                    maxParaWidth = paraWidth;
+                    continue;
+                }
+
+                var baseTypeface = new Typeface(defaultFamily, FontStyles.Normal, defaultWeight, FontStretches.Normal);
+                var formatted = new FormattedText(
+                    sb.ToString(), CultureInfo.CurrentCulture, FlowDirection.LeftToRight, baseTypeface,
+                    defaultSize, Brushes.Black, GetMeasurementPixelsPerDip());
+
+                foreach (var r in ranges)
+                {
+                    // 既定値と同じ区間はそのまま（ベースのTypeface設定を使う）にし、異なる
+                    // 区間（インラインコード等）だけ明示的に上書きする。
+                    if (!r.Family.Equals(defaultFamily))
+                    {
+                        formatted.SetFontFamily(r.Family, r.Start, r.Length);
+                    }
+                    if (Math.Abs(r.Size - defaultSize) > 0.01)
+                    {
+                        formatted.SetFontSize(r.Size, r.Start, r.Length);
+                    }
+                    if (r.Weight != defaultWeight)
+                    {
+                        formatted.SetFontWeight(r.Weight, r.Start, r.Length);
+                    }
+                }
+
+                if (formatted.Width > maxParaWidth)
+                {
+                    maxParaWidth = formatted.Width;
                 }
             }
             return maxParaWidth;
@@ -954,8 +1055,34 @@ namespace mde.common
                 return;
             }
 
-            // Star比率へフォールバックする場合は、複数列が幅を奪い合うため頭打ちした幅を使う。
+            // 頭打ち無しの幅の合計はavailableWidthPxに収まらないが、TABLE_COLUMN_COMPACT_MAX_WIDTHで
+            // 頭打ちした幅（naturalWidths）の合計であれば収まる場合、Star比率（複数列が幅を奪い合う）
+            // に頼らず、引き続きPixel（固定px、他の列と幅を奪い合わない）で確定できる。
+            // この場合に頭打ちされた列をそのまま据え置くと、Pixel列同士は幅を奪い合わないにも
+            // 関わらず、表の右側にavailableWidthPxとの差（余り）が残ったまま、頭打ちされた列だけ
+            // 不要な折り返しが発生してしまう（この分岐を追加する発端となった不具合）。頭打ちは
+            // 本来、Star比率で1つの長い列が他の列を圧迫するのを防ぐためのものでPixelには不要な
+            // ので、余った幅を頭打ちされた列へ、その列本来の内容幅（uncappedWidths）に達するまで
+            // 配分し直す。
             var naturalWidths = MeasureNaturalColumnWidthsPx(a_table);
+            if (a_availableWidthPx.HasValue && naturalWidths.Sum() <= a_availableWidthPx.Value)
+            {
+                // 頭打ちされた列を伸ばす際の目標幅は、表の右端の罫線が編集領域からはみ出して
+                // 見切れないよう、availableWidthPxから少し余裕（TABLE_RIGHT_EDGE_SAFETY_MARGIN_PX）
+                // を残した値にする（詳細は同定数のコメント参照）。
+                double distributeTargetWidthPx = Math.Max(
+                    naturalWidths.Sum(), a_availableWidthPx.Value - TABLE_RIGHT_EDGE_SAFETY_MARGIN_PX);
+                var finalWidths = DistributeSlackToCappedColumns(naturalWidths, uncappedWidths, distributeTargetWidthPx);
+                for (int c = 0; c < colCount; c++)
+                {
+                    a_table.Columns[c].Width = new GridLength(finalWidths[c], GridUnitType.Pixel);
+                }
+                ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
+                return;
+            }
+
+            // ここまでで収まらない場合にのみ、複数列が幅を奪い合うStar比率へフォールバックする
+            // （頭打ちした幅をそのまま比率として使う）。
             var dashCounts = new List<int?>();
             for (int c = 0; c < colCount; c++)
             {
@@ -963,6 +1090,58 @@ namespace mde.common
                 dashCounts.Add(PixelWidthToDashCount(px));
             }
             ApplyExplicitColumnWidths(a_table, dashCounts, a_availableWidthPx);
+        }
+
+        /// <summary>
+        /// Pixel（固定px、他の列と幅を奪い合わない）列幅を確定する際、TABLE_COLUMN_COMPACT_MAX_WIDTHで
+        /// 頭打ちされた列に、表示領域の余り（<paramref name="a_availableWidthPx"/> - 頭打ち後の合計幅）を、
+        /// その列本来の内容幅（<paramref name="a_uncappedWidths"/>）に達するまで配分し直す。
+        /// 頭打ちは、複数列がStar比率で幅を奪い合う際に1つの長い列が比率の大半を占めて他の列を
+        /// 圧迫しないようにするためのものであり、Pixel列同士は幅を奪い合わないため、表示領域に
+        /// 余裕があるなら頭打ちを解除してよい（解除しないと、表の右側に余白が残ったまま、頭打ち
+        /// された列だけが不要な折り返しをしてしまう）。複数の列が同時に頭打ちされている場合は、
+        /// 余りを均等に（waterfilling方式で）配分する。
+        /// </summary>
+        /// <param name="a_naturalWidths">頭打ち済みの幅（px）。MeasureNaturalColumnWidthsPxの戻り値。</param>
+        /// <param name="a_uncappedWidths">頭打ち無しの幅（px）。MeasureUncappedColumnWidthsPxの戻り値。
+        /// 各列の配分の上限として使う。</param>
+        /// <param name="a_availableWidthPx">表を表示できる実際の幅（px）。</param>
+        /// <returns>配分し直した後の、各列の最終的な幅（px）。</returns>
+        private static double[] DistributeSlackToCappedColumns(
+            double[] a_naturalWidths, double[] a_uncappedWidths, double a_availableWidthPx)
+        {
+            var finalWidths = (double[])a_naturalWidths.Clone();
+            double slack = a_availableWidthPx - finalWidths.Sum();
+            while (slack > 0.01)
+            {
+                var growableCols = new List<int>();
+                for (int c = 0; c < finalWidths.Length; c++)
+                {
+                    if (c < a_uncappedWidths.Length && finalWidths[c] < a_uncappedWidths[c] - 0.01)
+                    {
+                        growableCols.Add(c);
+                    }
+                }
+                if (0 == growableCols.Count)
+                {
+                    break;
+                }
+                double share = slack / growableCols.Count;
+                double distributed = 0;
+                foreach (int c in growableCols)
+                {
+                    double room = a_uncappedWidths[c] - finalWidths[c];
+                    double grow = Math.Min(share, room);
+                    finalWidths[c] += grow;
+                    distributed += grow;
+                }
+                slack -= distributed;
+                if (distributed < 0.01)
+                {
+                    break;
+                }
+            }
+            return finalWidths;
         }
 
         /// <summary>

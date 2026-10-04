@@ -285,6 +285,16 @@
                             <Style TargetType="Paragraph">
                                 <Setter Property="Margin" Value="{DynamicResource EditorBlockSpacing}"/>
                                 <Setter Property="LineHeight" Value="{DynamicResource EditorLineHeight}"/>
+                                <!-- LineStackingStrategyの既定値（MaxHeight）だと、上のLineHeightは
+                                     「最低でもこの高さ」という扱いになり、フォントが内部的に持つ
+                                     行送り（line gap）の方が大きければそちらが優先されてしまう。
+                                     Yu Gothic（表示フォント「新しいフォント」）はYu Gothic UIより
+                                     この内部の行送りがかなり大きいため、同じLineHeightを指定していても
+                                     Yu Gothicの方が行間・見出し下線までの余白が広く見えていた。
+                                     BlockLineHeightにすることでLineHeightを常にそのまま使うようになり、
+                                     フォントの違いによらず行間を統一できる（メニュー「表示」→
+                                     「表示フォント」参照）。 -->
+                                <Setter Property="LineStackingStrategy" Value="BlockLineHeight"/>
                             </Style>
                             <Style TargetType="List">
                                 <Setter Property="Margin" Value="{DynamicResource EditorBlockSpacing}"/>
