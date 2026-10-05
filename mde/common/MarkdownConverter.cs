@@ -2098,6 +2098,9 @@ namespace mde.common
             {
                 AppendPlainTextWithLineBreaks(a_p, a_text.Substring(lastIndex));
             }
+            // 画像を含む段落は行の高さの固定を外す（画像が上の文章に重なって描画されるのを防ぐ。
+            // BlockStyles.ApplyImageParagraphLineHeight参照）。
+            BlockStyles.ApplyImageParagraphLineHeight(a_p);
         }
 
         /// <summary>スタイル付きのクリック可能なリンクRunを組み立てる。</summary>
@@ -2251,12 +2254,14 @@ namespace mde.common
                 if (m.Groups[1].Success)
                 {
                     var img = new InlineUIContainer(m_imageManager.BuildImageFromHtmlTag(m.Groups[1].Value), cursor);
+                    BlockStyles.ApplyImageParagraphLineHeightFor(img);
                     cursor = img.ElementEnd;
                 }
                 else if (m.Groups[2].Success)
                 {
                     SplitUrlAndTitle(m.Groups[4].Value, out string imgSrc, out string imgTitle);
                     var img = new InlineUIContainer(m_imageManager.BuildImageFromMarkdown(m.Groups[3].Value, imgSrc, imgTitle), cursor);
+                    BlockStyles.ApplyImageParagraphLineHeightFor(img);
                     cursor = img.ElementEnd;
                 }
                 else if (m.Groups[5].Success)

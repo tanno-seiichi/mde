@@ -2484,10 +2484,16 @@ namespace mde
             // 表のセル内の画像はApplyImageSizingConsideringTable経由で列幅を考慮したサイズにする
             // （表の外の画像は従来通りエディタ幅基準）。単純にApplyImageSizing（エディタ幅基準）
             // だけを呼ぶと、セル内の画像は列幅を無視した（広すぎる）サイズになってしまう。
-            foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
+            // 画像を含む段落の行の高さの固定を外す処理（BlockStyles.ApplyImageParagraphLineHeight）が
+            // 初めて実際に段落のプロパティを変える場合もTextChangedを発生させるため、リサイズだけで
+            // ファイルがダーティ扱いにならないよう、RunWithoutDirtyMarkingでラップする。
+            RunWithoutDirtyMarking(() =>
             {
-                m_imageManager.ApplyImageSizingConsideringTable(img);
-            }
+                foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
+                {
+                    m_imageManager.ApplyImageSizingConsideringTable(img);
+                }
+            });
             // 列幅の変更はRichTextBox.TextChangedを発生させるため（ChromiumPdfExporter呼び出し側の
             // 既存コメント参照）、ウインドウのリサイズだけでファイルがダーティ扱いになってしまわない
             // よう、RunWithoutDirtyMarkingでラップする。
