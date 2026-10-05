@@ -586,6 +586,12 @@ namespace mde.manager
                 BlockStyles.ConstrainCellImagesToColumnWidths(table, GetAvailableImageWidth());
                 return;
             }
+            // 表の外の画像は、その段落の行の高さの固定を外す（画像が上の文章に重なって描画
+            // されるのを防ぐ。BlockStyles.ApplyImageParagraphLineHeight参照）。段落側の設定は
+            // 構築時・挿入時に済ませてあるが、まだ設定されていない段落（貼り付け等）の
+            // 取りこぼしを防ぐ保険として、サイズ調整のたびに（何も変わらなければ無害な形で）
+            // 確認する。
+            BlockStyles.ApplyImageParagraphLineHeightFor(a_img.Parent as InlineUIContainer);
             ApplyImageSizing(a_img);
         }
 
@@ -707,6 +713,7 @@ namespace mde.manager
 
                     var img = BuildImageFromMarkdown(Path.GetFileNameWithoutExtension(file), tempPath);
                     var container = new InlineUIContainer(img, insertAt);
+                    BlockStyles.ApplyImageParagraphLineHeightFor(container);
                     insertAt = container.ElementEnd;
                 }
                 m_editor.CaretPosition = insertAt;
@@ -782,6 +789,7 @@ namespace mde.manager
                 }
                 var img = BuildImageFromMarkdown(Path.GetFileNameWithoutExtension(fileName), destPath);
                 var container = new InlineUIContainer(img, m_editor.CaretPosition);
+                BlockStyles.ApplyImageParagraphLineHeightFor(container);
                 m_editor.CaretPosition = container.ElementEnd;
             });
 

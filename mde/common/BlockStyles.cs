@@ -306,6 +306,68 @@ namespace mde.common
             };
         }
 
+        /// <summary>
+        /// 画像（InlineUIContainer+Image）を含む段落だけ、行の高さの固定（LineHeight＋
+        /// LineStackingStrategy=BlockLineHeight。MainWindow.xamlのStyle TargetType="Paragraph"参照）を
+        /// 外し、画像の高さに合わせて行が広がるようにする。
+        ///
+        /// 【全画面表示にするとDESIGN.mdの目次末尾〜4章の見出しの手前の表示が崩れる不具合の修正】
+        /// 段落には行間を統一するため「行の高さを常にEditorLineHeight（既定26px）に固定する」
+        /// BlockLineHeightが適用されている。画像はInlineUIContainerとして文字と同じ「行」に
+        /// 置かれ、下端が行の基準線に揃うため、行の高さが固定されたままだと、画像の高さのうち
+        /// 26pxを超えた分が上方向へはみ出して直前の文章に重なって描画され、画像の段落自身は
+        /// 26px分の高さしか確保されない。通常サイズでは画像がエディタ幅に合わせて縮小されて
+        /// いるため重なりは小さいが、全画面ではほぼ原寸まで拡大されるため、数百pxの画像が
+        /// 1〜3章の文章全体を覆い隠していた。表のセル内の段落は従来からLineHeight=NaNにして
+        /// 同様の問題を避けているので、画像を含む表の外の段落にも同じ考え方を適用する。
+        /// 既にLineHeightがNaN（表のセル等）の段落や、画像を含まない段落には何もしない。
+        /// </summary>
+        /// <param name="a_p">対象の段落（nullなら何もしない）。</param>
+        public static void ApplyImageParagraphLineHeight(Paragraph a_p)
+        {
+            if (null == a_p ||
+                double.IsNaN(a_p.LineHeight) ||
+                !InlinesContainImage(a_p.Inlines))
+            {
+                return;
+            }
+            a_p.LineHeight = double.NaN;
+            a_p.LineStackingStrategy = LineStackingStrategy.MaxHeight;
+        }
+
+        /// <summary>指定したインライン要素（挿入した画像のInlineUIContainerなど）を含む段落に
+        /// ついて、ApplyImageParagraphLineHeightを適用する。Span等で包まれている場合も、
+        /// 論理ツリーを上へたどって段落を見つける。</summary>
+        /// <param name="a_inline">段落内のインライン要素。</param>
+        public static void ApplyImageParagraphLineHeightFor(Inline a_inline)
+        {
+            object parent = a_inline?.Parent;
+            while (parent is Span span)
+            {
+                parent = span.Parent;
+            }
+            ApplyImageParagraphLineHeight(parent as Paragraph);
+        }
+
+        /// <summary>インライン列（Span内も含む）に画像が1つでもあるかを返す。</summary>
+        /// <param name="a_inlines">調べるインライン列。</param>
+        /// <returns>画像を含む場合true。</returns>
+        private static bool InlinesContainImage(InlineCollection a_inlines)
+        {
+            foreach (Inline inline in a_inlines)
+            {
+                if (inline is InlineUIContainer iuc && iuc.Child is Image)
+                {
+                    return true;
+                }
+                if (inline is Span span && InlinesContainImage(span.Inlines))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         /// <summary>不順序リスト（箇条書き）のマーカー種別を、ネストの段数（1始まり）から決める。
         /// a_uniformFlgがfalse（既定）の場合はWPF標準の割り当て：VSCode等と同様、1段目は
         /// Disc（・）、2段目はCircle（輪郭だけの丸）、3段目以降はBox（塗りつぶしの四角）にする。
