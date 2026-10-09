@@ -361,16 +361,24 @@ namespace mde
             m_editor.LostKeyboardFocus += (a_s, a_e) =>
                 DebugLogger.Log($"Editor.LostKeyboardFocus: Old={a_e.OldFocus} New={a_e.NewFocus} " +
                     $"ForegroundWindow={DebugLogger.DescribeForegroundWindow()}");
+            // メッセージ文字列の組み立ては、DebugLogger.IsEnabledがfalseでも評価されてしまう
+            // ため、キー入力のたびに呼ばれるハンドラでは無効時に組み立てごと省略する。
             m_editor.PreviewTextInput += (a_s, a_e) =>
+            {
+                if (!DebugLogger.IsEnabled) return;
                 DebugLogger.Log(
                     $"Editor.PreviewTextInput: Text=\"{a_e.Text}\" " +
                     $"CompositionText=\"{a_e.TextComposition?.CompositionText}\" " +
                     $"SystemCompositionText=\"{a_e.TextComposition?.SystemCompositionText}\" " +
                     $"ControlText=\"{a_e.TextComposition?.ControlText}\"");
+            };
             m_editor.TextInput += (a_s, a_e) =>
+            {
+                if (!DebugLogger.IsEnabled) return;
                 DebugLogger.Log(
                     $"Editor.TextInput: Text=\"{a_e.Text}\" " +
                     $"CompositionText=\"{a_e.TextComposition?.CompositionText}\"");
+            };
 
             // IME固まり調査用の心拍ログ：イベントが発生しない無音期間もあるため、一定間隔で
             // フォーカス状態とフォアグラウンドウィンドウを強制的に記録する。
@@ -379,6 +387,9 @@ namespace mde
                 Interval = TimeSpan.FromMilliseconds(500)
             };
             m_imeDebugHeartbeatTimer.Tick += (a_s, a_e) =>
+            {
+                // 無効時はメッセージの組み立て（フォアグラウンドウィンドウの問い合わせ等）ごと省略する。
+                if (!DebugLogger.IsEnabled) return;
                 DebugLogger.Log(
                     $"heartbeat: EditorIsFocused={m_editor.IsFocused} " +
                     $"EditorIsKeyboardFocused={m_editor.IsKeyboardFocused} " +
@@ -388,6 +399,7 @@ namespace mde
                     $"IsInputMethodEnabled={InputMethod.GetIsInputMethodEnabled(m_editor)} " +
                     $"CurrentInputLanguage={InputLanguageManager.Current?.CurrentInputLanguage?.Name} " +
                     $"CanUndo={m_editor.CanUndo} CanRedo={m_editor.CanRedo}");
+            };
             m_imeDebugHeartbeatTimer.Start();
 
             // アウトラインペイン再構築（ScheduleOutlineRefresh）のデバウンス用タイマー。
@@ -1117,6 +1129,70 @@ namespace mde
         }
 
         /// <summary>
+        /// 段落が「表の近く」にあるかどうかを、安価に判定する（ResolveParagraphの総当たりを
+        /// 省略してよいかの判断用）。段落を含む最上位のBlock（FlowDocument直下）が、表自身・
+        /// 表の直前のBlock・表の直後のBlockのいずれかであればtrue。表のセル内の段落は
+        /// 最上位のBlockが表になるのでtrueになる。構造が想定外で最上位のBlockが見つからない
+        /// 場合も、安全側（総当たりする側）としてtrueを返す。
+        /// </summary>
+        /// <param name="a_para">判定する段落。</param>
+        /// <returns>表の近く（または判定不能）ならtrue。</returns>
+        private static bool IsParagraphNearTable(Paragraph a_para)
+        {
+            DependencyObject node = a_para;
+            while (node is TextElement element)
+            {
+                if (element is Block block && block.Parent is FlowDocument)
+                {
+                    return block is Table ||
+                           block.PreviousBlock is Table ||
+                           block.NextBlock is Table;
+                }
+                node = element.Parent;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 文書内の表を調べ、指定位置を含むセルの段落を返す（TextPointer.CompareToによる範囲比較。
+        /// 位置の論理方向に依存しない）。まず表全体の範囲で絞り込み、位置を含む表の中だけ
+        /// セルを調べる。見つからなければnull。
+        /// </summary>
+        /// <param name="a_position">解決したい位置。</param>
+        /// <param name="a_document">位置の属する文書。</param>
+        /// <returns>位置を含むセルの段落。なければnull。</returns>
+        private static Paragraph FindTableCellParagraphAt(TextPointer a_position, FlowDocument a_document)
+        {
+            foreach (Table table in a_document.Blocks.OfType<Table>())
+            {
+                if (0 > a_position.CompareTo(table.ContentStart) ||
+                    0 < a_position.CompareTo(table.ContentEnd))
+                {
+                    continue;
+                }
+                foreach (TableRowGroup group in table.RowGroups)
+                {
+                    foreach (TableRow row in group.Rows)
+                    {
+                        foreach (TableCell cell in row.Cells)
+                        {
+                            foreach (Block block in cell.Blocks)
+                            {
+                                if (block is Paragraph cellPara &&
+                                    0 <= a_position.CompareTo(cellPara.ContentStart) &&
+                                    0 >= a_position.CompareTo(cellPara.ContentEnd))
+                                {
+                                    return cellPara;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
         /// 表のセル内の段落を優先して探す（`a_document`が渡されている場合）: 文書内の全ての
         /// 表を直接辿り、各セルの段落の範囲（`ContentStart`〜`ContentEnd`）に`a_position`が
         /// 含まれるかを`TextPointer.CompareTo`（2つの位置の前後関係を調べるだけの、曖昧さの
@@ -1147,10 +1223,10 @@ namespace mde
         ///
         /// 表のセル内かどうかを`.Paragraph`より先に、位置の論理方向に依存しない方法
         /// （`CompareTo`による範囲比較）で確定させることで、この曖昧な解決に一切左右されず
-        /// 確実にセルの段落を特定できる。表の数が多い文書でこの総当たりを毎回行うことに
-        /// なるが、実行されるのはEnterキー押下・貼り付け時のみ（本メソッドの呼び出し元
-        /// 参照）であり、通常の入力操作（文字入力そのもの）では呼ばれないため、実用上の
-        /// 性能への影響は小さいと考えている。
+        /// 確実にセルの段落を特定できる。ただしこの関数はEditorPreviewKeyDownから全てのキー
+        /// 入力のたびに呼ばれるため、総当たりは表の近く（セル内・表の直前直後・
+        /// `.Paragraph`がnull）にいる時だけに限定している（IsParagraphNearTable参照。
+        /// 以前は常に総当たりしており、表の多い文書で入力・範囲選択が重くなっていた）。
         /// </summary>
         /// <param name="a_position">解決したい位置。</param>
         /// <param name="a_document">
@@ -1165,27 +1241,26 @@ namespace mde
                 return null;
             }
 
+            // 【キー入力のたびに全表の全セルを調べてしまい、表の多い文書で入力・範囲選択が
+            // 重くなる不具合の修正】この関数はEditorPreviewKeyDownから「全てのキー入力」の
+            // たびに呼ばれる（Enterキー押下時に限らない）。以前は、ここで毎回、文書内の全ての
+            // 表の全てのセルの段落をTextPointer.CompareToで総当たりしていたため、表やセルの
+            // 数に比例して1キーあたりの処理が増え、READMEのように表の多い文書を入力していくと
+            // 次第にレスポンスが悪化していた。総当たりが本当に必要なのは、WPF標準の
+            // 「.Paragraph」が誤った（またはnullの）結果を返しうる、表の境界付近の位置だけ
+            // （上のコメント参照）。そこで、まず「.Paragraph」の結果が表と無関係であること
+            // （表のセルの中でもなく、表の直前・直後のBlockでもない）を安価に確認し、無関係なら
+            // 総当たりを省略する。表の近くにいる場合、または「.Paragraph」がnullの場合だけ、
+            // 従来どおりの総当たり（FindTableCellParagraphAt）で確実に判定する。
             if (null != a_document)
             {
-                foreach (Table table in a_document.Blocks.OfType<Table>())
+                Paragraph hintPara = a_position.Paragraph;
+                if (null == hintPara || IsParagraphNearTable(hintPara))
                 {
-                    foreach (TableRowGroup group in table.RowGroups)
+                    Paragraph cellParaAtPosition = FindTableCellParagraphAt(a_position, a_document);
+                    if (null != cellParaAtPosition)
                     {
-                        foreach (TableRow row in group.Rows)
-                        {
-                            foreach (TableCell cell in row.Cells)
-                            {
-                                foreach (Block block in cell.Blocks)
-                                {
-                                    if (block is Paragraph cellPara &&
-                                        0 <= a_position.CompareTo(cellPara.ContentStart) &&
-                                        0 >= a_position.CompareTo(cellPara.ContentEnd))
-                                    {
-                                        return cellPara;
-                                    }
-                                }
-                            }
-                        }
+                        return cellParaAtPosition;
                     }
                 }
             }
