@@ -27,7 +27,7 @@
              ここでの初期値は既定（フォント変更後）のものだが、実際にはMainWindow
              コンストラクタで保存済み設定に応じて新しいフォント／以前のフォントのどちらかに
              起動直後に上書きされる（EditorLineHeightと同じパターン）。 -->
-        <FontFamily x:Key="EditorFontFamily">Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI</FontFamily>
+        <FontFamily x:Key="EditorFontFamily">Meiryo, Segoe UI</FontFamily>
         <Style TargetType="MenuItem" x:Key="CtxMenuItem">
             <Setter Property="Padding" Value="6,4"/>
         </Style>
@@ -77,7 +77,7 @@
                               IsCheckable="True" Click="LineBreakModeBlankOnlyChecked"/>
                 </MenuItem>
                 <MenuItem Header="表示フォント">
-                    <MenuItem x:Name="m_fontModeNewMenuItem" Header="新しいフォント（Yu Gothic）(_N)"
+                    <MenuItem x:Name="m_fontModeNewMenuItem" Header="新しいフォント（Meiryo）(_N)"
                               IsCheckable="True" Click="FontModeNewChecked"/>
                     <MenuItem x:Name="m_fontModeLegacyMenuItem" Header="以前のフォント（Yu Gothic UI）(_L)"
                               IsCheckable="True" Click="FontModeLegacyChecked"/>
@@ -288,9 +288,9 @@
                                 <!-- LineStackingStrategyの既定値（MaxHeight）だと、上のLineHeightは
                                      「最低でもこの高さ」という扱いになり、フォントが内部的に持つ
                                      行送り（line gap）の方が大きければそちらが優先されてしまう。
-                                     Yu Gothic（表示フォント「新しいフォント」）はYu Gothic UIより
+                                     Meiryo（表示フォント「新しいフォント」）はYu Gothic UIより
                                      この内部の行送りがかなり大きいため、同じLineHeightを指定していても
-                                     Yu Gothicの方が行間・見出し下線までの余白が広く見えていた。
+                                     Meiryoの方が行間・見出し下線までの余白が広く見えていた。
                                      BlockLineHeightにすることでLineHeightを常にそのまま使うようになり、
                                      フォントの違いによらず行間を統一できる（メニュー「表示」→
                                      「表示フォント」参照）。 -->

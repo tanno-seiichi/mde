@@ -107,7 +107,7 @@ namespace mde
         private bool m_uniformMarkerStyleFlg = false;
 
         /// <summary>メニュー「表示」→「表示フォント」の状態。falseなら既定の表示フォント
-        /// （Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI。既定）、trueならフォント変更前の以前の
+        /// （Meiryo, Segoe UI。既定）、trueならフォント変更前の以前の
         /// 表示フォント（Yu Gothic UI, Segoe UI）を使う。詳細はSetUseLegacyFontFlg参照。
         /// 既定値はfalse。</summary>
         private bool m_useLegacyFontFlg = false;
@@ -2761,7 +2761,7 @@ namespace mde
             m_markerStyleUniformMenuItem.IsChecked = m_uniformMarkerStyleFlg;
         }
 
-        /// <summary>メニュー「表示」→「表示フォント」→「新しいフォント（Yu Gothic）」。</summary>
+        /// <summary>メニュー「表示」→「表示フォント」→「新しいフォント（Meiryo）」。</summary>
         /// <param name="a_sender">メニュー項目。</param>
         /// <param name="a_args">Click event.</param>
         private void FontModeNewChecked(object a_sender, RoutedEventArgs a_args)
@@ -2783,7 +2783,7 @@ namespace mde
         /// 等と同じ理由・同じ方法（現在の文書をいったんMarkdownへ変換し、フラグを切り替えた上で
         /// 再度解析し直す）で、開いている文書全体を再変換し、新しいフォントでの幅に追従させる。</summary>
         /// <param name="a_value">true＝フォント変更前の以前のフォント（Yu Gothic UI, Segoe UI）、
-        /// false（既定）＝現在の既定フォント（Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI）。</param>
+        /// false（既定）＝現在の既定フォント（Meiryo, Segoe UI）。</param>
         private void SetUseLegacyFontFlg(bool a_value)
         {
             if (m_useLegacyFontFlg != a_value)
