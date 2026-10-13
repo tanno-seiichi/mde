@@ -458,7 +458,7 @@ namespace mde.common
 
         /// <summary>エディタの表示フォント（既定）。Typoraの実際の描画フォント（Yu Gothic、
         /// UI版ではない通常版）に合わせた設定。メニュー「表示」→「表示フォント」参照。</summary>
-        public static readonly FontFamily DefaultEditorFontFamily = new FontFamily("Yu Gothic, Meiryo, Yu Gothic UI, Segoe UI");
+        public static readonly FontFamily DefaultEditorFontFamily = new FontFamily("Meiryo, Segoe UI");
 
         /// <summary>エディタの表示フォント（フォント変更前の以前の設定）。メニュー「表示」→
         /// 「表示フォント」で切り替えられる。</summary>
