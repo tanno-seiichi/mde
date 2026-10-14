@@ -568,7 +568,7 @@ namespace mde.editor
             }
             else if ("inline-code" == styleTag)
             {
-                a_row.m_html.Append("<code style=\"font-family:Consolas,monospace;background:#f0efe9;padding:0 3pt;\">")
+                a_row.m_html.Append("<code style=\"font-family:Consolas,Meiryo,monospace;background:#f3f4f4;border:1px solid #e7eaed;padding:0 3pt;\">")
                     .Append(encoded).Append("</code>");
             }
             else if ("highlight" == styleTag)
