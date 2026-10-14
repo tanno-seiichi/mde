@@ -29,7 +29,7 @@ namespace mde.editor
     public class InlineStyleEditor
     {
         private static readonly Brush m_linkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
-        private static readonly Brush m_codeBlockBackground = BlockStyles.CodeBlockBackgroundBrush;
+        private static readonly Brush m_inlineCodeBackground = BlockStyles.InlineCodeBackgroundBrush;
         // ハイライト（==text==）用の背景色。
         private static readonly Brush m_highlightBackground = BlockStyles.HighlightBrush;
 
@@ -243,9 +243,9 @@ namespace mde.editor
                     case "code":
                         newRun = new Run(text, start)
                         {
-                            FontFamily = new FontFamily("Consolas"),
-                            FontSize = 13.5,
-                            Background = m_codeBlockBackground,
+                            FontFamily = BlockStyles.CodeFontFamily,
+                            FontSize = BlockStyles.INLINE_CODE_FONT_SIZE,
+                            Background = m_inlineCodeBackground,
                             Tag = "inline-code"
                         };
                         break;
@@ -969,9 +969,9 @@ namespace mde.editor
                 else
                     newRun = new Run(a_content, a_start)
                     {
-                        FontFamily = new FontFamily("Consolas"),
-                        FontSize = 13.5,
-                        Background = m_codeBlockBackground,
+                        FontFamily = BlockStyles.CodeFontFamily,
+                        FontSize = BlockStyles.INLINE_CODE_FONT_SIZE,
+                        Background = m_inlineCodeBackground,
                         Tag = "inline-code"
                     };
 

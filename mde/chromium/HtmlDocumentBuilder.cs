@@ -83,11 +83,11 @@ namespace mde.chromium
             a { color: #0969DA; text-decoration: underline; }
             a.mde-plain-link { color: #0969DA; text-decoration: underline; pointer-events: none; }
             s { text-decoration: line-through; }
-            pre.mde-codeblock { font-family: Consolas, monospace; background: #ECE8DC;
-                   border: 1px solid #B4B4B4; border-radius: 2pt; padding: 6pt 8pt; font-size: 9.5pt;
+            pre.mde-codeblock { font-family: Consolas, Meiryo, monospace; background: #F3F4F4;
+                   border: 1px solid #E7EAED; border-radius: 3px; padding: 6pt 12pt; font-size: 9.5pt; line-height: 1.5;
                    white-space: pre-wrap; word-break: break-all; margin: 3pt 0 10pt; }
-            code.mde-inline-code { font-family: Consolas, monospace; background: #f0efe9;
-                   padding: 0 3pt; border-radius: 2pt; font-size: 0.92em; }
+            code.mde-inline-code { font-family: Consolas, Meiryo, monospace; background: #F3F4F4;
+                   border: 1px solid #E7EAED; padding: 1px 4px 0; border-radius: 3px; font-size: 0.92em; }
             table { border-collapse: collapse; width: 100%; margin: 4pt 0 12pt; }
             th, td { border: 0.5pt solid #B4B4B4; padding: 4pt 6pt; text-align: left; vertical-align: middle; }
             thead { display: table-header-group; }

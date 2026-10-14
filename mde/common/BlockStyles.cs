@@ -23,7 +23,12 @@ namespace mde.common
     public static class BlockStyles
     {
         private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xB4, 0xB4, 0xB4));
-        private static readonly Brush m_codeBlockBackground = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
+        // コードブロック・インラインコードの背景色と、コードブロックの枠線の色（mdew と同じ）。
+        private static readonly Brush m_codeBlockBackground = new SolidColorBrush(Color.FromRgb(0xF3, 0xF4, 0xF4));
+        private static readonly Brush m_codeBlockBorder = new SolidColorBrush(Color.FromRgb(0xE7, 0xEA, 0xED));
+        // インラインコードの背景色。mdew は枠線で囲んで区別するが、WPF の Run には枠線を付けられないため、
+        // 本文と見分けやすいよう、mde の元の色（暖色系のベージュ）のままにする。
+        private static readonly Brush m_inlineCodeBackground = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
         // ヘッダー行のセル間縦罫線（右辺）だけこの太さにする。本文行の1pxのままだと、印刷
         // （PDF出力）時にヘッダー行の縦罫線だけラスタライズされず消えることがあるため
         // （色を変える対策は効果なし、太さを変える対策のみ有効と確認済み）。
@@ -38,6 +43,18 @@ namespace mde.common
 
         /// <summary>コードブロックの背景色（他クラスからも参照できるよう公開）。</summary>
         public static Brush CodeBlockBackgroundBrush => m_codeBlockBackground;
+
+        /// <summary>インラインコードの背景色（他クラスからも参照できるよう公開）。</summary>
+        public static Brush InlineCodeBackgroundBrush => m_inlineCodeBackground;
+
+        /// <summary>コードブロック・インラインコードのフォント（mdew と同じ。日本語は Meiryo で表示する）。</summary>
+        public static readonly FontFamily CodeFontFamily = new FontFamily("Consolas, Meiryo");
+
+        /// <summary>コードブロックの文字の大きさ（mdew と同じ）。</summary>
+        public const double CODE_BLOCK_FONT_SIZE = 14;
+
+        /// <summary>インラインコードの文字の大きさ（本文 16px の 0.92 倍。mdew と同じ）。</summary>
+        public const double INLINE_CODE_FONT_SIZE = 14.72;
 
         /// <summary>ハイライト（==text==）の背景色（他クラスからも参照できるよう公開）。</summary>
         public static Brush HighlightBrush => m_highlightBackground;
@@ -122,20 +139,20 @@ namespace mde.common
         {
             ClearSpecialStyling(a_p);
             a_p.Tag = new CodeBlockInfo { Language = a_language ?? "" };
-            a_p.FontFamily = new FontFamily("Consolas");
-            a_p.FontSize = 13.5;
+            a_p.FontFamily = CodeFontFamily;
+            a_p.FontSize = CODE_BLOCK_FONT_SIZE;
             a_p.FontWeight = FontWeights.Normal;
             a_p.Background = m_codeBlockBackground;
-            a_p.BorderBrush = m_cellBorder;
+            a_p.BorderBrush = m_codeBlockBorder;
             if (a_isLastLine)
             {
-                a_p.Padding = new Thickness(14, 10, 14, 10);
+                a_p.Padding = new Thickness(16, 8, 16, 8);
                 a_p.Margin = new Thickness(0, 4, 0, 14);
                 a_p.BorderThickness = new Thickness(1);
             }
             else
             {
-                a_p.Padding = new Thickness(14, 10, 14, 0);
+                a_p.Padding = new Thickness(16, 8, 16, 0);
                 a_p.Margin = new Thickness(0, 4, 0, 0);
                 a_p.BorderThickness = new Thickness(1, 1, 1, 0);
             }
@@ -157,20 +174,20 @@ namespace mde.common
         {
             ClearSpecialStyling(a_p);
             a_p.Tag = new CodeBlockContinuationInfo();
-            a_p.FontFamily = new FontFamily("Consolas");
-            a_p.FontSize = 13.5;
+            a_p.FontFamily = CodeFontFamily;
+            a_p.FontSize = CODE_BLOCK_FONT_SIZE;
             a_p.FontWeight = FontWeights.Normal;
             a_p.Background = m_codeBlockBackground;
-            a_p.BorderBrush = m_cellBorder;
+            a_p.BorderBrush = m_codeBlockBorder;
             if (a_isLastLine)
             {
-                a_p.Padding = new Thickness(14, 0, 14, 10);
+                a_p.Padding = new Thickness(16, 0, 16, 8);
                 a_p.Margin = new Thickness(0, 0, 0, 14);
                 a_p.BorderThickness = new Thickness(1, 0, 1, 1);
             }
             else
             {
-                a_p.Padding = new Thickness(14, 0, 14, 0);
+                a_p.Padding = new Thickness(16, 0, 16, 0);
                 a_p.Margin = new Thickness(0);
                 a_p.BorderThickness = new Thickness(1, 0, 1, 0);
             }
@@ -697,7 +714,7 @@ namespace mde.common
         /// いた。しかしWPFが実際に1行を描画する際は、複数のRunを1つながりの文字列として
         /// レイアウト（シェーピング）するため、文字どうしの間隔（特に日本語と半角英数字が
         /// 隣り合う境界）のつき方が、Runごとに切り離して測った幅の単純合計よりも広くなる
-        /// ことがある。通常の文章とインラインコード（`Shift+Ctrl+N`等。Consolas・13.5px。
+        /// ことがある。通常の文章とインラインコード（`Shift+Ctrl+N`等。Consolas・14.72px。
         /// AppendStyledRunsWithLineBreaks参照）のように複数のRunが混在するセルほどこの
         /// 誤差が積み重なりやすく、「列幅としては計算上ぴったり収まっているはずなのに、
         /// 実際の表示ではそのセルだけ折り返される（＝他の列や表の右側には余白が残る）」という

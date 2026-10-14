@@ -2213,9 +2213,9 @@ namespace mde.common
                 else
                     run = new Run(segText)
                     {
-                        FontFamily = new FontFamily("Consolas"),
-                        FontSize = 13.5,
-                        Background = BlockStyles.CodeBlockBackgroundBrush,
+                        FontFamily = BlockStyles.CodeFontFamily,
+                        FontSize = BlockStyles.INLINE_CODE_FONT_SIZE,
+                        Background = BlockStyles.InlineCodeBackgroundBrush,
                         Tag = "inline-code"
                     };
                 a_p.Inlines.Add(run);
@@ -2434,9 +2434,9 @@ namespace mde.common
                 {
                     run = new Run(segText, cursor)
                     {
-                        FontFamily = new FontFamily("Consolas"),
-                        FontSize = 13.5,
-                        Background = BlockStyles.CodeBlockBackgroundBrush,
+                        FontFamily = BlockStyles.CodeFontFamily,
+                        FontSize = BlockStyles.INLINE_CODE_FONT_SIZE,
+                        Background = BlockStyles.InlineCodeBackgroundBrush,
                         Tag = "inline-code"
                     };
                 }
