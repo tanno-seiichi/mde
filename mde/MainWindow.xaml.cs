@@ -3185,6 +3185,26 @@ namespace mde
             }
         }
 
+        /// <summary>右クリックのメニュー「ページトップに戻る」：文書の先頭を表示し、キャレットも先頭に置く
+        /// （キャレットを置かないと、続けて文字を打った時に元の位置へ戻ってしまうため。mdew と同じ）。
+        /// プログラムによるキャレットの移動は自動スクロールを伴わないため、ScrollEditorToTopで先頭を表示する。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void ScrollToPageTopClick(object a_sender, RoutedEventArgs a_args)
+        {
+            if (m_isSourceModeFlg)
+            {
+                m_sourceEditor.CaretIndex = 0;
+                m_sourceEditor.Focus();
+            }
+            else
+            {
+                m_editor.CaretPosition = m_editor.Document.ContentStart;
+                m_editor.Focus();
+            }
+            ScrollEditorToTop();
+        }
+
         /// <summary>ファイルパスごとに覚えておく、直前にそのファイルを表示していた時のおおまかな
         /// スクロール位置（0〜1の割合。Markdownモードなら文書全体の高さに対する縦スクロール量の
         /// 割合、ソースモードなら一番上に見えている行が全体の行数に対して何割目かを表す）。

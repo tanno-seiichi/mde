@@ -384,6 +384,7 @@
                                 <MenuItem x:Name="m_deleteImageMenuItem" Header="画像を削除" Style="{StaticResource CtxMenuItem}"
                                           Click="DeleteImageItemClick" Visibility="Collapsed"/>
                                 <Separator/>
+                                <MenuItem Header="ページトップに戻る" Style="{StaticResource CtxMenuItem}" Click="ScrollToPageTopClick"/>
                                 <MenuItem x:Name="m_toggleModeMenuItem" Header="ソースモードに切り替え"
                                           Style="{StaticResource CtxMenuItem}" Click="ToggleModeBtnClick"/>
                             </ContextMenu>
@@ -406,6 +407,7 @@
                              TextChanged="SourceEditorTextChanged">
                         <TextBox.ContextMenu>
                             <ContextMenu>
+                                <MenuItem Header="ページトップに戻る" Click="ScrollToPageTopClick"/>
                                 <MenuItem Header="Markdownモードに切り替え" Click="ToggleModeBtnClick"/>
                             </ContextMenu>
                         </TextBox.ContextMenu>
