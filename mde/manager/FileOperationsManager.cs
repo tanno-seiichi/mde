@@ -64,6 +64,7 @@ namespace mde.manager
         private readonly Action<bool> m_setCurrentFileIsDirty;
         private readonly Func<string> m_getLastSaveDialogDirectory;
         private readonly Action<string> m_setLastSaveDialogDirectory;
+        private readonly Func<bool> m_opensInNewWindow;
 
         /// <summary>メニュー「ファイル」→「最近使ったファイル」に表示する、最近開いた/保存した
         /// ファイルの最大件数。</summary>
@@ -122,6 +123,9 @@ namespace mde.manager
         /// のため、値自体はMainWindow側で保持する）。</param>
         /// <param name="a_setLastSaveDialogDirectory">直近に保存ダイアログで選択されたフォルダを
         /// 記憶するdelegate。</param>
+        /// <param name="a_opensInNewWindow">メニューからファイルを開く時に、新しいウィンドウで開くかを
+        /// 返すdelegate（今のウィンドウでファイル・フォルダを表示している、または何か書いてある時。
+        /// MainWindow.OpensInNewWindow参照）。</param>
         public FileOperationsManager(
             RichTextBox a_editor,
             TextBox a_sourceEditor,
@@ -154,7 +158,8 @@ namespace mde.manager
             Func<bool> a_getCurrentFileIsDirty,
             Action<bool> a_setCurrentFileIsDirty,
             Func<string> a_getLastSaveDialogDirectory,
-            Action<string> a_setLastSaveDialogDirectory)
+            Action<string> a_setLastSaveDialogDirectory,
+            Func<bool> a_opensInNewWindow)
         {
             this.m_editor = a_editor;
             this.m_sourceEditor = a_sourceEditor;
@@ -188,6 +193,7 @@ namespace mde.manager
             this.m_setCurrentFileIsDirty = a_setCurrentFileIsDirty;
             this.m_getLastSaveDialogDirectory = a_getLastSaveDialogDirectory;
             this.m_setLastSaveDialogDirectory = a_setLastSaveDialogDirectory;
+            this.m_opensInNewWindow = a_opensInNewWindow;
         }
 
         /// <summary>ファイル保存ダイアログの初期フォルダとして使う既定フォルダを返す。現在の
@@ -315,10 +321,9 @@ namespace mde.manager
             m_closeWindow();
         }
 
-        /// <summary>ファイルを開くダイアログを表示し、選択されたファイルを読み込む。</summary>
-        /// <param name="a_sender">イベントの発生元。</param>
-        /// <param name="a_args">イベントの引数。</param>
-        public void OpenBtnClick(object a_sender, RoutedEventArgs a_args)
+        /// <summary>ファイルを開くダイアログを表示し、選択されたファイルを開く（メニュー「ファイル」→
+        /// 「開く…」・Ctrl+O）。</summary>
+        public void OpenWithDialog()
         {
             var dlg = new Microsoft.Win32.OpenFileDialog
             {
@@ -326,8 +331,28 @@ namespace mde.manager
             };
             if (true == dlg.ShowDialog())
             {
-                LoadFile(dlg.FileName);
+                OpenFileFromMenu(dlg.FileName);
             }
+        }
+
+        /// <summary>メニューから選んだファイル（「開く…」・「最近使ったファイル」）を開く。今のウィンドウで
+        /// ファイル・フォルダを表示している、または何か書いてある時は、今の内容を残したまま新しいウィンドウで
+        /// 開く（mdew と同じ）。何も書いていない新規のウィンドウ、または今開いているファイルそのものを
+        /// 選んだ時は、このウィンドウで開く。</summary>
+        /// <param name="a_path">開くファイルの絶対パス。</param>
+        private void OpenFileFromMenu(string a_path)
+        {
+            string currentFilePath = m_getCurrentFilePath();
+            bool isCurrentFileFlg = !string.IsNullOrEmpty(currentFilePath) && m_pathsReferToSameFile(a_path, currentFilePath);
+            if (!isCurrentFileFlg && m_opensInNewWindow())
+            {
+                // 新しいウィンドウ側でも最近使ったファイルに加わるが、このウィンドウの一覧にも加えておく
+                // （ウィンドウごとに一覧を持ち、閉じた時に設定へ保存するため）
+                AddToRecentFiles(a_path);
+                m_openFileInNewWindow(a_path, null);
+                return;
+            }
+            LoadFile(a_path);
         }
 
         public void LoadFile(string a_path)
@@ -554,7 +579,7 @@ namespace mde.manager
         }
 
         /// <summary>「最近使ったファイル」サブメニューの中身を、現在のm_recentFilesの内容から
-        /// 組み立て直す。</summary>
+        /// 組み立て直す。同じ名前のファイルを区別できるよう、フルパスで表示する（mdew と同じ）。</summary>
         public void RebuildRecentFilesMenu()
         {
             m_recentFilesMenu.Items.Clear();
@@ -567,7 +592,9 @@ namespace mde.manager
             {
                 var item = new MenuItem
                 {
-                    Header = Path.GetFileName(path),
+                    // 「_」はメニューのアクセスキーの印として扱われて消えてしまうため、「__」にして
+                    // そのまま表示させる
+                    Header = path.Replace("_", "__"),
                     ToolTip = path,
                     Tag = path
                 };
@@ -595,7 +622,7 @@ namespace mde.manager
                 RebuildRecentFilesMenu();
                 return;
             }
-            LoadFile(path);
+            OpenFileFromMenu(path);
         }
 
         /// <summary>「履歴をクリア」：最近使ったファイルの一覧を空にする。</summary>

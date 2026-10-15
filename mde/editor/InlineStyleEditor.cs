@@ -270,7 +270,7 @@ namespace mde.editor
         {
             if (ContextLinkRun?.Tag is LinkInfo li)
             {
-                NavigateLink(li.Url);
+                NavigateLink(LinkUrlOf(ContextLinkRun, li));
             }
         }
 
@@ -279,7 +279,7 @@ namespace mde.editor
         {
             if (ContextLinkRun?.Tag is LinkInfo li)
             {
-                try { Clipboard.SetText(li.Url); } catch { /* 失敗しても致命的ではない */ }
+                try { Clipboard.SetText(LinkUrlOf(ContextLinkRun, li)); } catch { /* 失敗しても致命的ではない */ }
             }
         }
 
@@ -297,6 +297,9 @@ namespace mde.editor
                 m_originalTextTracker.Invalidate(ContextLinkRun.ContentStart);
                 li.Url = dlg.Url;
                 li.IsAutoLinkFlg = false;
+                // リンク先を指定し直したので、文中にそのまま書かれたメールアドレスではなくなる
+                // （保存時は [文字](URL) の形で書き出す）
+                li.IsBareEmailFlg = false;
                 ContextLinkRun.ToolTip = dlg.Url;
                 m_markDirty();
             }
@@ -622,7 +625,7 @@ namespace mde.editor
 
             if (pos.Parent is Run run && run.Tag is LinkInfo linkInfo && !string.IsNullOrWhiteSpace(linkInfo.Url))
             {
-                NavigateLink(linkInfo.Url);
+                NavigateLink(LinkUrlOf(run, linkInfo));
                 a_args.Handled = true;
             }
         }
@@ -662,40 +665,7 @@ namespace mde.editor
                 return false;
             }
 
-            // Run区間ごとに後ろ向きにたどり、各区間のテキストと開始位置を記録する（複数Run
-            // をまたぐ位置計算を避けるため）。Tag="escaped"の区間（\で確定済みの文字）も
-            // 区別して記録し、区切り記号として誤って再解釈されないようにする。
-            var segments = new List<(string text, TextPointer segStart, bool isEscaped)>();
-            TextPointer walker = caret;
-            int totalLen = 0;
-            int guard = 0;
-            while (null != walker &&
-                   walker.CompareTo(para.ContentStart) > 0 &&
-                   totalLen < 300 &&
-                   guard < 50)
-            {
-                guard++;
-                string chunk = walker.GetTextInRun(LogicalDirection.Backward);
-                if (!string.IsNullOrEmpty(chunk))
-                {
-                    var segStart = walker.GetPositionAtOffset(-chunk.Length);
-                    if (null == segStart)
-                    {
-                        break;
-                    }
-                    bool isEscapedFlg = "escaped" == (walker.Parent as Run)?.Tag as string;
-                    segments.Insert(0, (chunk, segStart, isEscapedFlg));
-                    totalLen += chunk.Length;
-                    walker = segStart;
-                }
-                else
-                {
-                    var prevContext = walker.GetNextContextPosition(LogicalDirection.Backward);
-                    if (null == prevContext ||
-                        0 == prevContext.CompareTo(walker)) break;
-                    walker = prevContext;
-                }
-            }
+            var segments = CollectSegmentsBeforeCaret(caret, para);
             if (0 == segments.Count)
             {
                 return false;
@@ -824,6 +794,11 @@ namespace mde.editor
                     match = null;
                 }
             }
+            if (null == style && TryLinkifyBareEmail(caret, segments, true))
+            {
+                // 文中にそのまま書いたメールアドレスの後ろに、空白・句読点等を打った
+                return true;
+            }
             if (null == style)
             {
                 // どの装飾トリガーにも一致しない場合、直前が「\ + 1文字」の完成した
@@ -889,6 +864,135 @@ namespace mde.editor
                 ReplaceTextBeforeCaretWithStyledRun(caret, start, match.Groups[1].Value, style);
             }
             return true;
+        }
+
+        /// <summary>
+        /// キャレットの前の、同じ段落の文字を、Run区間ごとに後ろ向きにたどって記録する（複数Runを
+        /// またぐ位置計算を避けるため。最大300文字程度）。Tag="escaped"の区間（\で確定済みの文字）は
+        /// isEscaped、書式の無い通常の文字の区間はisPlainとして区別する。
+        /// </summary>
+        /// <param name="a_caret">キャレットの位置。</param>
+        /// <param name="a_para">キャレットのある段落。</param>
+        /// <returns>前から順の区間の一覧（文字・開始位置・エスケープ済みか・書式が無いか）。</returns>
+        private static List<(string text, TextPointer segStart, bool isEscaped, bool isPlain)> CollectSegmentsBeforeCaret(
+            TextPointer a_caret, Paragraph a_para)
+        {
+            var segments = new List<(string text, TextPointer segStart, bool isEscaped, bool isPlain)>();
+            TextPointer walker = a_caret;
+            int totalLen = 0;
+            int guard = 0;
+            while (null != walker &&
+                   walker.CompareTo(a_para.ContentStart) > 0 &&
+                   totalLen < 300 &&
+                   guard < 50)
+            {
+                guard++;
+                string chunk = walker.GetTextInRun(LogicalDirection.Backward);
+                if (!string.IsNullOrEmpty(chunk))
+                {
+                    var segStart = walker.GetPositionAtOffset(-chunk.Length);
+                    if (null == segStart)
+                    {
+                        break;
+                    }
+                    object tag = (walker.Parent as Run)?.Tag;
+                    bool isEscapedFlg = "escaped" == tag as string;
+                    segments.Insert(0, (chunk, segStart, isEscapedFlg, null == tag));
+                    totalLen += chunk.Length;
+                    walker = segStart;
+                }
+                else
+                {
+                    var prevContext = walker.GetNextContextPosition(LogicalDirection.Backward);
+                    if (null == prevContext ||
+                        0 == prevContext.CompareTo(walker)) break;
+                    walker = prevContext;
+                }
+            }
+            return segments;
+        }
+
+        /// <summary>
+        /// Enterキーを押す直前に呼ぶ：キャレットの直前に書いたメールアドレスを、mailtoのリンクにする
+        /// （TryLinkifyBareEmail参照。読み込んだ時と同じ表示にするため）。
+        /// </summary>
+        /// <returns>リンクにした場合はtrue。</returns>
+        public bool LinkifyBareEmailBeforeCaret()
+        {
+            var caret = m_editor.CaretPosition;
+            var para = caret.Paragraph;
+            if (null == para || para.Tag is CodeBlockInfo || para.Tag is CodeBlockContinuationInfo)
+            {
+                return false;
+            }
+            return TryLinkifyBareEmail(caret, CollectSegmentsBeforeCaret(caret, para), false);
+        }
+
+        /// <summary>
+        /// キャレットの直前に、文中にそのまま書いたメールアドレスがあれば、mailtoのリンク（LinkInfo.IsBareEmailFlg。
+        /// 保存時は書いたまま書き戻す）のRunに置き換える。読み込んだ時（MarkdownConverterのBARE_EMAIL_PATTERN）と
+        /// 同じ表示にするため、メールアドレスの後ろに空白・句読点等を打った時（a_typedFlg）と、Enterキーを押す直前に呼ぶ。
+        /// 書式の無い通常の文字だけが対象（コード・リンク等の中のメールアドレスはリンクにしない）。
+        /// </summary>
+        /// <param name="a_caret">キャレットの位置。</param>
+        /// <param name="a_segments">CollectSegmentsBeforeCaretで集めた区間。</param>
+        /// <param name="a_typedFlg">メールアドレスの後ろに1文字打った直後か（その文字と、直前の「.」はリンクに含めない）。</param>
+        /// <returns>リンクにした場合はtrue。</returns>
+        private bool TryLinkifyBareEmail(TextPointer a_caret, List<(string text, TextPointer segStart, bool isEscaped, bool isPlain)> a_segments,
+            bool a_typedFlg)
+        {
+            // 書式の無い区間以外は、メールアドレスに使われない目印文字に置き換えて照合する
+            string plainBefore = string.Concat(a_segments.Select(s => s.isPlain ? s.text : new string('\uE0FF', s.text.Length)));
+            string pattern = MarkdownConverter.BARE_EMAIL_PREV_PATTERN + "(" + MarkdownConverter.BARE_EMAIL_PATTERN + ")" +
+                (a_typedFlg ? "(\\.?[^A-Za-z0-9._%+@\\-\uE0FF])$" : "()$");
+            Match match = Regex.Match(plainBefore, pattern);
+            if (!match.Success)
+            {
+                return false;
+            }
+            TextPointer start = null;
+            int remaining = match.Groups[1].Index;
+            foreach (var seg in a_segments)
+            {
+                if (remaining <= seg.text.Length)
+                {
+                    start = seg.segStart.GetPositionAtOffset(remaining);
+                    break;
+                }
+                remaining -= seg.text.Length;
+            }
+            if (null == start)
+            {
+                return false;
+            }
+            string email = match.Groups[1].Value;
+            string tail = match.Groups[2].Value;
+            m_runAsProgrammaticChange(() =>
+            {
+                new TextRange(start, a_caret).Text = "";
+                var newRun = new Run(email, start)
+                {
+                    Foreground = m_linkBrush,
+                    TextDecorations = TextDecorations.Underline,
+                    Tag = new LinkInfo { Url = "mailto:" + email, IsBareEmailFlg = true },
+                    ToolTip = email
+                };
+                // 後ろに打った文字は、リンクではない通常の文字として戻す（先頭のゼロ幅スペースは、
+                // 直後の入力へリンクの見た目が継承されるのを防ぐためのもの。保存時に自動除去）
+                var trailingRun = new Run("\u200B" + tail, newRun.ContentEnd);
+                m_editor.CaretPosition = trailingRun.ContentEnd;
+            });
+            return true;
+        }
+
+        /// <summary>リンクを開く・URLをコピーする時のリンク先。文中にそのまま書かれたメールアドレスの
+        /// リンクは、書き直されていても今の文字から作る。</summary>
+        /// <param name="a_run">リンクのRun。</param>
+        /// <param name="a_linkInfo">そのRunのリンクの情報。</param>
+        /// <returns>リンク先のURL。</returns>
+        private static string LinkUrlOf(Run a_run, LinkInfo a_linkInfo)
+        {
+            return a_linkInfo.IsBareEmailFlg ? "mailto:" + a_run.Text.Replace("\u200B", "").Trim() : a_linkInfo.Url;
         }
 
         /// <summary>

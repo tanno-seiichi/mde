@@ -124,6 +124,13 @@ namespace mde
         /// と同じリストを共有する（OnClosedでの設定保存のため、フィールド自体はここに残す）。</summary>
         private List<string> m_recentFiles = new List<string>();
 
+        /// <summary>メニュー「ファイル」→「最近使ったフォルダ」に表示する、最近「フォルダを開く」で
+        /// 開いたフォルダの絶対パス一覧（先頭が最新）。次回起動時にも復元される。</summary>
+        private List<string> m_recentFolders = new List<string>();
+
+        /// <summary>「最近使ったフォルダ」に残す件数の上限。</summary>
+        private const int MAX_RECENT_FOLDERS = 10;
+
         /// <summary>「名前を付けて保存」・「PDFに書き出し」ダイアログで、直近にユーザーが実際に
         /// 選択した保存先フォルダ（次回以降のダイアログの初期フォルダに使う）。次回起動時にも
         /// 復元される。FileOperationsManagerとdelegate経由で共有する（OnClosedでの設定保存の
@@ -251,6 +258,7 @@ namespace mde
             m_pdfMarginLeft = m_savedSettings.PdfMarginLeft > 0 ? m_savedSettings.PdfMarginLeft : 80;
             m_pdfMarginRight = m_savedSettings.PdfMarginRight > 0 ? m_savedSettings.PdfMarginRight : 80;
             m_recentFiles = null != m_savedSettings.RecentFiles ? new List<string>(m_savedSettings.RecentFiles) : new List<string>();
+            m_recentFolders = null != m_savedSettings.RecentFolders ? new List<string>(m_savedSettings.RecentFolders) : new List<string>();
             m_lastSaveDialogDirectory = m_savedSettings.LastSaveDialogDirectory;
             // 「最近使ったファイル」サブメニューの初回構築はFileOperationsManager構築後
             // （このコンストラクタの後半）で行う（RebuildRecentFilesMenu呼び出し箇所を参照）。
@@ -322,10 +330,12 @@ namespace mde
                 () => m_currentFilePath, v => m_currentFilePath = v,
                 () => m_currentFileDirectory, v => m_currentFileDirectory = v,
                 () => m_currentFileIsDirtyFlg, v => m_currentFileIsDirtyFlg = v,
-                () => m_lastSaveDialogDirectory, v => m_lastSaveDialogDirectory = v);
+                () => m_lastSaveDialogDirectory, v => m_lastSaveDialogDirectory = v,
+                OpensInNewWindow);
             // 「最近使ったファイル」サブメニューの初回構築（設定から読み込んだm_recentFilesの
             // 内容を反映する）。FileOperationsManagerの構築後に行う必要がある。
             m_fileOperationsManager.RebuildRecentFilesMenu();
+            RebuildRecentFoldersMenu();
 
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version;
             m_outlineTree.ItemsSource = m_outlineManager.Items;
@@ -433,6 +443,7 @@ namespace mde
                 m_folderPaneVisibleFlg = true;
                 m_folderTreeManager.LoadFolderTree(startupPath);
                 m_folderTreeManager.OpenFirstFileInLoadedFolder();
+                AddToRecentFolders(startupPath);
             }
 
             ApplyFolderPaneVisibility();
@@ -696,6 +707,7 @@ namespace mde
                 PdfMarginLeft = m_pdfMarginLeft,
                 PdfMarginRight = m_pdfMarginRight,
                 RecentFiles = m_recentFiles,
+                RecentFolders = m_recentFolders,
                 LastSaveDialogDirectory = m_lastSaveDialogDirectory
             };
             settings.Save();
@@ -1455,6 +1467,8 @@ namespace mde
 
             if (a_args.Key == Key.Enter)
             {
+                // Enterの直前に書いたメールアドレスは、mailtoのリンクにする（InlineStyleEditor.TryLinkifyBareEmail）
+                m_inlineStyleEditor.LinkifyBareEmailBeforeCaret();
                 if (m_listEditor.IsInListItem(para, out ListItem li, out List parentList))
                 {
                     if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
@@ -2158,10 +2172,10 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void CloseBtnClick(object a_sender, RoutedEventArgs a_args) => m_fileOperationsManager.CloseBtnClick(a_sender, a_args);
 
-        /// <summary>ファイルを開くダイアログを表示する（詳細はFileOperationsManager.OpenBtnClick参照）。</summary>
+        /// <summary>ファイルを開くダイアログを表示する（詳細はFileOperationsManager.OpenWithDialog参照）。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
-        private void OpenBtnClick(object a_sender, RoutedEventArgs a_args) => m_fileOperationsManager.OpenBtnClick(a_sender, a_args);
+        private void OpenBtnClick(object a_sender, RoutedEventArgs a_args) => m_fileOperationsManager.OpenWithDialog();
 
         /// <summary>指定したファイルを読み込む（詳細はFileOperationsManager.LoadFile参照）。他のウィンドウ
         /// （newWindow.LoadFile）や起動時処理から直接呼ばれるため、このラッパーは維持している。</summary>
@@ -3260,7 +3274,205 @@ namespace mde
         // ラッパーだけを残している。ペインの表示/非表示切り替え（幅の記憶・GridColumn操作）は、
         // エディタペインのスクロール位置保持処理と密接に絡んでいるため、別区画に残している。
 
-        private void OpenFolderTreeBtnClick(object a_sender, RoutedEventArgs a_args) => m_folderTreeManager.HandleOpenFolderTreeBtnClick(a_sender, a_args);
+        /// <summary>フォルダビューの「…」ボタン：フォルダを選んで開く。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void OpenFolderTreeBtnClick(object a_sender, RoutedEventArgs a_args) => ChooseAndOpenFolder();
+
+        /// <summary>メニュー「ファイル」→「フォルダを開く…」：フォルダを選んで開く（フォルダビューの
+        /// 「…」ボタンと同じ）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void OpenFolderMenuClick(object a_sender, RoutedEventArgs a_args)
+        {
+            if (!OpensInNewWindow())
+            {
+                ChooseAndOpenFolder();
+                return;
+            }
+            // 今のウィンドウでファイル・フォルダを表示している時は、選んだフォルダを新しいウィンドウで開く
+            // （保存していない変更も今のウィンドウにそのまま残るので、破棄の確認は要らない）
+            var dlg = new Microsoft.Win32.OpenFolderDialog();
+            if (true != dlg.ShowDialog())
+            {
+                return;
+            }
+            OpenFolderFromMenu(dlg.FolderName);
+        }
+
+        /// <summary>メニューからファイル・フォルダを開く時（「開く…」「最近使ったファイル」「フォルダを開く…」
+        /// 「最近使ったフォルダ」・Ctrl+O）に、新しいウィンドウで開くか。今のウィンドウでフォルダ・ファイルを
+        /// 表示している時や、何か書いてある時は、今の内容を残したまま新しいウィンドウで開く（mdew と同じ）。
+        /// 何も書いていない新規のウィンドウなら、このウィンドウで開く。</summary>
+        /// <returns>新しいウィンドウで開くならtrue。</returns>
+        private bool OpensInNewWindow()
+        {
+            if (!string.IsNullOrEmpty(m_folderTreeManager.LoadedFolderRootPath) || !string.IsNullOrEmpty(m_currentFilePath))
+            {
+                return true;
+            }
+            string text = m_isSourceModeFlg ? m_sourceEditor.Text : m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+            return !string.IsNullOrWhiteSpace(text);
+        }
+
+        /// <summary>メニューから選んだフォルダ（「フォルダを開く…」「最近使ったフォルダ」）を、新しいウィンドウの
+        /// フォルダビューに開く。このウィンドウのフォルダビューで既に開いているフォルダなら、新しいウィンドウは
+        /// 開かず、フォルダビューを表示するだけにする。</summary>
+        /// <param name="a_folderPath">開くフォルダ。</param>
+        private void OpenFolderFromMenu(string a_folderPath)
+        {
+            AddToRecentFolders(a_folderPath);
+            if (IsSameFolder(a_folderPath, m_folderTreeManager.LoadedFolderRootPath))
+            {
+                ShowFolderPane();
+                return;
+            }
+            var newWindow = new MainWindow(this);
+            newWindow.Show();
+            newWindow.OpenFolderAsRoot(a_folderPath);
+        }
+
+        /// <summary>このウィンドウのフォルダビューに、指定したフォルダを開き、直下の最初のファイルを開く
+        /// （新しいウィンドウで「フォルダを開く…」「最近使ったフォルダ」を実行した時。起動時引数でフォルダを
+        /// 指定された時と同じ）。</summary>
+        /// <param name="a_folderPath">開くフォルダ。</param>
+        private void OpenFolderAsRoot(string a_folderPath)
+        {
+            m_folderTreeManager.LoadFolderTree(a_folderPath);
+            m_folderTreeManager.OpenFirstFileInLoadedFolder();
+            AddToRecentFolders(a_folderPath);
+            ShowFolderPane();
+        }
+
+        /// <summary>2つのフォルダのパスが同じフォルダを指すか（末尾の「\」の有無・大文字小文字は区別しない）。</summary>
+        /// <param name="a_a">フォルダのパス。</param>
+        /// <param name="a_b">フォルダのパス（nullなら常にfalse）。</param>
+        /// <returns>同じフォルダならtrue。</returns>
+        private static bool IsSameFolder(string a_a, string a_b)
+        {
+            if (string.IsNullOrEmpty(a_a) || string.IsNullOrEmpty(a_b))
+            {
+                return false;
+            }
+            try
+            {
+                return string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a_a)),
+                    Path.TrimEndingDirectorySeparator(Path.GetFullPath(a_b)), StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>フォルダを選ぶダイアログを表示して、選んだフォルダをフォルダビューに開き、
+        /// 「最近使ったフォルダ」に加える。フォルダビューを隠していた場合は表示する。</summary>
+        private void ChooseAndOpenFolder()
+        {
+            string folder = m_folderTreeManager.ChooseAndOpenFolder();
+            if (null != folder)
+            {
+                AddToRecentFolders(folder);
+                ShowFolderPane();
+            }
+        }
+
+        /// <summary>フォルダビューを隠していれば表示する（「フォルダを表示」ボタンと同じ処理）。</summary>
+        private void ShowFolderPane()
+        {
+            if (!m_folderPaneVisibleFlg)
+            {
+                ToggleFolderPaneBtnClick(this, new RoutedEventArgs());
+            }
+        }
+
+        /// <summary>「最近使ったフォルダ」の一覧の先頭に、指定したフォルダを加える（既に一覧に
+        /// あれば先頭へ移す）。件数がMAX_RECENT_FOLDERSを超えたら、古いものから切り捨てる。</summary>
+        /// <param name="a_folderPath">開いたフォルダ。</param>
+        private void AddToRecentFolders(string a_folderPath)
+        {
+            if (string.IsNullOrEmpty(a_folderPath))
+            {
+                return;
+            }
+            string folder;
+            try
+            {
+                // 末尾の「\」の有無で別のフォルダとして並ばないようにそろえる（「C:\」等のルートはそのまま）
+                folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(a_folderPath));
+            }
+            catch
+            {
+                folder = a_folderPath;
+            }
+            m_recentFolders.RemoveAll(p => string.Equals(p, folder, StringComparison.OrdinalIgnoreCase));
+            m_recentFolders.Insert(0, folder);
+            if (m_recentFolders.Count > MAX_RECENT_FOLDERS)
+            {
+                m_recentFolders.RemoveRange(MAX_RECENT_FOLDERS, m_recentFolders.Count - MAX_RECENT_FOLDERS);
+            }
+            RebuildRecentFoldersMenu();
+        }
+
+        /// <summary>「最近使ったフォルダ」サブメニューの中身を、現在のm_recentFoldersの内容から
+        /// 組み立て直す。フォルダ名だけでは区別しにくいため、フルパスで表示する。</summary>
+        private void RebuildRecentFoldersMenu()
+        {
+            m_recentFoldersMenu.Items.Clear();
+            if (0 == m_recentFolders.Count)
+            {
+                m_recentFoldersMenu.Items.Add(new MenuItem { Header = "（履歴なし）", IsEnabled = false });
+                return;
+            }
+            foreach (string path in m_recentFolders)
+            {
+                var item = new MenuItem
+                {
+                    // 「_」はメニューのアクセスキーの印として扱われて消えてしまうため、「__」にして
+                    // そのまま表示させる
+                    Header = path.Replace("_", "__"),
+                    ToolTip = path,
+                    Tag = path
+                };
+                item.Click += RecentFolderMenuItemClick;
+                m_recentFoldersMenu.Items.Add(item);
+            }
+            m_recentFoldersMenu.Items.Add(new Separator());
+            var clearItem = new MenuItem { Header = "履歴をクリア(_C)" };
+            clearItem.Click += (a_s, a_e) =>
+            {
+                m_recentFolders.Clear();
+                RebuildRecentFoldersMenu();
+            };
+            m_recentFoldersMenu.Items.Add(clearItem);
+        }
+
+        /// <summary>「最近使ったフォルダ」の項目をクリックした時、そのフォルダをフォルダビューに開く。
+        /// フォルダが見つからない（移動・削除済みなど）場合は、その旨を伝えて一覧からも外す。</summary>
+        /// <param name="a_sender">クリックされたメニュー項目（Tagにフォルダの絶対パスを持つ）。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void RecentFolderMenuItemClick(object a_sender, RoutedEventArgs a_args)
+        {
+            string path = (string)((MenuItem)a_sender).Tag;
+            if (!Directory.Exists(path))
+            {
+                MessageBox.Show("フォルダが見つかりませんでした：" + path, "最近使ったフォルダ",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                m_recentFolders.Remove(path);
+                RebuildRecentFoldersMenu();
+                return;
+            }
+            if (OpensInNewWindow())
+            {
+                OpenFolderFromMenu(path);
+                return;
+            }
+            if (m_folderTreeManager.OpenFolder(path))
+            {
+                AddToRecentFolders(path);
+                ShowFolderPane();
+            }
+        }
 
         private void TreeViewItemExpanded(object a_sender, RoutedEventArgs a_args) => m_folderTreeManager.HandleTreeViewItemExpanded(a_sender, a_args);
 

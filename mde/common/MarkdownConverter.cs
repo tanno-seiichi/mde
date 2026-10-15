@@ -51,11 +51,27 @@ namespace mde.common
         /// グループ番号は以下の通り。
         /// 1:imgタグ／2,3,4:![alt](src)（alt,src)／5,6:`code`／7,8:**bold**／9,10:~~strike~~／
         /// 11,12:&lt;u&gt;underline&lt;/u&gt;／13,14:==highlight==／15,16,17:[text](url)（text,url)／
-        /// 18,19:&lt;http(s)://url&gt;／20,21:&lt;email&gt;／22,23:&lt;a id="..."&gt;&lt;/a&gt;
+        /// 18,19:&lt;http(s)://url&gt;／20,21:&lt;email&gt;／22,23:&lt;a id="..."&gt;&lt;/a&gt;／
+        /// 24,25:文中にそのまま書かれたメールアドレス（BARE_EMAIL_PATTERN）
         /// </summary>
         private static readonly Regex m_inlineContentRegex = new Regex(
-            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(`([^`]+)`)|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|(<u>([^<]+)</u>)|(==([^=]+)==)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)",
+            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(`([^`]+)`)|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|(<u>([^<]+)</u>)|(==([^=]+)==)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)|(" +
+            BARE_EMAIL_PREV_PATTERN + "(" + BARE_EMAIL_PATTERN + ")" + BARE_EMAIL_NEXT_PATTERN + ")",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>文中にそのまま（山括弧なしで）書かれたメールアドレス。表示だけ mailto のリンクにする
+        /// （GitHub と同じ。保存時は書いたまま書き戻す。LinkInfo.IsBareEmailFlg参照）。ドメインは「.」で
+        /// 区切られた2つ以上の部分で、最後は英字2文字以上。終わりの「.」（文の句点）は含めない。
+        /// mdew の markdown.js の RE_BARE_EMAIL と同じ。</summary>
+        public const string BARE_EMAIL_PATTERN =
+            "[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.[A-Za-z]{2,}";
+
+        /// <summary>BARE_EMAIL_PATTERNの直前の条件：メールアドレス・URLの一部になる文字の直後からは始めない
+        /// （http://user@host 等をメールアドレスとみなさないため）。</summary>
+        public const string BARE_EMAIL_PREV_PATTERN = "(?<![A-Za-z0-9._%+\\-/@])";
+
+        /// <summary>BARE_EMAIL_PATTERNの直後の条件：ドメインの途中で終わらない。</summary>
+        public const string BARE_EMAIL_NEXT_PATTERN = "(?![A-Za-z0-9-]|\\.[A-Za-z0-9])";
 
         /// <summary>表のセルの行内改行を表す&lt;br&gt;（大文字小文字・&lt;br /&gt;のような
         /// スペースや自己終了スラッシュの有無を問わない）を検出する正規表現。TableToMarkdownで
@@ -860,7 +876,12 @@ namespace mde.common
                 else if (inline is Run linkRun && linkRun.Tag is LinkInfo linkInfo)
                 {
                     string content = linkRun.Text.Replace("​", "");
-                    if (linkInfo.IsEmailAutoLinkFlg)
+                    if (linkInfo.IsBareEmailFlg)
+                    {
+                        // 文中にそのまま書かれていたメールアドレス：書かれたままの文字を書き出す
+                        a_sb.Append(content);
+                    }
+                    else if (linkInfo.IsEmailAutoLinkFlg)
                     {
                         // メールアドレス自動リンク。保存されているURLは"mailto:"付きなので、
                         // 書き戻す際は取り除く。
@@ -2091,6 +2112,12 @@ namespace mde.common
                 {
                     a_p.Inlines.Add(new Run("") { Tag = new AnchorInfo { Id = m.Groups[23].Value } });
                 }
+                else if (m.Groups[24].Success)
+                {
+                    // 文中にそのまま書かれたメールアドレス（表示だけ mailto のリンクにする）
+                    string email = RestorePlaceholders(m.Groups[25].Value);
+                    a_p.Inlines.Add(BuildLinkRun(email, "mailto:" + email, false, null, false, true));
+                }
 
                 lastIndex = m.Index + m.Length;
             }
@@ -2110,8 +2137,10 @@ namespace mde.common
         /// <param name="a_title">タイトル属性（[a_text](a_url "title")のtitle部分。省略時はnull）。</param>
         /// <param name="a_isEmailAutoLinkFlg">&lt;email@example.com&gt;形式のメールアドレス
         /// 自動リンクから来た場合はtrue。</param>
+        /// <param name="a_isBareEmailFlg">文中にそのまま書かれたメールアドレスから来た場合はtrue。</param>
         /// <returns>組み立てたリンクのRun。</returns>
-        public Run BuildLinkRun(string a_linkText, string a_url, bool a_isAutoLinkFlg, string a_title = null, bool a_isEmailAutoLinkFlg = false)
+        public Run BuildLinkRun(string a_linkText, string a_url, bool a_isAutoLinkFlg, string a_title = null, bool a_isEmailAutoLinkFlg = false,
+            bool a_isBareEmailFlg = false)
         {
             return new Run(a_linkText)
             {
@@ -2122,7 +2151,8 @@ namespace mde.common
                     Url = a_url,
                     IsAutoLinkFlg = a_isAutoLinkFlg,
                     Title = a_title,
-                    IsEmailAutoLinkFlg = a_isEmailAutoLinkFlg
+                    IsEmailAutoLinkFlg = a_isEmailAutoLinkFlg,
+                    IsBareEmailFlg = a_isBareEmailFlg
                 },
                 ToolTip = string.IsNullOrEmpty(a_title) ? a_url : a_title
             };
@@ -2326,6 +2356,19 @@ namespace mde.common
                 else if (m.Groups[22].Success)
                 {
                     var run = new Run("", cursor) { Tag = new AnchorInfo { Id = m.Groups[23].Value } };
+                    cursor = run.ContentEnd;
+                }
+                else if (m.Groups[24].Success)
+                {
+                    // 文中にそのまま書かれたメールアドレス（表示だけ mailto のリンクにする）
+                    string email = RestorePlaceholders(m.Groups[25].Value);
+                    var run = new Run(email, cursor)
+                    {
+                        Foreground = m_linkBrush,
+                        TextDecorations = TextDecorations.Underline,
+                        Tag = new LinkInfo { Url = "mailto:" + email, IsBareEmailFlg = true },
+                        ToolTip = email
+                    };
                     cursor = run.ContentEnd;
                 }
 

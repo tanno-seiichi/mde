@@ -755,7 +755,8 @@ namespace mde.editor
                     Url = li.Url,
                     IsAutoLinkFlg = li.IsAutoLinkFlg,
                     Title = li.Title,
-                    IsEmailAutoLinkFlg = li.IsEmailAutoLinkFlg
+                    IsEmailAutoLinkFlg = li.IsEmailAutoLinkFlg,
+                    IsBareEmailFlg = li.IsBareEmailFlg
                 };
             }
             return new Run(a_text)
