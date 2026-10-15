@@ -134,6 +134,11 @@ namespace mde.common
         /// <summary>true の場合、&lt;email@example.com&gt; 形式（山括弧のメール自動リンク）から
         /// 読み込まれたことを示す。保存時に mailto: を除いた元のアドレス形式で書き戻すために使う。</summary>
         public bool IsEmailAutoLinkFlg { get; set; }
+
+        /// <summary>true の場合、文中にそのまま（山括弧なしで）書かれたメールアドレスから作った
+        /// リンクであることを示す（表示だけ mailto のリンクにする。GitHub と同じ）。保存時は
+        /// リンクの文字をそのまま書き戻す（MarkdownConverter.AppendInlinesMarkdown参照）。</summary>
+        public bool IsBareEmailFlg { get; set; }
     }
 
     /// <summary>アウトラインペインの1項目（見出し1つ分）。FileSystemItemと同様、折りたたみ可能な

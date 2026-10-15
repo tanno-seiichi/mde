@@ -547,20 +547,14 @@ namespace mde.manager
         }
 
         /// <summary>フォルダピッカーを表示し、選択されたフォルダをフォルダツリーペインへ
-        /// 読み込む（可能であれば同じ相対パスのファイルを開いたままにする）。</summary>
-        /// <param name="a_sender">イベントの発生元。</param>
-        /// <param name="a_args">イベントの引数。</param>
-        public void HandleOpenFolderTreeBtnClick(object a_sender, RoutedEventArgs a_args)
+        /// 読み込む（可能であれば同じ相対パスのファイルを開いたままにする）。フォルダビューの
+        /// 「…」ボタンと、メニュー「ファイル」→「フォルダを開く…」から呼ばれる。</summary>
+        /// <returns>開いたフォルダ。開かなかった（取りやめた）場合はnull。</returns>
+        public string ChooseAndOpenFolder()
         {
-            if (m_getCurrentFileIsDirty() || m_getPendingEditPaths().Any())
+            if (!ConfirmDiscardChanges())
             {
-                var confirmResult = MessageBox.Show(
-                    "保存されていない変更があります。破棄して別のフォルダを開きますか？",
-                    "フォルダを開く", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-                if (confirmResult != MessageBoxResult.OK)
-                {
-                    return;
-                }
+                return null;
             }
 
             string previousRelativePath = GetCurrentFileRelativePath();
@@ -568,12 +562,52 @@ namespace mde.manager
             var dlg = new Microsoft.Win32.OpenFolderDialog();
             if (true != dlg.ShowDialog())
             {
-                return;
+                return null;
             }
 
+            OpenFolderAndFile(dlg.FolderName, previousRelativePath);
+            return dlg.FolderName;
+        }
+
+        /// <summary>指定したフォルダをフォルダツリーペインへ読み込む（メニュー「ファイル」→
+        /// 「最近使ったフォルダ」）。ChooseAndOpenFolderと同じく、可能であれば同じ相対パスの
+        /// ファイルを開いたままにする。</summary>
+        /// <param name="a_folderPath">開くフォルダ。</param>
+        /// <returns>開いたか（保存していない変更の破棄を取りやめた場合はfalse）。</returns>
+        public bool OpenFolder(string a_folderPath)
+        {
+            if (!ConfirmDiscardChanges())
+            {
+                return false;
+            }
+            OpenFolderAndFile(a_folderPath, GetCurrentFileRelativePath());
+            return true;
+        }
+
+        /// <summary>保存されていない変更（今のファイル・検索と置換による保留中の編集）があれば、
+        /// 破棄して別のフォルダを開いてよいかを確認する。</summary>
+        /// <returns>続けてよいか（変更が無い、または破棄してよいと答えた）。</returns>
+        private bool ConfirmDiscardChanges()
+        {
+            if (m_getCurrentFileIsDirty() || m_getPendingEditPaths().Any())
+            {
+                var confirmResult = MessageBox.Show(
+                    "保存されていない変更があります。破棄して別のフォルダを開きますか？",
+                    "フォルダを開く", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+                return confirmResult == MessageBoxResult.OK;
+            }
+            return true;
+        }
+
+        /// <summary>今のファイルを破棄してフォルダを読み込み、同じ相対パスのファイル（無ければ
+        /// フォルダの最初のファイル）を開く。</summary>
+        /// <param name="a_folderPath">読み込むフォルダ。</param>
+        /// <param name="a_relativePath">以前開いていたファイルの相対パス。</param>
+        private void OpenFolderAndFile(string a_folderPath, string a_relativePath)
+        {
             m_discardCurrentDocumentSilently();
-            LoadFolderTree(dlg.FolderName);
-            OpenMatchingOrFirstFile(dlg.FolderName, previousRelativePath);
+            LoadFolderTree(a_folderPath);
+            OpenMatchingOrFirstFile(a_folderPath, a_relativePath);
         }
 
         /// <summary>フォルダツリー内部のScrollViewerへの参照を取得しておく（選択項目切り替え後の

@@ -57,6 +57,10 @@ namespace mde
         /// ファイルの絶対パス一覧（先頭が最新）。</summary>
         public List<string> RecentFiles { get; set; } = new List<string>();
 
+        /// <summary>メニュー「ファイル」→「最近使ったフォルダ」に表示する、最近「フォルダを開く」で
+        /// 開いたフォルダの絶対パス一覧（先頭が最新）。</summary>
+        public List<string> RecentFolders { get; set; } = new List<string>();
+
         /// <summary>「名前を付けて保存」・「PDFに書き出し」のファイル保存ダイアログで、直近に
         /// ユーザーが実際に選択した保存先フォルダ。現在のファイルの保存先フォルダも表示中の
         /// フォルダも無い場合に、次回以降のダイアログの初期フォルダとして使う。一度も選択
