@@ -33,14 +33,19 @@
         <Thickness x:Key="EditorListItemSpacing">0,7.36,0,0</Thickness>
         <Thickness x:Key="EditorBlockSpacing">0,0,0,12.2</Thickness>
         <Thickness x:Key="EditorListSpacing">0,0,0,12.8</Thickness>
+        <!-- 箇条書きの左の字下げ（記号の分）。番号付きは少し広い。
+             ここまでの値は GitHubスタイルのもの。VSCodeスタイルの時は MainWindow.ApplyDocStyle が
+             BlockStyles の値で上書きする（メニュー「表示」→「表示スタイル」）。 -->
+        <Thickness x:Key="EditorListPadding">32,0,0,0</Thickness>
+        <Thickness x:Key="EditorDecimalListPadding">34,0,0,0</Thickness>
         <!-- エディタの表示フォント。メニュー「表示」→「表示フォント」で切り替えられる。
              ここでの初期値は既定（フォント変更後）のものだが、実際にはMainWindow
              コンストラクタで保存済み設定に応じて新しいフォント／以前のフォントのどちらかに
              起動直後に上書きされる（EditorLineHeightと同じパターン）。 -->
         <FontFamily x:Key="EditorFontFamily">Meiryo, Segoe UI</FontFamily>
-        <Style TargetType="MenuItem" x:Key="CtxMenuItem">
-            <Setter Property="Padding" Value="6,4"/>
-        </Style>
+        <!-- 右クリックのメニューの項目。見た目はすべてのメニューと同じ（MenuStyles.xaml の MenuItem のスタイル）。
+             メニューの見出し（MenuHeading）も MenuStyles.xaml にある。 -->
+        <Style TargetType="MenuItem" x:Key="CtxMenuItem" BasedOn="{StaticResource {x:Type MenuItem}}"/>
         <Style TargetType="Button" x:Key="ZoomButton" BasedOn="{StaticResource ToolbarButton}">
             <Setter Property="Width" Value="28"/>
             <Setter Property="Padding" Value="0"/>
@@ -54,17 +59,21 @@
     <DockPanel>
 
         <!-- ===================== Menu bar ===================== -->
-        <Menu DockPanel.Dock="Top" Background="{StaticResource CardBrush}" Foreground="{StaticResource InkBrush}"
-              BorderBrush="{StaticResource ThinBorderBrush}" BorderThickness="0,0,0,1" Padding="6,3" FontSize="13">
+        <!-- メニューバー（mdew と同じ見た目：背景は白・枠線なし・文字は Yu Gothic UI の 12px。項目・メニューの見た目は
+             MenuStyles.xaml） -->
+        <Menu DockPanel.Dock="Top" Background="White" BorderThickness="0" Padding="2,0"
+              FontFamily="{StaticResource MenuFont}" FontSize="12" TextOptions.TextFormattingMode="Display">
             <MenuItem Header="ファイル(_F)">
                 <MenuItem Header="新規作成(_N)" Click="NewBtnClick" InputGestureText="Ctrl+N"/>
                 <MenuItem Header="新しいウインドウ" Click="NewWindowClick" InputGestureText="Shift+Ctrl+N"/>
                 <MenuItem Header="開く…(_O)" Click="OpenBtnClick" InputGestureText="Ctrl+O"/>
-                <!-- 最近使ったファイル・フォルダのサブメニューは、マウスを乗せただけでは開かず、クリックした時だけ開く
-                     （common\ClickOpenMenuItem.cs。長いサブメニューがほかの項目を隠さないように。mdew と同じ） -->
-                <common:ClickOpenMenuItem x:Name="m_recentFilesMenu" Header="最近使ったファイル(_R)"/>
-                <common:ClickOpenMenuItem x:Name="m_recentFoldersMenu" Header="最近使ったフォルダ(_F)"/>
+                <!-- 最近使ったファイル・フォルダのサブメニューは、クリックした時か、マウスを乗せて少し待った時に開く
+                     （WPF の通常のメニューの動き。待つ時間は Windows の設定に従う。mdew と同じ）。下の項目へマウスを
+                     動かす途中で通り過ぎるだけなら開かないので、長いサブメニューがほかの項目を隠すことはない。 -->
+                <MenuItem x:Name="m_recentFilesMenu" Header="最近使ったファイル(_R)"/>
+                <MenuItem x:Name="m_recentFoldersMenu" Header="最近使ったフォルダ(_F)"/>
                 <MenuItem Header="フォルダを開く…(_D)" Click="OpenFolderMenuClick"/>
+                <Separator/>
                 <MenuItem Header="保存(_S)" Click="SaveBtnClick" InputGestureText="Ctrl+S"/>
                 <MenuItem Header="名前を付けて保存…" Click="SaveAsBtnClick" InputGestureText="Shift+Ctrl+S"/>
                 <MenuItem Header="すべて保存(_A)" Click="SaveAllBtnClick"/>
@@ -74,44 +83,66 @@
                 <Separator/>
                 <MenuItem Header="閉じる(_W)" Click="CloseBtnClick" InputGestureText="Ctrl+W"/>
             </MenuItem>
-            <MenuItem Header="検索と置換(_F)" Click="FindReplaceBtnClick" InputGestureText="Ctrl+F"/>
-            <MenuItem Header="表示(_V)">
-                <MenuItem Header="リンクの開き方">
-                    <MenuItem x:Name="m_linkModeCtrlClickMenuItem" Header="Ctrl+クリックで開く(_C)"
-                              IsCheckable="True" Click="LinkModeCtrlClickChecked"/>
-                    <MenuItem x:Name="m_linkModeClickOnlyMenuItem" Header="クリックのみで開く(_O)"
-                              IsCheckable="True" Click="LinkModeClickOnlyChecked"/>
-                </MenuItem>
-                <MenuItem Header="段落中の改行">
-                    <MenuItem x:Name="m_lineBreakModeSourceMenuItem" Header="ソースの通りに改行する(_S)"
-                              IsCheckable="True" Click="LineBreakModeSourceChecked"/>
-                    <MenuItem x:Name="m_lineBreakModeBlankOnlyMenuItem" Header="空行が入るまで改行しない(_B)"
-                              IsCheckable="True" Click="LineBreakModeBlankOnlyChecked"/>
-                </MenuItem>
-                <MenuItem Header="表示フォント">
-                    <MenuItem x:Name="m_fontModeNewMenuItem" Header="新しいフォント（Meiryo）(_N)"
-                              IsCheckable="True" Click="FontModeNewChecked"/>
-                    <MenuItem x:Name="m_fontModeLegacyMenuItem" Header="以前のフォント（Yu Gothic UI）(_L)"
-                              IsCheckable="True" Click="FontModeLegacyChecked"/>
-                </MenuItem>
-                <MenuItem Header="文字の色">
-                    <MenuItem x:Name="m_textColorSharpMenuItem" Header="くっきりした色(_S)"
-                              IsCheckable="True" Click="TextColorSharpChecked"/>
-                    <MenuItem x:Name="m_textColorSoftMenuItem" Header="目にやさしい色(_E)"
-                              IsCheckable="True" Click="TextColorSoftChecked"/>
-                </MenuItem>
-                <MenuItem x:Name="m_correctColumnWidthsMenuItem" Header="列幅を補正する(_W)"
+            <!-- 表示メニューは mdew と同じく、サブメニューを使わずに「見出し（選べない灰色の文字。MenuHeading）」と
+                 区切り線で項目をまとめる。並びも mdew と同じ（mde にしかない項目は「段落中の改行」の後に入れ、
+                 「表示スタイル」は最後、「デバッグログを有効にする」はさらにその後）。✓ と表示倍率は、メニューを
+                 開くたびに今の状態に合わせる（ViewMenuSubmenuOpened）。 -->
+            <MenuItem Header="表示(_V)" SubmenuOpened="ViewMenuSubmenuOpened">
+                <MenuItem x:Name="m_viewFolderPaneMenuItem" Header="フォルダを表示" Click="ToggleFolderPaneBtnClick"/>
+                <MenuItem x:Name="m_viewOutlinePaneMenuItem" Header="アウトラインを表示" Click="ToggleOutlinePaneBtnClick"/>
+                <MenuItem x:Name="m_viewStatusBarMenuItem" Header="ステータスバーを表示" Click="ToggleStatusBarClick"/>
+                <Separator/>
+                <MenuItem x:Name="m_viewSourceModeMenuItem" Header="ソースモード" Click="ToggleModeBtnClick"/>
+                <Separator/>
+                <MenuItem x:Name="m_viewZoomHeadingMenuItem" Header="表示倍率：100%" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_viewZoomInMenuItem" Header="拡大" Click="ZoomInClick" InputGestureText="Ctrl++"/>
+                <MenuItem x:Name="m_viewZoomOutMenuItem" Header="縮小" Click="ZoomOutClick" InputGestureText="Ctrl+-"/>
+                <MenuItem x:Name="m_viewZoomResetMenuItem" Header="100%に戻す" Click="ZoomResetClick" InputGestureText="Ctrl+0"/>
+                <Separator/>
+                <MenuItem Header="段落中の改行" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_lineBreakModeSourceMenuItem" Header="ソースの通りに改行する(_S)"
+                          IsCheckable="True" Click="LineBreakModeSourceChecked"/>
+                <MenuItem x:Name="m_lineBreakModeBlankOnlyMenuItem" Header="空行が入るまで改行しない(_B)"
+                          IsCheckable="True" Click="LineBreakModeBlankOnlyChecked"/>
+                <Separator/>
+                <MenuItem Header="リンクの開き方" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_linkModeCtrlClickMenuItem" Header="Ctrl+クリックで開く(_C)"
+                          IsCheckable="True" Click="LinkModeCtrlClickChecked"/>
+                <MenuItem x:Name="m_linkModeClickOnlyMenuItem" Header="クリックのみで開く(_O)"
+                          IsCheckable="True" Click="LinkModeClickOnlyChecked"/>
+                <Separator/>
+                <MenuItem Header="箇条書きの記号" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_markerStyleWpfStandardMenuItem" Header="WPF標準(_W)"
+                          IsCheckable="True" Click="MarkerStyleWpfStandardChecked"/>
+                <MenuItem x:Name="m_markerStyleUniformMenuItem" Header="すべての階層に同じ記号を使用する(_U)"
+                          IsCheckable="True" Click="MarkerStyleUniformChecked"/>
+                <Separator/>
+                <MenuItem Header="表" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_correctColumnWidthsMenuItem" Header="列幅を補正する(_T)"
                           IsCheckable="True" Click="CorrectColumnWidthsMenuItemChecked"/>
-                <MenuItem Header="箇条書きの記号(_M)">
-                    <MenuItem x:Name="m_markerStyleWpfStandardMenuItem" Header="WPF標準(_W)"
-                              IsCheckable="True" Click="MarkerStyleWpfStandardChecked"/>
-                    <MenuItem x:Name="m_markerStyleUniformMenuItem" Header="すべての階層に同じ記号を使用する(_S)"
-                              IsCheckable="True" Click="MarkerStyleUniformChecked"/>
-                </MenuItem>
+                <Separator/>
+                <MenuItem Header="表示フォント" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_fontModeNewMenuItem" Header="新しいフォント（Meiryo）(_N)"
+                          IsCheckable="True" Click="FontModeNewChecked"/>
+                <MenuItem x:Name="m_fontModeLegacyMenuItem" Header="以前のフォント（Yu Gothic UI）(_L)"
+                          IsCheckable="True" Click="FontModeLegacyChecked"/>
+                <Separator/>
+                <MenuItem Header="文字の色" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_textColorSharpMenuItem" Header="くっきりした色(_K)"
+                          IsCheckable="True" Click="TextColorSharpChecked"/>
+                <MenuItem x:Name="m_textColorSoftMenuItem" Header="目にやさしい色(_E)"
+                          IsCheckable="True" Click="TextColorSoftChecked"/>
+                <Separator/>
+                <MenuItem Header="表示スタイル" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_docStyleGithubMenuItem" Header="GitHubスタイル(_G)"
+                          IsCheckable="True" Click="DocStyleGithubChecked"/>
+                <MenuItem x:Name="m_docStyleVsCodeMenuItem" Header="VSCodeスタイル(_V)"
+                          IsCheckable="True" Click="DocStyleVsCodeChecked"/>
                 <Separator/>
                 <MenuItem x:Name="m_debugLogMenuItem" Header="デバッグログを有効にする(_D)"
                           IsCheckable="True" Click="DebugLogMenuItemChecked"/>
             </MenuItem>
+            <MenuItem Header="検索と置換" Click="FindReplaceBtnClick" InputGestureText="Ctrl+F"/>
             <MenuItem Header="ヘルプ(_H)">
                 <MenuItem Header="Readmeを開く(_R)" Click="OpenReadmeBtnClick"/>
                 <Separator/>
@@ -120,7 +151,8 @@
         </Menu>
 
         <!-- ===================== Status bar (panes / zoom / mode) ===================== -->
-        <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource ThinBorderBrush}" BorderThickness="0,1,0,0"
+        <!-- メニュー「表示」→「ステータスバーを表示」で表示・非表示を切り替える（ToggleStatusBarClick） -->
+        <Border x:Name="m_statusBar" DockPanel.Dock="Bottom" BorderBrush="{StaticResource ThinBorderBrush}" BorderThickness="0,1,0,0"
                 Padding="4,1,2,1">
             <Grid>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
@@ -318,7 +350,7 @@
                             <Style TargetType="List">
                                 <Setter Property="Margin" Value="{DynamicResource EditorListSpacing}"/>
                                 <Setter Property="LineHeight" Value="{DynamicResource EditorListLineHeight}"/>
-                                <Setter Property="Padding" Value="32,0,0,0"/>
+                                <Setter Property="Padding" Value="{DynamicResource EditorListPadding}"/>
                                 <!-- 以前はここでMarkerStyle=Circle/Squareの時だけList.FontSizeを
                                      小さくして、2段目以降の記号（○）をTyporaのように小さく
                                      見せていた。しかし、あるListItemが「自分の段落」と「さらに
@@ -331,12 +363,17 @@
                                      WPF既定の大きさに戻している。 -->
                                 <Style.Triggers>
                                     <Trigger Property="MarkerStyle" Value="Decimal">
-                                        <Setter Property="Padding" Value="34,0,0,0"/>
+                                        <Setter Property="Padding" Value="{DynamicResource EditorDecimalListPadding}"/>
                                     </Trigger>
                                 </Style.Triggers>
                             </Style>
                             <Style TargetType="ListItem">
                                 <Setter Property="Margin" Value="{DynamicResource EditorListItemSpacing}"/>
+                            </Style>
+                            <!-- 表示スタイルが VSCodeスタイルの時はエディタの線をくっきり描く（MainWindow.ApplyDocStyle）が、
+                                 スクロールバーは今までどおりなめらかに描く。 -->
+                            <Style TargetType="ScrollBar">
+                                <Setter Property="RenderOptions.EdgeMode" Value="Unspecified"/>
                             </Style>
                             <Style TargetType="Table">
                                 <Setter Property="Margin" Value="{DynamicResource EditorListSpacing}"/>
@@ -425,7 +462,7 @@
                              VerticalScrollBarVisibility="Auto"
                              TextChanged="SourceEditorTextChanged">
                         <TextBox.ContextMenu>
-                            <ContextMenu>
+                            <ContextMenu x:Name="m_sourceEditorContextMenu">
                                 <MenuItem Header="ページトップに戻る" Click="ScrollToPageTopClick"/>
                                 <MenuItem Header="Markdownモードに切り替え" Click="ToggleModeBtnClick"/>
                             </ContextMenu>

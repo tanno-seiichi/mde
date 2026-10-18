@@ -23,6 +23,9 @@ namespace mde
         public bool FolderPaneVisible { get; set; } = false;
         public double FolderPaneWidth { get; set; } = 200;
         public bool OutlinePaneVisible { get; set; } = false;
+
+        /// <summary>メニュー「表示」→「ステータスバーを表示」の状態。既定は true（表示する）。</summary>
+        public bool StatusBarVisible { get; set; } = true;
         public double OutlinePaneWidth { get; set; } = 200;
         public double ZoomLevel { get; set; } = 1.0;
         public bool RequireCtrlForLinkClickFlg { get; set; } = true;
@@ -42,6 +45,10 @@ namespace mde
         /// <summary>メニュー「表示」→「文字の色」の選択状態。falseなら「くっきりした色」（本文は黒。既定）、
         /// trueなら「目にやさしい色」（本文は少し薄い灰色、リンクも少し薄い青）。既定はfalse。</summary>
         public bool SoftTextColorFlg { get; set; } = false;
+
+        /// <summary>メニュー「表示」→「表示スタイル」の選択状態。falseなら「GitHubスタイル」（今までの見た目。既定）、
+        /// trueなら「VSCodeスタイル」（Visual Studio Code のプレビューに似せた見た目）。既定はfalse。</summary>
+        public bool UseVsCodeStyleFlg { get; set; } = false;
 
         /// <summary>メニュー「表示」→「列幅を補正する」のチェック状態（表全体の列幅機能の
         /// マスタースイッチ）。オンなら、明示的に調整済みの表はその比率で、未調整の表は内容量

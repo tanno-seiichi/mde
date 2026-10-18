@@ -80,7 +80,6 @@ namespace mde.editor
             this.m_imageManager = a_imageManager;
         }
 
-        private static readonly Brush m_headerBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
         private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
 
         // ---------------- セル間の矢印キー移動 ----------------
@@ -251,12 +250,12 @@ namespace mde.editor
                 // 避けるため、セル内の段落をページ内で分割させない。
                 // LineHeight=double.NaN: 行間設定を継承せず常に自然な高さで表示する
                 // （このファイル内の他のTableCell生成箇所も同様）。
-                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = BlockStyles.TableCellLineHeight, KeepTogether = true })
                 {
                     FontWeight = FontWeights.Bold,
-                    Background = m_headerBackground,
+                    Background = BlockStyles.TableHeaderBackground,
                     // 罫線は、表を組み立て終えた後にApplyTableCellBordersでまとめて設定する。
-                    Padding = new Thickness(8, 6, 8, 6)
+                    Padding = BlockStyles.TableCellPadding
                 };
                 headerRow.Cells.Add(cell);
             }
@@ -267,10 +266,10 @@ namespace mde.editor
                 var row = new TableRow();
                 for (int c = 0; c < a_cols; c++)
                 {
-                    var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
+                    var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = BlockStyles.TableCellLineHeight, KeepTogether = true })
                     {
                         // 罫線は、表を組み立て終えた後にApplyTableCellBordersでまとめて設定する。
-                        Padding = new Thickness(8, 6, 8, 6)
+                        Padding = BlockStyles.TableCellPadding
                     };
                     row.Cells.Add(cell);
                 }
@@ -327,11 +326,11 @@ namespace mde.editor
             var newRow = new TableRow();
             for (int c = 0; c < colCount; c++)
             {
-                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = BlockStyles.TableCellLineHeight, KeepTogether = true })
                 {
                     // 罫線は挿入後にApplyTableCellBordersで設定し直す
                     // （最上段への挿入で上辺罫線の対象セルが変わるため）。
-                    Padding = new Thickness(8, 6, 8, 6)
+                    Padding = BlockStyles.TableCellPadding
                 };
                 newRow.Cells.Add(cell);
             }
@@ -385,16 +384,16 @@ namespace mde.editor
             for (int r = 0; r < rows.Count; r++)
             {
                 var targetRow = rows[r];
-                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = double.NaN, KeepTogether = true })
+                var cell = new TableCell(new Paragraph { Margin = new Thickness(0), LineHeight = BlockStyles.TableCellLineHeight, KeepTogether = true })
                 {
                     // 罫線は挿入後にApplyTableCellBordersで設定し直す
                     // （最左列への挿入で左辺罫線の対象セルが変わるため）。
-                    Padding = new Thickness(8, 6, 8, 6)
+                    Padding = BlockStyles.TableCellPadding
                 };
                 if (0 == r)
                 {
                     cell.FontWeight = FontWeights.Bold;
-                    cell.Background = m_headerBackground;
+                    cell.Background = BlockStyles.TableHeaderBackground;
                 }
 
                 int idxInRow = Math.Min(insertIdx, targetRow.Cells.Count);
@@ -1127,15 +1126,15 @@ namespace mde.editor
                 for (int c = 0; c < colCount; c++)
                 {
                     string text = c < a_rows[r].Count ? a_rows[r][c] : "";
-                    var cell = new TableCell(new Paragraph(new Run(text)) { LineHeight = double.NaN, KeepTogether = true })
+                    var cell = new TableCell(new Paragraph(new Run(text)) { LineHeight = BlockStyles.TableCellLineHeight, KeepTogether = true })
                     {
                         // 罫線は、表を組み立て終えた後にApplyTableCellBordersでまとめて設定する。
-                        Padding = new Thickness(8, 6, 8, 6)
+                        Padding = BlockStyles.TableCellPadding
                     };
                     if (0 == r)
                     {
                         cell.FontWeight = FontWeights.Bold;
-                        cell.Background = m_headerBackground;
+                        cell.Background = BlockStyles.TableHeaderBackground;
                     }
                     row.Cells.Add(cell);
                 }

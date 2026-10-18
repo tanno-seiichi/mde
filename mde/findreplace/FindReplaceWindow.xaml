@@ -8,7 +8,7 @@
         ResizeMode="CanResizeWithGrip"
         FontFamily="Yu Gothic UI, Meiryo UI, Segoe UI"
         FontSize="12"
-        Background="{StaticResource PaperBrush}"
+        Background="#FFFFFF"
         PreviewKeyDown="FindReplaceWindowPreviewKeyDown">
     <!-- 部品（ボタン・入力欄・チェックボックス等）の見た目は、Windows のメッセージボックスと統一感が出るよう、
          Windows 11 風のもの（dialog\DialogStyles.xaml）にする。ボタンの間隔・幅は各ボタンに直接書く
@@ -16,7 +16,7 @@
     <Window.Resources>
         <ResourceDictionary Source="/mde;component/dialog/DialogStyles.xaml"/>
     </Window.Resources>
-    <StackPanel Margin="22,22,22,20">
+    <StackPanel Margin="22,22,22,0">
 
         <TextBlock Text="検索する文字列" Margin="0,0,0,0"/>
         <TextBox x:Name="m_searchBox" Padding="6,4" Margin="0,4,0,12" FontFamily="Consolas"/>
@@ -48,19 +48,19 @@
         </WrapPanel>
 
         <TextBlock x:Name="m_statusText" Margin="0,14,0,0" TextWrapping="Wrap" FontSize="12"
-                   Foreground="{StaticResource InkSoftBrush}"/>
+                   Foreground="#666666"/>
 
-        <ListBox x:Name="m_resultsList" Margin="0,8,0,0" MaxHeight="500" Visibility="Collapsed"
+        <ListBox x:Name="m_resultsList" Margin="0,8,0,20" MaxHeight="500" Visibility="Collapsed"
                  MouseDoubleClick="ResultsListMouseDoubleClick" FontFamily="Consolas" FontSize="12"/>
 
         <!-- Step-by-step (one match at a time) session panel -->
         <Border x:Name="m_stepPanel" Visibility="Collapsed" Margin="0,14,0,0" Padding="14"
-                Background="{StaticResource AccentSoftBrush}" CornerRadius="8">
+                Background="#EEF4FB" BorderBrush="#C8DCF0" BorderThickness="1" CornerRadius="4">
             <StackPanel>
                 <TextBlock x:Name="m_stepFileText" FontSize="11" FontFamily="Consolas"
-                           Foreground="{StaticResource AccentBrush}" Margin="0,0,0,6" TextWrapping="Wrap"/>
+                           Foreground="#0B62C4" Margin="0,0,0,6" TextWrapping="Wrap"/>
                 <TextBlock x:Name="m_stepContextText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"
-                           Foreground="{StaticResource InkBrush}" Margin="0,0,0,12"/>
+                           Foreground="#1C1C1C" Margin="0,0,0,12"/>
                 <WrapPanel>
                     <Button Content="置換" MinWidth="80" Margin="0,0,8,8" Click="StepReplaceOneClick"/>
                     <Button Content="スキップ" MinWidth="80" Margin="0,0,8,8" Click="StepSkipClick"/>

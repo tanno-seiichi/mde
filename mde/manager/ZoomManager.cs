@@ -16,6 +16,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using mde.common;
 
 namespace mde.manager
 {
@@ -28,6 +29,10 @@ namespace mde.manager
         private readonly RichTextBox m_editor;
         private readonly TextBox m_sourceEditor;
         private readonly Button m_zoomLabelBtn;
+
+        /// <summary>ズーム倍率の下限・上限（SetZoomで丸める範囲。メニュー「表示」の拡大・縮小を選べるかの判定にも使う）。</summary>
+        public const double MIN_ZOOM_LEVEL = 0.5;
+        public const double MAX_ZOOM_LEVEL = 2.5;
 
         /// <summary>エディタに適用中のズーム倍率（1.0が100%）。</summary>
         private double m_zoomLevel;
@@ -73,9 +78,9 @@ namespace mde.manager
         /// <param name="a_value">新しいズーム倍率（1.0が100%）。妥当な範囲に丸められる。</param>
         public void SetZoom(double a_value)
         {
-            m_zoomLevel = Math.Max(0.5, Math.Min(2.5, Math.Round(a_value, 2)));
+            m_zoomLevel = Math.Max(MIN_ZOOM_LEVEL, Math.Min(MAX_ZOOM_LEVEL, Math.Round(a_value, 2)));
             m_editor.LayoutTransform = new ScaleTransform(m_zoomLevel, m_zoomLevel);
-            m_sourceEditor.FontSize = 16 * m_zoomLevel;
+            m_sourceEditor.FontSize = BlockStyles.BodyFontSize * m_zoomLevel;
             m_zoomLabelBtn.Content = Math.Round(m_zoomLevel * 100) + "%";
         }
     }

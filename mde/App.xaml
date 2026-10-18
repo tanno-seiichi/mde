@@ -3,6 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
+        <ResourceDictionary>
+        <!-- メニューの見た目（mdew と同じ。MenuStyles.xaml） -->
+        <ResourceDictionary.MergedDictionaries>
+            <ResourceDictionary Source="MenuStyles.xaml"/>
+        </ResourceDictionary.MergedDictionaries>
 
         <SolidColorBrush x:Key="PaperBrush" Color="#FAF9F5"/>
         <SolidColorBrush x:Key="CardBrush" Color="#FFFFFF"/>
@@ -114,5 +119,6 @@
             </Setter>
         </Style>
 
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

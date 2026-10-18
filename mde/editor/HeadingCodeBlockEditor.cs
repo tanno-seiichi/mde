@@ -214,7 +214,7 @@ namespace mde.editor
                 // のa_isLastLineと対応）。bottomMarginと同じく、既存の状態をそのまま引き継ぐ。
                 bool wasLastLineFlg = a_nextContinuationPara.Padding.Bottom > 0;
                 BlockStyles.ApplyQuoteStyle(a_nextContinuationPara, true, wasLastLineFlg);
-                a_nextContinuationPara.Margin = new Thickness(0, 4, 0, bottomMargin);
+                a_nextContinuationPara.Margin = new Thickness(0, BlockStyles.QuoteTopMargin, 0, bottomMargin);
                 m_editor.Document.Blocks.Remove(a_emptyQuotePara);
                 m_editor.CaretPosition = a_nextContinuationPara.ContentStart;
             });

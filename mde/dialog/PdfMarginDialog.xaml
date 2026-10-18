@@ -8,7 +8,7 @@
         ResizeMode="NoResize"
         FontFamily="Yu Gothic UI, Meiryo UI, Segoe UI"
         FontSize="12"
-        Background="{StaticResource PaperBrush}">
+        Background="#FFFFFF">
     <!-- 部品（ボタン・入力欄・チェックボックス等）の見た目は、Windows のメッセージボックスと統一感が出るよう、
          Windows 11 風のもの（dialog\DialogStyles.xaml）にする。ボタンの間隔・幅は各ボタンに直接書く
          （ここにボタンの Style を足して BasedOn で引き継ごうとすると、WPF の既定の見た目を引き継いでしまうため） -->
@@ -17,22 +17,22 @@
     </Window.Resources>
     <StackPanel Margin="22">
         <TextBlock Text="PDFに書き出す際の、上下左右の余白（px）を設定してください" Margin="0,0,0,16"
-                   Foreground="{StaticResource InkBrush}" FontWeight="Bold" TextWrapping="Wrap"/>
+                   Foreground="#1C1C1C" FontWeight="Bold" TextWrapping="Wrap"/>
 
         <TextBlock Text="上の余白" Margin="0,0,0,4"
-                   Foreground="{StaticResource InkSoftBrush}" FontSize="12"/>
+                   Foreground="#555555" FontSize="12"/>
         <TextBox x:Name="m_topBox" Margin="0,0,0,14" Padding="6,4"/>
 
         <TextBlock Text="下の余白" Margin="0,0,0,4"
-                   Foreground="{StaticResource InkSoftBrush}" FontSize="12"/>
+                   Foreground="#555555" FontSize="12"/>
         <TextBox x:Name="m_bottomBox" Margin="0,0,0,14" Padding="6,4"/>
 
         <TextBlock Text="左の余白" Margin="0,0,0,4"
-                   Foreground="{StaticResource InkSoftBrush}" FontSize="12"/>
+                   Foreground="#555555" FontSize="12"/>
         <TextBox x:Name="m_leftBox" Margin="0,0,0,14" Padding="6,4"/>
 
         <TextBlock Text="右の余白" Margin="0,0,0,4"
-                   Foreground="{StaticResource InkSoftBrush}" FontSize="12"/>
+                   Foreground="#555555" FontSize="12"/>
         <TextBox x:Name="m_rightBox" Margin="0,0,0,22" Padding="6,4"/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

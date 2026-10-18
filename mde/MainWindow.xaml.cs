@@ -84,6 +84,9 @@ namespace mde
         /// <summary>エディタのズーム倍率の管理役。現在の倍率はm_zoomManager.ZoomLevelで
         /// 参照できる（設定の保存時に使用）。</summary>
         private ZoomManager m_zoomManager;
+
+        /// <summary>VSCodeスタイルの時、リンクにマウスを乗せている間だけ下線を表示する（ApplyDocStyle で有効・無効を切り替える）。</summary>
+        private LinkHoverUnderline m_linkHoverUnderline;
         private bool m_requireCtrlForLinkClickFlg = true;
 
         /// <summary>段落中の途中改行（空行を伴わない、ソース上の単純な改行）を、そのまま
@@ -113,6 +116,14 @@ namespace mde
         /// <summary>メニュー「表示」→「文字の色」の設定。falseなら「くっきりした色」（既定）、trueなら
         /// 「目にやさしい色」。詳細はApplyTextColor参照。</summary>
         private bool m_softTextColorFlg = false;
+
+        /// <summary>メニュー「表示」→「表示スタイル」の設定。falseなら「GitHubスタイル」（既定）、trueなら
+        /// 「VSCodeスタイル」。詳細はSetVsCodeStyleFlg・ApplyDocStyle参照。</summary>
+        private bool m_vsCodeStyleFlg = false;
+
+        /// <summary>ウィンドウを閉じる時（WindowClosing）に取得した「元の大きさ」の位置・サイズ
+        /// （GetNormalWindowBounds参照）。OnClosed で設定に保存する。</summary>
+        private Rect? m_normalBoundsAtClosing = null;
 
         /// <summary>PDF書き出し時の、上下左右の余白（px）。メニュー「PDFの余白を設定…」で
         /// 変更でき、次回起動時にも復元される。既定値はAppSettingsのものと揃えてある。</summary>
@@ -155,6 +166,9 @@ namespace mde
         private double m_lastOutlineColumnWidth = 210;
         private bool m_folderPaneVisibleFlg = false;
         private bool m_outlinePaneVisibleFlg = false;
+
+        /// <summary>ステータスバーを表示しているか（メニュー「表示」→「ステータスバーを表示」）。</summary>
+        private bool m_statusBarVisibleFlg = true;
 
         // 右クリック時の対象（表・コードブロックまわりはTableEditor/InlineStyleEditorに
         // それぞれ専用のプロパティがあるので、ここではまだどのクラスにも属さないものだけを保持する）
@@ -245,15 +259,18 @@ namespace mde
             }
 
             m_zoomManager = new ZoomManager(m_editor, m_sourceEditor, m_zoomLabelBtn, m_savedSettings.ZoomLevel);
+            m_linkHoverUnderline = new LinkHoverUnderline(m_editor);
             m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
             m_preserveSourceLineBreaksFlg = m_savedSettings.PreserveSourceLineBreaksFlg;
             m_correctColumnWidthsFlg = m_savedSettings.CorrectColumnWidthsFlg;
             m_correctColumnWidthsMenuItem.IsChecked = m_correctColumnWidthsFlg;
             m_uniformMarkerStyleFlg = m_savedSettings.UniformMarkerStyleFlg;
             m_useLegacyFontFlg = m_savedSettings.UseLegacyFontFlg;
-            ApplyEditorFontFamily(m_useLegacyFontFlg);
             m_softTextColorFlg = m_savedSettings.SoftTextColorFlg;
-            ApplyTextColor(m_softTextColorFlg);
+            m_vsCodeStyleFlg = m_savedSettings.UseVsCodeStyleFlg;
+            // 表示スタイルに合わせて、表示フォント・文字の色・行の間隔等をまとめて反映する（文書を
+            // 読み込む前に BlockStyles.VsCodeStyleFlg を設定しておく必要がある）。
+            ApplyDocStyle();
             m_debugLogMenuItem.IsChecked = m_savedSettings.DebugLogEnabledFlg;
             DebugLogger.SetEnabled(m_savedSettings.DebugLogEnabledFlg);
             m_pdfMarginTop = m_savedSettings.PdfMarginTop > 0 ? m_savedSettings.PdfMarginTop : 64;
@@ -270,8 +287,11 @@ namespace mde
             UpdateMarkerStyleMenuChecks();
             UpdateFontModeMenuChecks();
             UpdateTextColorMenuChecks();
+            UpdateDocStyleMenuChecks();
             m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
             m_outlinePaneVisibleFlg = m_savedSettings.OutlinePaneVisible;
+            m_statusBarVisibleFlg = m_savedSettings.StatusBarVisible;
+            m_statusBar.Visibility = m_statusBarVisibleFlg ? Visibility.Visible : Visibility.Collapsed;
             if (m_savedSettings.FolderPaneWidth > 0)
             {
                 m_lastFolderColumnWidth = m_savedSettings.FolderPaneWidth;
@@ -524,6 +544,78 @@ namespace mde
         }
 
         /// <summary>
+        /// ウィンドウの「元の大きさ」の位置・サイズ（最大化・最小化・画面の端へのスナップ・ディスプレイの高さ
+        /// いっぱいへの拡大をする前の位置・サイズ）を、WPFの座標（論理単位）で返す。スナップした状態では
+        /// Left/Top/Width/Height がスナップ後の位置・サイズになっているため、Win32 の GetWindowPlacement の
+        /// rcNormalPosition を使う。rcNormalPosition は、ウィンドウがあるモニターの作業領域（タスクバーを
+        /// 除いた領域）を基準にした座標なので、画面の座標に直してから論理単位に変換する。
+        /// </summary>
+        /// <returns>位置・サイズ。取得できなかった場合は null。</returns>
+        private Rect? GetNormalWindowBounds()
+        {
+            IntPtr hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            var placement = new WindowPlacement { m_length = Marshal.SizeOf<WindowPlacement>() };
+            if (IntPtr.Zero == hwnd ||
+                !GetWindowPlacement(hwnd, ref placement))
+            {
+                return null;
+            }
+            Rect32 r = placement.m_rcNormalPosition;
+            if (r.m_right - r.m_left <= 0 ||
+                r.m_bottom - r.m_top <= 0)
+            {
+                return null;
+            }
+            // 作業領域を基準にした座標 → 画面の座標
+            int offsetX = 0;
+            int offsetY = 0;
+            var monitorInfo = new MonitorInfo { m_cbSize = Marshal.SizeOf<MonitorInfo>() };
+            IntPtr hMonitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            if (IntPtr.Zero != hMonitor &&
+                GetMonitorInfo(hMonitor, ref monitorInfo))
+            {
+                offsetX = monitorInfo.m_rcWork.m_left - monitorInfo.m_rcMonitor.m_left;
+                offsetY = monitorInfo.m_rcWork.m_top - monitorInfo.m_rcMonitor.m_top;
+            }
+            // 画面の座標（ピクセル） → WPFの座標（論理単位）
+            Matrix fromDevice = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
+            Point topLeft = fromDevice.Transform(new Point(r.m_left + offsetX, r.m_top + offsetY));
+            Point bottomRight = fromDevice.Transform(new Point(r.m_right + offsetX, r.m_bottom + offsetY));
+            return new Rect(topLeft, bottomRight);
+        }
+
+        /// <summary>Win32 API GetWindowPlacement（ウィンドウの表示状態と「元の大きさ」の位置・サイズを取得）。</summary>
+        /// <param name="a_hWnd">ウィンドウのハンドル。</param>
+        /// <param name="a_lpwndpl">結果を受け取る WINDOWPLACEMENT 構造体（m_length を設定しておくこと）。</param>
+        /// <returns>成功した場合は true。</returns>
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowPlacement(IntPtr a_hWnd, ref WindowPlacement a_lpwndpl);
+
+        /// <summary>Win32 API MonitorFromWindow（ウィンドウがあるモニターのハンドルを取得）。</summary>
+        /// <param name="a_hWnd">ウィンドウのハンドル。</param>
+        /// <param name="a_dwFlags">ウィンドウがどのモニターにも重なっていない場合の扱い。</param>
+        /// <returns>モニターのハンドル。</returns>
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromWindow(IntPtr a_hWnd, uint a_dwFlags);
+
+        /// <summary>MonitorFromWindow：いちばん近いモニターを返す。</summary>
+        private const uint MONITOR_DEFAULTTONEAREST = 2;
+
+        /// <summary>Windows WINDOWPLACEMENT 構造体 (P/Invoke 用)。</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct WindowPlacement
+        {
+            public int m_length;
+            public int m_flags;
+            public int m_showCmd;
+            public int m_ptMinPositionX;
+            public int m_ptMinPositionY;
+            public int m_ptMaxPositionX;
+            public int m_ptMaxPositionY;
+            public Rect32 m_rcNormalPosition;
+        }
+
+        /// <summary>
         /// Win32 API EnumDisplayMonitors をラップする P/Invoke 宣言。
         /// すべてのディスプレイモニターにつき、コールバック関数を呼び出します。
         /// </summary>
@@ -613,6 +705,9 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void WindowClosing(object a_sender, System.ComponentModel.CancelEventArgs a_args)
         {
+            // 次回起動時に復元する「元の大きさ」の位置・サイズは、ここ（ウィンドウがまだ破棄されていない
+            // 時点）で取得しておく。OnClosed の時点ではウィンドウのハンドルが既に破棄されていて取得できない。
+            m_normalBoundsAtClosing = GetNormalWindowBounds();
             if (!m_currentFileIsDirtyFlg && 0 == m_pendingFileEdits.Count)
             {
                 return;
@@ -711,7 +806,11 @@ namespace mde
             }
 
             bool maximizedFlg = this.WindowState == WindowState.Maximized;
-            Rect bounds = maximizedFlg ? this.RestoreBounds : new Rect(this.Left, this.Top, this.Width, this.Height);
+            // 保存する位置・サイズは「元の大きさ」（最大化・スナップする前の位置・サイズ）にする。画面の端へ
+            // スナップした状態や、ディスプレイの高さいっぱいに広げた状態で閉じた場合も、次回はスナップする前の
+            // 位置・サイズで開く（mdew と同じ）。取得できない場合は今までどおり。
+            Rect bounds = m_normalBoundsAtClosing
+                ?? (maximizedFlg ? this.RestoreBounds : new Rect(this.Left, this.Top, this.Width, this.Height));
             // 表示中のペインについては、その時点の実際の幅（スプリッタでドラッグ調整された
             // 最新の値）を保存する。非表示のペインについては、直前に表示していた時の幅を使う。
             double folderWidthToSave = (m_folderPaneVisibleFlg && m_folderColumnDef.Width.Value > 0)
@@ -728,6 +827,7 @@ namespace mde
                 WindowTop = bounds.Y,
                 FolderPaneVisible = m_folderPaneVisibleFlg,
                 OutlinePaneVisible = m_outlinePaneVisibleFlg,
+                StatusBarVisible = m_statusBarVisibleFlg,
                 FolderPaneWidth = folderWidthToSave,
                 OutlinePaneWidth = outlineWidthToSave,
                 ZoomLevel = m_zoomManager.ZoomLevel,
@@ -737,6 +837,7 @@ namespace mde
                 UniformMarkerStyleFlg = m_uniformMarkerStyleFlg,
                 UseLegacyFontFlg = m_useLegacyFontFlg,
                 SoftTextColorFlg = m_softTextColorFlg,
+                UseVsCodeStyleFlg = m_vsCodeStyleFlg,
                 DebugLogEnabledFlg = DebugLogger.IsEnabled,
                 PdfMarginTop = m_pdfMarginTop,
                 PdfMarginBottom = m_pdfMarginBottom,
@@ -2669,6 +2770,26 @@ namespace mde
                 a_args.Handled = true;
                 m_findReplaceLauncher.Open();
             }
+            // 表示倍率（mdew と同じ）：Ctrl++（日本語キーボードの Ctrl+; も。Shift の有無は問わない）・Ctrl+-・Ctrl+0
+            // （テンキーも）。Ctrl+= 等は RichTextBox の下付き・上付き文字の切り替えに割り当てられているが、mde では使わない。
+            else if ((a_args.Key == Key.OemPlus || a_args.Key == Key.Add) &&
+                     (Keyboard.Modifiers == ModifierKeys.Control || Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift)))
+            {
+                a_args.Handled = true;
+                m_zoomManager.ZoomInClick(a_sender, null);
+            }
+            else if ((a_args.Key == Key.OemMinus || a_args.Key == Key.Subtract) &&
+                     Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                a_args.Handled = true;
+                m_zoomManager.ZoomOutClick(a_sender, null);
+            }
+            else if ((a_args.Key == Key.D0 || a_args.Key == Key.NumPad0) &&
+                     Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                a_args.Handled = true;
+                m_zoomManager.ZoomResetClick(a_sender, null);
+            }
             // Ctrl+Nは「新規作成」のショートカットとして扱う（Windows標準のCtrl+Nは「新しいウィンドウ」なので、そちらは無効化する）。
             else if (a_args.Key == Key.N &&
                      Keyboard.Modifiers == ModifierKeys.Control)
@@ -3054,7 +3175,11 @@ namespace mde
         /// <param name="a_useLegacyFontFlg">true＝以前のフォント、false＝既定の新しいフォント。</param>
         private void ApplyEditorFontFamily(bool a_useLegacyFontFlg)
         {
-            var fontFamily = a_useLegacyFontFlg
+            // VSCodeスタイルの時は「表示フォント」の設定によらず VSCodeスタイルのフォントを使う
+            // （「表示フォント」メニューは使えなくなる。ApplyDocStyle参照）。
+            var fontFamily = BlockStyles.VsCodeStyleFlg
+                ? BlockStyles.VsCodeEditorFontFamily
+                : a_useLegacyFontFlg
                 ? BlockStyles.LegacyEditorFontFamily
                 : BlockStyles.DefaultEditorFontFamily;
             Resources["EditorFontFamily"] = fontFamily;
@@ -3092,7 +3217,8 @@ namespace mde
         /// リンクは #0969DA（今までどおり）。「目にやさしい色」は本文・ソースモードとも少し薄い灰色（#333333）、
         /// リンクも少し薄い青（#4183C4）。本文の文字は RichTextBox の Foreground を継承しているので、ここを変えると
         /// 即座に変わる。リンクは、すべてのリンクで共有しているブラシ（MarkdownConverter.LinkBrush）の色を変える。
-        /// 引用の文字（灰色）・メニュー等の画面の部品の文字は変えない。</summary>
+        /// 引用の文字（灰色）・メニュー等の画面の部品の文字は変えない。VSCodeスタイルの時のリンクは、文字の色の
+        /// 設定によらず #006AB1（mdew と同じ）。</summary>
         /// <param name="a_softFlg">true＝目にやさしい色、false＝くっきりした色。</param>
         private void ApplyTextColor(bool a_softFlg)
         {
@@ -3100,7 +3226,131 @@ namespace mde
             textBrush.Freeze();
             m_editor.Foreground = textBrush;
             m_sourceEditor.Foreground = textBrush;
-            MarkdownConverter.LinkBrush.Color = a_softFlg ? Color.FromRgb(0x41, 0x83, 0xC4) : Color.FromRgb(0x09, 0x69, 0xDA);
+            // メニュー（メニューバーのメニュー・右クリックのメニュー）の文字の色も合わせる（mdew と同じ。MenuStyles.xaml の
+            // MenuText）。右クリックのメニューはウィンドウの外に開くため、メニュー自身にも設定する。
+            var menuTextBrush = new SolidColorBrush(a_softFlg ? Color.FromRgb(0x33, 0x33, 0x33) : Color.FromRgb(0x1C, 0x1C, 0x1C));
+            menuTextBrush.Freeze();
+            Resources["MenuText"] = menuTextBrush;
+            m_editorContextMenu.Resources["MenuText"] = menuTextBrush;
+            m_sourceEditorContextMenu.Resources["MenuText"] = menuTextBrush;
+            MarkdownConverter.LinkBrush.Color = BlockStyles.VsCodeStyleFlg
+                ? Color.FromRgb(0x00, 0x6A, 0xB1)
+                : a_softFlg ? Color.FromRgb(0x41, 0x83, 0xC4) : Color.FromRgb(0x09, 0x69, 0xDA);
+        }
+
+        /// <summary>メニュー「表示」→「表示スタイル」→「GitHubスタイル」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void DocStyleGithubChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            SetVsCodeStyleFlg(false);
+        }
+
+        /// <summary>メニュー「表示」→「表示スタイル」→「VSCodeスタイル」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void DocStyleVsCodeChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            SetVsCodeStyleFlg(true);
+        }
+
+        /// <summary>表示スタイルを切り替える。見出し・コードブロック・表等の見た目は段落やRunを作る時に
+        /// 決まる（BlockStyles.VsCodeStyleFlg 参照）ため、表示フォントの切り替え（SetUseLegacyFontFlg）と
+        /// 同じ方法で、現在の文書をいったんMarkdownへ変換し、スタイルを切り替えた上で解析し直す。</summary>
+        /// <param name="a_value">true＝VSCodeスタイル、false＝GitHubスタイル。</param>
+        private void SetVsCodeStyleFlg(bool a_value)
+        {
+            if (m_vsCodeStyleFlg != a_value)
+            {
+                if (m_isSourceModeFlg)
+                {
+                    // ソースモードの時は、Markdownモードへ戻る時に新しいスタイルで文書が作られる。
+                    m_vsCodeStyleFlg = a_value;
+                    ApplyDocStyle();
+                }
+                else
+                {
+                    string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
+                    m_vsCodeStyleFlg = a_value;
+                    ApplyDocStyle();
+                    RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
+                    m_outlineManager.Refresh();
+                    m_editor.CaretPosition = m_editor.Document.ContentStart;
+                }
+                // ソースモードの文字の大きさ（本文と同じ）も表示倍率を掛けて付け直す。
+                m_zoomManager.ApplyCurrentZoomLevel();
+            }
+            UpdateDocStyleMenuChecks();
+        }
+
+        /// <summary>メニュー「表示」を開いた時：フォルダ・アウトラインの表示、ソースモードの ✓ と、表示倍率の見出し・
+        /// 拡大／縮小／100%に戻すの選べる・選べないを、今の状態に合わせる（ステータスバーのボタンや Ctrl+マウスホイール
+        /// でも変わるため、開くたびに合わせる。mdew と同じ）。</summary>
+        /// <param name="a_sender">メニュー「表示」。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void ViewMenuSubmenuOpened(object a_sender, RoutedEventArgs a_args)
+        {
+            if (!ReferenceEquals(a_sender, a_args.OriginalSource))
+            {
+                return;
+            }
+            m_viewFolderPaneMenuItem.IsChecked = m_folderPaneVisibleFlg;
+            m_viewOutlinePaneMenuItem.IsChecked = m_outlinePaneVisibleFlg;
+            m_viewStatusBarMenuItem.IsChecked = m_statusBarVisibleFlg;
+            m_viewSourceModeMenuItem.IsChecked = m_isSourceModeFlg;
+            double zoomLevel = m_zoomManager.ZoomLevel;
+            m_viewZoomHeadingMenuItem.Header = "表示倍率：" + Math.Round(zoomLevel * 100) + "%";
+            m_viewZoomInMenuItem.IsEnabled = zoomLevel < ZoomManager.MAX_ZOOM_LEVEL;
+            m_viewZoomOutMenuItem.IsEnabled = zoomLevel > ZoomManager.MIN_ZOOM_LEVEL;
+            m_viewZoomResetMenuItem.IsEnabled = 1.0 != zoomLevel;
+        }
+
+        /// <summary>メニュー「表示」→「ステータスバーを表示」：ステータスバーの表示・非表示を切り替える（mdew と同じ。
+        /// 次回起動時も同じにする）。非表示の間も、ペインの表示・ソースモード・表示倍率はメニュー「表示」で切り替えられる。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void ToggleStatusBarClick(object a_sender, RoutedEventArgs a_args)
+        {
+            m_statusBarVisibleFlg = !m_statusBarVisibleFlg;
+            m_statusBar.Visibility = m_statusBarVisibleFlg ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        /// <summary>「表示スタイル」メニューの2項目を、現在の設定に合わせてラジオボタンのように片方だけチェック状態にする。</summary>
+        private void UpdateDocStyleMenuChecks()
+        {
+            m_docStyleGithubMenuItem.IsChecked = !m_vsCodeStyleFlg;
+            m_docStyleVsCodeMenuItem.IsChecked = m_vsCodeStyleFlg;
+        }
+
+        /// <summary>表示スタイル（m_vsCodeStyleFlg）を、BlockStylesと、行の間隔・余白のDynamicResource
+        /// （MainWindow.xamlのWindow.Resources）・本文の文字の大きさ・表示フォント・リンクの色へ反映する。
+        /// 既に作られている段落の見た目（見出し・コードブロック等）は変わらないため、切り替え時は
+        /// SetVsCodeStyleFlgが文書を作り直す。</summary>
+        private void ApplyDocStyle()
+        {
+            BlockStyles.VsCodeStyleFlg = m_vsCodeStyleFlg;
+            Resources["EditorLineHeight"] = BlockStyles.BodyLineHeight;
+            Resources["EditorListLineHeight"] = BlockStyles.ListLineHeight;
+            Resources["EditorListItemSpacing"] = new Thickness(0, BlockStyles.ListItemSpacing, 0, 0);
+            Resources["EditorBlockSpacing"] = new Thickness(0, 0, 0, BlockStyles.ParagraphBottomSpacing);
+            Resources["EditorListSpacing"] = new Thickness(0, 0, 0, BlockStyles.ListBottomSpacing);
+            Resources["EditorListPadding"] = new Thickness(BlockStyles.ListIndent, 0, 0, 0);
+            Resources["EditorDecimalListPadding"] = new Thickness(BlockStyles.DecimalListIndent, 0, 0, 0);
+            m_editor.FontSize = BlockStyles.BodyFontSize;
+            ApplyEditorFontFamily(m_useLegacyFontFlg);
+            ApplyTextColor(m_softTextColorFlg);
+            // VSCodeスタイルのフォントは決まっているので、「表示フォント」は選べなくする。
+            // VSCodeスタイルのリンクは、ふだんは下線なしで、マウスを乗せた時だけ下線を表示する（mdew と同じ）
+            m_linkHoverUnderline.Enabled = m_vsCodeStyleFlg;
+            m_fontModeNewMenuItem.IsEnabled = !m_vsCodeStyleFlg;
+            m_fontModeLegacyMenuItem.IsEnabled = !m_vsCodeStyleFlg;
+            // VSCodeスタイルの罫線（表の見出しの行の下の黒い線など、1px の線）は、行の位置が画面の
+            // ピクセルの境目にかかると、なめらかに描く処理で2ピクセルにまたがって描かれ、太く見える。
+            // VSCodeスタイルの時だけ、線や枠をピクセルに合わせてくっきり描く（文字の描き方は変わらない）。
+            // GitHubスタイルは見出しの下線に 1px 未満の太さを使っていて、くっきり描くと消えることがあるため、
+            // 今までどおりにする。スクロールバー・タスクリストのチェックボックスは対象外にしてある
+            // （MainWindow.xaml の RichTextBox.Resources、BlockStyles.CreateTaskCheckbox 参照）。
+            RenderOptions.SetEdgeMode(m_editor, m_vsCodeStyleFlg ? EdgeMode.Aliased : EdgeMode.Unspecified);
         }
 
         // ======================================================================

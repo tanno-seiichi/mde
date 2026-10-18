@@ -8,7 +8,7 @@
         ResizeMode="NoResize"
         FontFamily="Yu Gothic UI, Meiryo UI, Segoe UI"
         FontSize="12"
-        Background="{StaticResource PaperBrush}">
+        Background="#FFFFFF">
     <!-- 部品（ボタン・入力欄・チェックボックス等）の見た目は、Windows のメッセージボックスと統一感が出るよう、
          Windows 11 風のもの（dialog\DialogStyles.xaml）にする。ボタンの間隔・幅は各ボタンに直接書く
          （ここにボタンの Style を足して BasedOn で引き継ごうとすると、WPF の既定の見た目を引き継いでしまうため） -->
@@ -18,14 +18,14 @@
     <StackPanel Margin="22">
         <TextBlock Text="各列の幅を、他の列との比率を表す数値（大きいほど幅が広くなります。3未満は指定できません）で指定してください。表全体は編集領域の横幅に収まるように、この比率で分け合われます"
                    Margin="0,0,0,16" TextWrapping="Wrap"
-                   Foreground="{StaticResource InkBrush}" FontWeight="Bold"/>
+                   Foreground="#1C1C1C" FontWeight="Bold"/>
 
         <StackPanel x:Name="m_columnsPanel" Margin="0,0,0,8"/>
 
         <CheckBox x:Name="m_autoCalculateCheckBox" Content="自動計算" Margin="0,4,0,0"/>
         <TextBlock Text="内容量に応じた比率を自動的に使用します。値を直接編集すると自動的にオフになります"
                    Margin="0,2,0,0" FontSize="11" TextWrapping="Wrap"
-                   Foreground="{StaticResource InkSoftBrush}"/>
+                   Foreground="#555555"/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
             <Button Content="キャンセル" MinWidth="84" Margin="0,0,8,0" Click="CancelClick"/>

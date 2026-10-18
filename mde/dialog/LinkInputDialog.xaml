@@ -8,7 +8,7 @@
         ResizeMode="NoResize"
         FontFamily="Yu Gothic UI, Meiryo UI, Segoe UI"
         FontSize="12"
-        Background="{StaticResource PaperBrush}">
+        Background="#FFFFFF">
     <!-- 部品（ボタン・入力欄・チェックボックス等）の見た目は、Windows のメッセージボックスと統一感が出るよう、
          Windows 11 風のもの（dialog\DialogStyles.xaml）にする。ボタンの間隔・幅は各ボタンに直接書く
          （ここにボタンの Style を足して BasedOn で引き継ごうとすると、WPF の既定の見た目を引き継いでしまうため） -->
@@ -17,10 +17,10 @@
     </Window.Resources>
     <StackPanel Margin="22">
         <TextBlock x:Name="m_titleText" Text="リンク先のURLを入力してください" Margin="0,0,0,16"
-                   Foreground="{StaticResource InkBrush}" FontWeight="Bold"/>
+                   Foreground="#1C1C1C" FontWeight="Bold"/>
 
         <TextBlock Text="URL" Margin="0,0,0,4"
-                   Foreground="{StaticResource InkSoftBrush}" FontSize="12"/>
+                   Foreground="#555555" FontSize="12"/>
         <TextBox x:Name="m_urlBox" Margin="0,0,0,14" Padding="6,4"/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

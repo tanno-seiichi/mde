@@ -41,20 +41,114 @@ namespace mde.common
         // 引用の文字色（本文より少し薄いグレー。引用らしい「落ち着いた」印象にするため）。
         private static readonly Brush m_quoteForeground = new SolidColorBrush(Color.FromRgb(0x59, 0x59, 0x59));
 
+        // ======================================================================
+        //  表示スタイル（メニュー「表示」→「表示スタイル」。GitHubスタイル／VSCodeスタイル）
+        // ======================================================================
+
+        /// <summary>true＝VSCodeスタイル（Visual Studio Code のプレビューに似せた見た目）、
+        /// false（既定）＝GitHubスタイル（今までの見た目）。MainWindow が起動時と切り替え時に設定する。
+        /// 見た目は段落・Run を作る時に決まるため、切り替えた時は MainWindow が文書全体を作り直す
+        /// （表示フォントの切り替えと同じ方法）。VSCodeスタイルの値は mdew の VSCodeスタイルと同じ。</summary>
+        public static bool VsCodeStyleFlg { get; set; } = false;
+
+        // VSCodeスタイルの色。半透明の色は白地に重ねた時の色にしてある。
+        // 大見出し・中見出しの下線・水平線・表の行の間の線（淡い灰色）。
+        private static readonly Brush m_vsCodeSeparator = new SolidColorBrush(Color.FromRgb(0xD1, 0xD1, 0xD1));
+        // コードブロックの背景（rgba(220,220,220,0.4)）。
+        private static readonly Brush m_vsCodeCodeBlockBackground = new SolidColorBrush(Color.FromRgb(0xF1, 0xF1, 0xF1));
+        // インラインコードの背景（rgba(0,0,0,0.1)）と文字色（赤）。
+        private static readonly Brush m_vsCodeInlineCodeBackground = new SolidColorBrush(Color.FromRgb(0xE6, 0xE6, 0xE6));
+        private static readonly Brush m_vsCodeInlineCodeForeground = new SolidColorBrush(Color.FromRgb(0xA3, 0x15, 0x15));
+        // 引用の背景（rgba(127,127,127,0.1)）と左の縦線（rgba(0,122,204,0.5)）。
+        private static readonly Brush m_vsCodeQuoteBackground = new SolidColorBrush(Color.FromRgb(0xF2, 0xF2, 0xF2));
+        private static readonly Brush m_vsCodeQuoteBorder = new SolidColorBrush(Color.FromRgb(0x80, 0xBD, 0xE6));
+        // 表の見出しの行の下の線（黒）。
+        private static readonly Brush m_vsCodeTableHeaderBorder = new SolidColorBrush(Color.FromRgb(0x00, 0x00, 0x00));
+        // GitHubスタイルの表の見出しの行の背景。
+        private static readonly Brush m_tableHeaderBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
+        private static readonly TextDecorationCollection m_noTextDecorations = new TextDecorationCollection();
+
+        /// <summary>VSCodeスタイルの本文フォント（日本語は Yu Gothic UI で表示する）。</summary>
+        public static readonly FontFamily VsCodeEditorFontFamily = new FontFamily("Segoe UI, Yu Gothic UI");
+
+        /// <summary>本文の文字の大きさ（GitHubスタイル 16、VSCodeスタイル 14）。</summary>
+        public static double BodyFontSize => VsCodeStyleFlg ? 14 : 16;
+
+        /// <summary>本文の行の高さ（GitHubスタイル 16×1.5625、VSCodeスタイル 14×1.7）。MainWindow.xaml の EditorLineHeight に設定する。</summary>
+        public static double BodyLineHeight => VsCodeStyleFlg ? 23.8 : 25;
+
+        /// <summary>箇条書きの行の高さ（どちらも文字の大きさの1.6倍）。EditorListLineHeight に設定する。</summary>
+        public static double ListLineHeight => VsCodeStyleFlg ? 22.4 : 25.6;
+
+        /// <summary>箇条書きの項目と項目の間（GitHubスタイル 0.46em、VSCodeスタイルは空けない）。EditorListItemSpacing に設定する。</summary>
+        public static double ListItemSpacing => VsCodeStyleFlg ? 0 : 7.36;
+
+        /// <summary>段落の下の余白（GitHubスタイル 0.7625em、VSCodeスタイル 0.9em）。EditorBlockSpacing に設定する。</summary>
+        public static double ParagraphBottomSpacing => VsCodeStyleFlg ? 12.6 : 12.2;
+
+        /// <summary>箇条書き・表の下の余白（GitHubスタイル 0.8em、VSCodeスタイル 0.9em）。EditorListSpacing に設定する。</summary>
+        public static double ListBottomSpacing => VsCodeStyleFlg ? 12.6 : 12.8;
+
+        /// <summary>箇条書きの左の字下げ（記号の分。GitHubスタイル 32、VSCodeスタイル 2em）。EditorListPadding に設定する。</summary>
+        public static double ListIndent => VsCodeStyleFlg ? 28 : 32;
+
+        /// <summary>番号付きの箇条書きの左の字下げ。EditorDecimalListPadding に設定する。</summary>
+        public static double DecimalListIndent => VsCodeStyleFlg ? 30 : 34;
+
+        /// <summary>太字の太さ（VSCodeスタイルは少し細い太字）。</summary>
+        public static FontWeight BoldFontWeight => VsCodeStyleFlg ? FontWeights.SemiBold : FontWeights.Bold;
+
+        /// <summary>リンクの文字の線（GitHubスタイルは下線、VSCodeスタイルは下線なし）。</summary>
+        public static TextDecorationCollection LinkTextDecorations => VsCodeStyleFlg ? m_noTextDecorations : TextDecorations.Underline;
+
+        /// <summary>表の見出しの行の背景（VSCodeスタイルは背景なし＝null）。</summary>
+        public static Brush TableHeaderBackground => VsCodeStyleFlg ? null : m_tableHeaderBackground;
+
+        /// <summary>表のセルの内側の余白（GitHubスタイル 8,6、VSCodeスタイル 10,5）。</summary>
+        public static Thickness TableCellPadding => VsCodeStyleFlg ? new Thickness(10, 5, 10, 5) : new Thickness(8, 6, 8, 6);
+
+        /// <summary>引用の上・下の余白。</summary>
+        public static double QuoteTopMargin => VsCodeStyleFlg ? 0 : 4;
+        public static double QuoteBottomMargin => VsCodeStyleFlg ? 12.6 : 10;
+
+        /// <summary>表のセルの行の高さ。GitHubスタイルは NaN（フォントの自然な高さ）。VSCodeスタイルは
+        /// VSCode の表と同じ 22.4（14px の 1.6 倍）。フォントの自然な高さ（約 18.6）だと、VSCode より
+        /// 1行あたり約 4px 狭くなるため。</summary>
+        public static double TableCellLineHeight => VsCodeStyleFlg ? 22.4 : double.NaN;
+
         /// <summary>コードブロックの背景色（他クラスからも参照できるよう公開）。</summary>
-        public static Brush CodeBlockBackgroundBrush => m_codeBlockBackground;
+        public static Brush CodeBlockBackgroundBrush => VsCodeStyleFlg ? m_vsCodeCodeBlockBackground : m_codeBlockBackground;
 
         /// <summary>インラインコードの背景色（他クラスからも参照できるよう公開）。</summary>
-        public static Brush InlineCodeBackgroundBrush => m_inlineCodeBackground;
+        public static Brush InlineCodeBackgroundBrush => VsCodeStyleFlg ? m_vsCodeInlineCodeBackground : m_inlineCodeBackground;
 
-        /// <summary>コードブロック・インラインコードのフォント（mdew と同じ。日本語は Meiryo で表示する）。</summary>
-        public static readonly FontFamily CodeFontFamily = new FontFamily("Consolas, Meiryo");
+        /// <summary>コードブロック・インラインコードのフォント（GitHubスタイルは mdew と同じで日本語は Meiryo、
+        /// VSCodeスタイルは日本語を Yu Gothic UI で表示する）。</summary>
+        public static FontFamily CodeFontFamily => VsCodeStyleFlg ? m_vsCodeCodeFontFamily : m_codeFontFamily;
+        private static readonly FontFamily m_codeFontFamily = new FontFamily("Consolas, Meiryo");
+        private static readonly FontFamily m_vsCodeCodeFontFamily = new FontFamily("Consolas, Courier New, Yu Gothic UI");
 
-        /// <summary>コードブロックの文字の大きさ（mdew と同じ）。</summary>
+        /// <summary>コードブロックの文字の大きさ（mdew と同じ。どちらのスタイルも 14）。</summary>
         public const double CODE_BLOCK_FONT_SIZE = 14;
 
-        /// <summary>インラインコードの文字の大きさ（本文 16px の 0.92 倍。mdew と同じ）。</summary>
-        public const double INLINE_CODE_FONT_SIZE = 14.72;
+        /// <summary>インラインコードの文字の大きさ（GitHubスタイルは本文 16px の 0.92 倍、VSCodeスタイルは本文と同じ 14）。</summary>
+        public static double INLINE_CODE_FONT_SIZE => VsCodeStyleFlg ? 14 : 14.72;
+
+        /// <summary>Run にインラインコードの見た目（フォント・大きさ・背景、VSCodeスタイルでは赤い文字）を付ける。
+        /// Tag は呼び出し側で付ける。</summary>
+        /// <param name="a_run">対象の Run。</param>
+        /// <returns>a_run（そのまま返す）。</returns>
+        public static Run ApplyInlineCodeStyle(Run a_run)
+        {
+            a_run.FontFamily = CodeFontFamily;
+            a_run.FontSize = INLINE_CODE_FONT_SIZE;
+            a_run.Background = InlineCodeBackgroundBrush;
+            if (VsCodeStyleFlg)
+            {
+                a_run.Foreground = m_vsCodeInlineCodeForeground;
+            }
+            return a_run;
+        }
 
         /// <summary>ハイライト（==text==）の背景色（他クラスからも参照できるよう公開）。</summary>
         public static Brush HighlightBrush => m_highlightBackground;
@@ -88,7 +182,7 @@ namespace mde.common
             a_p.Tag = 0 == a_level ? null : (object)a_level;
             if (0 == a_level)
             {
-                a_p.FontSize = 16;
+                a_p.FontSize = BodyFontSize;
                 a_p.FontWeight = FontWeights.Normal;
                 // Marginはここでは明示的に設定しない。RichTextBoxのStyle側でEditorBlockSpacing
                 // （固定値。MainWindow.xamlのEditorBlockSpacing
@@ -96,6 +190,28 @@ namespace mde.common
                 // 常に一定になるようにしている（ここでローカル値として設定すると、そちらを
                 // 上書きしてしまい、連動しなくなる）。
                 a_p.ClearValue(Paragraph.MarginProperty);
+            }
+            else if (VsCodeStyleFlg)
+            {
+                // VSCodeスタイル：本文 14px に対して 2/1.5/1.25/1/0.875/0.85 倍、少し細い太字（600）、
+                // 行の高さは文字の 1.25 倍、上 24・下 16 の余白。大見出し・中見出しの下に淡い灰色の線
+                // （文字から線までは文字の 0.3 倍）。
+                double[] ems = { 0, 2, 1.5, 1.25, 1, 0.875, 0.85 };
+                double size = 14 * ems[a_level];
+                a_p.FontSize = size;
+                a_p.FontWeight = FontWeights.SemiBold;
+                a_p.Margin = new Thickness(0, 24, 0, 16);
+                a_p.LineHeight = size * 1.25;
+                if (a_level <= 2)
+                {
+                    a_p.BorderBrush = m_vsCodeSeparator;
+                    a_p.BorderThickness = new Thickness(0, 0, 0, 1);
+                    a_p.Padding = new Thickness(0, 0, 0, size * 0.3);
+                }
+                else
+                {
+                    a_p.BorderThickness = new Thickness(0);
+                }
             }
             else
             {
@@ -142,9 +258,17 @@ namespace mde.common
             a_p.FontFamily = CodeFontFamily;
             a_p.FontSize = CODE_BLOCK_FONT_SIZE;
             a_p.FontWeight = FontWeights.Normal;
-            a_p.Background = m_codeBlockBackground;
+            a_p.Background = CodeBlockBackgroundBrush;
             a_p.BorderBrush = m_codeBlockBorder;
-            if (a_isLastLine)
+            if (VsCodeStyleFlg)
+            {
+                // VSCodeスタイル：枠線なし、内側の余白 16、行の高さは文字の約 1.357 倍、下の余白 0.9em。
+                a_p.LineHeight = 19;
+                a_p.BorderThickness = new Thickness(0);
+                a_p.Padding = new Thickness(16, 16, 16, a_isLastLine ? 16 : 0);
+                a_p.Margin = new Thickness(0, 0, 0, a_isLastLine ? 12.6 : 0);
+            }
+            else if (a_isLastLine)
             {
                 a_p.Padding = new Thickness(16, 8, 16, 8);
                 a_p.Margin = new Thickness(0, 4, 0, 14);
@@ -177,9 +301,17 @@ namespace mde.common
             a_p.FontFamily = CodeFontFamily;
             a_p.FontSize = CODE_BLOCK_FONT_SIZE;
             a_p.FontWeight = FontWeights.Normal;
-            a_p.Background = m_codeBlockBackground;
+            a_p.Background = CodeBlockBackgroundBrush;
             a_p.BorderBrush = m_codeBlockBorder;
-            if (a_isLastLine)
+            if (VsCodeStyleFlg)
+            {
+                // VSCodeスタイル（ApplyCodeBlockStyle と同じ値）。
+                a_p.LineHeight = 19;
+                a_p.BorderThickness = new Thickness(0);
+                a_p.Padding = new Thickness(16, 0, 16, a_isLastLine ? 16 : 0);
+                a_p.Margin = new Thickness(0, 0, 0, a_isLastLine ? 12.6 : 0);
+            }
+            else if (a_isLastLine)
             {
                 a_p.Padding = new Thickness(16, 0, 16, 8);
                 a_p.Margin = new Thickness(0, 0, 0, 14);
@@ -200,9 +332,9 @@ namespace mde.common
             ClearSpecialStyling(a_p);
             a_p.Tag = new HorizontalRuleInfo();
             a_p.FontSize = 1;
-            a_p.BorderBrush = m_cellBorder;
+            a_p.BorderBrush = VsCodeStyleFlg ? m_vsCodeSeparator : m_cellBorder;
             a_p.BorderThickness = new Thickness(0, 1, 0, 0);
-            a_p.Margin = new Thickness(0, 14, 0, 14);
+            a_p.Margin = VsCodeStyleFlg ? new Thickness(0, 16.8, 0, 16.8) : new Thickness(0, 14, 0, 14);
             a_p.Padding = new Thickness(0);
         }
 
@@ -223,14 +355,25 @@ namespace mde.common
             if (!a_quoted)
             {
                 // ApplyHeadingStyleのa_level=0の場合と同じ値に戻す。
-                a_p.FontSize = 16;
+                a_p.FontSize = BodyFontSize;
                 a_p.FontWeight = FontWeights.Normal;
                 a_p.ClearValue(Paragraph.MarginProperty);
             }
             else
             {
-                a_p.FontSize = 16;
+                a_p.FontSize = BodyFontSize;
                 a_p.FontWeight = FontWeights.Normal;
+                if (VsCodeStyleFlg)
+                {
+                    // VSCodeスタイル：文字の色は本文と同じ、左に淡い青の太い縦線、上下の余白なし
+                    // （上下のパディングは0。a_isLastLine によらない）。
+                    a_p.Background = m_vsCodeQuoteBackground;
+                    a_p.BorderBrush = m_vsCodeQuoteBorder;
+                    a_p.BorderThickness = new Thickness(5, 0, 0, 0);
+                    a_p.Padding = new Thickness(10, 0, 16, 0);
+                    a_p.Margin = new Thickness(0, QuoteTopMargin, 0, QuoteBottomMargin);
+                    return;
+                }
                 a_p.Foreground = m_quoteForeground;
                 a_p.Background = m_quoteBackground;
                 // 左側だけに太い縦線を引く、一般的な引用（blockquote）の見た目。
@@ -248,7 +391,7 @@ namespace mde.common
                 // InsertQuoteContinuationParagraph・MarkdownConverter.MarkdownToDocument）が
                 // この下マージンを新しい最後の行の段落へ付け替え、この段落自身の下マージンを
                 // 0にする。
-                a_p.Margin = new Thickness(0, 4, 0, 10);
+                a_p.Margin = new Thickness(0, QuoteTopMargin, 0, QuoteBottomMargin);
             }
         }
 
@@ -268,8 +411,17 @@ namespace mde.common
         {
             ClearSpecialStyling(a_p);
             a_p.Tag = new QuoteContinuationInfo();
-            a_p.FontSize = 16;
+            a_p.FontSize = BodyFontSize;
             a_p.FontWeight = FontWeights.Normal;
+            if (VsCodeStyleFlg)
+            {
+                // VSCodeスタイル（ApplyQuoteStyle と同じ値）。
+                a_p.Background = m_vsCodeQuoteBackground;
+                a_p.BorderBrush = m_vsCodeQuoteBorder;
+                a_p.BorderThickness = new Thickness(5, 0, 0, 0);
+                a_p.Padding = new Thickness(10, 0, 16, 0);
+                return;
+            }
             a_p.Foreground = m_quoteForeground;
             a_p.Background = m_quoteBackground;
             a_p.BorderBrush = m_cellBorder;
@@ -300,6 +452,9 @@ namespace mde.common
                 Margin = new Thickness(0, 0, 4, 0),
                 Tag = "task-checkbox"
             };
+            // VSCodeスタイルの時はエディタの線をくっきり描く（MainWindow.ApplyDocStyle）が、
+            // チェックボックスは今までどおりなめらかに描く。
+            RenderOptions.SetEdgeMode(checkbox, EdgeMode.Unspecified);
             if (Application.Current?.Resources["TaskCheckboxStyle"] is Style taskCheckboxStyle)
             {
                 checkbox.Style = taskCheckboxStyle;
@@ -442,6 +597,11 @@ namespace mde.common
         /// <param name="a_borderBrush">罫線の色（呼び出し側が使っているm_cellBorderを渡す）。</param>
         public static void ApplyTableCellBorders(Table a_table, Brush a_borderBrush)
         {
+            if (VsCodeStyleFlg)
+            {
+                ApplyVsCodeTableCellBorders(a_table);
+                return;
+            }
             // 表自身の外周（上辺・左辺）を1回だけ描く。
             a_table.BorderBrush = a_borderBrush;
             a_table.BorderThickness = new Thickness(1, 1, 0, 0);
@@ -469,6 +629,26 @@ namespace mde.common
             }
         }
 
+        /// <summary>VSCodeスタイルの表の罫線：縦の線と外周の線は引かず、見出しの行の下だけ黒い線、
+        /// 本文の行と行の間は淡い灰色の線にする（最後の行の下には引かない）。</summary>
+        /// <param name="a_table">対象の表。</param>
+        private static void ApplyVsCodeTableCellBorders(Table a_table)
+        {
+            a_table.BorderBrush = null;
+            a_table.BorderThickness = new Thickness(0);
+            var rows = a_table.RowGroups.SelectMany(rg => rg.Rows).ToList();
+            for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
+            {
+                bool headerFlg = 0 == rowIndex;
+                bool lastRowFlg = rowIndex == rows.Count - 1;
+                foreach (TableCell cell in rows[rowIndex].Cells)
+                {
+                    cell.BorderBrush = headerFlg ? m_vsCodeTableHeaderBorder : m_vsCodeSeparator;
+                    cell.BorderThickness = new Thickness(0, 0, 0, headerFlg || !lastRowFlg ? 1 : 0);
+                }
+            }
+        }
+
         // ======================================================================
         //  表の列幅（内容に合わせたコンパクトな列幅）
         // ======================================================================
@@ -485,7 +665,8 @@ namespace mde.common
         /// 合わせてある）。メニュー「表示」→「表示フォント」の切り替えに応じて
         /// SetTableMeasureFontFamilyで更新される。</summary>
         private static FontFamily m_tableMeasureFontFamily = DefaultEditorFontFamily;
-        private const double TABLE_MEASURE_FONT_SIZE = 16;
+        // 表のセルの計測に使う文字の大きさ（本文と同じ。表示スタイルで変わる）。
+        private static double TABLE_MEASURE_FONT_SIZE => BodyFontSize;
 
         /// <summary>表のセル幅計測に使うフォントを変更する。メニュー「表示」→「表示フォント」の
         /// 切り替え時にMainWindowから呼ばれる（表のセル自体の表示フォントは、FlowDocumentの
@@ -507,7 +688,7 @@ namespace mde.common
 
         /// <summary>TableCellのPadding（左右合計）。列幅を内容ぴったりにする際、この分だけ
         /// 上乗せする。</summary>
-        private const double TABLE_CELL_HORIZONTAL_PADDING = 16;
+        private static double TABLE_CELL_HORIZONTAL_PADDING => TableCellPadding.Left + TableCellPadding.Right;
 
         /// <summary>
         /// 自動計算した「内容にちょうど収まる幅」に、追加で確保しておく余裕（px）。

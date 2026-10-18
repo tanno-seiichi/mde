@@ -27,7 +27,6 @@ namespace mde.common
     public class MarkdownConverter
     {
         // 表のヘッダー行の背景色。アウトラインビュー・フォルダペインの背景色とは意図的に別にしている。
-        private static readonly Brush m_headerBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
         private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
         /// <summary>リンクの文字の色。メニュー「表示」→「文字の色」で色を変える（MainWindow.ApplyTextColor）ため、
         /// すべてのリンク（InlineStyleEditor で作るものも含む）でこの1つのブラシを共有する（凍結しない）。</summary>
@@ -52,13 +51,15 @@ namespace mde.common
         /// 埋め込む方式にしている（既存の&lt;a id="..."&gt;アンカー・&lt;url&gt;自動リンクと同じ
         /// 「HTMLタグをそのまま埋め込む」という前例に倣った）。
         /// グループ番号は以下の通り。
-        /// 1:imgタグ／2,3,4:![alt](src)（alt,src)／5,6:`code`／7,8:**bold**／9,10:~~strike~~／
+        /// 1:imgタグ／2,3,4:![alt](src)（alt,src)／5,6:`code`（`` co`de `` のように2個以上のバッククォートで
+        /// 囲んだものも。囲みのバッククォートは名前付きグループ bt で、.NET では名前付きグループの番号は
+        /// 名前なしのグループの後になるため、6以降の番号は変わらない）／7,8:**bold**／9,10:~~strike~~／
         /// 11,12:&lt;u&gt;underline&lt;/u&gt;／13,14:==highlight==／15,16,17:[text](url)（text,url)／
         /// 18,19:&lt;http(s)://url&gt;／20,21:&lt;email&gt;／22,23:&lt;a id="..."&gt;&lt;/a&gt;／
         /// 24,25:文中にそのまま書かれたメールアドレス（BARE_EMAIL_PATTERN）
         /// </summary>
         private static readonly Regex m_inlineContentRegex = new Regex(
-            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(`([^`]+)`)|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|(<u>([^<]+)</u>)|(==([^=]+)==)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)|(" +
+            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|((?<!`)(?<bt>`+)(?!`)([\\s\\S]+?)(?<!`)\\k<bt>(?!`))|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|(<u>([^<]+)</u>)|(==([^=]+)==)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)|(" +
             BARE_EMAIL_PREV_PATTERN + "(" + BARE_EMAIL_PATTERN + ")" + BARE_EMAIL_NEXT_PATTERN + ")",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -134,7 +135,8 @@ namespace mde.common
                     // 1行しかない短いセルまで縦に間延びして見える。double.NaNを指定すると、
                     // WPF標準の「未指定（フォントの自然な行の高さ）」の挙動に戻るため、
                     // 表は常にコンパクトな行の高さで表示される。
-                    LineHeight = double.NaN,
+                    // VSCodeスタイルの時は VSCode と同じ行の高さにする（BlockStyles.TableCellLineHeight参照）。
+                    LineHeight = BlockStyles.TableCellLineHeight,
                     KeepTogether = true,
                     TextAlignment = a_alignment,
                     Tag = a_tag
@@ -849,7 +851,7 @@ namespace mde.common
                     string content = spanText.ToString();
                     if ("inline-code" == tag)
                     {
-                        a_sb.Append('`').Append(content).Append('`');
+                        a_sb.Append(BuildCodeSpanMarkdown(content));
                     }
                     else if ("bold" == tag)
                     {
@@ -1169,7 +1171,7 @@ namespace mde.common
                             // 見せるが、グループの最後の段落だけは、次のブロックとの間の余白
                             // （ApplyQuoteStyleのa_quoted=trueの場合の下マージンと同じ値）を
                             // 持たせる。
-                            contPara.Margin = lastLineFlg ? new Thickness(0, 0, 0, 10) : new Thickness(0);
+                            contPara.Margin = lastLineFlg ? new Thickness(0, 0, 0, BlockStyles.QuoteBottomMargin) : new Thickness(0);
                             AppendInlineMarkdownToParagraph(contPara, quoteLineTexts[lineIdx], false);
                             a_doc.Blocks.Add(contPara);
                         }
@@ -1274,11 +1276,11 @@ namespace mde.common
                         var cell = BuildTableCellFromMarkdown(
                             txt, headerAlignment, headerExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null);
                         cell.FontWeight = FontWeights.Bold;
-                        cell.Background = m_headerBackground;
+                        cell.Background = BlockStyles.TableHeaderBackground;
                         // 罫線（BorderBrush/BorderThickness）は、表全体を組み立て終えた後に
                         // BlockStyles.ApplyTableCellBordersでまとめて設定する（隣接セルとの
                         // 境界線が二重に重ならないようにするため。詳細は同メソッド参照）。
-                        cell.Padding = new Thickness(8, 6, 8, 6);
+                        cell.Padding = BlockStyles.TableCellPadding;
                         headerRow.Cells.Add(cell);
                         headerColIndex++;
                     }
@@ -1297,7 +1299,7 @@ namespace mde.common
                                 txt, bodyAlignment, bodyExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null);
                             // 罫線は表全体の組み立て後にBlockStyles.ApplyTableCellBordersで
                             // まとめて設定する（ヘッダーセルと同じ理由）。
-                            cell.Padding = new Thickness(8, 6, 8, 6);
+                            cell.Padding = BlockStyles.TableCellPadding;
                             row.Cells.Add(cell);
                             bodyColIndex++;
                         }
@@ -1404,7 +1406,7 @@ namespace mde.common
                         bool lastSegmentFlg = segIdx == brSegments.Length - 1;
                         var contPara = new Paragraph
                         {
-                            Margin = lastSegmentFlg ? new Thickness(0, 0, 0, 12.2) : new Thickness(0),
+                            Margin = lastSegmentFlg ? new Thickness(0, 0, 0, BlockStyles.ParagraphBottomSpacing) : new Thickness(0),
                             LineHeight = para.LineHeight,
                             KeepTogether = para.KeepTogether,
                             TextAlignment = para.TextAlignment,
@@ -1642,6 +1644,11 @@ namespace mde.common
         /// セルの中のインラインコード（`&amp;&amp;`/`||` のように、コードの中に「|」自体が
         /// 含まれる場合）まで区切ってしまい、列がずれて表が壊れてしまう。そのため、バック
         /// クォートで囲まれたコード区間の中にある「|」は区切りとして扱わないようにしている。
+        /// コード区間は、開きと同じ個数のバッククォートの並びで閉じる（`` Ctrl+Shift+` `` のように、
+        /// 中にバッククォートを含むコードは2個以上のバッククォートで囲んで書くため。CommonMark と同じ）。
+        /// 閉じる並びが見つからないバッククォートは、ただの文字として扱う。コード区間の外の「\」の
+        /// 直後の文字（「\|」等）は区切りとして扱わない（TableToMarkdown はセルの中の「|」を「\|」と
+        /// 書き出すため）。
         /// </summary>
         /// <param name="a_line">表の1行分のソーステキスト。</param>
         /// <returns>セルごとに分割した文字列。</returns>
@@ -1659,26 +1666,132 @@ namespace mde.common
 
             var cells = new List<string>();
             var current = new StringBuilder();
-            bool insideCodeFlg = false;
-            foreach (char c in t)
+            int i = 0;
+            while (i < t.Length)
             {
-                if ('`' == c)
+                char c = t[i];
+                if ('\\' == c && i + 1 < t.Length)
                 {
-                    insideCodeFlg = !insideCodeFlg;
-                    current.Append(c);
+                    // エスケープ（「\|」「\`」等）。2文字ともそのまま残す（後で PreprocessEscapes が処理する）。
+                    current.Append(c).Append(t[i + 1]);
+                    i += 2;
                 }
-                else if ('|' == c && !insideCodeFlg)
+                else if ('`' == c)
+                {
+                    int runLength = CountBacktickRun(t, i);
+                    int closeIndex = FindClosingBacktickRun(t, i + runLength, runLength);
+                    if (closeIndex >= 0)
+                    {
+                        // コード区間（閉じる並びまで）をそのまま残す。中の「|」では区切らない。
+                        current.Append(t, i, closeIndex + runLength - i);
+                        i = closeIndex + runLength;
+                    }
+                    else
+                    {
+                        current.Append('`', runLength);
+                        i += runLength;
+                    }
+                }
+                else if ('|' == c)
                 {
                     cells.Add(current.ToString().Trim());
                     current.Clear();
+                    i++;
                 }
                 else
                 {
                     current.Append(c);
+                    i++;
                 }
             }
             cells.Add(current.ToString().Trim());
             return cells;
+        }
+
+        /// <summary>a_textのa_start文字目から続くバッククォートの個数を数える。</summary>
+        /// <param name="a_text">対象の文字列。</param>
+        /// <param name="a_start">数え始める位置。</param>
+        /// <returns>続くバッククォートの個数。</returns>
+        private static int CountBacktickRun(string a_text, int a_start)
+        {
+            int end = a_start;
+            while (end < a_text.Length && '`' == a_text[end])
+            {
+                end++;
+            }
+            return end - a_start;
+        }
+
+        /// <summary>a_textのa_start文字目以降で、ちょうどa_runLength個のバッククォートの並び
+        /// （前後にバッククォートが続かないもの）を探す。インラインコードの閉じる並びを探すのに使う。</summary>
+        /// <param name="a_text">対象の文字列。</param>
+        /// <param name="a_start">探し始める位置。</param>
+        /// <param name="a_runLength">探すバッククォートの個数。</param>
+        /// <returns>見つかった並びの先頭の位置。見つからなければ -1。</returns>
+        private static int FindClosingBacktickRun(string a_text, int a_start, int a_runLength)
+        {
+            int i = a_start;
+            while (i < a_text.Length)
+            {
+                if ('`' == a_text[i])
+                {
+                    int runLength = CountBacktickRun(a_text, i);
+                    if (runLength == a_runLength)
+                    {
+                        return i;
+                    }
+                    i += runLength;
+                }
+                else
+                {
+                    i++;
+                }
+            }
+            return -1;
+        }
+
+        /// <summary>インラインコードの中身の前後の空白を、CommonMark と同じ規則で1つずつ取り除く
+        /// （中身の最初と最後が両方とも空白で、空白だけではない場合）。`` `code` `` のように、
+        /// バッククォートで始まる・終わるコードを書くために入れた空白を取り除くため。</summary>
+        /// <param name="a_content">コード区間の中身（囲みのバッククォートを除いたもの）。</param>
+        /// <returns>前後の空白を取り除いた中身。</returns>
+        public static string StripCodeSpanPadding(string a_content)
+        {
+            if (a_content.Length >= 2 &&
+                ' ' == a_content[0] &&
+                ' ' == a_content[a_content.Length - 1] &&
+                a_content.Trim(' ').Length > 0)
+            {
+                return a_content.Substring(1, a_content.Length - 2);
+            }
+            return a_content;
+        }
+
+        /// <summary>インラインコードの中身を Markdown に書き出す。中にバッククォートがあれば、中の
+        /// いちばん長い並びより1個多いバッククォートで囲み、中身がバッククォートで始まる・終わる場合等は
+        /// 前後に空白を1つずつ入れる（StripCodeSpanPadding で読み込み時に取り除かれる。CommonMark と同じ）。</summary>
+        /// <param name="a_content">コードの文字列。</param>
+        /// <returns>`` で囲んだ Markdown の文字列。</returns>
+        public static string BuildCodeSpanMarkdown(string a_content)
+        {
+            int longestRun = 0;
+            for (int i = 0; i < a_content.Length;)
+            {
+                if ('`' == a_content[i])
+                {
+                    int runLength = CountBacktickRun(a_content, i);
+                    longestRun = Math.Max(longestRun, runLength);
+                    i += runLength;
+                }
+                else
+                {
+                    i++;
+                }
+            }
+            string fence = new string('`', longestRun + 1);
+            bool padFlg = a_content.StartsWith("`") || a_content.EndsWith("`") ||
+                          (a_content.Length >= 2 && a_content.StartsWith(" ") && a_content.EndsWith(" ") && a_content.Trim(' ').Length > 0);
+            return padFlg ? fence + " " + a_content + " " + fence : fence + a_content + fence;
         }
 
         /// <summary>
@@ -2078,7 +2191,7 @@ namespace mde.common
                 }
                 else if (m.Groups[5].Success)
                 {
-                    AppendStyledRunsWithLineBreaks(a_p, m.Groups[6].Value, "code");
+                    AppendStyledRunsWithLineBreaks(a_p, StripCodeSpanPadding(m.Groups[6].Value), "code");
                 }
                 else if (m.Groups[7].Success)
                 {
@@ -2148,7 +2261,7 @@ namespace mde.common
             return new Run(a_linkText)
             {
                 Foreground = m_linkBrush,
-                TextDecorations = TextDecorations.Underline,
+                TextDecorations = BlockStyles.LinkTextDecorations,
                 Tag = new LinkInfo
                 {
                     Url = a_url,
@@ -2229,7 +2342,7 @@ namespace mde.common
                 Run run;
                 if ("bold" == a_style)
                 {
-                    run = new Run(segText) { FontWeight = FontWeights.Bold, Tag = "bold" };
+                    run = new Run(segText) { FontWeight = BlockStyles.BoldFontWeight, Tag = "bold" };
                 }
                 else if ("strikethrough" == a_style)
                 {
@@ -2244,13 +2357,7 @@ namespace mde.common
                     run = new Run(segText) { Background = BlockStyles.HighlightBrush, Tag = "highlight" };
                 }
                 else
-                    run = new Run(segText)
-                    {
-                        FontFamily = BlockStyles.CodeFontFamily,
-                        FontSize = BlockStyles.INLINE_CODE_FONT_SIZE,
-                        Background = BlockStyles.InlineCodeBackgroundBrush,
-                        Tag = "inline-code"
-                    };
+                    run = BlockStyles.ApplyInlineCodeStyle(new Run(segText) { Tag = "inline-code" });
                 a_p.Inlines.Add(run);
             }
         }
@@ -2299,7 +2406,7 @@ namespace mde.common
                 }
                 else if (m.Groups[5].Success)
                 {
-                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, m.Groups[6].Value, "code");
+                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, StripCodeSpanPadding(m.Groups[6].Value), "code");
                 }
                 else if (m.Groups[7].Success)
                 {
@@ -2326,7 +2433,7 @@ namespace mde.common
                     var run = new Run(linkText, cursor)
                     {
                         Foreground = m_linkBrush,
-                        TextDecorations = TextDecorations.Underline,
+                        TextDecorations = BlockStyles.LinkTextDecorations,
                         Tag = new LinkInfo { Url = url, IsAutoLinkFlg = false, Title = title },
                         ToolTip = string.IsNullOrEmpty(title) ? url : title
                     };
@@ -2338,7 +2445,7 @@ namespace mde.common
                     var run = new Run(url, cursor)
                     {
                         Foreground = m_linkBrush,
-                        TextDecorations = TextDecorations.Underline,
+                        TextDecorations = BlockStyles.LinkTextDecorations,
                         Tag = new LinkInfo { Url = url, IsAutoLinkFlg = true },
                         ToolTip = url
                     };
@@ -2350,7 +2457,7 @@ namespace mde.common
                     var run = new Run(email, cursor)
                     {
                         Foreground = m_linkBrush,
-                        TextDecorations = TextDecorations.Underline,
+                        TextDecorations = BlockStyles.LinkTextDecorations,
                         Tag = new LinkInfo { Url = "mailto:" + email, IsAutoLinkFlg = false, IsEmailAutoLinkFlg = true },
                         ToolTip = email
                     };
@@ -2368,7 +2475,7 @@ namespace mde.common
                     var run = new Run(email, cursor)
                     {
                         Foreground = m_linkBrush,
-                        TextDecorations = TextDecorations.Underline,
+                        TextDecorations = BlockStyles.LinkTextDecorations,
                         Tag = new LinkInfo { Url = "mailto:" + email, IsBareEmailFlg = true },
                         ToolTip = email
                     };
@@ -2462,7 +2569,7 @@ namespace mde.common
                 Run run;
                 if ("bold" == a_style)
                 {
-                    run = new Run(segText, cursor) { FontWeight = FontWeights.Bold, Tag = "bold" };
+                    run = new Run(segText, cursor) { FontWeight = BlockStyles.BoldFontWeight, Tag = "bold" };
                 }
                 else if ("strikethrough" == a_style)
                 {
@@ -2478,13 +2585,7 @@ namespace mde.common
                 }
                 else
                 {
-                    run = new Run(segText, cursor)
-                    {
-                        FontFamily = BlockStyles.CodeFontFamily,
-                        FontSize = BlockStyles.INLINE_CODE_FONT_SIZE,
-                        Background = BlockStyles.InlineCodeBackgroundBrush,
-                        Tag = "inline-code"
-                    };
+                    run = BlockStyles.ApplyInlineCodeStyle(new Run(segText, cursor) { Tag = "inline-code" });
                 }
                 cursor = run.ContentEnd;
             }

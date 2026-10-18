@@ -29,7 +29,6 @@ namespace mde.editor
     public class InlineStyleEditor
     {
         private static readonly Brush m_linkBrush = MarkdownConverter.LinkBrush; // 文字の色の切り替えで色が変わる共有のブラシ
-        private static readonly Brush m_inlineCodeBackground = BlockStyles.InlineCodeBackgroundBrush;
         // ハイライト（==text==）用の背景色。
         private static readonly Brush m_highlightBackground = BlockStyles.HighlightBrush;
 
@@ -191,7 +190,7 @@ namespace mde.editor
                 var newRun = new Run(text, start)
                 {
                     Foreground = m_linkBrush,
-                    TextDecorations = TextDecorations.Underline,
+                    TextDecorations = BlockStyles.LinkTextDecorations,
                     Tag = new LinkInfo { Url = a_url, IsAutoLinkFlg = false },
                     ToolTip = a_url
                 };
@@ -229,7 +228,7 @@ namespace mde.editor
                 switch (a_style)
                 {
                     case "bold":
-                        newRun = new Run(text, start) { FontWeight = FontWeights.Bold, Tag = "bold" };
+                        newRun = new Run(text, start) { FontWeight = BlockStyles.BoldFontWeight, Tag = "bold" };
                         break;
                     case "strikethrough":
                         newRun = new Run(text, start) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
@@ -241,13 +240,7 @@ namespace mde.editor
                         newRun = new Run(text, start) { Background = m_highlightBackground, Tag = "highlight" };
                         break;
                     case "code":
-                        newRun = new Run(text, start)
-                        {
-                            FontFamily = BlockStyles.CodeFontFamily,
-                            FontSize = BlockStyles.INLINE_CODE_FONT_SIZE,
-                            Background = m_inlineCodeBackground,
-                            Tag = "inline-code"
-                        };
+                        newRun = BlockStyles.ApplyInlineCodeStyle(new Run(text, start) { Tag = "inline-code" });
                         break;
                     default: // "normal"
                         newRun = new Run(text, start);
@@ -973,7 +966,7 @@ namespace mde.editor
                 var newRun = new Run(email, start)
                 {
                     Foreground = m_linkBrush,
-                    TextDecorations = TextDecorations.Underline,
+                    TextDecorations = BlockStyles.LinkTextDecorations,
                     Tag = new LinkInfo { Url = "mailto:" + email, IsBareEmailFlg = true },
                     ToolTip = email
                 };
@@ -1031,7 +1024,7 @@ namespace mde.editor
                 var newRun = new Run(a_linkText, a_start)
                 {
                     Foreground = m_linkBrush,
-                    TextDecorations = TextDecorations.Underline,
+                    TextDecorations = BlockStyles.LinkTextDecorations,
                     Tag = new LinkInfo { Url = a_url, IsAutoLinkFlg = a_isAutoLinkFlg, IsEmailAutoLinkFlg = a_isEmailAutoLinkFlg },
                     ToolTip = a_url
                 };
@@ -1056,7 +1049,7 @@ namespace mde.editor
                 Run newRun;
                 if ("bold" == a_style)
                 {
-                    newRun = new Run(a_content, a_start) { FontWeight = FontWeights.Bold, Tag = "bold" };
+                    newRun = new Run(a_content, a_start) { FontWeight = BlockStyles.BoldFontWeight, Tag = "bold" };
                 }
                 else if ("strikethrough" == a_style)
                 {
@@ -1071,13 +1064,7 @@ namespace mde.editor
                     newRun = new Run(a_content, a_start) { Background = m_highlightBackground, Tag = "highlight" };
                 }
                 else
-                    newRun = new Run(a_content, a_start)
-                    {
-                        FontFamily = BlockStyles.CodeFontFamily,
-                        FontSize = BlockStyles.INLINE_CODE_FONT_SIZE,
-                        Background = m_inlineCodeBackground,
-                        Tag = "inline-code"
-                    };
+                    newRun = BlockStyles.ApplyInlineCodeStyle(new Run(a_content, a_start) { Tag = "inline-code" });
 
                 // 通常スタイルの目に見えないゼロ幅スペースRun。直後の入力へスタイルが
                 // 継承されるのを防ぐ（保存時に自動除去。MarkdownConverter.AppendInlinesMarkdown参照）。
