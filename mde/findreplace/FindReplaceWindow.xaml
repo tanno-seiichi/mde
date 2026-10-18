@@ -6,10 +6,16 @@
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResizeWithGrip"
-        FontFamily="Segoe UI, Yu Gothic UI"
-        FontSize="13"
+        FontFamily="Yu Gothic UI, Meiryo UI, Segoe UI"
+        FontSize="12"
         Background="{StaticResource PaperBrush}"
         PreviewKeyDown="FindReplaceWindowPreviewKeyDown">
+    <!-- 部品（ボタン・入力欄・チェックボックス等）の見た目は、Windows のメッセージボックスと統一感が出るよう、
+         Windows 11 風のもの（dialog\DialogStyles.xaml）にする。ボタンの間隔・幅は各ボタンに直接書く
+         （ここにボタンの Style を足して BasedOn で引き継ごうとすると、WPF の既定の見た目を引き継いでしまうため） -->
+    <Window.Resources>
+        <ResourceDictionary Source="/mde;component/dialog/DialogStyles.xaml"/>
+    </Window.Resources>
     <StackPanel Margin="22,22,22,20">
 
         <TextBlock Text="検索する文字列" Margin="0,0,0,0"/>
@@ -32,12 +38,12 @@
         </StackPanel>
 
         <WrapPanel>
-            <Button Content="前を検索" Width="86" Style="{StaticResource DialogButton}" Click="FindPreviousClick"/>
-            <Button Content="次を検索" Width="86" Style="{StaticResource DialogButton}" Click="FindNextClick"/>
-            <Button Content="すべて検索" Width="86" Style="{StaticResource DialogButton}" Click="FindAllClick" IsDefault="True"/>
-            <Button x:Name="m_stepReplaceButton" Content="1件ずつ置換…" Width="100" Style="{StaticResource ToolbarButton}"
+            <Button Content="前を検索" MinWidth="86" Margin="0,0,8,8" Click="FindPreviousClick"/>
+            <Button Content="次を検索" MinWidth="86" Margin="0,0,8,8" Click="FindNextClick"/>
+            <Button Content="すべて検索" MinWidth="86" Margin="0,0,8,8" Click="FindAllClick" IsDefault="True"/>
+            <Button x:Name="m_stepReplaceButton" Content="1件ずつ置換…" MinWidth="100" Margin="0,0,8,8"
                     Click="StepReplaceClick" Visibility="Collapsed"/>
-            <Button x:Name="m_replaceAllButton" Content="すべて置換" Width="86" Style="{StaticResource ToolbarButton}"
+            <Button x:Name="m_replaceAllButton" Content="すべて置換" MinWidth="86" Margin="0,0,8,8"
                     Click="ReplaceAllClick" Visibility="Collapsed"/>
         </WrapPanel>
 
@@ -56,10 +62,10 @@
                 <TextBlock x:Name="m_stepContextText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"
                            Foreground="{StaticResource InkBrush}" Margin="0,0,0,12"/>
                 <WrapPanel>
-                    <Button Content="置換" Width="80" Style="{StaticResource ToolbarButton}" Click="StepReplaceOneClick"/>
-                    <Button Content="スキップ" Width="80" Style="{StaticResource ToolbarButton}" Click="StepSkipClick"/>
-                    <Button Content="残りをすべて置換" Width="120" Style="{StaticResource ToolbarButton}" Click="StepReplaceRemainingClick"/>
-                    <Button Content="終了" Width="70" Style="{StaticResource ToolbarButton}" Click="StepEndClick"/>
+                    <Button Content="置換" MinWidth="80" Margin="0,0,8,8" Click="StepReplaceOneClick"/>
+                    <Button Content="スキップ" MinWidth="80" Margin="0,0,8,8" Click="StepSkipClick"/>
+                    <Button Content="残りをすべて置換" MinWidth="120" Margin="0,0,8,8" Click="StepReplaceRemainingClick"/>
+                    <Button Content="終了" MinWidth="70" Margin="0,0,8,8" Click="StepEndClick"/>
                 </WrapPanel>
             </StackPanel>
         </Border>

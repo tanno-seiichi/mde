@@ -84,7 +84,6 @@ namespace mde
         /// <summary>エディタのズーム倍率の管理役。現在の倍率はm_zoomManager.ZoomLevelで
         /// 参照できる（設定の保存時に使用）。</summary>
         private ZoomManager m_zoomManager;
-        private double m_editorLineHeight = 26;
         private bool m_requireCtrlForLinkClickFlg = true;
 
         /// <summary>段落中の途中改行（空行を伴わない、ソース上の単純な改行）を、そのまま
@@ -110,6 +109,10 @@ namespace mde
         /// 表示フォント（Yu Gothic UI, Segoe UI）を使う。詳細はSetUseLegacyFontFlg参照。
         /// 既定値はfalse。</summary>
         private bool m_useLegacyFontFlg = false;
+
+        /// <summary>メニュー「表示」→「文字の色」の設定。falseなら「くっきりした色」（既定）、trueなら
+        /// 「目にやさしい色」。詳細はApplyTextColor参照。</summary>
+        private bool m_softTextColorFlg = false;
 
         /// <summary>PDF書き出し時の、上下左右の余白（px）。メニュー「PDFの余白を設定…」で
         /// 変更でき、次回起動時にも復元される。既定値はAppSettingsのものと揃えてある。</summary>
@@ -242,7 +245,6 @@ namespace mde
             }
 
             m_zoomManager = new ZoomManager(m_editor, m_sourceEditor, m_zoomLabelBtn, m_savedSettings.ZoomLevel);
-            m_editorLineHeight = m_savedSettings.EditorLineHeight > 0 ? m_savedSettings.EditorLineHeight : 26;
             m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
             m_preserveSourceLineBreaksFlg = m_savedSettings.PreserveSourceLineBreaksFlg;
             m_correctColumnWidthsFlg = m_savedSettings.CorrectColumnWidthsFlg;
@@ -250,6 +252,8 @@ namespace mde
             m_uniformMarkerStyleFlg = m_savedSettings.UniformMarkerStyleFlg;
             m_useLegacyFontFlg = m_savedSettings.UseLegacyFontFlg;
             ApplyEditorFontFamily(m_useLegacyFontFlg);
+            m_softTextColorFlg = m_savedSettings.SoftTextColorFlg;
+            ApplyTextColor(m_softTextColorFlg);
             m_debugLogMenuItem.IsChecked = m_savedSettings.DebugLogEnabledFlg;
             DebugLogger.SetEnabled(m_savedSettings.DebugLogEnabledFlg);
             m_pdfMarginTop = m_savedSettings.PdfMarginTop > 0 ? m_savedSettings.PdfMarginTop : 64;
@@ -261,11 +265,11 @@ namespace mde
             m_lastSaveDialogDirectory = m_savedSettings.LastSaveDialogDirectory;
             // 「最近使ったファイル」サブメニューの初回構築はFileOperationsManager構築後
             // （このコンストラクタの後半）で行う（RebuildRecentFilesMenu呼び出し箇所を参照）。
-            ApplyEditorLineHeight(m_editorLineHeight);
             UpdateLinkModeMenuChecks();
             UpdateLineBreakModeMenuChecks();
             UpdateMarkerStyleMenuChecks();
             UpdateFontModeMenuChecks();
+            UpdateTextColorMenuChecks();
             m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
             m_outlinePaneVisibleFlg = m_savedSettings.OutlinePaneVisible;
             if (m_savedSettings.FolderPaneWidth > 0)
@@ -600,20 +604,53 @@ namespace mde
             public uint m_dwFlags;
         }
 
-        /// <summary>ウィンドウを閉じようとした時、未保存の変更があれば確認する。</summary>
+        /// <summary>ウィンドウを閉じようとした時、未保存の変更があれば「…は変更されています。閉じる前に保存しますか？」
+        /// （はい・いいえ・キャンセル。既定は「はい」）を確認する。はい：保存してから閉じる（保存先の選択をキャンセル
+        /// した・保存に失敗した時は閉じない。FileOperationsManager.SaveForClose）。いいえ：保存せずに閉じる。
+        /// キャンセル：閉じない。メッセージには、変更されているファイルの名前を出す（多い時は4個まで出して、
+        /// 残りは「ほか n 個のファイル」）。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         private void WindowClosing(object a_sender, System.ComponentModel.CancelEventArgs a_args)
         {
-            if (m_currentFileIsDirtyFlg || m_pendingFileEdits.Count > 0)
+            if (!m_currentFileIsDirtyFlg && 0 == m_pendingFileEdits.Count)
             {
-                var result = MessageBox.Show(
-                    "保存されていない変更があります。破棄して閉じますか？",
-                    "閉じる", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
-                if (result != MessageBoxResult.OK)
+                return;
+            }
+            var names = new List<string>();
+            if (m_currentFileIsDirtyFlg)
+            {
+                names.Add(string.IsNullOrEmpty(m_currentFilePath) ? "(無題)" : System.IO.Path.GetFileName(m_currentFilePath));
+            }
+            foreach (string path in m_pendingFileEdits.Keys)
+            {
+                if (!string.Equals(path, m_currentFilePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    names.Add(System.IO.Path.GetFileName(path));
+                }
+            }
+            var lines = new System.Text.StringBuilder();
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (4 == i && 5 < names.Count)
+                {
+                    lines.Append($"ほか {names.Count - 4} 個のファイル\n");
+                    break;
+                }
+                lines.Append(names[i]).Append('\n');
+            }
+            MessageBoxResult result = MessageBox.Show(this, lines + "は変更されています。閉じる前に保存しますか？",
+                "mde", MessageBoxButton.YesNoCancel, MessageBoxImage.Question, MessageBoxResult.Yes);
+            if (MessageBoxResult.Yes == result)
+            {
+                if (!m_fileOperationsManager.SaveForClose())
                 {
                     a_args.Cancel = true;
                 }
+            }
+            else if (MessageBoxResult.No != result)
+            {
+                a_args.Cancel = true;
             }
         }
 
@@ -694,12 +731,12 @@ namespace mde
                 FolderPaneWidth = folderWidthToSave,
                 OutlinePaneWidth = outlineWidthToSave,
                 ZoomLevel = m_zoomManager.ZoomLevel,
-                EditorLineHeight = m_editorLineHeight,
                 RequireCtrlForLinkClickFlg = m_requireCtrlForLinkClickFlg,
                 PreserveSourceLineBreaksFlg = m_preserveSourceLineBreaksFlg,
                 CorrectColumnWidthsFlg = m_correctColumnWidthsFlg,
                 UniformMarkerStyleFlg = m_uniformMarkerStyleFlg,
                 UseLegacyFontFlg = m_useLegacyFontFlg,
+                SoftTextColorFlg = m_softTextColorFlg,
                 DebugLogEnabledFlg = DebugLogger.IsEnabled,
                 PdfMarginTop = m_pdfMarginTop,
                 PdfMarginBottom = m_pdfMarginBottom,
@@ -2777,21 +2814,6 @@ namespace mde
             }
         }
 
-        /// <summary>メニュー「表示」→「行間を設定…」。ダイアログを開き、ライブプレビュー
-        /// しながら行間を調整できるようにする。OKで確定した値を記憶し、次回起動時にも
-        /// 復元されるようにする。</summary>
-        /// <param name="a_sender">「行間を設定…」メニュー項目。</param>
-        /// <param name="a_args">Click event.</param>
-        private void LineHeightBtnClick(object a_sender, RoutedEventArgs a_args)
-        {
-            var dialog = new LineHeightDialog(m_editorLineHeight, ApplyEditorLineHeight) { Owner = this };
-            if (true == dialog.ShowDialog())
-            {
-                m_editorLineHeight = dialog.LineHeightValue;
-            }
-            ApplyEditorLineHeight(m_editorLineHeight);
-        }
-
         /// <summary>メニュー「表示」→「リンクの開き方」→「Ctrl+クリックで開く」。</summary>
         /// <param name="a_sender">メニュー項目。</param>
         /// <param name="a_args">Click event.</param>
@@ -3026,7 +3048,7 @@ namespace mde
         /// "EditorFontFamily"（MainWindow.xamlのWindow.Resources参照）を更新することで、
         /// m_editorDocument（FlowDocument）・m_sourceEditor（TextBox）双方のFontFamilyへ、
         /// WPFの通常のプロパティ継承・DynamicResourceの仕組みで即座に反映される
-        /// （ApplyEditorLineHeightと同じパターン）。表のセル幅計測用フォント
+        /// （行の間隔の EditorLineHeight 等と同じ DynamicResource の仕組み）。表のセル幅計測用フォント
         /// （BlockStyles.SetTableMeasureFontFamily）も合わせて更新するが、既存の表の列幅自体は、
         /// SetUseLegacyFontFlgでの再変換が実行されて初めて新しいフォントでの幅に更新される。</summary>
         /// <param name="a_useLegacyFontFlg">true＝以前のフォント、false＝既定の新しいフォント。</param>
@@ -3039,21 +3061,46 @@ namespace mde
             BlockStyles.SetTableMeasureFontFamily(fontFamily);
         }
 
-        /// <summary>エディタの行間（Paragraphの行の高さ）を、指定した値へ反映する。
-        /// 段落内で行が折り返された時の間隔は、その段落のLineHeightそのもので決まる。もし
-        /// 段落・リスト・表どうしの間の余白（Margin）にもLineHeightと同じ値を足してしまうと、
-        /// 「折り返された行の間隔」の2倍近くになってしまい、段落間だけ不自然に間隔が
-        /// 空いて見える（実際にこの不具合が起きていたため、箇条書きの項目内の段落
-        /// （BuildNestedList参照）にならい、段落・リスト・表どうしの余白はLineHeightの値に
-        /// 関わらず常にこの固定値のままにしている）。ただし固定値をゼロにはしない：見出し・
-        /// コードブロック・水平線はそれぞれ固有のMarginを明示的に持っているのに対し、通常の
-        /// 段落・リスト・表はこの共有の値だけを頼りにしているため、ここがゼロだと、空行
-        /// 区切りのMarkdown段落どうしが単純な行の折り返しと見分けが付かなくなってしまう。</summary>
-        /// <param name="a_value">設定したい行間の値。</param>
-        private void ApplyEditorLineHeight(double a_value)
+        /// <summary>メニュー「表示」→「文字の色」→「くっきりした色」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void TextColorSharpChecked(object a_sender, RoutedEventArgs a_args)
         {
-            Resources["EditorLineHeight"] = a_value;
-            Resources["EditorBlockSpacing"] = new Thickness(0, 0, 0, 14);
+            m_softTextColorFlg = false;
+            ApplyTextColor(false);
+            UpdateTextColorMenuChecks();
+        }
+
+        /// <summary>メニュー「表示」→「文字の色」→「目にやさしい色」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void TextColorSoftChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            m_softTextColorFlg = true;
+            ApplyTextColor(true);
+            UpdateTextColorMenuChecks();
+        }
+
+        /// <summary>「文字の色」メニューの2項目を、現在の設定に合わせてラジオボタンのように片方だけチェック状態にする。</summary>
+        private void UpdateTextColorMenuChecks()
+        {
+            m_textColorSharpMenuItem.IsChecked = !m_softTextColorFlg;
+            m_textColorSoftMenuItem.IsChecked = m_softTextColorFlg;
+        }
+
+        /// <summary>エディタの文字の色を、指定した設定へ反映する。「くっきりした色」は本文・ソースモードとも黒、
+        /// リンクは #0969DA（今までどおり）。「目にやさしい色」は本文・ソースモードとも少し薄い灰色（#333333）、
+        /// リンクも少し薄い青（#4183C4）。本文の文字は RichTextBox の Foreground を継承しているので、ここを変えると
+        /// 即座に変わる。リンクは、すべてのリンクで共有しているブラシ（MarkdownConverter.LinkBrush）の色を変える。
+        /// 引用の文字（灰色）・メニュー等の画面の部品の文字は変えない。</summary>
+        /// <param name="a_softFlg">true＝目にやさしい色、false＝くっきりした色。</param>
+        private void ApplyTextColor(bool a_softFlg)
+        {
+            var textBrush = new SolidColorBrush(a_softFlg ? Color.FromRgb(0x33, 0x33, 0x33) : Colors.Black);
+            textBrush.Freeze();
+            m_editor.Foreground = textBrush;
+            m_sourceEditor.Foreground = textBrush;
+            MarkdownConverter.LinkBrush.Color = a_softFlg ? Color.FromRgb(0x41, 0x83, 0xC4) : Color.FromRgb(0x09, 0x69, 0xDA);
         }
 
         // ======================================================================

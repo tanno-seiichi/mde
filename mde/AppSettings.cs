@@ -25,7 +25,6 @@ namespace mde
         public bool OutlinePaneVisible { get; set; } = false;
         public double OutlinePaneWidth { get; set; } = 200;
         public double ZoomLevel { get; set; } = 1.0;
-        public double EditorLineHeight { get; set; } = 26;
         public bool RequireCtrlForLinkClickFlg { get; set; } = true;
         public bool PreserveSourceLineBreaksFlg { get; set; } = true;
 
@@ -39,6 +38,10 @@ namespace mde
         /// 設定。既定）、trueならフォント変更前の以前の表示フォント（Yu Gothic UI, Segoe UI）を
         /// 使う。既定はfalse。</summary>
         public bool UseLegacyFontFlg { get; set; } = false;
+
+        /// <summary>メニュー「表示」→「文字の色」の選択状態。falseなら「くっきりした色」（本文は黒。既定）、
+        /// trueなら「目にやさしい色」（本文は少し薄い灰色、リンクも少し薄い青）。既定はfalse。</summary>
+        public bool SoftTextColorFlg { get; set; } = false;
 
         /// <summary>メニュー「表示」→「列幅を補正する」のチェック状態（表全体の列幅機能の
         /// マスタースイッチ）。オンなら、明示的に調整済みの表はその比率で、未調整の表は内容量

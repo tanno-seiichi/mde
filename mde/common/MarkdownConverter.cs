@@ -29,7 +29,10 @@ namespace mde.common
         // 表のヘッダー行の背景色。アウトラインビュー・フォルダペインの背景色とは意図的に別にしている。
         private static readonly Brush m_headerBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
         private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
-        private static readonly Brush m_linkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
+        /// <summary>リンクの文字の色。メニュー「表示」→「文字の色」で色を変える（MainWindow.ApplyTextColor）ため、
+        /// すべてのリンク（InlineStyleEditor で作るものも含む）でこの1つのブラシを共有する（凍結しない）。</summary>
+        internal static readonly SolidColorBrush LinkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
+        private static readonly Brush m_linkBrush = LinkBrush;
 
         /// <summary>
         /// 表の列揃えで、「明示的な左揃え（:---）」と「揃え指定なし（---）」を区別して保存する
@@ -1396,12 +1399,12 @@ namespace mde.common
                         // para.Marginを読んでもまだ反映されていないため、依存せず明示的に指定
                         // する）。グループ内の段落どうしの間は0にして、見た目には1つの段落内の
                         // 複数行にしか見えないようにするが、グループの最後の段落だけは、次の
-                        // ブロックとの間の余白（ApplyEditorLineHeightのEditorBlockSpacingと
+                        // ブロックとの間の余白（MainWindow.xamlのEditorBlockSpacingと
                         // 同じ固定値）を通常の段落と同様に持たせる。
                         bool lastSegmentFlg = segIdx == brSegments.Length - 1;
                         var contPara = new Paragraph
                         {
-                            Margin = lastSegmentFlg ? new Thickness(0, 0, 0, 14) : new Thickness(0),
+                            Margin = lastSegmentFlg ? new Thickness(0, 0, 0, 12.2) : new Thickness(0),
                             LineHeight = para.LineHeight,
                             KeepTogether = para.KeepTogether,
                             TextAlignment = para.TextAlignment,

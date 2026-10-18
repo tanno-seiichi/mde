@@ -2,12 +2,15 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>disable</Nullable>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <ApplicationIcon>images\mde.ico</ApplicationIcon>
+    <!-- アプリのマニフェスト（app.manifest）。コモンコントロール 6 を使う設定で、Windows のメッセージボックス
+         （MessageBox.Show）が、今の Windows の見た目（角丸のボタン等）で表示されるようにする -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>

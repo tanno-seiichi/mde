@@ -13,17 +13,26 @@
         Closing="WindowClosing">
 
     <Window.Resources>
-        <sys:Double x:Key="EditorLineHeight">26</sys:Double>
-        <!-- 段落・リスト・表どうしの間の余白（ApplyEditorLineHeight参照）は、行間
-             （EditorLineHeight）の値に関わらず常にこの固定値のままにする（段落内の行間と
-             二重に加算されて、行間の設定値を上げるほど間隔が不自然に広がるのを防ぐため。
-             DESIGN.md 14.11節参照）。ゼロにはしない：見出し・コードブロック・水平線は
-             それぞれ固有のMarginを明示的に持っているのに対し、通常の段落・リスト・表は
-             この共有の値だけを頼りにしているため、ここが0だと、空行区切りのMarkdown段落
-             どうしが単純な行の折り返しと見分けが付かなくなってしまう。ここでの初期値も
-             それに合わせておく（実際にはMainWindowコンストラクタのApplyEditorLineHeight
-             呼び出しで、起動直後にこの値で上書きされる）。 -->
-        <Thickness x:Key="EditorBlockSpacing">0,0,0,14</Thickness>
+        <!-- 行の間隔・段落や箇条書きの間隔（mdew の GitHubスタイルの調整結果に合わせた固定値。文字の大きさ 16px の時）。
+             以前の「表示」→「行間を設定…」は廃止した。
+               EditorLineHeight：本文の段落の行の間隔（25px。mdew の 1.5625 倍）。FlowDocument の LineHeight に指定し、
+                 中の段落へ引き継がせる（見出し・表のセル・画像の段落は、それぞれ自分の値を持つ）
+               EditorListLineHeight：箇条書きの項目の中の行の間隔（25.6px。mdew の 1.6 倍）。List の LineHeight に指定し、
+                 項目の段落へ引き継がせる
+               EditorListItemSpacing：箇条書きの項目と項目の間（7.36px。mdew の 0.46em）。ListItem の上の余白にする。
+                 入れ子の箇条書きの最初の項目にも付くので、親の項目の文字と入れ子の項目の間も同じだけ空く
+                 （mdew と同じ）。上下に並んだブロックの余白は重ねて数えられるので、箇条書きの最初の項目の上の余白は、
+                 前の段落の下の余白に吸収される
+               EditorBlockSpacing：段落の下の余白（12.2px。mdew の 0.7625em）
+               EditorListSpacing：箇条書き・表の下の余白（12.8px。mdew の 0.8em）
+             ゼロにはしない：見出し・コードブロック・水平線はそれぞれ固有のMarginを明示的に持っているのに対し、
+             通常の段落・リスト・表はこの共有の値だけを頼りにしているため、ここが0だと、空行区切りのMarkdown段落
+             どうしが単純な行の折り返しと見分けが付かなくなってしまう。 -->
+        <sys:Double x:Key="EditorLineHeight">25</sys:Double>
+        <sys:Double x:Key="EditorListLineHeight">25.6</sys:Double>
+        <Thickness x:Key="EditorListItemSpacing">0,7.36,0,0</Thickness>
+        <Thickness x:Key="EditorBlockSpacing">0,0,0,12.2</Thickness>
+        <Thickness x:Key="EditorListSpacing">0,0,0,12.8</Thickness>
         <!-- エディタの表示フォント。メニュー「表示」→「表示フォント」で切り替えられる。
              ここでの初期値は既定（フォント変更後）のものだが、実際にはMainWindow
              コンストラクタで保存済み設定に応じて新しいフォント／以前のフォントのどちらかに
@@ -67,8 +76,6 @@
             </MenuItem>
             <MenuItem Header="検索と置換(_F)" Click="FindReplaceBtnClick" InputGestureText="Ctrl+F"/>
             <MenuItem Header="表示(_V)">
-                <MenuItem Header="行間を設定…(_L)" Click="LineHeightBtnClick"/>
-                <Separator/>
                 <MenuItem Header="リンクの開き方">
                     <MenuItem x:Name="m_linkModeCtrlClickMenuItem" Header="Ctrl+クリックで開く(_C)"
                               IsCheckable="True" Click="LinkModeCtrlClickChecked"/>
@@ -86,6 +93,12 @@
                               IsCheckable="True" Click="FontModeNewChecked"/>
                     <MenuItem x:Name="m_fontModeLegacyMenuItem" Header="以前のフォント（Yu Gothic UI）(_L)"
                               IsCheckable="True" Click="FontModeLegacyChecked"/>
+                </MenuItem>
+                <MenuItem Header="文字の色">
+                    <MenuItem x:Name="m_textColorSharpMenuItem" Header="くっきりした色(_S)"
+                              IsCheckable="True" Click="TextColorSharpChecked"/>
+                    <MenuItem x:Name="m_textColorSoftMenuItem" Header="目にやさしい色(_E)"
+                              IsCheckable="True" Click="TextColorSoftChecked"/>
                 </MenuItem>
                 <MenuItem x:Name="m_correctColumnWidthsMenuItem" Header="列幅を補正する(_W)"
                           IsCheckable="True" Click="CorrectColumnWidthsMenuItemChecked"/>
@@ -289,8 +302,9 @@
                         <RichTextBox.Resources>
                             <Style TargetType="Paragraph">
                                 <Setter Property="Margin" Value="{DynamicResource EditorBlockSpacing}"/>
-                                <Setter Property="LineHeight" Value="{DynamicResource EditorLineHeight}"/>
-                                <!-- LineStackingStrategyの既定値（MaxHeight）だと、上のLineHeightは
+                                <!-- 行の高さ（LineHeight）はここでは指定せず、FlowDocument（本文の段落）・List（箇条書きの
+                                     項目の段落）に指定した値を引き継がせる（段落の種類ごとに行の間隔を変えるため）。
+                                     LineStackingStrategyの既定値（MaxHeight）だと、LineHeightは
                                      「最低でもこの高さ」という扱いになり、フォントが内部的に持つ
                                      行送り（line gap）の方が大きければそちらが優先されてしまう。
                                      Meiry0（表示フォント「新しいフォント」）はYu Gothic UIより
@@ -302,7 +316,8 @@
                                 <Setter Property="LineStackingStrategy" Value="BlockLineHeight"/>
                             </Style>
                             <Style TargetType="List">
-                                <Setter Property="Margin" Value="{DynamicResource EditorBlockSpacing}"/>
+                                <Setter Property="Margin" Value="{DynamicResource EditorListSpacing}"/>
+                                <Setter Property="LineHeight" Value="{DynamicResource EditorListLineHeight}"/>
                                 <Setter Property="Padding" Value="32,0,0,0"/>
                                 <!-- 以前はここでMarkerStyle=Circle/Squareの時だけList.FontSizeを
                                      小さくして、2段目以降の記号（○）をTyporaのように小さく
@@ -320,8 +335,11 @@
                                     </Trigger>
                                 </Style.Triggers>
                             </Style>
+                            <Style TargetType="ListItem">
+                                <Setter Property="Margin" Value="{DynamicResource EditorListItemSpacing}"/>
+                            </Style>
                             <Style TargetType="Table">
-                                <Setter Property="Margin" Value="{DynamicResource EditorBlockSpacing}"/>
+                                <Setter Property="Margin" Value="{DynamicResource EditorListSpacing}"/>
                                 <Setter Property="CellSpacing" Value="0"/>
                             </Style>
                         </RichTextBox.Resources>
@@ -389,7 +407,8 @@
                                           Style="{StaticResource CtxMenuItem}" Click="ToggleModeBtnClick"/>
                             </ContextMenu>
                         </RichTextBox.ContextMenu>
-                        <FlowDocument x:Name="m_editorDocument" FontFamily="{DynamicResource EditorFontFamily}"/>
+                        <FlowDocument x:Name="m_editorDocument" FontFamily="{DynamicResource EditorFontFamily}"
+                                      LineHeight="{DynamicResource EditorLineHeight}"/>
                     </RichTextBox>
 
                     <TextBox x:Name="m_sourceEditor"

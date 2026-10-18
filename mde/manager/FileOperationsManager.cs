@@ -925,6 +925,65 @@ namespace mde.manager
                 failures.Count > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
 
+        /// <summary>ウィンドウを閉じる時の確認（「…は変更されています。閉じる前に保存しますか？」）で「はい」を
+        /// 選んだ時に、保存していない内容をすべて保存する（確認のメッセージは出さない。SaveAllBtnClickと同じ順）。
+        /// 現在のファイルは、新規の文書・実行フォルダのファイルなら「名前を付けて保存」になる（SaveBtnClickと同じ）。
+        /// 保存先を選ぶダイアログでキャンセルした・保存に失敗した時はfalseを返す（ウィンドウを閉じない）。
+        /// 失敗した時は、失敗したファイルをメッセージで知らせる。</summary>
+        /// <returns>すべて保存できたらtrue。</returns>
+        public bool SaveForClose()
+        {
+            var failures = new List<string>();
+            string currentFilePath = m_getCurrentFilePath();
+            if (m_getCurrentFileIsDirty())
+            {
+                if (string.IsNullOrEmpty(currentFilePath) || IsApplicationBaseDirectory(m_getCurrentFileDirectory()))
+                {
+                    SaveAs();
+                    if (m_getCurrentFileIsDirty())
+                    {
+                        return false; // 保存先を選ぶダイアログでキャンセルした
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        string md = GetMarkdownForSaveWithImageRelocation();
+                        File.WriteAllText(currentFilePath, m_lineEndingTracker.Apply(md, m_lineEndingTracker.GetFor(currentFilePath)), new UTF8Encoding(false));
+                        m_pendingFileEdits.Remove(currentFilePath);
+                        m_setCurrentFileIsDirty(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        failures.Add(currentFilePath + " (" + ex.Message + ")");
+                    }
+                }
+            }
+
+            foreach (var kv in new List<KeyValuePair<string, string>>(m_pendingFileEdits))
+            {
+                try
+                {
+                    File.WriteAllText(kv.Key, m_lineEndingTracker.Apply(kv.Value, m_lineEndingTracker.GetFor(kv.Key)), new UTF8Encoding(false));
+                    m_pendingFileEdits.Remove(kv.Key);
+                }
+                catch (Exception ex)
+                {
+                    failures.Add(kv.Key + " (" + ex.Message + ")");
+                }
+            }
+
+            m_folderTreeManager.RefreshDirtyMarkers();
+            if (failures.Count > 0)
+            {
+                MessageBox.Show("保存に失敗したファイルがあるため、閉じるのをやめました。\n\n" + string.Join("\n", failures),
+                    "閉じる", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+            return true;
+        }
+
         /// <summary>エディタを空の無題文書にリセットし、未保存変更の追跡もすべてクリアする
         /// （確認は行わない。呼び出し側が必要に応じて事前にユーザーへ確認済みであることを
         /// 前提とする）。</summary>

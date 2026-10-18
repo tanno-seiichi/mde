@@ -91,7 +91,7 @@ namespace mde.common
                 a_p.FontSize = 16;
                 a_p.FontWeight = FontWeights.Normal;
                 // Marginはここでは明示的に設定しない。RichTextBoxのStyle側でEditorBlockSpacing
-                // （行間の値に関わらず常に固定値。MainWindow.xaml.csのApplyEditorLineHeight
+                // （固定値。MainWindow.xamlのEditorBlockSpacing
                 // 参照）が適用されることで、段落と段落の間の間隔が、行間の設定を変えても
                 // 常に一定になるようにしている（ここでローカル値として設定すると、そちらを
                 // 上書きしてしまい、連動しなくなる）。
@@ -103,7 +103,7 @@ namespace mde.common
                 a_p.FontSize = sizes[a_level];
                 a_p.FontWeight = FontWeights.Bold;
                 a_p.Margin = new Thickness(0, a_level <= 2 ? 20 : 14, 0, 10);
-                // 見出しのLineHeightは、本文用のEditorLineHeight（既定26。メニュー「表示」→
+                // 見出しのLineHeightは、本文用のEditorLineHeight（25。MainWindow.xaml参照。以前は「表示」→
                 // 「行間を設定」で変更可）をそのまま使うのではなく、見出しのFontSizeに応じた
                 // 専用の値をローカル値として指定する（RichTextBoxのStyle側のLineHeightより、
                 // ここで設定するローカル値の方が優先される）。本文と同じ1行の目安（約1.2倍）に

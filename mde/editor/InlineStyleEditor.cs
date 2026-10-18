@@ -28,7 +28,7 @@ namespace mde.editor
     /// </summary>
     public class InlineStyleEditor
     {
-        private static readonly Brush m_linkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
+        private static readonly Brush m_linkBrush = MarkdownConverter.LinkBrush; // 文字の色の切り替えで色が変わる共有のブラシ
         private static readonly Brush m_inlineCodeBackground = BlockStyles.InlineCodeBackgroundBrush;
         // ハイライト（==text==）用の背景色。
         private static readonly Brush m_highlightBackground = BlockStyles.HighlightBrush;

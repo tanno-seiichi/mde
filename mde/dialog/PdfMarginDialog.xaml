@@ -6,9 +6,15 @@
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
-        FontFamily="Segoe UI, Yu Gothic UI"
-        FontSize="13"
+        FontFamily="Yu Gothic UI, Meiryo UI, Segoe UI"
+        FontSize="12"
         Background="{StaticResource PaperBrush}">
+    <!-- 部品（ボタン・入力欄・チェックボックス等）の見た目は、Windows のメッセージボックスと統一感が出るよう、
+         Windows 11 風のもの（dialog\DialogStyles.xaml）にする。ボタンの間隔・幅は各ボタンに直接書く
+         （ここにボタンの Style を足して BasedOn で引き継ごうとすると、WPF の既定の見た目を引き継いでしまうため） -->
+    <Window.Resources>
+        <ResourceDictionary Source="/mde;component/dialog/DialogStyles.xaml"/>
+    </Window.Resources>
     <StackPanel Margin="22">
         <TextBlock Text="PDFに書き出す際の、上下左右の余白（px）を設定してください" Margin="0,0,0,16"
                    Foreground="{StaticResource InkBrush}" FontWeight="Bold" TextWrapping="Wrap"/>
@@ -30,12 +36,9 @@
         <TextBox x:Name="m_rightBox" Margin="0,0,0,22" Padding="6,4"/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="既定値に戻す" Width="100" Height="30" Margin="0,0,8,0"
-                    Style="{StaticResource ToolbarButton}" Click="ResetClick"/>
-            <Button Content="キャンセル" Width="84" Height="30" Margin="0,0,8,0"
-                    Style="{StaticResource ToolbarButton}" Click="CancelClick"/>
-            <Button Content="OK" Width="84" Height="30" IsDefault="True"
-                    Style="{StaticResource ToolbarButton}" Click="OkClick"/>
+            <Button Content="既定値に戻す" MinWidth="100" Margin="0,0,8,0" Click="ResetClick"/>
+            <Button Content="キャンセル" MinWidth="84" Margin="0,0,8,0" Click="CancelClick"/>
+            <Button Content="OK" MinWidth="84" IsDefault="True" Click="OkClick"/>
         </StackPanel>
     </StackPanel>
 </Window>
