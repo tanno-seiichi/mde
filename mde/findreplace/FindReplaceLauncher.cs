@@ -40,15 +40,19 @@ namespace mde.findreplace
         }
 
         /// <summary>検索と置換ウィンドウを開く（すでに開いていれば、そちらを前面に出す）。</summary>
-        public void Open()
+        /// <param name="a_selectedText">編集ペインで範囲選択していた文字列。空でなければ、検索する文字列に入れる
+        /// （FindReplaceWindow.SetSearchText 参照。mdew と同じ）。</param>
+        public void Open(string a_selectedText = null)
         {
             if (null != m_openFindReplaceWindow)
             {
+                m_openFindReplaceWindow.SetSearchText(a_selectedText);
                 m_openFindReplaceWindow.Activate();
                 m_openFindReplaceWindow.Focus();
                 return;
             }
             m_openFindReplaceWindow = m_createFindReplaceWindow();
+            m_openFindReplaceWindow.SetSearchText(a_selectedText);
             m_openFindReplaceWindow.Closed += (s, e) => m_openFindReplaceWindow = null;
             m_openFindReplaceWindow.Show();
         }

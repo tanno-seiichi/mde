@@ -452,9 +452,6 @@ namespace mde.common
                 Margin = new Thickness(0, 0, 4, 0),
                 Tag = "task-checkbox"
             };
-            // VSCodeスタイルの時はエディタの線をくっきり描く（MainWindow.ApplyDocStyle）が、
-            // チェックボックスは今までどおりなめらかに描く。
-            RenderOptions.SetEdgeMode(checkbox, EdgeMode.Unspecified);
             if (Application.Current?.Resources["TaskCheckboxStyle"] is Style taskCheckboxStyle)
             {
                 checkbox.Style = taskCheckboxStyle;

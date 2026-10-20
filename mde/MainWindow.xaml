@@ -65,14 +65,14 @@
               FontFamily="{StaticResource MenuFont}" FontSize="12" TextOptions.TextFormattingMode="Display">
             <MenuItem Header="ファイル(_F)">
                 <MenuItem Header="新規作成(_N)" Click="NewBtnClick" InputGestureText="Ctrl+N"/>
-                <MenuItem Header="新しいウインドウ" Click="NewWindowClick" InputGestureText="Shift+Ctrl+N"/>
                 <MenuItem Header="開く…(_O)" Click="OpenBtnClick" InputGestureText="Ctrl+O"/>
+                <MenuItem Header="フォルダを開く…(_D)" Click="OpenFolderMenuClick"/>
+                <Separator/>
                 <!-- 最近使ったファイル・フォルダのサブメニューは、クリックした時か、マウスを乗せて少し待った時に開く
                      （WPF の通常のメニューの動き。待つ時間は Windows の設定に従う。mdew と同じ）。下の項目へマウスを
                      動かす途中で通り過ぎるだけなら開かないので、長いサブメニューがほかの項目を隠すことはない。 -->
                 <MenuItem x:Name="m_recentFilesMenu" Header="最近使ったファイル(_R)"/>
                 <MenuItem x:Name="m_recentFoldersMenu" Header="最近使ったフォルダ(_F)"/>
-                <MenuItem Header="フォルダを開く…(_D)" Click="OpenFolderMenuClick"/>
                 <Separator/>
                 <MenuItem Header="保存(_S)" Click="SaveBtnClick" InputGestureText="Ctrl+S"/>
                 <MenuItem Header="名前を付けて保存…" Click="SaveAsBtnClick" InputGestureText="Shift+Ctrl+S"/>
@@ -313,7 +313,7 @@
                     <RichTextBox x:Name="m_editor"
                                  BorderThickness="0"
                                  Background="Transparent"
-                                 Padding="20,20,4,0"
+                                 Padding="20,0,4,0"
                                  FontSize="16"
                                  SelectionBrush="#3390FF"
                                  SelectionOpacity="0.45"
@@ -369,11 +369,6 @@
                             </Style>
                             <Style TargetType="ListItem">
                                 <Setter Property="Margin" Value="{DynamicResource EditorListItemSpacing}"/>
-                            </Style>
-                            <!-- 表示スタイルが VSCodeスタイルの時はエディタの線をくっきり描く（MainWindow.ApplyDocStyle）が、
-                                 スクロールバーは今までどおりなめらかに描く。 -->
-                            <Style TargetType="ScrollBar">
-                                <Setter Property="RenderOptions.EdgeMode" Value="Unspecified"/>
                             </Style>
                             <Style TargetType="Table">
                                 <Setter Property="Margin" Value="{DynamicResource EditorListSpacing}"/>
@@ -460,7 +455,8 @@
                              AcceptsTab="True"
                              TextWrapping="Wrap"
                              VerticalScrollBarVisibility="Auto"
-                             TextChanged="SourceEditorTextChanged">
+                             TextChanged="SourceEditorTextChanged"
+                             PreviewMouseWheel="SourceEditorPreviewMouseWheel">
                         <TextBox.ContextMenu>
                             <ContextMenu x:Name="m_sourceEditorContextMenu">
                                 <MenuItem Header="ページトップに戻る" Click="ScrollToPageTopClick"/>

@@ -87,6 +87,17 @@ namespace mde
 
         /// <summary>VSCodeスタイルの時、リンクにマウスを乗せている間だけ下線を表示する（ApplyDocStyle で有効・無効を切り替える）。</summary>
         private LinkHoverUnderline m_linkHoverUnderline;
+
+        /// <summary>編集ペインの文書の上の余白（px。FlowDocument.PagePadding の上。mdew と同じ 24px）。実際の余白は、
+        /// これに文書の先頭の段落の上の余白を足したもの（EditorTopPadding 参照）。</summary>
+        private const double EDITOR_TOP_PADDING = 24;
+
+        /// <summary>文書の先頭の段落（見出し等）の上の余白を、文書の上の余白に足す時の倍率（EditorTopPadding 参照）。</summary>
+        private const double EDITOR_FIRST_BLOCK_MARGIN_RATIO = 1.25;
+
+        /// <summary>編集ペインの文書の下の余白（px。FlowDocument.PagePadding の下）。末尾までスクロールした時に、最後の行の
+        /// 下に余白を表示する（mdew と同じ 120px）。</summary>
+        private const double EDITOR_BOTTOM_PADDING = 120;
         private bool m_requireCtrlForLinkClickFlg = true;
 
         /// <summary>段落中の途中改行（空行を伴わない、ソース上の単純な改行）を、そのまま
@@ -211,7 +222,7 @@ namespace mde
         /// <summary>ウィンドウを初期化し、各機能クラスを構築・配線したうえで、初回起動時の
         /// 案内文書を読み込む。</summary>
         /// <param name="a_openedFromWindow">
-        /// このウインドウが既存の別のウインドウから開かれた場合（「新しいウインドウ」・
+        /// このウインドウが既存の別のウインドウから開かれた場合（「新規作成」・
         /// 「フォルダペインの範囲外のファイルへのリンク」・「表示中のフォルダの外への
         /// 名前を付けて保存」・「Readmeを開く」）、その呼び出し元のウインドウ。
         /// 指定された場合、設定から復元した位置ではなく、そのウインドウから右下へ少し
@@ -260,6 +271,21 @@ namespace mde
 
             m_zoomManager = new ZoomManager(m_editor, m_sourceEditor, m_zoomLabelBtn, m_savedSettings.ZoomLevel);
             m_linkHoverUnderline = new LinkHoverUnderline(m_editor);
+            // 文書の上の余白（EditorTopPadding）は、RichTextBox の Padding ではなく FlowDocument の PagePadding に付ける。
+            // Padding の部分はスクロールしない枠の内側の余白になり、スクロールした時に文字がその余白の下端で切れて、編集
+            // ペインの上端から余白の分だけ下で文字が欠けて見えるため（PagePadding は文書と一緒にスクロールする。mdew と同じ）。
+            // 下も同じく PagePadding に余白（EDITOR_BOTTOM_PADDING）を付ける。左右は RichTextBox の既定のまま（未設定なら自動）にする。
+            // RichTextBox は、表示の準備をする時（コンストラクタより後）に PagePadding を自分の既定値に設定し直すことが
+            // あるため、ここで設定するだけでなく、PagePadding が変わるたびに上下の余白を付け直す（ApplyEditorTopPadding）。
+            ApplyEditorTopPadding();
+            System.ComponentModel.DependencyPropertyDescriptor
+                .FromProperty(FlowDocument.PagePaddingProperty, typeof(FlowDocument))
+                .AddValueChanged(m_editorDocument, (s, e) => ApplyEditorTopPadding());
+            m_editor.Loaded += (s, e) => ApplyEditorTopPadding();
+            // 文書の先頭の段落が変わったら（見出し⇔本文等）、上の余白を付け直す（EditorTopPadding 参照）
+            m_editor.TextChanged += (s, e) => ApplyEditorTopPadding();
+            // 表示スタイルに合わせた線の描き方（ApplyEditorEdgeMode）は、編集ペインのスクロール領域ができてから付ける
+            m_editor.Loaded += (s, e) => ApplyEditorEdgeMode();
             m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
             m_preserveSourceLineBreaksFlg = m_savedSettings.PreserveSourceLineBreaksFlg;
             m_correctColumnWidthsFlg = m_savedSettings.CorrectColumnWidthsFlg;
@@ -762,7 +788,7 @@ namespace mde
         private string ResolveStartupPath()
         {
             // 起動時引数は、プロセス全体で共通の情報であり、ウィンドウ単位のものではない。
-            // 「新しいウィンドウ」やファイルリンクからの別ウィンドウ起動でも同じ引数が
+            // 「新規作成」やファイルリンクからの別ウィンドウ起動でも同じ引数が
             // 見えてしまうため、最初の1つのウィンドウでだけ使うようにする。
             if (!m_isFirstWindowInstanceFlg)
             {
@@ -2075,6 +2101,13 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorPreviewMouseLeftButtonDown(object a_sender, MouseButtonEventArgs a_args)
         {
+            // スクロールバーのクリックは、スクロールバーにそのまま任せる（文書の中の要素のクリックとして扱わない）。
+            // これが無いと、スクロールバーをクリックした高さと同じ行にリンクがある時に、そのリンクを開いてしまっていた
+            // （InlineStyleEditor.HandlePreviewMouseLeftButtonDown 参照）。
+            if (null != FindVisualAncestorOrSelf<System.Windows.Controls.Primitives.ScrollBar>(a_args.OriginalSource as DependencyObject))
+            {
+                return;
+            }
             Point pos = a_args.GetPosition(m_editor);
             var hit = VisualTreeHelper.HitTest(m_editor, pos);
 
@@ -2109,7 +2142,9 @@ namespace mde
         // ======================================================================
 
         /// <summary>指定した型の、最も近い視覚ツリーの祖先（またはその要素自身）を見つける。</summary>
-        /// <param name="a_start">探索を始める要素。</param>
+        /// <param name="a_start">探索を始める要素。文書の中の段落・Run 等（Visual ではない要素。クリックした時の
+        /// MouseButtonEventArgs.OriginalSource になることがある）の場合は、論理ツリーの親をたどる
+        /// （VisualTreeHelper.GetParent は Visual 以外を渡すと例外になるため）。</param>
         /// <returns>見つかった要素。なければ null。</returns>
         private static T FindVisualAncestorOrSelf<T>(DependencyObject a_start) where T : DependencyObject
         {
@@ -2120,7 +2155,9 @@ namespace mde
                 {
                     return match;
                 }
-                current = VisualTreeHelper.GetParent(current);
+                current = (current is Visual || current is System.Windows.Media.Media3D.Visual3D)
+                    ? VisualTreeHelper.GetParent(current)
+                    : LogicalTreeHelper.GetParent(current);
             }
             return null;
         }
@@ -2256,9 +2293,9 @@ namespace mde
                 // 対象の段落が必ず画面の一番上に来るとは限らない。RestoreEditorScrollAnchorと
                 // 同じ考え方で、その段落の先頭が画面の何ピクセル目に来ているか
                 // （GetCharacterRectはビューポート基準の相対座標を返す）を確認して補正する。
-                // 比較対象は0ではなくm_editor.Padding.Top：m_editorにはPadding="20,20,4,0"が
-                // 設定されており、内容が一番上に来ている状態でもGetCharacterRectのTopは常に
-                // このPadding分（上端なら20）を示すため。
+                // 比較対象はm_editor.Padding.Top（スクロールしない上の余白。今は0で、文書の上の余白は
+                // スクロールする FlowDocument.PagePadding 側にある。EDITOR_TOP_PADDING参照）：内容が一番上に
+                // 来ている状態でのGetCharacterRectのTopは、このPadding分になるため。
                 Block scrollTargetBlock = scrollAnchorBlock ?? caretBlock;
                 if (null != scrollTargetBlock)
                 {
@@ -2294,15 +2331,10 @@ namespace mde
         //  薄いラッパー（PDF書き出しのみ、両版で内容が異なるためこのファイルに残している）。
         // ======================================================================
 
-        /// <summary>現在の内容を破棄して新規文書を開始する（詳細はFileOperationsManager.NewBtnClick参照）。</summary>
+        /// <summary>新しいウィンドウを開く（詳細はFileOperationsManager.NewBtnClick参照）。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         private void NewBtnClick(object a_sender, RoutedEventArgs a_args) => m_fileOperationsManager.NewBtnClick(a_sender, a_args);
-
-        /// <summary>新しいウィンドウを開く（詳細はFileOperationsManager.NewWindowClick参照）。</summary>
-        /// <param name="a_sender">イベントの発生元。</param>
-        /// <param name="a_args">イベントの引数。</param>
-        private void NewWindowClick(object a_sender, RoutedEventArgs a_args) => m_fileOperationsManager.NewWindowClick(a_sender, a_args);
 
         /// <summary>このウィンドウを閉じる（詳細はFileOperationsManager.CloseBtnClick参照）。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
@@ -2679,7 +2711,48 @@ namespace mde
         /// EditorPreviewMouseWheel参照）。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
-        private void EditorPreviewMouseWheel(object a_sender, MouseWheelEventArgs a_args) => m_zoomManager.EditorPreviewMouseWheel(a_sender, a_args);
+        private void EditorPreviewMouseWheel(object a_sender, MouseWheelEventArgs a_args)
+        {
+            // Ctrl+ホイールは拡大・縮小（ZoomManager）。それ以外はスクロール（ScrollByWheelDelta）
+            m_zoomManager.EditorPreviewMouseWheel(a_sender, a_args);
+            if (!a_args.Handled)
+            {
+                ScrollByWheelDelta(m_editor, a_args);
+            }
+        }
+
+        /// <summary>ソースモードのエディタでのマウスホイール・タッチパッドのスクロール（ScrollByWheelDelta）。</summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void SourceEditorPreviewMouseWheel(object a_sender, MouseWheelEventArgs a_args) => ScrollByWheelDelta(m_sourceEditor, a_args);
+
+        /// <summary>
+        /// マウスホイール・タッチパッドでのスクロールを、回した量（MouseWheelEventArgs.Delta）に比例した量にする。
+        /// WPF の ScrollViewer は、回した量によらず、1回の通知ごとに決まった量（3行＝48px。Windows の「一度に
+        /// スクロールする行数」×16px）スクロールする。マウスのホイールは1目盛りで1回（Delta=120）通知されるので
+        /// 問題ないが、ノートパソコンのタッチパッドは、指を少し動かすたびに小さな量（Delta が 120 より小さい値）で
+        /// 何回も通知するため、その回数分 48px ずつスクロールして、スクロールしすぎてしまう（mdew（WebView2）は
+        /// 量に比例してスクロールするので、ちょうどよい量になる）。マウスのホイール1目盛りの量は今までと同じ。
+        /// </summary>
+        /// <param name="a_editor">スクロールするエディタ（RichTextBox または TextBox）。</param>
+        /// <param name="a_args">イベントの引数（スクロールしたら Handled にする）。</param>
+        private void ScrollByWheelDelta(Control a_editor, MouseWheelEventArgs a_args)
+        {
+            if (ModifierKeys.None != Keyboard.Modifiers)
+            {
+                return;
+            }
+            var scrollViewer = FindVisualChild<ScrollViewer>(a_editor);
+            if (null == scrollViewer)
+            {
+                return;
+            }
+            int lines = SystemParameters.WheelScrollLines;
+            // 「一度に1画面スクロールする」設定（-1）の時は、1目盛りで1画面分
+            double amountPerNotch = 0 < lines ? lines * 16.0 : scrollViewer.ViewportHeight;
+            scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - a_args.Delta / 120.0 * amountPerNotch);
+            a_args.Handled = true;
+        }
 
         /// <summary>ソースモード編集中、ファイルをダーティにする。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
@@ -2756,7 +2829,20 @@ namespace mde
 
         private void FindReplaceBtnClick(object a_sender, RoutedEventArgs a_args)
         {
-            m_findReplaceLauncher.Open();
+            m_findReplaceLauncher.Open(SelectedTextForFind());
+        }
+
+        /// <summary>検索と置換ウィンドウを開く時に、検索する文字列に入れる文字列（編集ペイン・ソースモードの入力欄で
+        /// 範囲選択している文字列。mdew と同じ）。選択していない時・複数行にまたがる時は ""（検索する文字列の欄は
+        /// 1行のため。欄は前回の内容のままになる）。書式の区切りに使っている見えない文字（ゼロ幅スペース）は除く。</summary>
+        /// <returns>検索する文字列に入れる文字列。</returns>
+        private string SelectedTextForFind()
+        {
+            string text = m_isSourceModeFlg
+                ? m_sourceEditor.SelectedText
+                : (m_editor.Selection.IsEmpty ? "" : m_editor.Selection.Text);
+            text = (text ?? "").Replace("\u200B", "");
+            return text.IndexOfAny(new[] { '\r', '\n' }) >= 0 ? "" : text;
         }
 
         /// <summary>メインウインドウのキーボードショートカットの実装。</summary>
@@ -2768,7 +2854,7 @@ namespace mde
                 Keyboard.Modifiers == ModifierKeys.Control)
             {
                 a_args.Handled = true;
-                m_findReplaceLauncher.Open();
+                m_findReplaceLauncher.Open(SelectedTextForFind());
             }
             // 表示倍率（mdew と同じ）：Ctrl++（日本語キーボードの Ctrl+; も。Shift の有無は問わない）・Ctrl+-・Ctrl+0
             // （テンキーも）。Ctrl+= 等は RichTextBox の下付き・上付き文字の切り替えに割り当てられているが、mde では使わない。
@@ -2790,19 +2876,12 @@ namespace mde
                 a_args.Handled = true;
                 m_zoomManager.ZoomResetClick(a_sender, null);
             }
-            // Ctrl+Nは「新規作成」のショートカットとして扱う（Windows標準のCtrl+Nは「新しいウィンドウ」なので、そちらは無効化する）。
+            // Ctrl+N（Shift+Ctrl+N も）は「新規作成」（新しいウィンドウを開く。mdew と同じ）。
             else if (a_args.Key == Key.N &&
-                     Keyboard.Modifiers == ModifierKeys.Control)
+                     (Keyboard.Modifiers == ModifierKeys.Control || Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift)))
             {
                 a_args.Handled = true;
                 NewBtnClick(a_sender, null);
-            }
-            // Shift+Ctrl+Nは「新しいウィンドウ」のショートカットとして扱う。
-            else if (a_args.Key == Key.N &&
-                     Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
-            {
-                a_args.Handled = true;
-                NewWindowClick(a_sender, null);
             }
             // Ctrl+Oは「開く」のショートカットとして扱う。
             else if (a_args.Key == Key.O &&
@@ -3283,6 +3362,54 @@ namespace mde
             UpdateDocStyleMenuChecks();
         }
 
+        /// <summary>VSCodeスタイルの罫線（表の見出しの行の下の黒い線など、1px の線）は、行の位置が画面の
+        /// ピクセルの境目にかかると、なめらかに描く処理で2ピクセルにまたがって描かれ、太く見える。
+        /// VSCodeスタイルの時だけ、線や枠をピクセルに合わせてくっきり描く（文字の描き方は変わらない）。
+        /// GitHubスタイルは見出しの下線に 1px 未満の太さを使っていて、くっきり描くと消えることがあるため、
+        /// 今までどおりにする。くっきり描く設定は、その要素の中のすべてに効き、中の一部だけ元に戻すことはできないため、
+        /// エディタ全体（スクロールバーを含む）ではなく、文書を表示する部分（スクロール領域の ScrollContentPresenter。
+        /// スクロールバーはその外にある）だけに付ける（スクロールバーの矢印・つまみの角が、ギザギザにならないように）。</summary>
+        private void ApplyEditorEdgeMode()
+        {
+            var presenter = FindVisualChild<ScrollContentPresenter>(m_editor);
+            if (null != presenter)
+            {
+                RenderOptions.SetEdgeMode(presenter, m_vsCodeStyleFlg ? EdgeMode.Aliased : EdgeMode.Unspecified);
+            }
+        }
+
+        /// <summary>
+        /// 編集ペインの文書の上の余白（px）。mdew と同じく、ファイルの先頭に余白（24px）を空け、さらに文書の先頭の段落の
+        /// 上の余白（見出しなら BlockStyles.ApplyHeadingStyle で付けた上の余白）を足す。mdew（HTML）は先頭の見出しの上の余白もそのまま
+        /// 空けるが、WPF は文書の先頭の段落の上の余白を無視するため、その分をここで足している。倍率
+        /// （EDITOR_FIRST_BLOCK_MARGIN_RATIO）は、mdew の見出しの上の余白が mde より大きい分を補うためのもので、
+        /// 同じファイル（先頭が大見出し）を mdew と並べて、見出しの位置がそろうように合わせた値。
+        /// </summary>
+        private double EditorTopPadding
+        {
+            get
+            {
+                Block firstBlock = m_editorDocument.Blocks.FirstBlock;
+                double firstMargin = null != firstBlock && !double.IsNaN(firstBlock.Margin.Top) ? firstBlock.Margin.Top : 0;
+                return EDITOR_TOP_PADDING + Math.Round(firstMargin * EDITOR_FIRST_BLOCK_MARGIN_RATIO);
+            }
+        }
+
+        /// <summary>編集ペインの文書の上下の余白（FlowDocument.PagePadding の上・下）を EditorTopPadding・
+        /// EDITOR_BOTTOM_PADDING にする（既にそうなら何もしない。コンストラクタ参照）。</summary>
+        private void ApplyEditorTopPadding()
+        {
+            Thickness pagePadding = m_editorDocument.PagePadding;
+            double top = EditorTopPadding;
+            if (top == pagePadding.Top &&
+                EDITOR_BOTTOM_PADDING == pagePadding.Bottom)
+            {
+                return;
+            }
+            DebugLogger.Log($"ApplyEditorTopPadding: PagePadding={pagePadding} → Top={top} Bottom={EDITOR_BOTTOM_PADDING}");
+            m_editorDocument.PagePadding = new Thickness(pagePadding.Left, top, pagePadding.Right, EDITOR_BOTTOM_PADDING);
+        }
+
         /// <summary>メニュー「表示」を開いた時：フォルダ・アウトラインの表示、ソースモードの ✓ と、表示倍率の見出し・
         /// 拡大／縮小／100%に戻すの選べる・選べないを、今の状態に合わせる（ステータスバーのボタンや Ctrl+マウスホイール
         /// でも変わるため、開くたびに合わせる。mdew と同じ）。</summary>
@@ -3344,13 +3471,8 @@ namespace mde
             m_linkHoverUnderline.Enabled = m_vsCodeStyleFlg;
             m_fontModeNewMenuItem.IsEnabled = !m_vsCodeStyleFlg;
             m_fontModeLegacyMenuItem.IsEnabled = !m_vsCodeStyleFlg;
-            // VSCodeスタイルの罫線（表の見出しの行の下の黒い線など、1px の線）は、行の位置が画面の
-            // ピクセルの境目にかかると、なめらかに描く処理で2ピクセルにまたがって描かれ、太く見える。
-            // VSCodeスタイルの時だけ、線や枠をピクセルに合わせてくっきり描く（文字の描き方は変わらない）。
-            // GitHubスタイルは見出しの下線に 1px 未満の太さを使っていて、くっきり描くと消えることがあるため、
-            // 今までどおりにする。スクロールバー・タスクリストのチェックボックスは対象外にしてある
-            // （MainWindow.xaml の RichTextBox.Resources、BlockStyles.CreateTaskCheckbox 参照）。
-            RenderOptions.SetEdgeMode(m_editor, m_vsCodeStyleFlg ? EdgeMode.Aliased : EdgeMode.Unspecified);
+            // VSCodeスタイルの時は、文書の線をくっきり描く（ApplyEditorEdgeMode 参照）
+            ApplyEditorEdgeMode();
         }
 
         // ======================================================================

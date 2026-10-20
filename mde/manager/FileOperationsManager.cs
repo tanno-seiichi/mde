@@ -270,45 +270,11 @@ namespace mde.manager
             m_setWindowTitle(title);
         }
 
-        /// <summary>現在の内容を破棄して新規文書を開始する。現在のファイルがフォルダビューに
-        /// 表示されている場合は、破棄前に編集内容を保留中の編集として退避したうえで、確認
-        /// ダイアログなしで新規作成する（あとでフォルダビューから開き直して保存できるため）。
-        /// フォルダビューに表示されていないファイル（またはそもそも未保存の新規文書）の場合は、
-        /// 内容が失われる可能性があるため従来通り確認する。</summary>
+        /// <summary>メニュー「ファイル」→「新規作成」・Ctrl+N：新しいウィンドウを開く（今のウィンドウの内容には
+        /// 触れない。mdew の「新規」と同じ）。新しいウィンドウは、今のウィンドウから少し右下にずらした位置に開く。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         public void NewBtnClick(object a_sender, RoutedEventArgs a_args)
-        {
-            bool currentFileInFolderViewFlg = !string.IsNullOrEmpty(m_getCurrentFileDirectory()) &&
-                m_folderTreeManager.IsWithinLoadedFolder(m_getCurrentFileDirectory());
-
-            if (!currentFileInFolderViewFlg && (m_getCurrentFileIsDirty() || m_pendingFileEdits.Count > 0))
-            {
-                var result = MessageBox.Show(
-                    "現在の内容を破棄して新規作成します。保存されていない変更は失われますが、よろしいですか？",
-                    "新規作成", MessageBoxButton.OKCancel, MessageBoxImage.Question);
-                if (result != MessageBoxResult.OK)
-                {
-                    return;
-                }
-            }
-
-            if (currentFileInFolderViewFlg)
-            {
-                SnapshotCurrentFileIfDirty();
-                StartNewDocumentKeepingPendingEdits();
-            }
-            else
-            {
-                DiscardCurrentDocumentSilently();
-            }
-            m_editor.Focus();
-        }
-
-        /// <summary>新しいウィンドウを開く（現在のウィンドウの内容には触れない）。</summary>
-        /// <param name="a_sender">イベントの発生元。</param>
-        /// <param name="a_args">イベントの引数。</param>
-        public void NewWindowClick(object a_sender, RoutedEventArgs a_args)
         {
             m_openNewWindow();
         }
@@ -994,35 +960,6 @@ namespace mde.manager
             SetWindowTitleForFile(null);
 
             m_pendingFileEdits.Clear();
-            m_setCurrentFileIsDirty(false);
-
-            m_runAsProgrammaticChange(() =>
-            {
-                if (m_isSourceMode())
-                {
-                    m_sourceEditor.Text = "";
-                }
-                else
-                {
-                    m_editor.Document.Blocks.Clear();
-                    m_editor.Document.Blocks.Add(new Paragraph());
-                }
-            });
-            m_outlineManager.Refresh();
-            m_folderTreeManager.RefreshDirtyMarkers();
-        }
-
-        /// <summary>
-        /// DiscardCurrentDocumentSilentlyと同様に、エディタを空の無題文書へリセットするが、
-        /// 他のファイルの保留中の編集（m_pendingFileEdits）はそのまま残す。フォルダビューに
-        /// 表示されているファイルから新規作成する際、そのファイル自身の編集内容は事前に
-        /// SnapshotCurrentFileIfDirtyで退避済みであることを前提とする。
-        /// </summary>
-        private void StartNewDocumentKeepingPendingEdits()
-        {
-            m_setCurrentFilePath(null);
-            m_setCurrentFileDirectory(null);
-            SetWindowTitleForFile(null);
             m_setCurrentFileIsDirty(false);
 
             m_runAsProgrammaticChange(() =>

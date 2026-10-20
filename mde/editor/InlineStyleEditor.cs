@@ -610,7 +610,11 @@ namespace mde.editor
                 return;
             }
 
-            var pos = m_editor.GetPositionFromPoint(a_args.GetPosition(m_editor), true);
+            // 文字の上をクリックした時だけリンクを開く（第2引数 false：文字の上でなければ null）。true（いちばん近い文字の
+            // 位置に寄せる）だと、行の右の空いた所や、スクロールバー等の文書の外をクリックした時も、同じ高さにあるリンクの
+            // 文字の位置になり、リンクを開いてしまう（目次の行の横でスクロールバーをクリックすると、目次のリンク先へ移動
+            // してしまっていた）。
+            var pos = m_editor.GetPositionFromPoint(a_args.GetPosition(m_editor), false);
             if (null == pos)
             {
                 return;

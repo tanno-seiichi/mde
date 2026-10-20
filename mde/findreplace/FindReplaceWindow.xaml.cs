@@ -84,6 +84,20 @@ namespace mde.findreplace
         private static bool m_lastScopeFolderFlg = false;
         private static bool m_lastReplaceExpandedFlg = false;
 
+        /// <summary>検索する文字列の欄に、編集ペインで範囲選択していた文字列を入れ、欄を選択した状態にする
+        /// （FindReplaceLauncher.Open から呼ばれる。mdew と同じ）。「正規表現を使用する」がオンの時は、そのままの文字列を
+        /// 探すよう、記号をエスケープして入れる。a_text が空の時は、欄は前回の内容のままにする。</summary>
+        /// <param name="a_text">範囲選択していた文字列（無ければ null か ""）。</param>
+        public void SetSearchText(string a_text)
+        {
+            if (!string.IsNullOrEmpty(a_text))
+            {
+                m_searchBox.Text = UseRegex ? System.Text.RegularExpressions.Regex.Escape(a_text) : a_text;
+            }
+            m_searchBox.Focus();
+            m_searchBox.SelectAll();
+        }
+
         public FindReplaceWindow(MainWindow a_owner)
         {
             InitializeComponent();

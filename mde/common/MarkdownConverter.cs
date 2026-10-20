@@ -2061,6 +2061,10 @@ namespace mde.common
         ///   消費され、2つ目以降の\はすべてそのまま表示される（さらなるエスケープ処理はしない）。
         /// ・[リンク文字列](URL) のリンク文字列（[]の中）では、\はエスケープ文字として扱わず
         ///   そのまま表示する。
+        /// ・インラインコード（`...`）の中では、\はエスケープ文字として扱わずそのまま表示する
+        ///   （CommonMark と同じ。`%LocalAppData%\mdew\settings.json` 等のパスの \ が消えないように）。
+        /// ・\の直後が記号（ASCII の句読点）でない場合は、エスケープではないので \ もそのまま表示する
+        ///   （CommonMark と同じ。C:\src のような文中のパスの \ が消えないように）。
         /// </summary>
         /// <param name="a_text">1行分の生テキスト。</param>
         /// <returns>エスケープ処理を適用した後のテキスト（プレースホルダ文字を含む）。</returns>
@@ -2087,6 +2091,34 @@ namespace mde.common
             {
                 var g = m.Groups[1];
                 exemptRanges.Add((g.Index, g.Index + g.Length));
+            }
+            // インラインコードの中（囲みのバッククォートを含む）も対象外にする。コード区間の見つけ方は ParseTableRow・
+            // m_inlineContentRegex と同じ（開きと同じ個数のバッククォートの並びで閉じる）。コードの外の \` は
+            // コードの始まりではない（エスケープされたバッククォート）。
+            for (int ci = 0; ci < a_text.Length;)
+            {
+                if ('\\' == a_text[ci])
+                {
+                    ci += 2;
+                }
+                else if ('`' == a_text[ci])
+                {
+                    int runLength = CountBacktickRun(a_text, ci);
+                    int closeIndex = FindClosingBacktickRun(a_text, ci + runLength, runLength);
+                    if (closeIndex >= 0)
+                    {
+                        exemptRanges.Add((ci, closeIndex + runLength));
+                        ci = closeIndex + runLength;
+                    }
+                    else
+                    {
+                        ci += runLength;
+                    }
+                }
+                else
+                {
+                    ci++;
+                }
             }
             bool IsExempt(int a_idx)
             {
@@ -2126,7 +2158,19 @@ namespace mde.common
                     if (i < a_text.Length)
                     {
                         char next = a_text[i];
-                        sb.Append(m_escapePlaceholders.TryGetValue(next, out char ph) ? ph : next);
+                        if (m_escapePlaceholders.TryGetValue(next, out char ph))
+                        {
+                            sb.Append(ph);
+                        }
+                        else if (IsAsciiPunctuation(next))
+                        {
+                            sb.Append(next);
+                        }
+                        else
+                        {
+                            // 記号以外の前の \ はエスケープではない（\ もそのまま表示する）
+                            sb.Append('\\').Append(next);
+                        }
                         i++;
                     }
                     else
@@ -2146,6 +2190,14 @@ namespace mde.common
                 }
             }
             return sb.ToString();
+        }
+
+        /// <summary>CommonMark で \ でエスケープできる文字（ASCII の句読点・記号）か。</summary>
+        /// <param name="a_c">文字。</param>
+        /// <returns>エスケープできる文字なら true。</returns>
+        private static bool IsAsciiPunctuation(char a_c)
+        {
+            return (a_c >= '!' && a_c <= '/') || (a_c >= ':' && a_c <= '@') || (a_c >= '[' && a_c <= '`') || (a_c >= '{' && a_c <= '~');
         }
 
         /// <summary>エスケープ処理で使ったプレースホルダ文字を、実際の文字へ戻す。</summary>
