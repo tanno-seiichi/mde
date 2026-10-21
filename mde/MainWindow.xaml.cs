@@ -270,6 +270,8 @@ namespace mde
             }
 
             m_zoomManager = new ZoomManager(m_editor, m_sourceEditor, m_zoomLabelBtn, m_savedSettings.ZoomLevel);
+            m_zoomManager.ZoomChangeWrapper = ChangeZoomKeepingTopLine;
+            m_zoomManager.ZoomLevelShown = ShowZoomToast;
             m_linkHoverUnderline = new LinkHoverUnderline(m_editor);
             // 文書の上の余白（EditorTopPadding）は、RichTextBox の Padding ではなく FlowDocument の PagePadding に付ける。
             // Padding の部分はスクロールしない枠の内側の余白になり、スクロールした時に文字がその余白の下端で切れて、編集
@@ -2721,6 +2723,113 @@ namespace mde
             }
         }
 
+        /// <summary>表示倍率を変える（引数の処理を実行する）時に、編集ペインの一番上に見えている行が動かないようにする
+        /// （ZoomManager.ZoomChangeWrapper）。倍率を変えると、文字の大きさに合わせて折り返しの位置・画像の大きさも変わる
+        /// ため、スクロール量をそのまま保つと別の場所が表示されてしまう。そこで、変える前に一番上に見えている行を覚えておき、
+        /// 変えた後にその行が同じ位置に来るようスクロールし直す（ソースモードでは、一番上に見えている行が一番上に来るようにする）。</summary>
+        /// <param name="a_changeZoom">倍率を変える処理。</param>
+        private void ChangeZoomKeepingTopLine(Action a_changeZoom)
+        {
+            object anchor = m_isSourceModeFlg ? CaptureEditorScrollAnchor() : CaptureZoomTopLineAnchor();
+            a_changeZoom();
+            UpdateLayout();
+            if (anchor is ZoomTopLineAnchor lineAnchor)
+            {
+                RestoreZoomTopLineAnchor(lineAnchor);
+            }
+            else
+            {
+                RestoreEditorScrollAnchor(anchor);
+            }
+        }
+
+        /// <summary>拡大・縮小した時に、今の表示倍率をウィンドウの中央に大きく表示する（m_zoomToast。1秒ほど表示したら
+        /// 消える。続けて拡大・縮小した時は、表示し直してまた1秒ほど表示する）。</summary>
+        /// <param name="a_zoomLevel">今の倍率（1.0が100%）。</param>
+        private void ShowZoomToast(double a_zoomLevel)
+        {
+            m_zoomToastText.Text = Math.Round(a_zoomLevel * 100) + "%";
+            // すぐに表示し、1秒表示したら 0.25 秒かけて消す（アニメーションを始め直すと、前のアニメーションは置き換わる）
+            var fade = new System.Windows.Media.Animation.DoubleAnimationUsingKeyFrames();
+            fade.KeyFrames.Add(new System.Windows.Media.Animation.DiscreteDoubleKeyFrame(1, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.Zero)));
+            fade.KeyFrames.Add(new System.Windows.Media.Animation.DiscreteDoubleKeyFrame(1, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.FromSeconds(1))));
+            fade.KeyFrames.Add(new System.Windows.Media.Animation.LinearDoubleKeyFrame(0, System.Windows.Media.Animation.KeyTime.FromTimeSpan(TimeSpan.FromSeconds(1.25))));
+            m_zoomToast.BeginAnimation(UIElement.OpacityProperty, fade);
+        }
+
+        /// <summary>ChangeZoomKeepingTopLine が覚えておく、Markdownモード時の一番上に見えている行。</summary>
+        private class ZoomTopLineAnchor
+        {
+            /// <summary>一番上に見えている行の中の文字の位置。</summary>
+            public TextPointer Position { get; set; }
+
+            /// <summary>その行の、表示領域の上端より上にスクロールされている割合（0=行の上端が表示領域の上端にある）。
+            /// 行の高さに対する割合で覚えておくのは、画像の行は倍率を変えると画像の大きさ（エディタの座標での）が
+            /// 変わるため。</summary>
+            public double Fraction { get; set; }
+
+            /// <summary>行の上端が表示領域の上端より下に見えていた場合（文書の先頭の余白や、段落と段落の間の余白が上端に
+            /// ある時）の、上端から行の上端までの距離（エディタの座標。px）。null なら、行の途中が上端にあった（Fraction を使う）。</summary>
+            public double? TopGap { get; set; }
+        }
+
+        /// <summary>表示倍率を変える直前に、編集ペインの一番上に見えている行を覚えておく（ChangeZoomKeepingTopLine）。</summary>
+        /// <returns>ZoomTopLineAnchor。行が分からない時（画像の途中等）は、段落単位の位置（CaptureEditorScrollAnchor）。</returns>
+        private object CaptureZoomTopLineAnchor()
+        {
+            if (!m_editor.IsLoaded)
+            {
+                return null;
+            }
+            // 表示領域の上端（GetCharacterRect の座標。m_editor の Padding の上の分だけ下）の、横の真ん中にある文字
+            double viewportTop = m_editor.Padding.Top;
+            TextPointer position = m_editor.GetPositionFromPoint(new Point(m_editor.ActualWidth / 2, viewportTop + 1), true);
+            if (null != position)
+            {
+                // GetCharacterRect の高さはその文字の行の高さ
+                Rect rect = position.GetCharacterRect(LogicalDirection.Forward);
+                // 一番上の行（上端にかかっているか、上端のすぐ下にある行）の文字であることを確かめる（近い文字に吸着した
+                // 結果、上端より上の文字や、ずっと下の文字になることがあるため）
+                if (!rect.IsEmpty && 0 < rect.Height &&
+                    viewportTop <= rect.Bottom && rect.Top - viewportTop < m_editor.ActualHeight / 2)
+                {
+                    return new ZoomTopLineAnchor
+                    {
+                        Position = position,
+                        Fraction = Clamp01((viewportTop - rect.Top) / rect.Height),
+                        TopGap = rect.Top >= viewportTop ? rect.Top - viewportTop : (double?)null,
+                    };
+                }
+            }
+            return CaptureEditorScrollAnchor();
+        }
+
+        /// <summary>CaptureZoomTopLineAnchor で覚えておいた行が、表示倍率を変えた後も同じ位置に来るようスクロールする。
+        /// 呼び出し側で、倍率を変えた後に UpdateLayout() を挟んでから呼び出すこと。</summary>
+        /// <param name="a_anchor">CaptureZoomTopLineAnchor の戻り値。</param>
+        private void RestoreZoomTopLineAnchor(ZoomTopLineAnchor a_anchor)
+        {
+            if (null == m_editorScrollViewer)
+            {
+                m_editorScrollViewer = FindVisualChild<ScrollViewer>(m_editor);
+            }
+            if (null == m_editorScrollViewer)
+            {
+                return;
+            }
+            Rect rect = a_anchor.Position.GetCharacterRect(LogicalDirection.Forward);
+            if (rect.IsEmpty)
+            {
+                return;
+            }
+            double viewportTop = m_editor.Padding.Top;
+            // GetCharacterRect は今の表示領域を基準にした位置のため、行が同じ位置に来るまでのずれを、今のスクロール位置に足す
+            double targetTop = null != a_anchor.TopGap
+                ? rect.Top - viewportTop - a_anchor.TopGap.Value
+                : rect.Top - viewportTop + a_anchor.Fraction * rect.Height;
+            m_editorScrollViewer.ScrollToVerticalOffset(m_editorScrollViewer.VerticalOffset + targetTop);
+        }
+
         /// <summary>ソースモードのエディタでのマウスホイール・タッチパッドのスクロール（ScrollByWheelDelta）。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
@@ -3746,6 +3855,11 @@ namespace mde
             public Paragraph Paragraph { get; set; }
             public double VerticalFraction { get; set; }
             public double HorizontalFraction { get; set; }
+
+            /// <summary>段落の先頭が表示領域の上端より下に見えていた場合（文書の先頭の余白が見えている時や、段落と段落の
+            /// 間の余白が上端にある時）の、上端から段落の先頭までの距離（px）。null なら、段落の途中が上端にあった
+            /// （VerticalFraction を使う）。</summary>
+            public double? TopGap { get; set; }
         }
 
         /// <summary>フォルダ/アウトラインペインの表示・非表示を切り替える直前に呼び出し、今
@@ -3788,9 +3902,16 @@ namespace mde
             Rect endRect = para.ContentEnd.GetCharacterRect(LogicalDirection.Backward);
             double height = endRect.Bottom - startRect.Top;
             double width = endRect.Right - startRect.Left;
+            // 表示領域の上端（GetCharacterRect の座標。m_editor の Padding の上の分だけ下）
+            double viewportTop = m_editor.Padding.Top;
             return new EditorScrollAnchor
             {
                 Paragraph = para,
+                // 段落の先頭が上端より下に見えている時は、その距離をそのまま覚えておき、切り替え後も同じ距離に戻す。
+                // 割合（VerticalFraction）だけだと 0 になり、段落の先頭がぴったり上端に来るまでスクロールしてしまうため、
+                // 文書の先頭を表示している時にアウトライン等を開閉すると、文書の上の余白（FlowDocument.PagePadding）の
+                // 分だけ下にずれていた。
+                TopGap = startRect.Top >= viewportTop ? startRect.Top - viewportTop : (double?)null,
                 // GetPositionFromPointは、その段落が図解画像1枚だけで構成されているような
                 // 場合（＝段落の途中を指す文字位置が存在しない場合）、段落の先頭か末尾の
                 // どちらか近い方へ吸着してしまい、実際にはその画像の途中までスクロールして
@@ -3798,7 +3919,7 @@ namespace mde
                 // 縦横のRect（先頭〜末尾）を基準に「左上端が段落の何%の位置にあるか」を
                 // 割合として覚えておくことで、画像の途中までスクロールしていた場合にも
                 // 対応できるようにしている。
-                VerticalFraction = (height > 0) ? Clamp01((0 - startRect.Top) / height) : 0,
+                VerticalFraction = (height > 0) ? Clamp01((viewportTop - startRect.Top) / height) : 0,
                 HorizontalFraction = (width > 0) ? Clamp01((0 - startRect.Left) / width) : 0,
             };
         }
@@ -3889,7 +4010,11 @@ namespace mde
                 Rect endRect = anchor.Paragraph.ContentEnd.GetCharacterRect(LogicalDirection.Backward);
                 double height = endRect.Bottom - startRect.Top;
                 double width = endRect.Right - startRect.Left;
-                double targetTop = startRect.Top + anchor.VerticalFraction * height;
+                double viewportTop = m_editor.Padding.Top;
+                // 段落の先頭が上端より下に見えていた場合は、同じ距離だけ下に段落の先頭が来るようにする（TopGap 参照）
+                double targetTop = null != anchor.TopGap
+                    ? startRect.Top - viewportTop - anchor.TopGap.Value
+                    : startRect.Top - viewportTop + anchor.VerticalFraction * height;
                 double targetLeft = startRect.Left + anchor.HorizontalFraction * width;
 
                 m_editorScrollViewer.ScrollToVerticalOffset(m_editorScrollViewer.VerticalOffset + targetTop);

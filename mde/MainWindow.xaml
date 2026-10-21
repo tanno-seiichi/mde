@@ -56,6 +56,8 @@
         </Style>
     </Window.Resources>
 
+    <!-- 表示倍率の表示（m_zoomToast）を、ウィンドウ全体の中央に重ねるための Grid -->
+    <Grid>
     <DockPanel>
 
         <!-- ===================== Menu bar ===================== -->
@@ -468,4 +470,12 @@
             </Border>
         </Grid>
     </DockPanel>
+
+    <!-- 拡大・縮小した時に、今の表示倍率をウィンドウの中央に1秒ほど表示する（MainWindow.ShowZoomToast。mdew と同じ見た目）。
+         普段は透明。マウスの操作は受け取らない -->
+    <Border x:Name="m_zoomToast" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0" IsHitTestVisible="False"
+            Background="#99000000" CornerRadius="8" Padding="28,10">
+        <TextBlock x:Name="m_zoomToastText" Foreground="White" FontSize="36" FontFamily="Yu Gothic UI, Segoe UI"/>
+    </Border>
+    </Grid>
 </Window>
