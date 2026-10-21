@@ -27,6 +27,10 @@ namespace mde.findreplace
         /// <summary>検索・置換の対象となるメインウィンドウ。</summary>
         private readonly MainWindow m_owner;
 
+        /// <summary>結果の一覧の高さの上限（XAML の MaxHeight）。ウィンドウの大きさを変えた時になくし、「すべて検索」で
+        /// ウィンドウの高さを中身に合わせ直す時に戻す（FitHeightToContent）。</summary>
+        private readonly double m_resultsListMaxHeight;
+
         /// <summary>現在表示中の「すべて検索/すべて置換」結果一覧の背後にあるファイルパス。</summary>
         private List<string> m_resultsPaths = new List<string>();
 
@@ -102,6 +106,16 @@ namespace mde.findreplace
         {
             InitializeComponent();
             this.m_owner = a_owner;
+            m_resultsListMaxHeight = m_resultsList.MaxHeight;
+            // 利用者がウィンドウの大きさを変えると（WPF が SizeToContent を Manual にする）、結果の一覧の高さの上限（MaxHeight。
+            // 開いた時に中身に合わせて大きくなりすぎないためのもの）をなくし、一覧がウィンドウの高さに合わせて伸び縮みするようにする
+            SizeChanged += (s, e) =>
+            {
+                if (SizeToContent.Manual == SizeToContent)
+                {
+                    m_resultsList.ClearValue(MaxHeightProperty);
+                }
+            };
 
             // 前回の検索条件を復元する。
             m_searchBox.Text = m_lastTerm;
@@ -432,6 +446,14 @@ namespace mde.findreplace
             m_statusText.Text = "見つかりませんでした。";
         }
 
+        /// <summary>ウィンドウの高さを、開いた時と同じく中身に合わせた高さに戻す（大きさを変えた後でも、「すべて検索」で
+        /// 結果の数に合った高さになるように）。幅は変えない。</summary>
+        private void FitHeightToContent()
+        {
+            m_resultsList.MaxHeight = m_resultsListMaxHeight;
+            SizeToContent = SizeToContent.Height;
+        }
+
         /// <summary>「すべて検索」ボタン：選択されている範囲内の一致箇所をすべて一覧表示する
         /// （現在のファイル範囲では、各一致箇所を前後の文脈付きで一覧表示する）。</summary>
         /// <param name="a_sender">ボタン。</param>
@@ -442,6 +464,7 @@ namespace mde.findreplace
             {
                 return;
             }
+            FitHeightToContent();
             m_folderFindFileList = null; // 次を検索/前を検索の位置情報が古いまま残らないようリセット
             m_lastFindAllTerm = Term;
 
