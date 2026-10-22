@@ -116,15 +116,33 @@ namespace mde.common
         /// Markdown書き出し時に参照されるのはセルの最初の段落のTagだけだが（TableToMarkdownの
         /// ヘッダー行のTextAlignment/Tag検出部分参照）、すべての段落に同じ値を設定しておいても
         /// 書き出し結果には影響しない。</param>
+        /// <param name="a_taskCheckboxFlg">セルの先頭の"[ ]"/"[x]"（後ろは空白かセルの終わり）をチェックボックスに
+        /// するか（見出しの行以外のセルはtrue。箇条書きのタスクリストと同じ見た目・操作。書き出しは、チェックボックスの
+        /// InlineUIContainerがAppendInlinesMarkdownで"[ ] "/"[x] "に戻る）。</param>
         /// <returns>組み立てたTableCell（罫線・Padding・背景色等、内容以外の見た目は
         /// 呼び出し側で設定すること）。</returns>
-        private TableCell BuildTableCellFromMarkdown(string a_cellMarkdownText, TextAlignment a_alignment, object a_tag)
+        private TableCell BuildTableCellFromMarkdown(string a_cellMarkdownText, TextAlignment a_alignment, object a_tag, bool a_taskCheckboxFlg)
         {
             string converted = ConvertTableCellBrToLineBreak(a_cellMarkdownText);
             string[] cellLines = converted.Split('\n');
             var cell = new TableCell();
-            foreach (string lineText in cellLines)
+            bool firstLineFlg = true;
+            foreach (string cellLineText in cellLines)
             {
+                string lineText = cellLineText;
+                // セルの先頭の"[ ]"/"[x]"（チェックボックス）
+                bool? taskChecked = null;
+                if (a_taskCheckboxFlg && firstLineFlg)
+                {
+                    var taskMatch = Regex.Match(lineText, "^\\[([ xX])\\](?:[ \\t]+|$)");
+                    if (taskMatch.Success)
+                    {
+                        taskChecked = " " != taskMatch.Groups[1].Value;
+                        lineText = lineText.Substring(taskMatch.Length);
+                    }
+                }
+                firstLineFlg = false;
+
                 var p = new Paragraph
                 {
                     Margin = new Thickness(0),
@@ -142,6 +160,22 @@ namespace mde.common
                     Tag = a_tag
                 };
                 AppendInlineMarkdownToParagraph(p, lineText, false);
+                if (taskChecked.HasValue)
+                {
+                    // 箇条書きのタスクリスト（BuildNestedList）と同じく、チェックボックスを段落の先頭に置く。
+                    // 段落の中身がチェックボックスだけになる時は、空のRunも一緒に入れる（理由は
+                    // ListEditor.ConvertListItemTextToTaskCheckbox参照）
+                    var container = BlockStyles.CreateTaskCheckboxContainer(taskChecked.Value);
+                    if (p.Inlines.Count > 0)
+                    {
+                        p.Inlines.InsertBefore(p.Inlines.FirstInline, container);
+                    }
+                    else
+                    {
+                        p.Inlines.Add(container);
+                        p.Inlines.Add(new Run(""));
+                    }
+                }
                 cell.Blocks.Add(p);
             }
             return cell;
@@ -719,7 +753,14 @@ namespace mde.common
                             {
                                 sb.Append('\n');
                             }
-                            sb.Append(ParagraphInlineToMarkdown(cp));
+                            string paraMarkdown = ParagraphInlineToMarkdown(cp);
+                            if (firstParaFlg)
+                            {
+                                // セルの先頭のチェックボックス（"[ ] "/"[x] "）の直後に打った空白は、その後ろの空白と
+                                // 重なるので1つにする
+                                paraMarkdown = Regex.Replace(paraMarkdown, "^(\\[[ x]\\]) +", "$1 ");
+                            }
+                            sb.Append(paraMarkdown);
                             firstParaFlg = false;
                         }
                     }
@@ -928,7 +969,7 @@ namespace mde.common
                 }
                 else if (inline is InlineUIContainer cbIuc && cbIuc.Child is CheckBox taskCheckBox)
                 {
-                    // タスクリストのチェックボックス。
+                    // タスクリスト・表のセルのチェックボックス。
                     a_sb.Append(true == taskCheckBox.IsChecked ? "[x] " : "[ ] ");
                 }
                 else if (inline is Span span)
@@ -1274,7 +1315,7 @@ namespace mde.common
                         // ようにし、行の途中で表が壊れて見える問題を避ける。
                         var (headerAlignment, headerExplicitLeftFlg) = GetColumnAlignment(headerColIndex);
                         var cell = BuildTableCellFromMarkdown(
-                            txt, headerAlignment, headerExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null);
+                            txt, headerAlignment, headerExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null, false);
                         cell.FontWeight = FontWeights.Bold;
                         cell.Background = BlockStyles.TableHeaderBackground;
                         // 罫線（BorderBrush/BorderThickness）は、表全体を組み立て終えた後に
@@ -1296,7 +1337,7 @@ namespace mde.common
                             // KeepTogether: 上のヘッダーセルと同じ理由（罫線が崩れる問題への対策）。
                             var (bodyAlignment, bodyExplicitLeftFlg) = GetColumnAlignment(bodyColIndex);
                             var cell = BuildTableCellFromMarkdown(
-                                txt, bodyAlignment, bodyExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null);
+                                txt, bodyAlignment, bodyExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null, true);
                             // 罫線は表全体の組み立て後にBlockStyles.ApplyTableCellBordersで
                             // まとめて設定する（ヘッダーセルと同じ理由）。
                             cell.Padding = BlockStyles.TableCellPadding;

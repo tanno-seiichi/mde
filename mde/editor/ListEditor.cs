@@ -199,7 +199,7 @@ namespace mde.editor
         /// 変換する（ライブ入力時用）。MarkdownConverter.BuildNestedListのバッチ変換と対になる処理。
         /// ConvertParagraphToListItem等と同様、記号部分だけを取り除き、それ以降の内容は書式ごと
         /// そのまま残す。</summary>
-        /// <param name="a_p">変換する段落（リスト項目直下のものであること）。</param>
+        /// <param name="a_p">変換する段落（リスト項目直下のもの。表のセルの先頭の段落にも使う）。</param>
         /// <param name="a_checked">"[x] "ならtrue、"[ ] "ならfalse。</param>
         /// <param name="a_markerTextLength">段落先頭から取り除く記号部分の文字数
         /// （"[ ] "/"[x] "はいずれも4文字）。</param>

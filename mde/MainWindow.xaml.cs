@@ -933,6 +933,22 @@ namespace mde
             }
         }
 
+        /// <summary>段落が、表の見出しの行以外のセルの最初の段落か（セルの先頭の"[ ] "/"[x] "をチェックボックスに
+        /// 変換する対象。MarkdownConverter.BuildTableCellFromMarkdownと同じく、見出しの行（表の最初の行）は除く）。</summary>
+        /// <param name="a_para">調べる段落。</param>
+        /// <returns>見出しの行以外のセルの最初の段落ならtrue。</returns>
+        private static bool IsTableBodyCellFirstParagraph(Paragraph a_para)
+        {
+            if (!(a_para.Parent is TableCell cell) || !ReferenceEquals(cell.Blocks.FirstBlock, a_para) ||
+                !(cell.Parent is TableRow row) || !(row.Parent is TableRowGroup rowGroup) || !(rowGroup.Parent is Table table))
+            {
+                return false;
+            }
+            bool headerRowFlg = ReferenceEquals(table.RowGroups.FirstOrDefault(), rowGroup) &&
+                ReferenceEquals(rowGroup.Rows.FirstOrDefault(), row);
+            return !headerRowFlg;
+        }
+
         /// <summary>
         /// タスクリストのチェックボックス（[ ]/[x]）がクリックされてチェック状態が変わった時の
         /// 処理。埋め込まれた各CheckBoxに個別のハンドラを付けるのではなく、ToggleButton.
@@ -1156,7 +1172,7 @@ namespace mde
             // 「・」より位置がずれて見えるため。詳細はBlockStyles.CreateTaskCheckbox参照）。
             // BackSpace/Deleteで文字を全て消すと、WPF標準の削除処理が空になったRunを内部的に
             // 取り除くことがあるため、ここで直後のInlineの有無を毎回確認し、無ければ補う。
-            if (para.Parent is ListItem &&
+            if ((para.Parent is ListItem || para.Parent is TableCell) &&
                 para.Inlines.FirstInline is InlineUIContainer existingTaskIuc &&
                 existingTaskIuc.Child is CheckBox existingTaskCb &&
                 "task-checkbox" == (existingTaskCb.Tag as string) &&
@@ -1185,6 +1201,23 @@ namespace mde
                 {
                     m_listEditor.ConvertListItemTextToTaskCheckbox(
                         para, " " != taskMatch.Groups[1].Value, taskMatch.Value.Length);
+                    return;
+                }
+            }
+
+            // 表のセル（見出しの行以外）の先頭の"[ ] "/"[x] "も、チェックボックスに変換する（箇条書きと同じ。
+            // 既にチェックボックスがあるセルは除く）。表のセルでは、後ろにスペースを打たなくても、セルの中身が
+            // "[ ]"/"[x]"だけになった時にも変換する（セルの先頭の"[ ]"/"[x]"は、後ろが空白でもセルの終わりでも、
+            // 読み込むとチェックボックスになるため。MarkdownConverter.BuildTableCellFromMarkdown）
+            if (IsTableBodyCellFirstParagraph(para) &&
+                !(para.Inlines.FirstInline is InlineUIContainer firstIuc && firstIuc.Child is CheckBox))
+            {
+                string cellText = m_listEditor.GetParagraphPlainText(para);
+                var cellTaskMatch = Regex.Match(cellText, "^\\[([ xX])\\](?:[ \u00A0]|$)");
+                if (cellTaskMatch.Success)
+                {
+                    m_listEditor.ConvertListItemTextToTaskCheckbox(
+                        para, " " != cellTaskMatch.Groups[1].Value, cellTaskMatch.Value.Length);
                     return;
                 }
             }

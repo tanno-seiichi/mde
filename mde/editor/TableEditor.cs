@@ -806,6 +806,11 @@ namespace mde.editor
                     {
                         sb.Append('\n');
                     }
+                    // セルの先頭のチェックボックスは、☑・☐ の文字にする（AppendCellInlinesと同じ）
+                    if (p.Inlines.FirstInline is InlineUIContainer cbIuc && cbIuc.Child is System.Windows.Controls.CheckBox cb)
+                    {
+                        sb.Append(true == cb.IsChecked ? "☑ " : "☐ ");
+                    }
                     sb.Append(new TextRange(p.ContentStart, p.ContentEnd).Text);
                     firstParaFlg = false;
                 }
@@ -864,6 +869,11 @@ namespace mde.editor
                 else if (inline is InlineUIContainer iuc && iuc.Child is System.Windows.Controls.Image img)
                 {
                     AppendCellImage(a_sb, img, hasMoreFlg);
+                }
+                else if (inline is InlineUIContainer cbIuc && cbIuc.Child is System.Windows.Controls.CheckBox cb)
+                {
+                    // セルの先頭のチェックボックスは、☑・☐ の文字にする（箇条書きのチェックボックスを Excel 用にコピーする時と同じ文字）
+                    a_sb.Append(true == cb.IsChecked ? "☑ " : "☐ ");
                 }
                 else if (inline is Run run)
                 {
