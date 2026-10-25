@@ -22,6 +22,7 @@ Markdown エディタです。編集用とプレビュー用の画面が分か�
 - [PDFへの書き出し](#pdfへの書き出し)
 - [ショートカット一覧](#ショートカット一覧)
 - [困ったときは](#困ったときは)
+- [ライセンス](#ライセンス)
 
 ## インストールと起動
 
@@ -370,3 +371,9 @@ Windows標準の「Microsoft Print to PDF」仮想プリンタを使って書き
 - 動作がおかしいと感じたときは、一度ファイルを保存してからウィンドウを閉じて開き直してみてください。
 - 起動時の状態やペインの幅などがおかしくなった場合は、`%AppData%\mde\settings.json` を削除すると
   初期状態に戻ります。
+
+## ライセンス
+
+mde は MIT License です（`LICENSE.txt`）。ただし、インストーラーのソースの `msi\UpgradeConfirmDlg.wxs` は、
+WiX Toolset の `WixUI_Minimal.wxs` を元に作ったものなので、Microsoft Reciprocal License（MS-RL）です
+（`msi\LICENSE-MS-RL.txt`）。
