@@ -228,6 +228,66 @@ namespace mde.editor
             }
         }
 
+        /// <summary>
+        /// Tab・Shift+Tab でのセル間の移動（mdew・mdee と同じ）。次（Shift+Tab は前）のセルの内容を選んだ状態にする
+        /// （そのまま入力すると書き換えられる）。行の端では次（前）の行へ進む。最後のセルで Tab を押した時は、表の下に
+        /// 行を1行追加して、その先頭のセルへ移る。最初のセルで Shift+Tab を押した時は何もしない。
+        /// </summary>
+        /// <param name="a_cell">今のセル。</param>
+        /// <param name="a_backwardFlg">前のセルへ移るか（Shift+Tab）。</param>
+        public void MoveByTab(TableCell a_cell, bool a_backwardFlg)
+        {
+            if (!(a_cell.Parent is TableRow row) || !(row.Parent is TableRowGroup rg) || !(rg.Parent is Table table))
+            {
+                return;
+            }
+            var cells = table.RowGroups.SelectMany(g => g.Rows).SelectMany(r => r.Cells).ToList();
+            int index = cells.IndexOf(a_cell) + (a_backwardFlg ? -1 : 1);
+            if (index < 0)
+            {
+                return;
+            }
+            if (index >= cells.Count)
+            {
+                // 最後のセル：下に行を追加する（InsertRowが、新しい行の先頭のセルにキャレットを置く）
+                var lastRow = table.RowGroups.Last().Rows.Last();
+                ContextCell = lastRow.Cells[lastRow.Cells.Count - 1];
+                InsertRow(false);
+                return;
+            }
+            TableCell target = cells[index];
+            if (target.Blocks.FirstBlock is Paragraph firstPara && target.Blocks.LastBlock is Paragraph lastPara)
+            {
+                m_editor.Selection.Select(firstPara.ContentStart, lastPara.ContentEnd);
+            }
+            m_editor.Focus();
+        }
+
+        /// <summary>
+        /// Ctrl+Enter：今のセルの行の下に行を挿入して、新しい行の同じ列のセルへ移る（mdew・mdee と同じ。見出しの行で
+        /// 押した時は、見出しの行のすぐ下に挿入する）。
+        /// </summary>
+        /// <param name="a_cell">今のセル。</param>
+        public void InsertRowBelowFromKey(TableCell a_cell)
+        {
+            if (!(a_cell.Parent is TableRow row) || !(row.Parent is TableRowGroup rg))
+            {
+                return;
+            }
+            int column = row.Cells.IndexOf(a_cell);
+            ContextCell = a_cell;
+            InsertRow(false);
+            int newRowIndex = rg.Rows.IndexOf(row) + 1;
+            if (newRowIndex < rg.Rows.Count)
+            {
+                var newRow = rg.Rows[newRowIndex];
+                if (column >= 0 && column < newRow.Cells.Count && newRow.Cells[column].Blocks.FirstBlock is Paragraph np)
+                {
+                    m_editor.CaretPosition = np.ContentStart;
+                }
+            }
+        }
+
         // ---------------- 表の挿入・行/列の挿入・削除 ----------------
 
         /// <summary>指定した行数・列数の新しい表を、ContextParagraphの後ろに挿入する。</summary>
@@ -454,7 +514,7 @@ namespace mde.editor
             {
                 return (null, null, false);
             }
-            return BlockStyles.BuildColumnWidthDialogInfo(table);
+            return BlockStyles.BuildColumnWidthDialogInfo(table, GetAvailableTableWidth());
         }
 
         /// <summary>列幅調整ダイアログでOKが押された後、ContextCellが属する表に、指定された幅
@@ -1158,6 +1218,12 @@ namespace mde.editor
             // MarkdownConverter.csと同じ理由で一時的に無効化（BlockStyles.ApplyContentBasedColumnWidths参照）。
             // BlockStyles.ApplyContentBasedColumnWidths(table);
 
+            // 列幅は、保存して開き直した時（区切り行は |---|。自動計算）と同じにする（以前は、貼り付けた直後だけ
+            // 各列が均等な幅で、編集ペインの幅いっぱいに広がっていた）
+            var dashCounts = Enumerable.Repeat(BlockStyles.TABLE_COLUMN_DEFAULT_DASH_COUNT, colCount).ToList();
+            BlockStyles.SetSourceDashCounts(table, dashCounts);
+            BlockStyles.ApplyEffectiveColumnWidths(table, dashCounts, m_correctColumnWidthsFlg?.Invoke() ?? true, GetAvailableTableWidth());
+
             m_runAsProgrammaticChange(() =>
             {
                 var para = m_editor.CaretPosition?.Paragraph;
@@ -1194,7 +1260,10 @@ namespace mde.editor
         /// <param name="a_args">イベントの引数。</param>
         public void HandlePasting(object a_sender, DataObjectPastingEventArgs a_args)
         {
-            if (m_isSourceMode())
+            // 先に登録したハンドラ（画像の貼り付け・書式付きの HTML の貼り付け。MainWindow の AddPastingHandler 参照）が
+            // 貼り付け済みなら、何もしない（同じ内容を、表としてもう一度貼ってしまわないように）
+            if (m_isSourceMode() ||
+                a_args.CommandCancelled)
             {
                 return;
             }

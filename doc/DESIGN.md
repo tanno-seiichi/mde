@@ -22,6 +22,7 @@
 12. [コーディング規約](#12-コーディング規約)
 13. [ビルド・配布](#13-ビルド配布)
 14. [既知の制約](#14-既知の制約)
+15. [貼り付け・表の列幅（mdew・mdee から取り入れた仕組み）](#15-貼り付け表の列幅mdewmdee-から取り入れた仕組み)
 
 ---
 
@@ -394,3 +395,53 @@ mde 自身のコードとは無関係に、.NET の apphost（`UseAppHost` の�
 - このコードは Windows/WPF のビルド環境上で都度コンパイル検証されているわけではないため、
   大きな変更を加えた後は必ずビルドして確認してください。
 
+## 15. 貼り付け・表の列幅（mdew・mdee から取り入れた仕組み）
+
+### 15.1 貼り付けの振り分け
+
+`DataObject.AddPastingHandler` は登録順にすべてのハンドラを呼ぶため、先のハンドラが貼り付けたら
+`CancelCommand()` し、後のハンドラは `a_args.CommandCancelled` を見て何もしない（`TableEditor.HandlePasting`
+もこれを確認する。確認しないと、同じ内容が表としてもう一度貼られる）。登録順と担当は次の通り。
+
+1. `ImageManager.HandlePasting`：画像。
+2. `MainWindow.EditorHandleHtmlPasting`：他のアプリの書式付きの内容（クリップボードの HTML）。
+   `HtmlToMarkdown`（mdew・mdee の `clipboard.js` の `htmlToMarkdown` の移植。簡単な HTML の読み取りを含む）で
+   Markdown にしてから `PasteMarkdown` で貼る。mde どうしのコピー（Xaml 形式付き）、書式の無い HTML
+   （VS Code の色付けだけの HTML 等）、表だけの HTML（Excel 等）、コードブロックの中は扱わない。
+   Word は Rtf 形式も付けるが、WPF 標準の Rtf の貼り付けでは Run の Tag が付かず保存すると書式が消えるため、
+   HTML の方を使う。
+3. `TableEditor.HandlePasting`：コードブロックの中の文字、Excel 等の表（HTML の表・タブ区切りの文字）。
+4. `MainWindow.EditorHandleInlineMarkdownPasting`：それ以外の文字（Xaml・Rtf 形式が無い場合）。`PasteMarkdown` で貼る。
+
+`PasteMarkdown` は、Markdown を使い捨ての `MarkdownConverter`・`OriginalTextTracker`・`FlowDocument` で
+ブロックにして（`MarkdownConverter.ParseMarkdownBlocks`。今の文書の読み込みの記録を壊さないため）、
+1つの通常の段落だけなら今まで通り `InsertInlineMarkdownAtPosition` で今の段落の中に挿入する。複数のブロックなら、
+最上位の段落・見出しをキャレット位置で分けて（`ListEditor.SplitInlinesAtCaret`）その間にブロックを入れ、
+最初・最後の通常の段落は分けた前後とつなげる。箇条書きの項目の中にリストだけを貼る場合は項目として加える。
+表のセル・引用の中等は文字として挿入する。貼ったブロックは元テキストの記録が無いため、保存時は今の構造から
+書き出される（7章）。**Ctrl+Shift+V**（`PastePlainText`）は、Markdown として読まずに文字のまま挿入する。
+ただし、mde は保存時に本文の文字の中の Markdown の記号（行頭の `#`・`*` 等）をエスケープしないため
+（今までの仕組みのまま。mdew・mdee はエスケープする）、書式なしで貼った記号は、保存して開き直すと書式になる。
+
+### 15.2 表の列幅の自動計算
+
+未調整（区切り行がすべて `---`）の表の列幅は、ブラウザ（mdew・mdee）の表の自動レイアウトと同じ考え方で
+決める（`BlockStyles.ComputeAutoColumnWidthsPx`）。各列の「最大の幅」（折り返さない幅）の合計が表示できる
+幅に収まれば、各列を最大の幅にする。収まらなければ、各列の「最小の幅」（いちばん長い語の幅。
+`MeasureMinWordColumnWidthsPx`）を配った上で、残りを「最大の幅 − 最小の幅」の比で配る（Chromium の計算）。
+長い URL 等で最小の幅の合計が大きすぎる時は、合計が表示できる幅の半分に収まるまで長い列から頭打ちにする
+（ブラウザは表がはみ出すが、WPF は列より長い語も折り返せるため、はみ出さないようにする）。列幅は表を作った
+時の内容で決まるため、表の中を編集してキャレットが表の外へ出た時（`MainWindow.RefreshTableWidthsOnLeave`。
+日本語入力の途中で表の見た目が変わらないよう、入力中には行わない）と、ウィンドウの大きさを変えた時に
+計算し直す。
+
+### 15.3 本文の幅・表示の設定の切り替え
+
+「表示」→「本文の幅」→「読みやすい幅にする」は、`RichTextBox` の左右の `Padding` を広げて本文を最大 884px
+で中央に置く（`MainWindow.ApplyDocumentWidth`。`PagePadding` の左右は RichTextBox が管理するため使わない）。
+画像・表の表示できる幅は `Padding` を除いた幅で計算しているため、そのまま本文の幅に合う。
+
+表示スタイル等を切り替えて文書を作り直す時は、一番上に見えていたブロックの番号とその中の割合を覚えて
+（`CaptureRebuildScrollAnchor`）、作り直した後に同じ場所を表示する（`RestoreRebuildScrollAnchor`）。
+同じ Markdown から作り直すだけなので、作り直す前に変更が無かった文書は変更なしのままにする
+（`KeepCleanAfterRebuild`）。大きな画像の近くでは、画像の大きさが決まる前後で位置が少しずれることがある。

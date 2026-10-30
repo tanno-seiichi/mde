@@ -11,6 +11,7 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -22,6 +23,10 @@ namespace mde.common
     /// <summary>見出し・コードブロックの段落スタイルを適用する静的ヘルパー群。</summary>
     public static class BlockStyles
     {
+        /// <summary>本文の文字を書く幅の上限（px。メニュー「表示」→「本文の幅」→「読みやすい幅にする」の時。mdew・mdee と
+        /// 同じ 884px。MainWindow.ApplyDocumentWidth）。</summary>
+        public const double READABLE_DOCUMENT_WIDTH_PX = 884;
+
         private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xB4, 0xB4, 0xB4));
         // コードブロック・インラインコードの背景色と、コードブロックの枠線の色（mdew と同じ）。
         private static readonly Brush m_codeBlockBackground = new SolidColorBrush(Color.FromRgb(0xF3, 0xF4, 0xF4));
@@ -700,7 +705,7 @@ namespace mde.common
         private const double TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX = 8;
 
         /// <summary>
-        /// DistributeSlackToCappedColumnsで頭打ちされた列を伸ばす際、表の右端（最後の列の
+        /// 自動計算の列幅（ComputeAutoColumnWidthsPx）で、表示できる幅に合わせて列を広げる際、表の右端（最後の列の
         /// 右辺の罫線。ApplyTableCellBorders参照）をavailableWidthPxぎりぎりまで使い切らず、
         /// この分だけ手前で止めておく余裕（px）。ぴったりavailableWidthPxまで埋めてしまうと、
         /// 測定値と実際の描画幅のわずかな差（DPIやレイアウトのタイミングによる）で表が
@@ -1152,12 +1157,15 @@ namespace mde.common
         /// 分けない。ApplyExplicitColumnWidthsが常に全列を同じ扱いにする方針と揃えてある）。
         /// </summary>
         /// <param name="a_table">対象の表。</param>
-        public static (List<string> Labels, List<int> DashCounts, bool IsAutoCalculated) BuildColumnWidthDialogInfo(Table a_table)
+        public static (List<string> Labels, List<int> DashCounts, bool IsAutoCalculated) BuildColumnWidthDialogInfo(
+            Table a_table, double? a_availableWidthPx = null)
         {
             var labels = new List<string>();
             var dashCounts = new List<int>();
             int colCount = a_table.Columns.Count;
-            var naturalWidths = MeasureNaturalColumnWidthsPx(a_table);
+            // 自動計算の値：実際に表示している列幅（ComputeAutoColumnWidthsPx）。表示できる幅が分からない時は、
+            // 内容から測った幅（頭打ちあり）
+            var naturalWidths = ComputeAutoColumnWidthsPx(a_table, a_availableWidthPx) ?? MeasureNaturalColumnWidthsPx(a_table);
 
             var sourceDashCounts = GetSourceDashCounts(a_table);
             bool isAutoCalculatedFlg = IsAutoCalculatedDashCounts(sourceDashCounts);
@@ -1274,23 +1282,17 @@ namespace mde.common
         /// <summary>
         /// まだ調整されていない表（区切り行のダッシュ数が全列とも互いに同じ。詳細は
         /// IsAutoCalculatedDashCountsのコメント参照）に対して、列幅調整ダイアログの
-        /// 「自動計算」欄と同じ計算方法（内容量から測った幅をダッシュ数と同じ単位に変換した
-        /// 比率）で、表示上だけ列幅を適用する。あくまで表示（TableColumn.Width）だけの効果
-        /// であり、区切り行のダッシュ数（GetSourceDashCounts／SetSourceDashCounts）には
+        /// 「自動計算」欄と同じ計算方法で、表示上だけ列幅を適用する。あくまで表示（TableColumn.Width）
+        /// だけの効果であり、区切り行のダッシュ数（GetSourceDashCounts／SetSourceDashCounts）には
         /// 一切触れない。そのため、Markdownへの書き出し（MarkdownConverter.TableToMarkdown）
         /// はこの比率を書き戻さず、区切り行のダッシュ数はそれまで記録されていた値
         /// （手書きのMarkdownを読み込んだ場合はそのソースの値、既定値のまま一度も
         /// 調整していない場合は既定値|---|）のまま保たれる。
-        /// <paramref name="a_availableWidthPx"/>が指定されており、かつ各列の自然な幅
-        /// （測定値。長い説明文の列はTABLE_COLUMN_COMPACT_MAX_WIDTHで頭打ち済み）の合計が
-        /// その幅に収まる場合は、Starではなく自然な幅をそのままPixel（固定px）として設定する
-        /// （常に同一の単位＝全列Pixelになり、単位の混在は発生しない）。表示領域に余裕が
-        /// ある場合でも常にStarで横幅いっぱいに広げると、短い見出し語だけの表まで間延びして
-        /// 見えてしまうため、それを防ぐ措置。
-        /// 合計が収まらない場合（表示領域が狭い場合）や<paramref name="a_availableWidthPx"/>
-        /// がnull（呼び出し側が表示領域の幅を把握していない場合。保存専用の使い捨て文書や
-        /// PDF書き出し用の一時文書など）は、常にStar比率にする（表が編集領域の横幅を超えて
-        /// 右端が見切れることが構造上あり得ないようにするための安全策）。
+        /// 列幅は、ブラウザ（mdew・mdee）の表の自動レイアウトと同じ計算で決め、全列Pixel（固定px）に
+        /// する（ComputeAutoColumnWidthsPx参照。単位の混在は発生しない）。
+        /// <paramref name="a_availableWidthPx"/>がnull（呼び出し側が表示領域の幅を把握していない場合。
+        /// 保存専用の使い捨て文書など）や、列が多すぎて各列の最小の幅でも収まらない場合は、Star比率に
+        /// する（表が編集領域の横幅を超えて右端が見切れることが構造上あり得ないようにするための安全策）。
         /// </summary>
         /// <param name="a_table">対象の表。</param>
         /// <param name="a_availableWidthPx">表を表示できる実際の幅（px）。呼び出し側が
@@ -1298,48 +1300,23 @@ namespace mde.common
         public static void ApplyAutoCalculatedColumnWidths(Table a_table, double? a_availableWidthPx)
         {
             int colCount = a_table.Columns.Count;
-            // Pixelは他の列と幅を奪い合わないため、頭打ち無しの生の幅を使う
-            // （詳細はMeasureUncappedColumnWidthsPxのコメント参照）。
-            var uncappedWidths = MeasureUncappedColumnWidthsPx(a_table);
-
-            if (a_availableWidthPx.HasValue && uncappedWidths.Sum() <= a_availableWidthPx.Value)
+            // ブラウザ（mdew・mdee）の表の自動レイアウトと同じ計算で、各列の幅（px）を決める
+            // （ComputeAutoColumnWidthsPx参照）。決められた時は、全列Pixel（固定px）にする。
+            var autoWidths = ComputeAutoColumnWidthsPx(a_table, a_availableWidthPx);
+            if (null != autoWidths)
             {
                 for (int c = 0; c < colCount; c++)
                 {
-                    a_table.Columns[c].Width = new GridLength(uncappedWidths[c], GridUnitType.Pixel);
+                    a_table.Columns[c].Width = new GridLength(autoWidths[c], GridUnitType.Pixel);
                 }
                 ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
                 return;
             }
 
-            // 頭打ち無しの幅の合計はavailableWidthPxに収まらないが、TABLE_COLUMN_COMPACT_MAX_WIDTHで
-            // 頭打ちした幅（naturalWidths）の合計であれば収まる場合、Star比率（複数列が幅を奪い合う）
-            // に頼らず、引き続きPixel（固定px、他の列と幅を奪い合わない）で確定できる。
-            // この場合に頭打ちされた列をそのまま据え置くと、Pixel列同士は幅を奪い合わないにも
-            // 関わらず、表の右側にavailableWidthPxとの差（余り）が残ったまま、頭打ちされた列だけ
-            // 不要な折り返しが発生してしまう（この分岐を追加する発端となった不具合）。頭打ちは
-            // 本来、Star比率で1つの長い列が他の列を圧迫するのを防ぐためのものでPixelには不要な
-            // ので、余った幅を頭打ちされた列へ、その列本来の内容幅（uncappedWidths）に達するまで
-            // 配分し直す。
+            // 表示できる幅が分からない時（保存専用の使い捨て文書等）や、列が多すぎて各列の最小の幅でも
+            // 収まらない時だけ、複数列が幅を奪い合うStar比率へフォールバックする（頭打ちした幅を
+            // そのまま比率として使う）。
             var naturalWidths = MeasureNaturalColumnWidthsPx(a_table);
-            if (a_availableWidthPx.HasValue && naturalWidths.Sum() <= a_availableWidthPx.Value)
-            {
-                // 頭打ちされた列を伸ばす際の目標幅は、表の右端の罫線が編集領域からはみ出して
-                // 見切れないよう、availableWidthPxから少し余裕（TABLE_RIGHT_EDGE_SAFETY_MARGIN_PX）
-                // を残した値にする（詳細は同定数のコメント参照）。
-                double distributeTargetWidthPx = Math.Max(
-                    naturalWidths.Sum(), a_availableWidthPx.Value - TABLE_RIGHT_EDGE_SAFETY_MARGIN_PX);
-                var finalWidths = DistributeSlackToCappedColumns(naturalWidths, uncappedWidths, distributeTargetWidthPx);
-                for (int c = 0; c < colCount; c++)
-                {
-                    a_table.Columns[c].Width = new GridLength(finalWidths[c], GridUnitType.Pixel);
-                }
-                ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
-                return;
-            }
-
-            // ここまでで収まらない場合にのみ、複数列が幅を奪い合うStar比率へフォールバックする
-            // （頭打ちした幅をそのまま比率として使う）。
             var dashCounts = new List<int?>();
             for (int c = 0; c < colCount; c++)
             {
@@ -1350,55 +1327,211 @@ namespace mde.common
         }
 
         /// <summary>
-        /// Pixel（固定px、他の列と幅を奪い合わない）列幅を確定する際、TABLE_COLUMN_COMPACT_MAX_WIDTHで
-        /// 頭打ちされた列に、表示領域の余り（<paramref name="a_availableWidthPx"/> - 頭打ち後の合計幅）を、
-        /// その列本来の内容幅（<paramref name="a_uncappedWidths"/>）に達するまで配分し直す。
-        /// 頭打ちは、複数列がStar比率で幅を奪い合う際に1つの長い列が比率の大半を占めて他の列を
-        /// 圧迫しないようにするためのものであり、Pixel列同士は幅を奪い合わないため、表示領域に
-        /// 余裕があるなら頭打ちを解除してよい（解除しないと、表の右側に余白が残ったまま、頭打ち
-        /// された列だけが不要な折り返しをしてしまう）。複数の列が同時に頭打ちされている場合は、
-        /// 余りを均等に（waterfilling方式で）配分する。
+        /// 自動計算の列で、各列が最低限確保する幅（px）。セルの左右の余白と、全角1文字分の幅と、
+        /// 測定の誤差のための余裕（TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX）。ブラウザ（mdew・mdee の
+        /// 「編集ペインの幅に合わせる」）で、セルの中の長い URL 等も途中で折り返す時の、列の最小の幅
+        /// （1文字＋余白）に相当する。
         /// </summary>
-        /// <param name="a_naturalWidths">頭打ち済みの幅（px）。MeasureNaturalColumnWidthsPxの戻り値。</param>
-        /// <param name="a_uncappedWidths">頭打ち無しの幅（px）。MeasureUncappedColumnWidthsPxの戻り値。
-        /// 各列の配分の上限として使う。</param>
-        /// <param name="a_availableWidthPx">表を表示できる実際の幅（px）。</param>
-        /// <returns>配分し直した後の、各列の最終的な幅（px）。</returns>
-        private static double[] DistributeSlackToCappedColumns(
-            double[] a_naturalWidths, double[] a_uncappedWidths, double a_availableWidthPx)
+        private static double TABLE_AUTO_COLUMN_MIN_WIDTH_PX =>
+            TABLE_CELL_HORIZONTAL_PADDING + TABLE_MEASURE_FONT_SIZE + TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX;
+
+        /// <summary>
+        /// まだ調整されていない表の各列の幅（px）を、ブラウザ（mdew・mdee）の表の自動レイアウトと
+        /// 同じ考え方で決める（3つのアプリで、同じ表がおおむね同じ列幅で表示されるように）。
+        ///  - 各列の「最大の幅」：セルの内容を折り返さずに並べた時の幅（MeasureUncappedColumnWidthsPx）。
+        ///  - 各列の「最小の幅」：いちばん長い単語（空白で区切った語。日本語等は1文字ずつ）の幅
+        ///    （MeasureMinWordColumnWidthsPx。ブラウザと同じく、「Microsoft」等の語が途中で折り返されない幅）。
+        ///    ただし、長い URL 等で最小の幅の合計が表示できる幅を超える時は、長い語の列から順に、合計が収まる
+        ///    幅まで狭くする（WPFは列より長い語も途中で折り返すため、ブラウザのように表がはみ出すことはない。
+        ///    いちばん狭くて TABLE_AUTO_COLUMN_MIN_WIDTH_PX＝1文字分）。
+        ///  - 最大の幅の合計が表示できる幅に収まる時：各列を最大の幅にする（短い表は内容に合わせて
+        ///    コンパクトに表示する）。
+        ///  - 収まらない時：各列に最小の幅を配った上で、残りの幅を「最大の幅 − 最小の幅」の比で配る
+        ///    （Chromium の表の自動レイアウトの計算。内容の多い列ほど広くなるが、短い列も読める幅を
+        ///    保つ）。以前の計算（長い列を300pxで頭打ちにした幅の比）では、説明文の長い列が他の列と
+        ///    同じ扱いになり、ブラウザと見た目が大きく違っていた。
+        /// 表の右端の罫線が見切れないよう、表示できる幅から TABLE_RIGHT_EDGE_SAFETY_MARGIN_PX を
+        /// 残す。表示できる幅が分からない時、および最小の幅の合計でも収まらない時はnullを返す
+        /// （呼び出し側がStar比率にする）。
+        /// </summary>
+        /// <param name="a_table">対象の表。</param>
+        /// <param name="a_availableWidthPx">表を表示できる実際の幅（px）。分からない時はnull。</param>
+        /// <returns>各列の幅（px）。決められない時はnull。</returns>
+        public static double[] ComputeAutoColumnWidthsPx(Table a_table, double? a_availableWidthPx)
         {
-            var finalWidths = (double[])a_naturalWidths.Clone();
-            double slack = a_availableWidthPx - finalWidths.Sum();
-            while (slack > 0.01)
+            if (!a_availableWidthPx.HasValue || 0 == a_table.Columns.Count)
             {
-                var growableCols = new List<int>();
-                for (int c = 0; c < finalWidths.Length; c++)
+                return null;
+            }
+            var maxWidths = MeasureUncappedColumnWidthsPx(a_table);
+            if (maxWidths.Sum() <= a_availableWidthPx.Value)
+            {
+                return maxWidths;
+            }
+            double targetWidthPx = a_availableWidthPx.Value - TABLE_RIGHT_EDGE_SAFETY_MARGIN_PX;
+            double minColumnWidth = TABLE_AUTO_COLUMN_MIN_WIDTH_PX;
+            var floorWidths = maxWidths.Select(w => Math.Min(w, minColumnWidth)).ToArray();
+            if (floorWidths.Sum() >= targetWidthPx)
+            {
+                return null;
+            }
+            // 最小の幅：いちばん長い語の幅（1文字分〜最大の幅の間）。合計が収まらなければ、長い語の列から順に、
+            // 同じ幅（cap）で頭打ちにして収める（合計が targetWidthPx の半分までに収まる cap を探す。残りの半分は、
+            // 下の「最大の幅 − 最小の幅」の比で配る分として残す）
+            var wordWidths = MeasureMinWordColumnWidthsPx(a_table);
+            var minWidths = new double[maxWidths.Length];
+            for (int c = 0; c < minWidths.Length; c++)
+            {
+                minWidths[c] = Math.Max(floorWidths[c], Math.Min(maxWidths[c], wordWidths[c]));
+            }
+            double minBudget = Math.Max(floorWidths.Sum(), targetWidthPx / 2);
+            if (minWidths.Sum() > minBudget)
+            {
+                double cap = FindCapForTotal(minWidths, floorWidths, minBudget);
+                for (int c = 0; c < minWidths.Length; c++)
                 {
-                    if (c < a_uncappedWidths.Length && finalWidths[c] < a_uncappedWidths[c] - 0.01)
-                    {
-                        growableCols.Add(c);
-                    }
-                }
-                if (0 == growableCols.Count)
-                {
-                    break;
-                }
-                double share = slack / growableCols.Count;
-                double distributed = 0;
-                foreach (int c in growableCols)
-                {
-                    double room = a_uncappedWidths[c] - finalWidths[c];
-                    double grow = Math.Min(share, room);
-                    finalWidths[c] += grow;
-                    distributed += grow;
-                }
-                slack -= distributed;
-                if (distributed < 0.01)
-                {
-                    break;
+                    minWidths[c] = Math.Max(floorWidths[c], Math.Min(minWidths[c], cap));
                 }
             }
-            return finalWidths;
+            double sumMin = minWidths.Sum();
+            double sumMax = maxWidths.Sum();
+            if (sumMin >= targetWidthPx || sumMax - sumMin <= 0.01)
+            {
+                return null;
+            }
+            double ratio = (targetWidthPx - sumMin) / (sumMax - sumMin);
+            var widths = new double[maxWidths.Length];
+            for (int c = 0; c < widths.Length; c++)
+            {
+                widths[c] = minWidths[c] + (maxWidths[c] - minWidths[c]) * ratio;
+            }
+            return widths;
+        }
+
+        /// <summary>各列の幅を同じ値（cap）で頭打ちにした時（ただし a_floors より狭くはしない）、合計が a_total 以下になる、
+        /// いちばん大きい cap を求める（ComputeAutoColumnWidthsPx）。</summary>
+        /// <param name="a_widths">各列の幅。</param>
+        /// <param name="a_floors">各列の、これより狭くしない幅。</param>
+        /// <param name="a_total">合計の上限。</param>
+        /// <returns>頭打ちにする幅。</returns>
+        private static double FindCapForTotal(double[] a_widths, double[] a_floors, double a_total)
+        {
+            double Total(double a_cap)
+            {
+                double sum = 0;
+                for (int c = 0; c < a_widths.Length; c++)
+                {
+                    sum += Math.Max(a_floors[c], Math.Min(a_widths[c], a_cap));
+                }
+                return sum;
+            }
+            double low = 0;
+            double high = a_widths.Max();
+            for (int i = 0; i < 40; i++)
+            {
+                double mid = (low + high) / 2;
+                if (Total(mid) <= a_total)
+                {
+                    low = mid;
+                }
+                else
+                {
+                    high = mid;
+                }
+            }
+            return low;
+        }
+
+        /// <summary>セルの文字（段落・改行の間は空白にする）。表を文書に入れる前（MarkdownConverter で組み立て中）にも
+        /// 使うため、TextRange ではなく Run を直接たどる。</summary>
+        /// <param name="a_cell">対象のセル。</param>
+        /// <returns>セルの文字。</returns>
+        private static string CellPlainText(TableCell a_cell)
+        {
+            var sb = new StringBuilder();
+            void AppendInlines(InlineCollection a_inlines)
+            {
+                foreach (Inline inline in a_inlines)
+                {
+                    if (inline is Run run)
+                    {
+                        sb.Append(run.Text);
+                    }
+                    else if (inline is Span span)
+                    {
+                        AppendInlines(span.Inlines);
+                    }
+                    else if (inline is LineBreak)
+                    {
+                        sb.Append(' ');
+                    }
+                }
+            }
+            foreach (Block block in a_cell.Blocks)
+            {
+                if (block is Paragraph p)
+                {
+                    AppendInlines(p.Inlines);
+                    sb.Append(' ');
+                }
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>空白・改行で区切った語（日本語等の文字は1文字ずつ。ブラウザもその間で折り返す）。</summary>
+        private static readonly Regex s_tableWordRegex = new Regex(
+            "[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]|[^\\s\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]+", RegexOptions.Compiled);
+
+        /// <summary>
+        /// 各列の、いちばん長い語（s_tableWordRegex）の幅（px。セルの左右の余白と、測定の誤差のための余裕を含む）。
+        /// ブラウザ（mdew・mdee）の表の自動レイアウトの「列の最小の幅」に当たる（ComputeAutoColumnWidthsPx）。
+        /// 文字の大きさ・太さは、セルの既定（見出しの行は太字）で測る（インラインコード等の違いは無視する。目安のため）。
+        /// </summary>
+        /// <param name="a_table">対象の表。</param>
+        /// <returns>各列の幅（px）。</returns>
+        private static double[] MeasureMinWordColumnWidthsPx(Table a_table)
+        {
+            int colCount = a_table.Columns.Count;
+            var widths = new double[colCount];
+            double pixelsPerDip = GetMeasurementPixelsPerDip();
+            foreach (TableRowGroup rg in a_table.RowGroups)
+            {
+                foreach (TableRow row in rg.Rows)
+                {
+                    for (int c = 0; c < row.Cells.Count && c < colCount; c++)
+                    {
+                        TableCell cell = row.Cells[c];
+                        var typeface = new Typeface(m_tableMeasureFontFamily, FontStyles.Normal, cell.FontWeight, FontStretches.Normal);
+                        string text = CellPlainText(cell);
+                        string longest = "";
+                        double longestWidth = 0;
+                        foreach (Match m in s_tableWordRegex.Matches(text))
+                        {
+                            // 文字数の少ない語は測らない（測る回数を減らす。幅は文字数にほぼ比例するため）
+                            if (m.Length + 2 < longest.Length)
+                            {
+                                continue;
+                            }
+                            double w = new FormattedText(m.Value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface,
+                                TABLE_MEASURE_FONT_SIZE, Brushes.Black, pixelsPerDip).Width;
+                            if (w > longestWidth)
+                            {
+                                longestWidth = w;
+                                longest = m.Value;
+                            }
+                        }
+                        if (longestWidth > widths[c])
+                        {
+                            widths[c] = longestWidth;
+                        }
+                    }
+                }
+            }
+            for (int c = 0; c < colCount; c++)
+            {
+                widths[c] += TABLE_CELL_HORIZONTAL_PADDING + TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX;
+            }
+            return widths;
         }
 
         /// <summary>

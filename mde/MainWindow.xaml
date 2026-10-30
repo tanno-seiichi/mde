@@ -107,6 +107,12 @@
                 <MenuItem x:Name="m_lineBreakModeBlankOnlyMenuItem" Header="空行が入るまで改行しない(_B)"
                           IsCheckable="True" Click="LineBreakModeBlankOnlyChecked"/>
                 <Separator/>
+                <MenuItem Header="本文の幅" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_docWidthLimitedMenuItem" Header="読みやすい幅にする（最大 884px）(_R)"
+                          IsCheckable="True" Click="DocWidthLimitedChecked"/>
+                <MenuItem x:Name="m_docWidthFullMenuItem" Header="編集ペインの幅に合わせる(_P)"
+                          IsCheckable="True" Click="DocWidthFullChecked"/>
+                <Separator/>
                 <MenuItem Header="リンクの開き方" Style="{StaticResource MenuHeading}"/>
                 <MenuItem x:Name="m_linkModeCtrlClickMenuItem" Header="Ctrl+クリックで開く(_C)"
                           IsCheckable="True" Click="LinkModeCtrlClickChecked"/>
@@ -382,10 +388,11 @@
                                 <MenuItem x:Name="m_textStyleMenuItem" Header="文字装飾" Style="{StaticResource CtxMenuItem}"
                                           Visibility="Collapsed">
                                     <MenuItem Header="通常表記に戻す" Tag="normal" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="インラインコードにする" Tag="code" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="太字にする" Tag="bold" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="取り消し線にする" Tag="strikethrough" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="下線を引く" Tag="underline" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="インラインコードにする" Tag="code" InputGestureText="Ctrl+Shift+@" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="太字にする" Tag="bold" InputGestureText="Ctrl+B" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="斜体にする" Tag="italic" InputGestureText="Ctrl+I" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="取り消し線にする" Tag="strikethrough" InputGestureText="Alt+Shift+5" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="下線を引く" Tag="underline" InputGestureText="Ctrl+U" Click="TextStyleItemClick"/>
                                     <MenuItem Header="ハイライトにする" Tag="highlight" Click="TextStyleItemClick"/>
                                     <MenuItem Header="リンクにする…" Tag="link" Click="TextStyleItemClick"/>
                                 </MenuItem>

@@ -50,6 +50,10 @@ namespace mde
         /// trueなら「VSCodeスタイル」（Visual Studio Code のプレビューに似せた見た目）。既定はfalse。</summary>
         public bool UseVsCodeStyleFlg { get; set; } = false;
 
+        /// <summary>メニュー「表示」→「本文の幅」の選択状態。trueなら「読みやすい幅にする（最大 884px）」（本文を最大
+        /// 884px の幅で中央に置く。mdew・mdee と同じ）、falseなら「編集ペインの幅に合わせる」（今までの見た目。既定）。</summary>
+        public bool LimitDocWidthFlg { get; set; } = false;
+
         /// <summary>メニュー「表示」→「列幅を補正する」のチェック状態（表全体の列幅機能の
         /// マスタースイッチ）。オンなら、明示的に調整済みの表はその比率で、未調整の表は内容量
         /// に応じた自動比率で表示する。オフなら両方とも既定の均等幅（Auto）で表示する。

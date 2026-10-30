@@ -60,8 +60,22 @@ namespace mde.common
         /// </summary>
         private static readonly Regex m_inlineContentRegex = new Regex(
             "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|((?<!`)(?<bt>`+)(?!`)([\\s\\S]+?)(?<!`)\\k<bt>(?!`))|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|(<u>([^<]+)</u>)|(==([^=]+)==)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)|(" +
-            BARE_EMAIL_PREV_PATTERN + "(" + BARE_EMAIL_PATTERN + ")" + BARE_EMAIL_NEXT_PATTERN + ")",
+            BARE_EMAIL_PREV_PATTERN + "(" + BARE_EMAIL_PATTERN + ")" + BARE_EMAIL_NEXT_PATTERN + ")" +
+            "|" + ITALIC_PATTERN,
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// 斜体（*斜体* / _斜体_）。m_inlineContentRegex の最後の選択肢（名前付きグループ it。中身は
+        /// itc（* で囲んだもの）か itu（_ で囲んだもの））。名前付きグループの番号は名前なしのグループの後に
+        /// なるため、1〜25 の番号は変わらない。太字（**…**）の選択肢より後ろにあるので、** は太字として先に
+        /// 解釈される。mdew・mdee（markdown.js）と同じ考え方：
+        ///  - * は、文字の間でも使える（日本語の文中の *斜体* も斜体にする）。ただし ** の一部・中身の前後が
+        ///    空白のもの（「2 * 3 * 4」等）は斜体にしない。
+        ///  - _ は、英数字の単語の途中では使わない（snake_case 等のファイル名・変数名を斜体にしない）。
+        /// </summary>
+        public const string ITALIC_PATTERN =
+            "(?<it>(?<!\\*)\\*(?![\\s*])(?<itc>[^*\\n]*?[^*\\s])\\*(?!\\*)" +
+            "|(?<![\\w_])_(?![\\s_])(?<itu>[^_\\n]*?[^_\\s])_(?![\\w_]))";
 
         /// <summary>文中にそのまま（山括弧なしで）書かれたメールアドレス。表示だけ mailto のリンクにする
         /// （GitHub と同じ。保存時は書いたまま書き戻す。LinkInfo.IsBareEmailFlg参照）。ドメインは「.」で
@@ -875,6 +889,8 @@ namespace mde.common
                      "strikethrough" == tag ||
                      "underline" == tag ||
                      "highlight" == tag ||
+                     "italic" == tag ||
+                     "italic_" == tag ||
                      "inline-code" == tag))
                 {
                     var spanText = new StringBuilder();
@@ -905,6 +921,14 @@ namespace mde.common
                     else if ("highlight" == tag)
                     {
                         a_sb.Append("==").Append(content).Append("==");
+                    }
+                    else if ("italic" == tag)
+                    {
+                        a_sb.Append('*').Append(content).Append('*');
+                    }
+                    else if ("italic_" == tag)
+                    {
+                        a_sb.Append('_').Append(content).Append('_');
                     }
                     else
                     {
@@ -2090,6 +2114,8 @@ namespace mde.common
             [')'] = '',
             ['<'] = '',
             ['>'] = '',
+            ['_'] = '',
+            ['='] = '',
         };
         private static readonly Dictionary<char, char> m_placeholderToChar =
             m_escapePlaceholders.ToDictionary(kv => kv.Value, kv => kv.Key);
@@ -2327,6 +2353,13 @@ namespace mde.common
                     string email = RestorePlaceholders(m.Groups[25].Value);
                     a_p.Inlines.Add(BuildLinkRun(email, "mailto:" + email, false, null, false, true));
                 }
+                else if (m.Groups["it"].Success)
+                {
+                    // 斜体（* で囲んだものは "italic"、_ で囲んだものは "italic_"。保存時に同じ記号で書き戻す）
+                    bool underscoreFlg = m.Groups["itu"].Success;
+                    AppendStyledRunsWithLineBreaks(a_p, underscoreFlg ? m.Groups["itu"].Value : m.Groups["itc"].Value,
+                        underscoreFlg ? "italic_" : "italic");
+                }
 
                 lastIndex = m.Index + m.Length;
             }
@@ -2449,6 +2482,10 @@ namespace mde.common
                 {
                     run = new Run(segText) { Background = BlockStyles.HighlightBrush, Tag = "highlight" };
                 }
+                else if ("italic" == a_style || "italic_" == a_style)
+                {
+                    run = new Run(segText) { FontStyle = FontStyles.Italic, Tag = a_style };
+                }
                 else
                     run = BlockStyles.ApplyInlineCodeStyle(new Run(segText) { Tag = "inline-code" });
                 a_p.Inlines.Add(run);
@@ -2458,6 +2495,38 @@ namespace mde.common
         // ======================================================================
         //  生のMarkdownテキストを、任意の位置へその場で挿入する（貼り付け用）
         // ======================================================================
+
+        /// <summary>
+        /// 文字を、Markdown の記号として読まずに、そのまま指定した位置へ挿入する（書式なしで貼り付け。Ctrl+Shift+V）。
+        /// 改行は、<see cref="InsertInlineMarkdownAtPosition"/> と同じく段落の中の改行（LineBreak）にする。
+        /// </summary>
+        /// <param name="a_position">挿入する位置。</param>
+        /// <param name="a_text">挿入する文字（改行は LF）。</param>
+        /// <returns>挿入した内容の末尾の位置。</returns>
+        public TextPointer InsertPlainTextAtPosition(TextPointer a_position, string a_text)
+        {
+            return InsertPlainTextWithLineBreaksAt(a_position, a_text ?? "");
+        }
+
+        /// <summary>
+        /// Markdown の文字を、見出し・リスト・表・コードブロック等のブロックの並びにする（貼り付け用。mdew・mdee の
+        /// pasteMarkdown と同じく、複数のブロックを含む文字を書式にして貼るために使う）。今の文書の読み込みの記録
+        /// （元テキストの保持・空行の数等）を壊さないよう、使い捨ての MarkdownConverter・OriginalTextTracker で、
+        /// 使い捨ての FlowDocument に読み込んでから取り出す。返す Block はどの文書にも属していないため、そのまま
+        /// 編集中の文書に入れられる（元テキストの記録が無いため、保存時は今の構造から書き出される）。
+        /// </summary>
+        /// <param name="a_md">Markdown の文字（改行は LF）。</param>
+        /// <returns>ブロックの並び（空の文字なら空のリスト）。</returns>
+        public List<Block> ParseMarkdownBlocks(string a_md)
+        {
+            var tempConverter = new MarkdownConverter(new OriginalTextTracker(null), m_imageManager,
+                m_preserveSourceLineBreaksFlg, m_correctColumnWidthsFlg, m_availableTableWidthFunc, m_uniformMarkerStyleFlg);
+            var tempDoc = new FlowDocument();
+            tempConverter.MarkdownToDocument(a_md ?? "", tempDoc);
+            var blocks = tempDoc.Blocks.ToList();
+            tempDoc.Blocks.Clear();
+            return blocks;
+        }
 
         /// <summary>
         /// 他アプリ等からの生のMarkdownテキスト（**太字**・~~取り消し線~~・&lt;u&gt;下線&lt;/u&gt;・
@@ -2574,6 +2643,12 @@ namespace mde.common
                     };
                     cursor = run.ContentEnd;
                 }
+                else if (m.Groups["it"].Success)
+                {
+                    bool underscoreFlg = m.Groups["itu"].Success;
+                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, underscoreFlg ? m.Groups["itu"].Value : m.Groups["itc"].Value,
+                        underscoreFlg ? "italic_" : "italic");
+                }
 
                 lastIndex = m.Index + m.Length;
             }
@@ -2675,6 +2750,10 @@ namespace mde.common
                 else if ("highlight" == a_style)
                 {
                     run = new Run(segText, cursor) { Background = BlockStyles.HighlightBrush, Tag = "highlight" };
+                }
+                else if ("italic" == a_style || "italic_" == a_style)
+                {
+                    run = new Run(segText, cursor) { FontStyle = FontStyles.Italic, Tag = a_style };
                 }
                 else
                 {

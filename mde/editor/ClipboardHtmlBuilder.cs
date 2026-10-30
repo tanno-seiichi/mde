@@ -558,6 +558,10 @@ namespace mde.editor
             {
                 a_row.m_html.Append("<b>").Append(encoded).Append("</b>");
             }
+            else if ("italic" == styleTag || "italic_" == styleTag)
+            {
+                a_row.m_html.Append("<i>").Append(encoded).Append("</i>");
+            }
             else if ("strikethrough" == styleTag)
             {
                 a_row.m_html.Append("<s>").Append(encoded).Append("</s>");

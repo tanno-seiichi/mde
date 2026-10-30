@@ -132,6 +132,17 @@ namespace mde
         /// 「VSCodeスタイル」。詳細はSetVsCodeStyleFlg・ApplyDocStyle参照。</summary>
         private bool m_vsCodeStyleFlg = false;
 
+        /// <summary>メニュー「表示」→「本文の幅」の状態。true＝読みやすい幅（最大 884px で中央に置く。mdew・mdee と同じ）、
+        /// false＝編集ペインの幅に合わせる（今までの見た目。既定）。ApplyDocumentWidth 参照。</summary>
+        private bool m_limitDocWidthFlg = false;
+
+        /// <summary>編集ペイン（RichTextBox）の左右の余白（Padding）の、本来の値（MainWindow.xaml の値。px）。
+        /// 「読みやすい幅にする」の時は、これに本文を中央に置くための余白を足す（ApplyDocumentWidth）。</summary>
+        private Thickness m_editorBasePadding;
+
+        /// <summary>ソースモードの入力欄の、本来の余白（MainWindow.xaml の値。px）。ApplyDocumentWidth 参照。</summary>
+        private Thickness m_sourceEditorBasePadding;
+
         /// <summary>ウィンドウを閉じる時（WindowClosing）に取得した「元の大きさ」の位置・サイズ
         /// （GetNormalWindowBounds参照）。OnClosed で設定に保存する。</summary>
         private Rect? m_normalBoundsAtClosing = null;
@@ -296,6 +307,12 @@ namespace mde
             m_useLegacyFontFlg = m_savedSettings.UseLegacyFontFlg;
             m_softTextColorFlg = m_savedSettings.SoftTextColorFlg;
             m_vsCodeStyleFlg = m_savedSettings.UseVsCodeStyleFlg;
+            m_limitDocWidthFlg = m_savedSettings.LimitDocWidthFlg;
+            m_editorBasePadding = m_editor.Padding;
+            m_sourceEditorBasePadding = m_sourceEditor.Padding;
+            // ソースモードの入力欄は表示倍率を文字の大きさで表すため（ZoomManager.SetZoom）、幅が変わった時に加えて、
+            // 倍率を変えた時（ChangeZoomKeepingTopLine）にも本文の幅を合わせ直す
+            m_sourceEditor.SizeChanged += (s, e) => ApplyDocumentWidth();
             // 表示スタイルに合わせて、表示フォント・文字の色・行の間隔等をまとめて反映する（文書を
             // 読み込む前に BlockStyles.VsCodeStyleFlg を設定しておく必要がある）。
             ApplyDocStyle();
@@ -316,6 +333,7 @@ namespace mde
             UpdateFontModeMenuChecks();
             UpdateTextColorMenuChecks();
             UpdateDocStyleMenuChecks();
+            UpdateDocWidthMenuChecks();
             m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
             m_outlinePaneVisibleFlg = m_savedSettings.OutlinePaneVisible;
             m_statusBarVisibleFlg = m_savedSettings.StatusBarVisible;
@@ -406,6 +424,9 @@ namespace mde
             // コピーした画像はHTML/テキストも同時に持つことがあるため、画像なら他に渡る前に
             // ここで処理する（詳細はEditorHandleInlineMarkdownPasting参照）。
             DataObject.AddPastingHandler(m_editor, m_imageManager.HandlePasting);
+            // 書式付きの HTML（Claude・Web ページ・Word 等）は、表だけの HTML 用の TableEditor.HandlePasting より先に
+            // 処理する（表を含む文章全体が、表だけとして貼られないように。EditorHandleHtmlPasting参照）。
+            DataObject.AddPastingHandler(m_editor, EditorHandleHtmlPasting);
             DataObject.AddPastingHandler(m_editor, m_tableEditor.HandlePasting);
             DataObject.AddPastingHandler(m_editor, EditorHandleInlineMarkdownPasting);
 
@@ -415,6 +436,8 @@ namespace mde
             // 利用し、m_editor自身に登録した単一のハンドラでまとめて受け取る。
             m_editor.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
             m_editor.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
+            // 表の中を編集してキャレットが表の外へ出た時に、その表の列幅を内容に合わせ直す（RefreshTableWidthsOnLeave）
+            m_editor.SelectionChanged += (s, e) => RefreshTableWidthsOnLeave();
 
             // IME固まり調査用デバッグログ：フォーカス移動とIME入力（変換中含む）を時系列で記録する。
             m_editor.GotKeyboardFocus += (a_s, a_e) =>
@@ -866,6 +889,7 @@ namespace mde
                 UseLegacyFontFlg = m_useLegacyFontFlg,
                 SoftTextColorFlg = m_softTextColorFlg,
                 UseVsCodeStyleFlg = m_vsCodeStyleFlg,
+                LimitDocWidthFlg = m_limitDocWidthFlg,
                 DebugLogEnabledFlg = DebugLogger.IsEnabled,
                 PdfMarginTop = m_pdfMarginTop,
                 PdfMarginBottom = m_pdfMarginBottom,
@@ -1567,11 +1591,81 @@ namespace mde
         }
 
         /// <summary>
+        /// 他のアプリ（Claude 等のチャット・Web ページ・Word・Google ドキュメント等）でコピーした書式付きの内容（HTML）を、
+        /// Markdown に直してから書式にして貼り付ける（mdew・mdee と同じ。変換は HtmlToMarkdown）。見出し・リスト・表・
+        /// コードブロック・引用・太字・斜体・リンク等が、mde の書式になる（文字の色・大きさ等の飾りは捨てる）。
+        /// 次の場合は何もせず、これまで通り後のハンドラ（TableEditor.HandlePasting・EditorHandleInlineMarkdownPasting）
+        /// や WPF 標準の貼り付けに任せる：
+        ///  - mde どうしのコピー（Xaml 形式が付いている。構造をそのまま復元する WPF 標準の貼り付けに任せる）
+        ///  - 書式の無い HTML（VS Code の色付けだけの HTML 等。文字として貼る）
+        ///  - 表だけの HTML（Excel 等。TableEditor.HandlePasting が表にする）
+        ///  - コードブロックの中（TableEditor.HandlePasting が文字のまま貼る）
+        /// Word は Rtf 形式も付けるが、WPF 標準の Rtf の貼り付けでは mde の書式（Run の Tag）が付かず保存すると書式が
+        /// 消えるため、HTML の方を使う。
+        /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">貼り付けイベントの引数。</param>
+        private void EditorHandleHtmlPasting(object a_sender, DataObjectPastingEventArgs a_args)
+        {
+            if (m_isSourceModeFlg ||
+                a_args.CommandCancelled)
+            {
+                return;
+            }
+            IDataObject data = a_args.SourceDataObject;
+            if (data.GetDataPresent(DataFormats.Xaml) ||
+                !data.GetDataPresent(DataFormats.Html))
+            {
+                return;
+            }
+            // 空の文書（新規作成直後・すべて消した後）は段落が無いため null になる。その場合も貼り付ける（PasteMarkdown が
+            // 段落を作る）
+            var para = ResolveParagraph(m_editor.CaretPosition, m_editor.Document);
+            if ((null == para && 0 < m_editor.Document.Blocks.Count) ||
+                para?.Tag is CodeBlockInfo ||
+                para?.Tag is CodeBlockContinuationInfo)
+            {
+                return;
+            }
+            HtmlToMarkdown.Result converted;
+            string text = null;
+            try
+            {
+                converted = HtmlToMarkdown.Convert(data.GetData(DataFormats.Html) as string);
+                if (data.GetDataPresent(DataFormats.UnicodeText))
+                {
+                    text = data.GetData(DataFormats.UnicodeText) as string;
+                }
+            }
+            catch (Exception ex)
+            {
+                // クリップボードの読み取り・変換に失敗した場合は、これまで通りの貼り付けに任せる
+                DebugLogger.Log($"EditorHandleHtmlPasting: HTML を変換できなかった（{ex.Message}）");
+                return;
+            }
+            if (null == converted ||
+                !converted.RichFlg ||
+                0 == converted.Markdown.Trim().Length)
+            {
+                return;
+            }
+            if (converted.Markdown.Split('\n').All(l => l.StartsWith("|")))
+            {
+                return; // 表だけ：TableEditor.HandlePasting に任せる（Excel 等の表の貼り付けは今まで通り）
+            }
+            a_args.CancelCommand();
+            PasteMarkdown(converted.Markdown, text);
+        }
+
+        /// <summary>
         /// 他アプリや、Xaml/Rtf形式を伴わない生のテキストが貼り付けられた時、そのテキストを
-        /// Markdownのインライン記法（**太字**・~~取り消し線~~・&lt;u&gt;下線&lt;/u&gt;・`コード`・
-        /// [リンク](url)等）として解釈しながら挿入する。Xaml/Rtfを伴う貼り付け（mdeや他の
+        /// Markdownとして解釈しながら挿入する（PasteMarkdown）。1つの段落だけなら、これまで通り
+        /// インライン記法（**太字**・~~取り消し線~~・&lt;u&gt;下線&lt;/u&gt;・`コード`・[リンク](url)等）を
+        /// 書式にして今の段落に挿入する。見出し・リスト・表・コードブロック等を含む場合は、mdew・mdee と同じく
+        /// ブロックとして挿入する。Xaml/Rtfを伴う貼り付け（mdeや他の
         /// リッチテキストアプリから）はWPF標準の貼り付けにそのまま任せる。`DataObject.
         /// AddPastingHandler`は登録順に全ハンドラを呼ぶため、画像は`ImageManager.HandlePasting`、
+        /// 書式付きの HTML は `EditorHandleHtmlPasting`、
         /// コードブロック・表は`TableEditor.HandlePasting`がこのハンドラより先に登録されており、
         /// それぞれ処理済みなら`CancelCommand()`する。ここでは`a_args.CommandCancelled`を
         /// 確認してから処理することで、それらと重複処理しないようにしている。
@@ -1604,9 +1698,27 @@ namespace mde
             {
                 return;
             }
-            text = text.Replace("\r\n", "\n").Replace("\r", "\n");
 
             a_args.CancelCommand();
+            PasteMarkdown(text, null);
+        }
+
+        /// <summary>
+        /// Markdown の文字を、書式にしてキャレット位置に貼り付ける（mdew・mdee の pasteMarkdown と同じ考え方）。
+        ///  - 1つの段落だけの場合：これまで通り、今の段落（見出し・項目・表のセル等）の中に、太字・リンク等の書式に
+        ///    して挿入する（MarkdownConverter.InsertInlineMarkdownAtPosition）
+        ///  - 複数のブロック（見出し・リスト・表・コードブロック等）の場合：今の段落をキャレット位置で分けて、その間に
+        ///    ブロックを入れる（TryInsertMarkdownBlocksAtCaret）
+        ///  - 箇条書きの項目の中にリストだけを貼る場合：今の項目の後ろに項目として加える
+        ///  - 表のセル・引用の中等、ブロックを置けない場所：a_fallbackText（無ければ a_markdown）を、これまで通り
+        ///    インライン記法として挿入する
+        /// </summary>
+        /// <param name="a_markdown">貼り付ける Markdown。</param>
+        /// <param name="a_fallbackText">ブロックを置けない場所で、代わりに貼る文字（HTML から変換した Markdown を
+        /// 貼る時の、クリップボードの文字）。null なら a_markdown を使う。</param>
+        private void PasteMarkdown(string a_markdown, string a_fallbackText)
+        {
+            string md = a_markdown.Replace("\r\n", "\n").Replace("\r", "\n");
             m_originalTextTracker.Invalidate(m_editor.CaretPosition);
             RunAsProgrammaticChange(() =>
             {
@@ -1614,12 +1726,286 @@ namespace mde
                 {
                     m_editor.Selection.Text = "";
                 }
+                EnsureParagraphInEmptyDocument();
+                MarkdownPasteKind kind = TryInsertMarkdownBlocksAtCaret(md);
+                if (MarkdownPasteKind.Blocks == kind)
+                {
+                    return;
+                }
+                string text = MarkdownPasteKind.Fallback == kind && null != a_fallbackText
+                    ? a_fallbackText.Replace("\r\n", "\n").Replace("\r", "\n")
+                    : md;
                 TextPointer end = m_markdownConverter.InsertInlineMarkdownAtPosition(m_editor.CaretPosition, text);
                 m_editor.CaretPosition = end;
                 m_editor.Selection.Select(end, end);
             });
             m_outlineManager.Refresh();
             MarkDirty();
+        }
+
+        /// <summary>直前にキャレットがあった表（RefreshTableWidthsOnLeave）。表の外なら null。</summary>
+        private Table m_lastCaretTable;
+
+        /// <summary>
+        /// キャレットが表の外へ出た（別の表へ移った）時に、それまでキャレットがあった表の列幅を、今の内容に合わせ直す
+        /// （BlockStyles.RefreshAutoCalculatedColumnWidths。ウィンドウの大きさを変えた時と同じ）。列幅は表を作った時の内容で
+        /// 決まるため、行を足したり文字を書き足したりすると、狭い列で折り返したままになっていた（mdew・mdee は書くたびに
+        /// 合わせ直す）。日本語入力の途中で列幅（表の見た目）が変わらないよう、入力中ではなく、表から出た時に行う。
+        /// </summary>
+        private void RefreshTableWidthsOnLeave()
+        {
+            if (m_isSourceModeFlg)
+            {
+                return;
+            }
+            Table current = null;
+            for (DependencyObject node = m_editor.CaretPosition?.Paragraph; null != node; node = (node as TextElement)?.Parent)
+            {
+                if (node is Table table)
+                {
+                    current = table;
+                    break;
+                }
+            }
+            Table left = m_lastCaretTable;
+            m_lastCaretTable = current;
+            if (null == left || ReferenceEquals(left, current) || !m_correctColumnWidthsFlg)
+            {
+                return;
+            }
+            // 選択の変更の通知の中では文書を変えず、後で行う
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!m_isSourceModeFlg && ReferenceEquals(left.Parent, m_editor.Document))
+                {
+                    RunWithoutDirtyMarking(() => BlockStyles.RefreshAutoCalculatedColumnWidths(left, m_tableEditor.GetAvailableTableWidth()));
+                }
+            }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        /// <summary>文書が空（段落が1つも無い。すべて消した後等）なら、空の段落を作ってキャレットを置く（貼り付ける場所を
+        /// 作る。PasteMarkdown）。</summary>
+        private void EnsureParagraphInEmptyDocument()
+        {
+            if (0 == m_editor.Document.Blocks.Count)
+            {
+                var para = new Paragraph();
+                m_editor.Document.Blocks.Add(para);
+                m_editor.CaretPosition = para.ContentStart;
+            }
+        }
+
+        /// <summary>TryInsertMarkdownBlocksAtCaret の結果。</summary>
+        private enum MarkdownPasteKind
+        {
+            /// <summary>ブロックとして挿入した。</summary>
+            Blocks,
+            /// <summary>1つの段落だけなので、今の段落の中に書式として挿入する（呼び出し側が行う）。</summary>
+            Inline,
+            /// <summary>この場所にはブロックを置けないので、文字として挿入する（呼び出し側が行う）。</summary>
+            Fallback,
+        }
+
+        /// <summary>段落が空か（文字・画像・チェックボックスが無い。書式の区切りのゼロ幅スペースは文字とみなさない）。</summary>
+        /// <param name="a_para">調べる段落。</param>
+        /// <returns>空なら true。</returns>
+        private static bool IsParagraphEmpty(Paragraph a_para)
+        {
+            if (a_para.Inlines.OfType<InlineUIContainer>().Any())
+            {
+                return false;
+            }
+            string text = new TextRange(a_para.ContentStart, a_para.ContentEnd).Text;
+            return 0 == text.Replace("​", "").Trim().Length;
+        }
+
+        /// <summary>
+        /// Markdown の文字をブロックの並びにして（MarkdownConverter.ParseMarkdownBlocks）、キャレット位置に挿入する。
+        /// 文書の最上位の段落・見出しの中では、段落をキャレット位置で分けて、その間にブロックを入れる。貼る内容の
+        /// 最初・最後が通常の段落なら、分けた前後の文字とつなげる。最後が表・リスト等で、キャレットより後ろに文字が
+        /// 無い場合も、後ろに空の段落を置いてそこにキャレットを置く（表を貼った後と同じ。TableEditor.InsertParsedTable）。
+        /// 呼び出し側で RunAsProgrammaticChange の中から呼ぶこと。
+        /// </summary>
+        /// <param name="a_md">Markdown の文字（改行は LF）。</param>
+        /// <returns>挿入したか、呼び出し側で文字として挿入すべきか。</returns>
+        private MarkdownPasteKind TryInsertMarkdownBlocksAtCaret(string a_md)
+        {
+            List<Block> blocks = m_markdownConverter.ParseMarkdownBlocks(a_md);
+            if (0 == blocks.Count)
+            {
+                return MarkdownPasteKind.Fallback;
+            }
+            // 1つの通常の段落（<br> による続きの段落を含む）だけなら、これまで通り今の段落の中に挿入する
+            if (blocks[0] is Paragraph firstPara && null == firstPara.Tag &&
+                blocks.Skip(1).All(b => b is Paragraph p && p.Tag is BrContinuationInfo))
+            {
+                return MarkdownPasteKind.Inline;
+            }
+            TextPointer caret = m_editor.CaretPosition;
+            Paragraph para = ResolveParagraph(caret, m_editor.Document);
+            if (null == para)
+            {
+                return MarkdownPasteKind.Fallback;
+            }
+
+            // 箇条書きの項目の中にリストだけを貼る：今の項目の後ろに項目として加える（今の項目が空なら置き換える）
+            if (m_listEditor.IsInListItem(para, out ListItem li, out List parentList))
+            {
+                if (1 != blocks.Count || !(blocks[0] is List pastedList) || 0 == pastedList.ListItems.Count)
+                {
+                    return MarkdownPasteKind.Fallback;
+                }
+                var items = pastedList.ListItems.ToList();
+                pastedList.ListItems.Clear();
+                ListItem anchorItem = li;
+                foreach (ListItem item in items)
+                {
+                    parentList.ListItems.InsertAfter(anchorItem, item);
+                    anchorItem = item;
+                }
+                if (1 == li.Blocks.Count && IsParagraphEmpty(para))
+                {
+                    parentList.ListItems.Remove(li);
+                }
+                Paragraph lastItemPara = anchorItem.Blocks.FirstBlock as Paragraph;
+                m_editor.CaretPosition = (lastItemPara ?? (TextElement)anchorItem).ContentEnd;
+                return MarkdownPasteKind.Blocks;
+            }
+
+            // ここから先は、最上位の通常の段落・見出しの中に貼る場合だけ（表のセル・引用の中等は文字として貼る）
+            bool headingFlg = para.Tag is int level && level > 0;
+            if (!(para.Parent is FlowDocument doc) || !(null == para.Tag || headingFlg))
+            {
+                return MarkdownPasteKind.Fallback;
+            }
+
+            // キャレット位置で今の段落を分ける（キャレットより後ろの部分を tail に移す）
+            var tail = new Paragraph();
+            foreach (Inline moved in ListEditor.SplitInlinesAtCaret(para.Inlines, caret))
+            {
+                tail.Inlines.Add(moved);
+            }
+
+            // 最初のブロックが通常の段落なら、今の段落の続きにする（見出しの中は、改行を含まない場合だけ）
+            int start = 0;
+            bool mergedFirstFlg = false;
+            if (blocks[0] is Paragraph first && null == first.Tag &&
+                !(headingFlg && first.Inlines.OfType<LineBreak>().Any()))
+            {
+                var inlines = first.Inlines.ToList();
+                first.Inlines.Clear();
+                para.Inlines.AddRange(inlines);
+                start = 1;
+                mergedFirstFlg = true;
+            }
+            Block last = para;
+            for (int i = start; i < blocks.Count; i++)
+            {
+                doc.Blocks.InsertAfter(last, blocks[i]);
+                last = blocks[i];
+            }
+            // 今の段落が空のまま残った場合（空の行に見出し等を貼った場合）は取り除く
+            if (!mergedFirstFlg && !ReferenceEquals(last, para) && IsParagraphEmpty(para))
+            {
+                doc.Blocks.Remove(para);
+            }
+
+            // キャレットより後ろにあった文字を、最後のブロックが通常の段落ならその続きに、それ以外なら新しい段落にする
+            var tailInlines = tail.Inlines.ToList();
+            bool tailHasContentFlg = !IsParagraphEmpty(tail);
+            if (last is Paragraph lastPara && null == lastPara.Tag)
+            {
+                TextPointer caretPos = lastPara.ContentEnd;
+                if (tailHasContentFlg)
+                {
+                    tail.Inlines.Clear();
+                    lastPara.Inlines.AddRange(tailInlines);
+                    caretPos = tailInlines[0].ElementStart;
+                }
+                m_editor.CaretPosition = caretPos;
+            }
+            else
+            {
+                doc.Blocks.InsertAfter(last, tail);
+                m_editor.CaretPosition = tail.ContentStart;
+            }
+            m_editor.Selection.Select(m_editor.CaretPosition, m_editor.CaretPosition);
+            return MarkdownPasteKind.Blocks;
+        }
+
+        /// <summary>
+        /// 書式なしで貼り付ける（Ctrl+Shift+V。mdew・mdee と同じ）。クリップボードの文字を、Markdown の記号として
+        /// 読まずに、そのままキャレット位置に挿入する（改行は段落の中の改行になる）。コードブロックの中では、通常の
+        /// 貼り付け（文字のまま貼る）と同じ。
+        /// </summary>
+        private void PastePlainText()
+        {
+            string text;
+            try
+            {
+                text = Clipboard.ContainsText() ? Clipboard.GetText() : null;
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Log($"PastePlainText: クリップボードを読み取れなかった（{ex.Message}）");
+                return;
+            }
+            if (string.IsNullOrEmpty(text))
+            {
+                return;
+            }
+            var para = ResolveParagraph(m_editor.CaretPosition, m_editor.Document);
+            if (null != para && (para.Tag is CodeBlockInfo || para.Tag is CodeBlockContinuationInfo))
+            {
+                m_editor.Paste();
+                return;
+            }
+            text = text.Replace("\r\n", "\n").Replace("\r", "\n");
+            m_originalTextTracker.Invalidate(m_editor.CaretPosition);
+            RunAsProgrammaticChange(() =>
+            {
+                if (!m_editor.Selection.IsEmpty)
+                {
+                    m_editor.Selection.Text = "";
+                }
+                EnsureParagraphInEmptyDocument();
+                TextPointer end = m_markdownConverter.InsertPlainTextAtPosition(m_editor.CaretPosition, text);
+                m_editor.CaretPosition = end;
+                m_editor.Selection.Select(end, end);
+            });
+            m_outlineManager.Refresh();
+            MarkDirty();
+        }
+
+        /// <summary>
+        /// 押されたキーが書式のショートカットなら、その書式の名前を返す（InlineStyleEditor.
+        /// ToggleInlineStyleFromShortcut に渡す）。Ctrl+B：太字、Ctrl+I：斜体、Ctrl+U：下線、Alt+Shift+5：取り消し線、
+        /// Ctrl+Shift+@（英語キーボードは `）：インラインコード。
+        /// </summary>
+        /// <param name="a_args">キーのイベントの引数。</param>
+        /// <returns>書式の名前。ショートカットでなければ null。</returns>
+        private static string GetInlineStyleShortcut(KeyEventArgs a_args)
+        {
+            ModifierKeys modifiers = Keyboard.Modifiers;
+            Key key = Key.System == a_args.Key ? a_args.SystemKey : a_args.Key;
+            if (ModifierKeys.Control == modifiers)
+            {
+                switch (key)
+                {
+                    case Key.B: return "bold";
+                    case Key.I: return "italic";
+                    case Key.U: return "underline";
+                }
+            }
+            if ((ModifierKeys.Alt | ModifierKeys.Shift) == modifiers && (Key.D5 == key || Key.NumPad5 == key))
+            {
+                return "strikethrough";
+            }
+            if ((ModifierKeys.Control | ModifierKeys.Shift) == modifiers && Key.Oem3 == key)
+            {
+                return "code";
+            }
+            return null;
         }
 
         /// <summary>
@@ -1645,6 +2031,23 @@ namespace mde
 
             if (m_isSourceModeFlg)
             {
+                return;
+            }
+            // 書式のショートカット（mdew・mdee と同じキー）。WPF の RichTextBox 標準の Ctrl+B・Ctrl+I・Ctrl+U は、
+            // mde の書式（Run の Tag）を付けずに見た目だけを変え、保存すると書式が消えるため、ここで代わりに処理する
+            // （文字を選んでいない時も、標準の処理は行わない）。
+            string shortcutStyle = GetInlineStyleShortcut(a_args);
+            if (null != shortcutStyle)
+            {
+                a_args.Handled = true;
+                m_inlineStyleEditor.ToggleInlineStyleFromShortcut(shortcutStyle);
+                return;
+            }
+            // 書式なしで貼り付け（mdew・mdee と同じ Ctrl+Shift+V）
+            if ((ModifierKeys.Control | ModifierKeys.Shift) == Keyboard.Modifiers && Key.V == a_args.Key)
+            {
+                a_args.Handled = true;
+                PastePlainText();
                 return;
             }
             var para = ResolveParagraph(m_editor.CaretPosition, m_editor.Document);
@@ -1721,6 +2124,13 @@ namespace mde
                 }
                 if (para.Parent is TableCell cellForEnter)
                 {
+                    if (ModifierKeys.Control == Keyboard.Modifiers)
+                    {
+                        // Ctrl+Enter：下に行を挿入する（mdew・mdee と同じ。右クリックの「下に行を挿入」と同じ）
+                        a_args.Handled = true;
+                        m_tableEditor.InsertRowBelowFromKey(cellForEnter);
+                        return;
+                    }
                     if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
                     {
                         a_args.Handled = true;
@@ -1907,6 +2317,14 @@ namespace mde
                 return;
             }
 
+            if (a_args.Key == Key.Tab && para.Parent is TableCell tabCell &&
+                (ModifierKeys.None == Keyboard.Modifiers || ModifierKeys.Shift == Keyboard.Modifiers))
+            {
+                // 表のセルの中の Tab・Shift+Tab：次・前のセルへ移る（最後のセルの Tab は行を追加する。mdew・mdee と同じ）
+                a_args.Handled = true;
+                m_tableEditor.MoveByTab(tabCell, ModifierKeys.Shift == Keyboard.Modifiers);
+                return;
+            }
             if (para.Parent is TableCell cell)
             {
                 if (a_args.Key == Key.Up ||
@@ -2765,6 +3183,7 @@ namespace mde
         {
             object anchor = m_isSourceModeFlg ? CaptureEditorScrollAnchor() : CaptureZoomTopLineAnchor();
             a_changeZoom();
+            ApplyDocumentWidth();
             UpdateLayout();
             if (anchor is ZoomTopLineAnchor lineAnchor)
             {
@@ -2863,6 +3282,195 @@ namespace mde
             m_editorScrollViewer.ScrollToVerticalOffset(m_editorScrollViewer.VerticalOffset + targetTop);
         }
 
+        /// <summary>表示の設定を変えて文書を作り直す時（SetVsCodeStyleFlg 等）に覚えておく、一番上に見えている場所。作り直すと
+        /// TextPointer は使えなくなるため、文書の最上位のブロックの番号と、そのブロックの中のどこ（高さに対する割合）が
+        /// 表示領域の上端にあったかで覚える（同じ Markdown から作り直すので、ブロックの並びは変わらない）。</summary>
+        private class RebuildScrollAnchor
+        {
+            /// <summary>表示領域の上端にあった、文書の最上位のブロックの番号（0から）。</summary>
+            public int BlockIndex { get; set; }
+
+            /// <summary>そのブロックの上端から表示領域の上端までの、ブロックの高さに対する割合（0〜1）。</summary>
+            public double Fraction { get; set; }
+
+            /// <summary>ブロックの上端が表示領域の上端より下にあった時（文書の先頭の余白が見えている時等）の、その距離（px）。
+            /// それ以外は 0。</summary>
+            public double TopGap { get; set; }
+        }
+
+        /// <summary>文書の最上位のブロックの上端の位置（表示領域の上端を 0 とした、エディタの座標。px）。ブロックの最初の文字の
+        /// 位置で測る（表・リストは最初のセル・項目の文字）。測れない時は null。</summary>
+        /// <param name="a_block">対象のブロック。</param>
+        /// <returns>上端の位置。</returns>
+        private double? BlockTop(Block a_block)
+        {
+            // 画像で始まる段落：文字の位置（GetCharacterRect）は画像の高さの分ずれた値になるため、画像そのものの位置で測る
+            // （画像の前に、書式の区切りのゼロ幅スペース等の空の文字があってもよい）
+            if (a_block is Paragraph para)
+            {
+                foreach (Inline inline in para.Inlines)
+                {
+                    if (inline is InlineUIContainer container && container.Child is UIElement child && child.IsVisible)
+                    {
+                        return child.TranslatePoint(new Point(0, 0), m_editor).Y - m_editor.Padding.Top;
+                    }
+                    if (!(inline is Run run) || 0 < run.Text.Replace("\u200B", "").Trim().Length)
+                    {
+                        break;
+                    }
+                }
+            }
+            TextPointer start = a_block.ContentStart.GetInsertionPosition(LogicalDirection.Forward);
+            Rect rect = start.GetCharacterRect(LogicalDirection.Forward);
+            if (rect.IsEmpty)
+            {
+                return null;
+            }
+            return rect.Top - m_editor.Padding.Top;
+        }
+
+        /// <summary>ブロックの上端の位置（BlockTop）と、次のブロックの上端までの高さ。</summary>
+        /// <param name="a_blocks">文書の最上位のブロックの並び。</param>
+        /// <param name="a_index">対象のブロックの番号。</param>
+        /// <param name="a_top">上端の位置。</param>
+        /// <param name="a_height">高さ（最後のブロック・測れない時は 0）。</param>
+        /// <returns>上端を測れたか。</returns>
+        private bool TryGetBlockTopAndHeight(List<Block> a_blocks, int a_index, out double a_top, out double a_height)
+        {
+            a_top = 0;
+            a_height = 0;
+            double? top = BlockTop(a_blocks[a_index]);
+            if (null == top)
+            {
+                return false;
+            }
+            a_top = top.Value;
+            double? next = a_index + 1 < a_blocks.Count ? BlockTop(a_blocks[a_index + 1]) : null;
+            if (null != next && next.Value > a_top)
+            {
+                a_height = next.Value - a_top;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 表示の設定（表示スタイル・表示フォント・段落中の改行・列幅の補正・箇条書きの記号）を変えて文書を作り直す前に、
+        /// 編集ペインの一番上に見えている場所を覚えておく（RestoreRebuildScrollAnchor で、作り直した後も同じ場所を表示する。
+        /// 以前は、作り直すと文書の先頭に戻っていた。mdew・mdee は、表示スタイルを変えても同じ場所を表示する）。
+        /// 表示領域の上端にかかっているブロックを、ブロックの上端の位置で二分探索して見つける（文書が長くても速いように）。
+        /// </summary>
+        /// <returns>覚えた位置。ソースモードの時・覚えられない時は null。</returns>
+        private RebuildScrollAnchor CaptureRebuildScrollAnchor()
+        {
+            if (m_isSourceModeFlg || !m_editor.IsLoaded)
+            {
+                return null;
+            }
+            var blocks = m_editor.Document.Blocks.ToList();
+            if (0 == blocks.Count)
+            {
+                return null;
+            }
+            // 上端が表示領域の上端（0）以下にある、最後のブロックを探す（測れないブロックは、前のブロックの続きとみなす）
+            int low = 0;
+            int high = blocks.Count - 1;
+            int found = 0;
+            while (low <= high)
+            {
+                int mid = (low + high) / 2;
+                double? top = BlockTop(blocks[mid]);
+                if (null == top || top.Value <= 0)
+                {
+                    found = mid;
+                    low = mid + 1;
+                }
+                else
+                {
+                    high = mid - 1;
+                }
+            }
+            if (!TryGetBlockTopAndHeight(blocks, found, out double blockTop, out double height))
+            {
+                return null;
+            }
+            var anchor = new RebuildScrollAnchor
+            {
+                BlockIndex = found,
+                Fraction = 0 < height && blockTop < 0 ? Clamp01(-blockTop / height) : 0,
+                TopGap = blockTop > 0 ? blockTop : 0,
+            };
+            if (DebugLogger.IsEnabled)
+            {
+                DebugLogger.Log($"CaptureRebuildScrollAnchor: BlockIndex={found} Block={blocks[found].GetType().Name} Tag={blocks[found].Tag} " +
+                    $"Top={blockTop} Height={height} Fraction={anchor.Fraction} TopGap={anchor.TopGap}");
+            }
+            return anchor;
+        }
+
+        /// <summary>表示の設定を変えて文書を作り直した時（同じ Markdown から作り直すだけで、内容は変わらない）、作り直す前に
+        /// 変更が無かった文書は、変更なしのままにする（以前は、表示スタイル等を切り替えただけで「変更されています」になり、
+        /// 閉じる時に保存するか聞かれていた）。</summary>
+        /// <param name="a_wasDirtyFlg">作り直す前に、変更があったか。</param>
+        private void KeepCleanAfterRebuild(bool a_wasDirtyFlg)
+        {
+            if (!a_wasDirtyFlg && m_currentFileIsDirtyFlg)
+            {
+                m_currentFileIsDirtyFlg = false;
+                m_folderTreeManager.RefreshDirtyMarkers();
+            }
+        }
+
+        /// <summary>CaptureRebuildScrollAnchor で覚えた場所が、文書を作り直した後も一番上に来るようスクロールする。画像は、
+        /// 作り直した後に読み込みが終わってから大きさが決まる（ImageManager.ApplyImageSizingConsideringTable）ため、その分だけ
+        /// 表示がずれることがある。画面の更新が落ち着いた後に、もう一度合わせる。</summary>
+        /// <param name="a_anchor">CaptureRebuildScrollAnchor の戻り値（null なら何もしない）。</param>
+        private void RestoreRebuildScrollAnchor(RebuildScrollAnchor a_anchor)
+        {
+            if (null == a_anchor)
+            {
+                return;
+            }
+            bool caretPlacedFlg = false;
+            void Restore()
+            {
+                if (null == m_editorScrollViewer)
+                {
+                    m_editorScrollViewer = FindVisualChild<ScrollViewer>(m_editor);
+                }
+                var blocks = m_editor.Document.Blocks.ToList();
+                if (null == m_editorScrollViewer || 0 == blocks.Count)
+                {
+                    return;
+                }
+                int index = Math.Min(a_anchor.BlockIndex, blocks.Count - 1);
+                if (!caretPlacedFlg)
+                {
+                    // キャレットを、表示する場所のブロックの先頭に置く（文書の先頭に置いたままだと、後でキャレットが見える
+                    // 位置まで（文書の先頭まで）スクロールされてしまうため）
+                    caretPlacedFlg = true;
+                    m_editor.CaretPosition = blocks[index].ContentStart.GetInsertionPosition(LogicalDirection.Forward);
+                }
+                if (!TryGetBlockTopAndHeight(blocks, index, out double blockTop, out double height))
+                {
+                    return;
+                }
+                double delta = blockTop + a_anchor.Fraction * height - a_anchor.TopGap;
+                if (DebugLogger.IsEnabled)
+                {
+                    DebugLogger.Log($"RestoreRebuildScrollAnchor: BlockIndex={index} Block={blocks[index].GetType().Name} " +
+                        $"Top={blockTop} Height={height} Delta={delta} VerticalOffset={m_editorScrollViewer.VerticalOffset}");
+                }
+                m_editorScrollViewer.ScrollToVerticalOffset(m_editorScrollViewer.VerticalOffset + delta);
+            }
+            UpdateLayout();
+            Restore();
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                UpdateLayout();
+                Restore();
+            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+
         /// <summary>ソースモードのエディタでのマウスホイール・タッチパッドのスクロール（ScrollByWheelDelta）。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
@@ -2923,6 +3531,15 @@ namespace mde
             {
                 return;
             }
+            // 本文の幅（「読みやすい幅にする」の時の左右の余白）を、先に今の幅に合わせる（画像・表の幅は、この余白を
+            // 除いた幅に合わせるため）
+            ApplyDocumentWidth();
+            RefreshImageAndTableWidths();
+        }
+
+        /// <summary>画像の大きさと、表の列幅を、今の本文の幅に合わせ直す（EditorSizeChanged・SetLimitDocWidthFlg）。</summary>
+        private void RefreshImageAndTableWidths()
+        {
             // 表のセル内の画像はApplyImageSizingConsideringTable経由で列幅を考慮したサイズにする
             // （表の外の画像は従来通りエディタ幅基準）。単純にApplyImageSizing（エディタ幅基準）
             // だけを呼ぶと、セル内の画像は列幅を無視した（広すぎる）サイズになってしまう。
@@ -3212,8 +3829,8 @@ namespace mde
         /// 現在の内容を一旦Markdownテキストへ書き出してから読み直すことで、新しい設定を
         /// その場で反映させる（LoadFile等、文書を丸ごと差し替える他の処理と同じパターン）。
         /// 文書再構築直後のキャレット位置は不定・不確実になりうるため、LoadFile等の既存箇所に
-        /// ならい、独自のキャレット位置の保持・復元は一切試みず、
-        /// 常に文書の先頭へ明示的に設定する。ソースモード中は、次にMarkdownモードへ切り替え
+        /// ならい、独自のキャレット位置の保持・復元は試みず、いったん文書の先頭へ明示的に設定した上で、
+        /// 一番上に見えていたブロックの先頭へ置き直す（表示している場所を保つため。RestoreRebuildScrollAnchor）。ソースモード中は、次にMarkdownモードへ切り替え
         /// られた際の変換に反映されるよう、設定値を変更するだけにとどめる。</summary>
         /// <param name="a_value">true＝ソースの通りに改行する、false＝空行が入るまで改行しない。</param>
         private void SetPreserveSourceLineBreaksFlg(bool a_value)
@@ -3228,9 +3845,13 @@ namespace mde
                 {
                     string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
                     m_preserveSourceLineBreaksFlg = a_value;
+                    RebuildScrollAnchor scrollAnchor = CaptureRebuildScrollAnchor();
+                    bool wasDirtyFlg = m_currentFileIsDirtyFlg;
                     RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
                     m_outlineManager.Refresh();
                     m_editor.CaretPosition = m_editor.Document.ContentStart;
+                    RestoreRebuildScrollAnchor(scrollAnchor);
+                    KeepCleanAfterRebuild(wasDirtyFlg);
                 }
             }
             UpdateLineBreakModeMenuChecks();
@@ -3273,9 +3894,13 @@ namespace mde
                 {
                     string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
                     m_correctColumnWidthsFlg = a_value;
+                    RebuildScrollAnchor scrollAnchor = CaptureRebuildScrollAnchor();
+                    bool wasDirtyFlg = m_currentFileIsDirtyFlg;
                     RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
                     m_outlineManager.Refresh();
                     m_editor.CaretPosition = m_editor.Document.ContentStart;
+                    RestoreRebuildScrollAnchor(scrollAnchor);
+                    KeepCleanAfterRebuild(wasDirtyFlg);
                 }
             }
             m_correctColumnWidthsMenuItem.IsChecked = m_correctColumnWidthsFlg;
@@ -3318,9 +3943,13 @@ namespace mde
                 {
                     string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
                     m_uniformMarkerStyleFlg = a_value;
+                    RebuildScrollAnchor scrollAnchor = CaptureRebuildScrollAnchor();
+                    bool wasDirtyFlg = m_currentFileIsDirtyFlg;
                     RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
                     m_outlineManager.Refresh();
                     m_editor.CaretPosition = m_editor.Document.ContentStart;
+                    RestoreRebuildScrollAnchor(scrollAnchor);
+                    KeepCleanAfterRebuild(wasDirtyFlg);
                 }
             }
             UpdateMarkerStyleMenuChecks();
@@ -3370,9 +3999,13 @@ namespace mde
                 {
                     string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
                     m_useLegacyFontFlg = a_value;
+                    RebuildScrollAnchor scrollAnchor = CaptureRebuildScrollAnchor();
+                    bool wasDirtyFlg = m_currentFileIsDirtyFlg;
                     RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
                     m_outlineManager.Refresh();
                     m_editor.CaretPosition = m_editor.Document.ContentStart;
+                    RestoreRebuildScrollAnchor(scrollAnchor);
+                    KeepCleanAfterRebuild(wasDirtyFlg);
                 }
             }
             UpdateFontModeMenuChecks();
@@ -3494,9 +4127,13 @@ namespace mde
                     string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
                     m_vsCodeStyleFlg = a_value;
                     ApplyDocStyle();
+                    RebuildScrollAnchor scrollAnchor = CaptureRebuildScrollAnchor();
+                    bool wasDirtyFlg = m_currentFileIsDirtyFlg;
                     RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
                     m_outlineManager.Refresh();
                     m_editor.CaretPosition = m_editor.Document.ContentStart;
+                    RestoreRebuildScrollAnchor(scrollAnchor);
+                    KeepCleanAfterRebuild(wasDirtyFlg);
                 }
                 // ソースモードの文字の大きさ（本文と同じ）も表示倍率を掛けて付け直す。
                 m_zoomManager.ApplyCurrentZoomLevel();
@@ -3585,6 +4222,98 @@ namespace mde
         }
 
         /// <summary>「表示スタイル」メニューの2項目を、現在の設定に合わせてラジオボタンのように片方だけチェック状態にする。</summary>
+        private void UpdateDocWidthMenuChecks()
+        {
+            m_docWidthLimitedMenuItem.IsChecked = m_limitDocWidthFlg;
+            m_docWidthFullMenuItem.IsChecked = !m_limitDocWidthFlg;
+        }
+
+        /// <summary>メニュー「表示」→「本文の幅」→「読みやすい幅にする（最大 884px）」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void DocWidthLimitedChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            SetLimitDocWidthFlg(true);
+        }
+
+        /// <summary>メニュー「表示」→「本文の幅」→「編集ペインの幅に合わせる」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void DocWidthFullChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            SetLimitDocWidthFlg(false);
+        }
+
+        /// <summary>本文の幅を切り替える。折り返しの位置が変わっても、編集ペインの一番上に見えている行が動かないように
+        /// する（表示倍率を変える時と同じ。ChangeZoomKeepingTopLine）。画像・表の幅は、編集ペインの幅が変わった時と同じく
+        /// 合わせ直す（EditorSizeChanged）。</summary>
+        /// <param name="a_value">true＝読みやすい幅にする、false＝編集ペインの幅に合わせる。</param>
+        private void SetLimitDocWidthFlg(bool a_value)
+        {
+            if (m_limitDocWidthFlg != a_value)
+            {
+                ChangeZoomKeepingTopLine(() =>
+                {
+                    m_limitDocWidthFlg = a_value;
+                    ApplyDocumentWidth();
+                    if (!m_isSourceModeFlg)
+                    {
+                        UpdateLayout();
+                        RefreshImageAndTableWidths();
+                    }
+                });
+            }
+            UpdateDocWidthMenuChecks();
+        }
+
+        /// <summary>
+        /// 本文の幅を、今の設定（m_limitDocWidthFlg）と編集ペインの幅に合わせる。「読みやすい幅にする」の時は、文字を書く
+        /// 幅が最大 884px（BlockStyles.READABLE_DOCUMENT_WIDTH_PX。表示倍率を掛けた幅）になるよう、編集ペイン（RichTextBox）・
+        /// ソースモードの入力欄の左右の余白（Padding）を広げて、本文を中央に置く（mdew・mdee と同じ。編集ペインが狭い時は、
+        /// 本来の余白のまま）。「編集ペインの幅に合わせる」の時は、本来の余白（MainWindow.xaml の値）に戻す。
+        /// 余白は Padding に付ける（PagePadding の左右は RichTextBox が管理するため。ApplyEditorTopPadding 参照）。
+        /// 画像・表の表示できる幅（ImageManager.GetAvailableImageWidth・TableEditor.GetAvailableTableWidth）は、Padding を
+        /// 除いた幅で計算しているため、そのまま本文の幅に合う。
+        /// </summary>
+        private void ApplyDocumentWidth()
+        {
+            if (null == m_editor || null == m_sourceEditor)
+            {
+                return;
+            }
+            double scrollBarWidth = SystemParameters.VerticalScrollBarWidth;
+            // 編集ペイン：表示倍率は LayoutTransform（ZoomManager.SetZoom）なので、ActualWidth・Padding は倍率を掛ける前の値
+            double extra = 0;
+            if (m_limitDocWidthFlg && 0 < m_editor.ActualWidth)
+            {
+                // 文字を書く幅 = 幅 − 本来の左右の余白 − スクロールバー − 文書の左右の余白（PagePadding）
+                Thickness page = m_editorDocument.PagePadding;
+                double pageSides = (double.IsNaN(page.Left) ? 0 : page.Left) + (double.IsNaN(page.Right) ? 0 : page.Right);
+                double textWidth = m_editor.ActualWidth - m_editorBasePadding.Left - m_editorBasePadding.Right - scrollBarWidth - pageSides;
+                extra = Math.Max(0, Math.Floor((textWidth - BlockStyles.READABLE_DOCUMENT_WIDTH_PX) / 2));
+            }
+            var editorPadding = new Thickness(m_editorBasePadding.Left + extra, m_editorBasePadding.Top,
+                m_editorBasePadding.Right + extra, m_editorBasePadding.Bottom);
+            if (editorPadding != m_editor.Padding)
+            {
+                m_editor.Padding = editorPadding;
+            }
+            // ソースモードの入力欄：表示倍率は文字の大きさなので、884px にも倍率を掛ける
+            double sourceExtra = 0;
+            if (m_limitDocWidthFlg && 0 < m_sourceEditor.ActualWidth)
+            {
+                double zoom = m_zoomManager?.ZoomLevel ?? 1.0;
+                double textWidth = m_sourceEditor.ActualWidth - m_sourceEditorBasePadding.Left - m_sourceEditorBasePadding.Right - scrollBarWidth;
+                sourceExtra = Math.Max(0, Math.Floor((textWidth - BlockStyles.READABLE_DOCUMENT_WIDTH_PX * zoom) / 2));
+            }
+            var sourcePadding = new Thickness(m_sourceEditorBasePadding.Left + sourceExtra, m_sourceEditorBasePadding.Top,
+                m_sourceEditorBasePadding.Right + sourceExtra, m_sourceEditorBasePadding.Bottom);
+            if (sourcePadding != m_sourceEditor.Padding)
+            {
+                m_sourceEditor.Padding = sourcePadding;
+            }
+        }
+
         private void UpdateDocStyleMenuChecks()
         {
             m_docStyleGithubMenuItem.IsChecked = !m_vsCodeStyleFlg;

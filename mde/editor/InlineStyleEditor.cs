@@ -167,6 +167,52 @@ namespace mde.editor
             return sb.ToString();
         }
 
+        /// <summary>
+        /// 書式のショートカット（Ctrl+B：太字、Ctrl+I：斜体、Ctrl+U：下線、Alt+Shift+5：取り消し線、
+        /// Ctrl+Shift+@（`）：インラインコード。mdew・mdee と同じキー）。選んだ文字がすべてその書式なら、書式を
+        /// 外して通常の文字に戻す（もう一度押すと元に戻る）。それ以外は、その書式にする（右クリックの「文字装飾」と
+        /// 同じ処理）。文字を選んでいない時は何もしない。
+        /// </summary>
+        /// <param name="a_style">"bold"・"italic"・"underline"・"strikethrough"・"code"のいずれか。</param>
+        public void ToggleInlineStyleFromShortcut(string a_style)
+        {
+            if (null == m_editor.Selection || m_editor.Selection.IsEmpty)
+            {
+                return;
+            }
+            ApplyInlineStyle(IsWholeSelectionStyled(a_style) ? "normal" : a_style);
+        }
+
+        /// <summary>選んだ範囲の文字（ゼロ幅スペース以外）が、すべて指定の書式か。</summary>
+        /// <param name="a_style">"bold"・"italic"・"underline"・"strikethrough"・"code"のいずれか。</param>
+        /// <returns>すべてその書式なら true。</returns>
+        private bool IsWholeSelectionStyled(string a_style)
+        {
+            TextPointer end = m_editor.Selection.End;
+            TextPointer navigator = m_editor.Selection.Start;
+            bool anyTextFlg = false;
+            int guard = 0;
+            while (null != navigator && navigator.CompareTo(end) < 0 && guard++ < 100000)
+            {
+                if (TextPointerContext.Text == navigator.GetPointerContext(LogicalDirection.Forward) &&
+                    navigator.Parent is Run run &&
+                    0 < run.Text.Replace("\u200B", "").Length)
+                {
+                    string tag = run.Tag as string;
+                    bool sameFlg = "code" == a_style ? "inline-code" == tag
+                        : "italic" == a_style ? ("italic" == tag || "italic_" == tag)
+                        : a_style == tag;
+                    if (!sameFlg)
+                    {
+                        return false;
+                    }
+                    anyTextFlg = true;
+                }
+                navigator = navigator.GetNextContextPosition(LogicalDirection.Forward);
+            }
+            return anyTextFlg;
+        }
+
         /// <summary>現在の選択範囲を、指定URLへのリンクRunに置き換える。</summary>
         /// <param name="a_url">リンク先URL。</param>
         public void ApplyLinkStyle(string a_url)
@@ -204,7 +250,7 @@ namespace mde.editor
         /// <summary>右クリック「文字装飾」の通常スタイル実装。選択範囲を指定スタイルの新しいRunに
         /// 置き換える。既存Runのプロパティ個別リセットはWPFの制約（FontFamilyをnullにできない等）
         /// で失敗するため、常に新規Runを作り直す。</summary>
-        /// <param name="a_style">"normal"、"code"、"bold"、"strikethrough"、"underline"のいずれか。</param>
+        /// <param name="a_style">"normal"、"code"、"bold"、"italic"、"strikethrough"、"underline"、"highlight"のいずれか。</param>
         private void ApplyInlineStyle(string a_style)
         {
             if (null == m_editor.Selection || m_editor.Selection.IsEmpty)
@@ -229,6 +275,9 @@ namespace mde.editor
                 {
                     case "bold":
                         newRun = new Run(text, start) { FontWeight = BlockStyles.BoldFontWeight, Tag = "bold" };
+                        break;
+                    case "italic":
+                        newRun = new Run(text, start) { FontStyle = FontStyles.Italic, Tag = "italic" };
                         break;
                     case "strikethrough":
                         newRun = new Run(text, start) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
@@ -721,6 +770,36 @@ namespace mde.editor
                 }
             }
             if (null == style &&
+                '*' == lastChar)
+            {
+                // 斜体（*斜体*）。**太字** の途中（閉じの1つ目の * を打った所）では斜体にしない（直前が * の * からは
+                // 始めない。中身に * を含めない）。中身の前後が空白のもの（「2 * 3 * 4」等）も斜体にしない
+                // （MarkdownConverter.ITALIC_PATTERN と同じ条件）。
+                match = Regex.Match(textBefore, "(?<!\\*)\\*(?![\\s*])([^*]*?[^*\\s])\\*$");
+                if (match.Success && !IsEscapedAt(textBefore, match.Index))
+                {
+                    style = "italic";
+                }
+                else
+                {
+                    match = null;
+                }
+            }
+            if (null == style &&
+                '_' == lastChar)
+            {
+                // 斜体（_斜体_）。英数字の単語の途中の _（snake_case 等）からは始めない
+                match = Regex.Match(textBefore, "(?<![\\w_])_(?![\\s_])([^_]*?[^_\\s])_$");
+                if (match.Success && !IsEscapedAt(textBefore, match.Index))
+                {
+                    style = "italic_";
+                }
+                else
+                {
+                    match = null;
+                }
+            }
+            if (null == style &&
                 '~' == lastChar)
             {
                 match = Regex.Match(textBefore, "~~([^~]+)~~$");
@@ -1066,6 +1145,10 @@ namespace mde.editor
                 else if ("highlight" == a_style)
                 {
                     newRun = new Run(a_content, a_start) { Background = m_highlightBackground, Tag = "highlight" };
+                }
+                else if ("italic" == a_style || "italic_" == a_style)
+                {
+                    newRun = new Run(a_content, a_start) { FontStyle = FontStyles.Italic, Tag = a_style };
                 }
                 else
                     newRun = BlockStyles.ApplyInlineCodeStyle(new Run(a_content, a_start) { Tag = "inline-code" });

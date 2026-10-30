@@ -14,6 +14,9 @@ using System.Windows.Documents;
 using System.Linq;
 using System.Windows;
 using System.Windows.Input;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
+using System.Windows.Media;
 
 namespace mde.findreplace
 {
@@ -114,6 +117,12 @@ namespace mde.findreplace
                 if (SizeToContent.Manual == SizeToContent)
                 {
                     m_resultsList.ClearValue(MaxHeightProperty);
+                }
+                else
+                {
+                    // 中身に合わせて高くなった時（「すべて検索」の結果を表示した時等）に、画面の下にはみ出さないようにする
+                    // （mdew・mdee と同じ。FitInWorkArea）。大きさを変えている最中に位置を変えないよう、後で行う
+                    Dispatcher.BeginInvoke(new Action(FitInWorkArea), System.Windows.Threading.DispatcherPriority.Loaded);
                 }
             };
 
@@ -444,6 +453,65 @@ namespace mde.findreplace
                 }
             }
             m_statusText.Text = "見つかりませんでした。";
+        }
+
+        private const int MONITOR_DEFAULTTONEAREST = 2;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MONITORINFO
+        {
+            public int cbSize;
+            public RECT rcMonitor;
+            public RECT rcWork;
+            public int dwFlags;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromWindow(IntPtr a_hwnd, int a_flags);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetMonitorInfo(IntPtr a_monitor, ref MONITORINFO a_info);
+
+        /// <summary>ウィンドウが、表示している画面の作業領域（タスクバーを除いた範囲）の下にはみ出していれば、上へずらす
+        /// （それでも収まらなければ、高さを作業領域に収まるまで縮める。結果の一覧が縮む）。mdew・mdee の
+        /// FindWindow.fitInWorkArea と同じ。</summary>
+        private void FitInWorkArea()
+        {
+            if (!(PresentationSource.FromVisual(this) is HwndSource source) || null == source.CompositionTarget)
+            {
+                return;
+            }
+            var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (!GetMonitorInfo(MonitorFromWindow(source.Handle, MONITOR_DEFAULTTONEAREST), ref info))
+            {
+                return;
+            }
+            // 画面の座標（物理的な画素）を、WPF の座標（DPI に依らない単位）にする
+            Matrix fromDevice = source.CompositionTarget.TransformFromDevice;
+            double workTop = fromDevice.Transform(new Point(info.rcWork.Left, info.rcWork.Top)).Y;
+            double workBottom = fromDevice.Transform(new Point(info.rcWork.Right, info.rcWork.Bottom)).Y;
+            double top = Top;
+            double height = ActualHeight;
+            if (double.IsNaN(top) || height <= 0 || top + height <= workBottom)
+            {
+                return;
+            }
+            top = Math.Max(workTop, workBottom - height);
+            Top = top;
+            if (top + height > workBottom)
+            {
+                SizeToContent = SizeToContent.Manual;
+                Height = workBottom - top;
+            }
         }
 
         /// <summary>ウィンドウの高さを、開いた時と同じく中身に合わせた高さに戻す（大きさを変えた後でも、「すべて検索」で
