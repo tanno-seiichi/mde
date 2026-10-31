@@ -281,8 +281,10 @@ namespace mde.common
                 a_p.LineHeight = size * 1.4;
                 if (a_level <= 2)
                 {
+                    // 大見出し・中見出しの下の線は、mdew・mdee と同じ 1px の #B4B4B4（以前は 0.75・0.5px で、薄く見えていた）。
+                    // 線はピクセルに合わせてくっきり描く（MainWindow.ApplyEditorEdgeMode）
                     a_p.BorderBrush = m_cellBorder;
-                    a_p.BorderThickness = new Thickness(0, 0, 0, 1 == a_level ? 0.75 : 0.5);
+                    a_p.BorderThickness = new Thickness(0, 0, 0, 1);
                     a_p.Padding = new Thickness(0, 0, 0, 4);
                 }
                 else

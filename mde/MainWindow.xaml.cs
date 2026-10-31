@@ -295,7 +295,7 @@ namespace mde
             m_editor.Loaded += (s, e) => ApplyEditorTopPadding();
             // 文書の先頭の段落が変わったら（見出し⇔本文等）、上の余白を付け直す（EditorTopPadding 参照）
             m_editor.TextChanged += (s, e) => ApplyEditorTopPadding();
-            // 表示スタイルに合わせた線の描き方（ApplyEditorEdgeMode）は、編集ペインのスクロール領域ができてから付ける
+            // 線の描き方（ApplyEditorEdgeMode）は、編集ペインのスクロール領域ができてから付ける
             m_editor.Loaded += (s, e) => ApplyEditorEdgeMode();
             m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
             m_preserveSourceLineBreaksFlg = m_savedSettings.PreserveSourceLineBreaksFlg;
@@ -4113,11 +4113,10 @@ namespace mde
             UpdateDocStyleMenuChecks();
         }
 
-        /// <summary>VSCodeスタイルの罫線（表の見出しの行の下の黒い線など、1px の線）は、行の位置が画面の
-        /// ピクセルの境目にかかると、なめらかに描く処理で2ピクセルにまたがって描かれ、太く見える。
-        /// VSCodeスタイルの時だけ、線や枠をピクセルに合わせてくっきり描く（文字の描き方は変わらない）。
-        /// GitHubスタイルは見出しの下線に 1px 未満の太さを使っていて、くっきり描くと消えることがあるため、
-        /// 今までどおりにする。くっきり描く設定は、その要素の中のすべてに効き、中の一部だけ元に戻すことはできないため、
+        /// <summary>罫線（見出しの下の線・表の罫線など、1px の線）は、行の位置が画面のピクセルの境目にかかると、なめらかに描く
+        /// 処理で2ピクセルにまたがって薄く描かれる（mdew・mdee の線より薄く・太く見える）。線や枠をピクセルに合わせてくっきり
+        /// 描く（文字の描き方は変わらない）。以前は GitHubスタイルの見出しの下線に 1px 未満の太さを使っていて、くっきり描くと
+        /// 消えることがあったため VSCodeスタイルの時だけにしていたが、1px にしたため、どちらのスタイルでもくっきり描く。くっきり描く設定は、その要素の中のすべてに効き、中の一部だけ元に戻すことはできないため、
         /// エディタ全体（スクロールバーを含む）ではなく、文書を表示する部分（スクロール領域の ScrollContentPresenter。
         /// スクロールバーはその外にある）だけに付ける（スクロールバーの矢印・つまみの角が、ギザギザにならないように）。</summary>
         private void ApplyEditorEdgeMode()
@@ -4125,7 +4124,7 @@ namespace mde
             var presenter = FindVisualChild<ScrollContentPresenter>(m_editor);
             if (null != presenter)
             {
-                RenderOptions.SetEdgeMode(presenter, m_vsCodeStyleFlg ? EdgeMode.Aliased : EdgeMode.Unspecified);
+                RenderOptions.SetEdgeMode(presenter, EdgeMode.Aliased);
             }
         }
 
@@ -4312,7 +4311,7 @@ namespace mde
             ApplyTextColor(m_softTextColorFlg);
             // VSCodeスタイルのリンクは、ふだんは下線なしで、マウスを乗せた時だけ下線を表示する（mdew と同じ）
             m_linkHoverUnderline.Enabled = m_vsCodeStyleFlg;
-            // VSCodeスタイルの時は、文書の線をくっきり描く（ApplyEditorEdgeMode 参照）
+            // 文書の線をくっきり描く（ApplyEditorEdgeMode 参照）
             ApplyEditorEdgeMode();
         }
 
