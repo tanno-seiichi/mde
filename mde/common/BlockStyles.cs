@@ -80,6 +80,21 @@ namespace mde.common
         // （PDF出力）時にヘッダー行の縦罫線だけラスタライズされず消えることがあるため
         // （色を変える対策は効果なし、太さを変える対策のみ有効と確認済み）。
         private const double HEADER_VERTICAL_BORDER_THICKNESS = 1.75;
+
+        /// <summary>表の罫線の色（mdew・mdee と同じ #C8CCD1。以前は #DDDFE2 で、薄く見えていた）。</summary>
+        public static readonly Brush TableBorderBrush = CreateFrozenBrush(0xC8, 0xCC, 0xD1);
+
+        /// <summary>固定した（変更できない・スレッドをまたいで使える）単色のブラシを作る。</summary>
+        /// <param name="a_r">赤。</param>
+        /// <param name="a_g">緑。</param>
+        /// <param name="a_b">青。</param>
+        /// <returns>ブラシ。</returns>
+        private static Brush CreateFrozenBrush(byte a_r, byte a_g, byte a_b)
+        {
+            var brush = new SolidColorBrush(Color.FromRgb(a_r, a_g, a_b));
+            brush.Freeze();
+            return brush;
+        }
         // ハイライト（==text==）の背景色。
         private static readonly Brush m_highlightBackground = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0x8A));
         // 引用（&gt; ）の背景色・文字色。コードブロックの背景色（暖色系のベージュ）とは
@@ -716,6 +731,17 @@ namespace mde.common
         /// <param name="a_borderBrush">罫線の色（呼び出し側が使っているm_cellBorderを渡す）。</param>
         public static void ApplyTableCellBorders(Table a_table, Brush a_borderBrush)
         {
+            ApplyTableCellBorders(a_table, a_borderBrush, false);
+        }
+
+        /// <summary>ApplyTableCellBorders と同じ。a_forPrintFlg が true の時だけ、見出しの行のセルの間の縦の線を
+        /// HEADER_VERTICAL_BORDER_THICKNESS の太さにする（PDF に書き出す時に、細い線が消えないように。MainWindow の
+        /// PDF の書き出しで、書き出す間だけ使う）。画面では mdew・mdee と同じく、すべて 1px。</summary>
+        /// <param name="a_table">対象の表。</param>
+        /// <param name="a_borderBrush">罫線の色。</param>
+        /// <param name="a_forPrintFlg">PDF に書き出す時か。</param>
+        public static void ApplyTableCellBorders(Table a_table, Brush a_borderBrush, bool a_forPrintFlg)
+        {
             if (VsCodeStyleFlg)
             {
                 ApplyVsCodeTableCellBorders(a_table);
@@ -738,7 +764,7 @@ namespace mde.common
                     foreach (TableCell cell in row.Cells)
                     {
                         bool isLastCellInRow = (cellIndex == cellCount - 1);
-                        double right = (0 == rowIndex && !isLastCellInRow) ? HEADER_VERTICAL_BORDER_THICKNESS : 1;
+                        double right = (a_forPrintFlg && 0 == rowIndex && !isLastCellInRow) ? HEADER_VERTICAL_BORDER_THICKNESS : 1;
                         cell.BorderBrush = a_borderBrush;
                         cell.BorderThickness = new Thickness(0, 0, right, 1);
                         cellIndex++;

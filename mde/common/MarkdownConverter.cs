@@ -27,7 +27,8 @@ namespace mde.common
     public class MarkdownConverter
     {
         // 表のヘッダー行の背景色。アウトラインビュー・フォルダペインの背景色とは意図的に別にしている。
-        private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
+        // 表の罫線の色（mdew・mdee と同じ #C8CCD1。BlockStyles.TableBorderBrush）
+        private static readonly Brush m_cellBorder = BlockStyles.TableBorderBrush;
         /// <summary>リンクの文字の色。メニュー「表示」→「文字の色」で色を変える（MainWindow.ApplyTextColor）ため、
         /// すべてのリンク（InlineStyleEditor で作るものも含む）でこの1つのブラシを共有する（凍結しない）。</summary>
         internal static readonly SolidColorBrush LinkBrush = new SolidColorBrush(Color.FromRgb(0x09, 0x69, 0xDA));
