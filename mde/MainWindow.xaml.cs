@@ -423,6 +423,8 @@ namespace mde
             // 画像貼り付けハンドラを表・テキスト向けハンドラより先に登録する：ブラウザ等から
             // コピーした画像はHTML/テキストも同時に持つことがあるため、画像なら他に渡る前に
             // ここで処理する（詳細はEditorHandleInlineMarkdownPasting参照）。
+            // mde どうしのコピー・貼り付け（EditorHandleMdeMarkdownPasting）は、他のどのハンドラよりも先に処理する。
+            DataObject.AddPastingHandler(m_editor, EditorHandleMdeMarkdownPasting);
             DataObject.AddPastingHandler(m_editor, m_imageManager.HandlePasting);
             // 書式付きの HTML（Claude・Web ページ・Word 等）は、表だけの HTML 用の TableEditor.HandlePasting より先に
             // 処理する（表を含む文章全体が、表だけとして貼られないように。EditorHandleHtmlPasting参照）。
@@ -1674,7 +1676,277 @@ namespace mde
             {
                 return;
             }
+            // mde どうしで貼り付けた時に見出し・太字・リンク等の書式が保たれるよう、選んだ範囲を Markdown にして
+            // 独自の形式で一緒に載せておく（EditorHandleMdeMarkdownPasting）。WPF 標準のコピー（Xaml 形式）では、
+            // mde の書式の目印（Paragraph・Run の Tag）が写らず、貼った所は見た目だけ見出し・太字のまま、保存すると
+            // ただの文字になっていた。
+            string selectionMarkdown = TryBuildSelectionMarkdown();
+            if (null != selectionMarkdown)
+            {
+                try
+                {
+                    a_args.DataObject.SetData(MDE_MARKDOWN_CLIPBOARD_FORMAT, selectionMarkdown);
+                }
+                catch (Exception ex)
+                {
+                    DebugLogger.Log($"EditorHandleCopying: Markdown を載せられなかった（{ex.Message}）");
+                }
+            }
             Dispatcher.BeginInvoke(new Action(StripUrlBreakJoinersFromClipboard), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        /// <summary>mde どうしのコピー・貼り付けで、選んだ範囲の Markdown を載せるクリップボードの形式名。</summary>
+        private const string MDE_MARKDOWN_CLIPBOARD_FORMAT = "mde.Markdown";
+
+        /// <summary>
+        /// 選んでいる範囲を Markdown にする（EditorHandleCopying）。
+        ///  - 1つの段落の中だけ（表のセル・箇条書きの項目の中を含む）：段落の種類の記号を付けない、書式付きの文字
+        ///    （ただし、本文の段落・見出し等をまるごと選んだ時は、ブロックとして）
+        ///  - 複数のブロック：まるごと入っているブロックはそのまま、途中から・途中までのブロックは複製を切り詰めて
+        ///    Markdown にする
+        /// 画像を含む範囲・表やコードブロックの途中から（まで）の範囲・変換できなかった場合は null を返し、これまで通り
+        /// WPF 標準のコピー・貼り付けに任せる。
+        /// </summary>
+        /// <returns>Markdown。作らない場合は null。</returns>
+        private string TryBuildSelectionMarkdown()
+        {
+            try
+            {
+                TextSelection sel = m_editor.Selection;
+                if (sel.IsEmpty)
+                {
+                    return null;
+                }
+                TextPointer selStart = sel.Start;
+                TextPointer selEnd = sel.End;
+
+                Paragraph startPara = selStart.Paragraph;
+                Paragraph endPara = selEnd.Paragraph;
+                if (null != startPara && ReferenceEquals(startPara, endPara))
+                {
+                    if (startPara.Tag is CodeBlockInfo || startPara.Tag is CodeBlockContinuationInfo || ContainsImage(startPara))
+                    {
+                        return null;
+                    }
+                    bool wholeFlg = !HasTextBetween(startPara.ContentStart, selStart) && !HasTextBetween(selEnd, startPara.ContentEnd);
+                    if (!(wholeFlg && startPara.Parent is FlowDocument))
+                    {
+                        var inlineClone = CloneTrimmedBlock(startPara, selStart, selEnd) as Paragraph;
+                        return null == inlineClone ? null : m_markdownConverter.ParagraphInlinesToMarkdown(inlineClone);
+                    }
+                }
+
+                var picked = new List<Block>();
+                foreach (Block block in m_editor.Document.Blocks)
+                {
+                    if (block.ElementEnd.CompareTo(selStart) <= 0)
+                    {
+                        continue;
+                    }
+                    if (block.ElementStart.CompareTo(selEnd) >= 0)
+                    {
+                        break;
+                    }
+                    picked.Add(block);
+                }
+                if (0 == picked.Count || picked.Any(ContainsImage))
+                {
+                    return null;
+                }
+                if (picked[0] is Paragraph firstPara && firstPara.Tag is CodeBlockContinuationInfo)
+                {
+                    return null; // コードブロックの途中から
+                }
+                if (picked[picked.Count - 1] is Paragraph lastPara &&
+                    (lastPara.Tag is CodeBlockInfo || lastPara.Tag is CodeBlockContinuationInfo) &&
+                    lastPara.NextBlock is Paragraph afterLastPara && afterLastPara.Tag is CodeBlockContinuationInfo)
+                {
+                    return null; // コードブロックの途中まで
+                }
+
+                var blocks = new List<Block>();
+                for (int i = 0; i < picked.Count; i++)
+                {
+                    Block block = picked[i];
+                    bool cutStartFlg = 0 == i && HasTextBetween(block.ContentStart, selStart);
+                    bool cutEndFlg = picked.Count - 1 == i && HasTextBetween(selEnd, block.ContentEnd);
+                    if (!cutStartFlg && !cutEndFlg)
+                    {
+                        blocks.Add(block);
+                        continue;
+                    }
+                    if ((cutEndFlg && !HasTextBetween(block.ContentStart, selEnd)) ||
+                        (cutStartFlg && !HasTextBetween(selStart, block.ContentEnd)))
+                    {
+                        continue; // 選んだ範囲がこのブロックの先頭で終わる（末尾から始まる）：文字を含まないため入れない
+                    }
+                    if (block is Table ||
+                        (block is Paragraph codePara && (codePara.Tag is CodeBlockInfo || codePara.Tag is CodeBlockContinuationInfo)))
+                    {
+                        return null;
+                    }
+                    Block clone = CloneTrimmedBlock(block, cutStartFlg ? selStart : null, cutEndFlg ? selEnd : null);
+                    if (null == clone)
+                    {
+                        return null;
+                    }
+                    blocks.Add(clone);
+                }
+                string md = m_markdownConverter.BlocksToMarkdown(blocks);
+                return string.IsNullOrWhiteSpace(md) ? null : md;
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Log($"TryBuildSelectionMarkdown: Markdown にできなかった（{ex.Message}）");
+                return null;
+            }
+        }
+
+        /// <summary>2つの位置の間に、文字（ゼロ幅スペース・URL の折り返し用の文字を除く）か埋め込みの要素があるか
+        /// （a_from が a_to 以降なら false）。箇条書きの項目では TextRange.Text が行頭の記号まで拾うため、Run の文字を
+        /// 直接数える。</summary>
+        /// <param name="a_from">始まり。</param>
+        /// <param name="a_to">終わり。</param>
+        /// <returns>あれば true。</returns>
+        private static bool HasTextBetween(TextPointer a_from, TextPointer a_to)
+        {
+            for (TextPointer pos = a_from; null != pos && 0 > pos.CompareTo(a_to); pos = pos.GetNextContextPosition(LogicalDirection.Forward))
+            {
+                TextPointerContext context = pos.GetPointerContext(LogicalDirection.Forward);
+                if (TextPointerContext.EmbeddedElement == context)
+                {
+                    return true;
+                }
+                if (TextPointerContext.Text == context)
+                {
+                    string run = pos.GetTextInRun(LogicalDirection.Forward);
+                    int length = Math.Min(run.Length, pos.GetOffsetToPosition(a_to));
+                    for (int i = 0; i < length; i++)
+                    {
+                        if ('\u200B' != run[i] && BlockStyles.URL_BREAK_JOINER != run[i])
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>画像（または UI 要素のブロック）を含むか。</summary>
+        /// <param name="a_obj">調べる要素。</param>
+        /// <returns>含めば true。</returns>
+        private static bool ContainsImage(DependencyObject a_obj)
+        {
+            if (a_obj is Image || a_obj is BlockUIContainer)
+            {
+                return true;
+            }
+            foreach (object child in LogicalTreeHelper.GetChildren(a_obj))
+            {
+                if (child is DependencyObject childObj && ContainsImage(childObj))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// ブロックを複製し（Tag も含めて。XamlWriter）、a_cutBefore より前・a_cutAfter より後ろの文字を消す。
+        /// 複製の中の位置は、元のブロックの先頭からの距離（シンボルの数）で求め、その位置までの文字が元と同じことを
+        /// 確かめる（違えば null）。
+        /// </summary>
+        /// <param name="a_source">元のブロック。</param>
+        /// <param name="a_cutBefore">これより前を消す位置（null なら消さない）。</param>
+        /// <param name="a_cutAfter">これより後ろを消す位置（null なら消さない）。</param>
+        /// <returns>切り詰めた複製（一時的な FlowDocument の中にある）。できなければ null。</returns>
+        private static Block CloneTrimmedBlock(Block a_source, TextPointer a_cutBefore, TextPointer a_cutAfter)
+        {
+            var clone = (Block)System.Windows.Markup.XamlReader.Parse(System.Windows.Markup.XamlWriter.Save(a_source));
+            var tempDoc = new FlowDocument();
+            tempDoc.Blocks.Add(clone);
+
+            TextPointer MapToClone(TextPointer a_pos)
+            {
+                if (0 > a_pos.CompareTo(a_source.ContentStart) || 0 < a_pos.CompareTo(a_source.ContentEnd))
+                {
+                    return null;
+                }
+                TextPointer mapped = clone.ContentStart.GetPositionAtOffset(a_source.ContentStart.GetOffsetToPosition(a_pos));
+                if (null == mapped ||
+                    new TextRange(a_source.ContentStart, a_pos).Text != new TextRange(clone.ContentStart, mapped).Text)
+                {
+                    return null;
+                }
+                return mapped;
+            }
+
+            // 後ろを先に消す（前を先に消すと、後ろの位置の距離が変わるため）
+            if (null != a_cutAfter)
+            {
+                TextPointer cloneCutAfter = MapToClone(a_cutAfter);
+                if (null == cloneCutAfter)
+                {
+                    return null;
+                }
+                new TextRange(cloneCutAfter, clone.ContentEnd).Text = "";
+            }
+            if (null != a_cutBefore)
+            {
+                TextPointer cloneCutBefore = MapToClone(a_cutBefore);
+                if (null == cloneCutBefore)
+                {
+                    return null;
+                }
+                new TextRange(clone.ContentStart, cloneCutBefore).Text = "";
+            }
+            return clone;
+        }
+
+        /// <summary>
+        /// mde でコピーした内容（EditorHandleCopying が載せた Markdown）を、書式にして貼り付ける（PasteMarkdown）。
+        /// コードブロックの中へ貼る時は何もせず、これまで通り文字のまま貼る（TableEditor.HandlePasting）。
+        /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">貼り付けイベントの引数。</param>
+        private void EditorHandleMdeMarkdownPasting(object a_sender, DataObjectPastingEventArgs a_args)
+        {
+            if (m_isSourceModeFlg || a_args.CommandCancelled || a_args.IsDragDrop)
+            {
+                return;
+            }
+            IDataObject data = a_args.SourceDataObject;
+            if (!data.GetDataPresent(MDE_MARKDOWN_CLIPBOARD_FORMAT))
+            {
+                return;
+            }
+            var para = ResolveParagraph(m_editor.CaretPosition, m_editor.Document);
+            if (para?.Tag is CodeBlockInfo || para?.Tag is CodeBlockContinuationInfo)
+            {
+                return;
+            }
+            string md;
+            string text = null;
+            try
+            {
+                md = data.GetData(MDE_MARKDOWN_CLIPBOARD_FORMAT) as string;
+                if (data.GetDataPresent(DataFormats.UnicodeText))
+                {
+                    text = data.GetData(DataFormats.UnicodeText) as string;
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.Log($"EditorHandleMdeMarkdownPasting: クリップボードを読めなかった（{ex.Message}）");
+                return;
+            }
+            if (string.IsNullOrEmpty(md))
+            {
+                return;
+            }
+            a_args.CancelCommand();
+            PasteMarkdown(md, text);
         }
 
         /// <summary>クリップボードの文字から、BlockStyles.URL_BREAK_JOINER を取り除く（EditorHandleCopying）。含まれていなければ
@@ -2254,6 +2526,16 @@ namespace mde
                 return; // 通常の段落、Enter単独: WPF標準の動作（新しい段落の作成）に任せる
             }
 
+            // 箇条書き項目の続きの行の先頭でのBackSpaceは、同じ項目の前の段落の末尾へつなげる
+            // （ListEditor.TryMergeContinuationParagraphOnBackspace。WPF標準の動作だと、続きの行が
+            // 1段浅い新しい項目に変わり、入れ子のリストが途中で分断されていた）。
+            if (a_args.Key == Key.Back && ModifierKeys.None == Keyboard.Modifiers &&
+                m_listEditor.TryMergeContinuationParagraphOnBackspace(para))
+            {
+                a_args.Handled = true;
+                return;
+            }
+
             // 見出し段落が空の状態でBackSpaceが押された場合、見出しの書式だけを本文へ戻す
             // （箇条書きのListItemは同じ状況でWPF標準の動作のままリストを抜けられるが、
             // 見出しはただのParagraphに書式を適用しているだけなので標準動作では外れない）。
@@ -2285,6 +2567,15 @@ namespace mde
                 {
                     a_args.Handled = true;
                     m_headingCodeBlockEditor.DeleteLastCharInHeading(para);
+                    return;
+                }
+                // 文字のある見出しの先頭でのBackSpaceも、見出しを通常の段落に戻す（mdew・mdeeと同じ）。
+                // WPF標準の動作に任せると、見出しの文字が前の段落の末尾につながって見出しが消えていた。
+                if (!isEmptyFlg && isSelectionEmptyFlg &&
+                    0 == new TextRange(para.ContentStart, m_editor.Selection.Start).Text.Length)
+                {
+                    a_args.Handled = true;
+                    m_headingCodeBlockEditor.RevertEmptyHeadingOnBackspace(para);
                     return;
                 }
             }
@@ -2330,6 +2621,19 @@ namespace mde
                     m_headingCodeBlockEditor.DeleteLastCharInQuote(para);
                     return;
                 }
+            }
+
+            // 文字のあるコードブロックの先頭行の先頭でのBackSpaceは何もしない。WPF標準の動作に任せると、
+            // コードの1行目が前の段落（引用・見出し等）の末尾へつながり、コードが本文に混ざっていた。
+            // 1行だけの空のコードブロックは、これまで通り標準の動作（前の段落へつながって消える）のまま。
+            if (a_args.Key == Key.Back && ModifierKeys.None == Keyboard.Modifiers && para.Tag is CodeBlockInfo &&
+                m_editor.Selection.IsEmpty &&
+                0 == new TextRange(para.ContentStart, m_editor.Selection.Start).Text.Length &&
+                (0 < new TextRange(para.ContentStart, para.ContentEnd).Text.TrimEnd('\r', '\n').Length ||
+                 (para.NextBlock is Paragraph nextCodePara && nextCodePara.Tag is CodeBlockContinuationInfo)))
+            {
+                a_args.Handled = true;
+                return;
             }
 
             // コードブロックの続きの行（CodeBlockContinuationInfo）の先頭でBackSpaceが押された
@@ -2387,6 +2691,24 @@ namespace mde
                 // 表のセルの中の Tab・Shift+Tab：次・前のセルへ移る（最後のセルの Tab は行を追加する。mdew・mdee と同じ）
                 a_args.Handled = true;
                 m_tableEditor.MoveByTab(tabCell, ModifierKeys.Shift == Keyboard.Modifiers);
+                return;
+            }
+            // 表のセルの先頭でのBackSpace・末尾でのDeleteは何もしない（mdew・mdeeと同じ）。WPF標準の
+            // 動作では前（次）のセルへ移り、押し続けると隣のセルの文字まで消えていた。
+            if (a_args.Key == Key.Delete && ModifierKeys.None == Keyboard.Modifiers && m_editor.Selection.IsEmpty &&
+                para.Parent is TableCell deleteCell && para == deleteCell.Blocks.LastBlock &&
+                0 <= m_editor.CaretPosition.GetInsertionPosition(LogicalDirection.Backward)
+                    .CompareTo(para.ContentEnd.GetInsertionPosition(LogicalDirection.Backward)))
+            {
+                a_args.Handled = true;
+                return;
+            }
+            if (a_args.Key == Key.Back && ModifierKeys.None == Keyboard.Modifiers && m_editor.Selection.IsEmpty &&
+                para.Parent is TableCell backCell && para == backCell.Blocks.FirstBlock &&
+                0 >= m_editor.CaretPosition.GetInsertionPosition(LogicalDirection.Forward)
+                    .CompareTo(para.ContentStart.GetInsertionPosition(LogicalDirection.Forward)))
+            {
+                a_args.Handled = true;
                 return;
             }
             if (para.Parent is TableCell cell)

@@ -497,9 +497,17 @@ namespace mde.editor
                     m_editor,
                     () =>
                     {
+                        // 遅らせている間に続けて打たれたキー（Tabでの字下げ等）で、項目が別のリストへ
+                        // 移っていたり、削除されていたりすることがある。その場合に元のリストのまま
+                        // 処理すると例外（'ListItem' PreviousSibling は、この TextElementCollection に
+                        // 属していません）になるため、今の親のリストで処理し、項目が無ければ何もしない。
+                        if (!(a_li.Parent is List currentList))
+                        {
+                            return;
+                        }
                         m_runAsProgrammaticChange(() =>
                         {
-                            Paragraph targetPara = CreateOrExitListItem(a_li, a_parentList);
+                            Paragraph targetPara = CreateOrExitListItem(a_li, currentList);
                             m_editor.CaretPosition = GetCaretPositionForNewListParagraph(targetPara);
                         });
                     },
@@ -515,6 +523,61 @@ namespace mde.editor
                 });
                 FinishCaretMoveToNewParagraph();
             }
+        }
+
+        /// <summary>
+        /// 箇条書き項目の2つ目以降の段落（Shift+Enterや、空の項目でのBackSpaceでできる、項目の
+        /// 続きの行）の先頭でBackSpaceが押された時、その段落を同じ項目の前の段落の末尾へつなげる
+        /// （mdew・mdee・Typoraと同じ）。WPF標準の動作に任せると、続きの行が1段浅い新しい項目
+        /// （1段目なら箇条書きの外の段落）に変わり、入れ子のリストが途中で分断されていた。
+        /// 項目の最初の段落の先頭でのBackSpace（項目を前の項目の続きの行にする）は、これまで
+        /// 通りWPF標準の動作に任せる。
+        /// </summary>
+        /// <param name="a_para">キャレットのある段落。</param>
+        /// <returns>つなげた場合はtrue（呼び出し側はキー入力を処理済みにする）。</returns>
+        public bool TryMergeContinuationParagraphOnBackspace(Paragraph a_para)
+        {
+            if (!m_editor.Selection.IsEmpty || !(a_para.Parent is ListItem li) || !(li.Parent is List parentList))
+            {
+                return false;
+            }
+            if (!(a_para.PreviousBlock is Paragraph prevPara) || prevPara.Parent != li)
+            {
+                return false;
+            }
+            TextPointer caret = m_editor.CaretPosition.GetInsertionPosition(LogicalDirection.Forward);
+            TextPointer paraStart = a_para.ContentStart.GetInsertionPosition(LogicalDirection.Forward);
+            if (0 != caret.CompareTo(paraStart))
+            {
+                return false;
+            }
+
+            List topList = parentList;
+            DependencyObject cursor = parentList.Parent;
+            while (cursor is ListItem ownerLi && ownerLi.Parent is List ownerList)
+            {
+                topList = ownerList;
+                cursor = ownerList.Parent;
+            }
+            m_originalTextTracker.InvalidateForBlock(topList);
+
+            m_runAsProgrammaticChange(() =>
+            {
+                var moved = a_para.Inlines.ToList();
+                Inline firstMoved = moved.FirstOrDefault(i => !(i is Run r) || 0 < r.Text.Length);
+                foreach (Inline inline in moved)
+                {
+                    a_para.Inlines.Remove(inline);
+                    prevPara.Inlines.Add(inline);
+                }
+                li.Blocks.Remove(a_para);
+                m_editor.CaretPosition = null != firstMoved
+                    ? (firstMoved is Run firstRun ? firstRun.ContentStart : firstMoved.ElementStart)
+                    : prevPara.ContentEnd;
+            });
+            m_editor.UpdateLayout();
+            ImeCaretMoveHelper.TryClearSuggestedX(m_editor);
+            return true;
         }
 
         /// <summary>Enterキーで新しく作った段落へキャレットを合わせる際の位置を決める。

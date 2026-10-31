@@ -600,6 +600,53 @@ namespace mde.common
             return -1;
         }
 
+        /// <summary>
+        /// コピーした範囲のブロックの並びをMarkdownにする（mde どうしのコピー・貼り付け用。MainWindow.
+        /// TryBuildSelectionMarkdown）。DocumentToMarkdownと同じ規則でつなぐが、元のソースの空行の数・
+        /// HTMLコメント・元の文字（OriginalTextTracker）は使わず、ブロックの間は常に空行1つにする。
+        /// </summary>
+        /// <param name="a_blocks">ブロックの並び（文書の中のブロックと、範囲に合わせて切り詰めた複製が混ざってよい）。</param>
+        /// <returns>Markdown。</returns>
+        public string BlocksToMarkdown(IEnumerable<Block> a_blocks)
+        {
+            var sb = new StringBuilder();
+            bool firstFlg = true;
+            foreach (Block block in a_blocks)
+            {
+                string s = BlockToMarkdown(block);
+                if (block is Paragraph contPara &&
+                    (contPara.Tag is BrContinuationInfo || contPara.Tag is QuoteContinuationInfo || contPara.Tag is CodeBlockContinuationInfo))
+                {
+                    if (!firstFlg)
+                    {
+                        sb.Append(contPara.Tag is BrContinuationInfo ? "<br>\n" : "\n");
+                    }
+                    sb.Append(s);
+                    firstFlg = false;
+                    continue;
+                }
+                if (string.IsNullOrWhiteSpace(s))
+                {
+                    continue;
+                }
+                sb.Append(BuildElementSeparator(DEFAULT_BLANK_LINES_BEFORE_BLOCK, firstFlg));
+                sb.Append(s);
+                firstFlg = false;
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>段落の中の文字を、書式付きのMarkdown（インライン）にする（段落の種類の記号は付けない。
+        /// mde どうしのコピー・貼り付けで、1つの段落の中だけを選んでいた時に使う）。</summary>
+        /// <param name="a_p">段落。</param>
+        /// <returns>Markdown。</returns>
+        public string ParagraphInlinesToMarkdown(Paragraph a_p)
+        {
+            var sb = new StringBuilder();
+            AppendInlinesMarkdown(a_p.Inlines, sb);
+            return sb.ToString().Trim('\r', '\n');
+        }
+
         /// <summary>1つのトップレベルブロックを、種類（見出し/段落・コードブロック・引用・箇条書き・
         /// 表）に応じて適切な変換関数へ振り分ける。コードブロック丸ごとコピー機能からも利用される。</summary>
         /// <param name="a_block">対象のブロック。</param>
@@ -1263,10 +1310,19 @@ namespace mde.common
                 if (Regex.IsMatch(line, "^\\s*([*+-]|\\d+\\.)\\s+"))
                 {
                     var listLines = new List<string>();
+                    // 1段目の項目の字下げと種類（箇条書きの記号／番号付き）。1段目で種類が
+                    // 変わったら、そこから別のリストにする（標準Markdown・mdew・mdeeと同じ。
+                    // 以前は、箇条書きの後に空行を挟んで番号付きリストを書くと、番号付きの
+                    // 項目まで箇条書きとして同じリストに取り込まれていた）。
+                    TryGetListItemKind(line, out int rootIndent, out string rootKind);
                     while (i < lines.Length)
                     {
-                        if (Regex.IsMatch(lines[i], "^\\s*([*+-]|\\d+\\.)\\s+"))
+                        if (TryGetListItemKind(lines[i], out int itemIndent, out string itemKind))
                         {
+                            if (0 < listLines.Count && itemIndent < rootIndent + LIST_NEST_MIN_INDENT && itemKind != rootKind)
+                            {
+                                break;
+                            }
                             listLines.Add(lines[i]);
                             i++;
                             continue;
@@ -1290,7 +1346,8 @@ namespace mde.common
                             {
                                 j++;
                             }
-                            if (j < lines.Length && Regex.IsMatch(lines[j], "^\\s*([*+-]|\\d+\\.)\\s+"))
+                            if (j < lines.Length && TryGetListItemKind(lines[j], out int nextIndent, out string nextKind) &&
+                                !(nextIndent < rootIndent + LIST_NEST_MIN_INDENT && nextKind != rootKind))
                             {
                                 while (i < j) { listLines.Add(lines[i]); i++; }
                                 continue;
@@ -1913,6 +1970,41 @@ namespace mde.common
             return count < BlockStyles.TABLE_COLUMN_MIN_DASH_COUNT ? BlockStyles.TABLE_COLUMN_MIN_DASH_COUNT : count;
         }
 
+        /// <summary>直前の段の項目より、この文字数以上深く字下げされた項目を1段深い入れ子とする。</summary>
+        private const int LIST_NEST_MIN_INDENT = 2;
+
+        /// <summary>リスト項目の行頭の空白の幅を返す（タブは4文字として数える）。</summary>
+        /// <param name="a_leading">行頭の空白。</param>
+        /// <returns>幅（文字数）。</returns>
+        private static int ListIndentWidth(string a_leading)
+        {
+            int width = 0;
+            foreach (char ch in a_leading)
+            {
+                width += '\t' == ch ? 4 - (width % 4) : 1;
+            }
+            return width;
+        }
+
+        /// <summary>リスト項目の行なら、その字下げの幅と種類（番号付きなら "."、箇条書きなら記号）を返す。</summary>
+        /// <param name="a_line">行。</param>
+        /// <param name="a_indent">字下げの幅。</param>
+        /// <param name="a_kind">種類。</param>
+        /// <returns>リスト項目の行ならtrue。</returns>
+        private static bool TryGetListItemKind(string a_line, out int a_indent, out string a_kind)
+        {
+            var m = Regex.Match(a_line, "^(\\s*)(?:([*+-])|\\d+\\.)\\s+");
+            if (!m.Success)
+            {
+                a_indent = 0;
+                a_kind = null;
+                return false;
+            }
+            a_indent = ListIndentWidth(m.Groups[1].Value);
+            a_kind = m.Groups[2].Success ? m.Groups[2].Value : ".";
+            return true;
+        }
+
         /// <summary>
         /// 箇条書き項目のソース行の連なりから、（入れ子を含む）Listを組み立てる。
         /// ネストの各段で箇条書き記号か順序付き数字かを判定し、各項目の1行目と継続行を
@@ -1925,7 +2017,18 @@ namespace mde.common
         private List BuildNestedList(List<string> a_listLines)
         {
             var rootList = new List { MarkerStyle = TextMarkerStyle.Disc };
-            var stack = new List<(List list, int level)> { (rootList, 0) };
+            // 入れ子の段は、字下げの「段数」（以前は3文字＝1段と決め打ちしていた）ではなく、
+            // 各段の項目の字下げの幅（indent）を覚えておき、直前の段より2文字以上深ければ
+            // 1段深い入れ子とする（標準Markdown・mdew・mdeeと同じ考え方）。3文字単位で丸める
+            // 方式では、2文字ずつ字下げしたソース（"- a" / "  - b" / "    - c"）の3段目
+            // （4文字）が2段目と同じ段に丸められ、入れ子が1段消えていた。
+            int firstIndent = a_listLines
+                .Select(l => Regex.Match(l, "^(\\s*)(?:[*+-]|\\d+\\.)\\s+"))
+                .Where(mm => mm.Success)
+                .Select(mm => ListIndentWidth(mm.Groups[1].Value))
+                .DefaultIfEmpty(0)
+                .First();
+            var stack = new List<(List list, int level)> { (rootList, firstIndent) };
             bool rootMarkerSetFlg = false;
             var numbersByList = new Dictionary<List, List<int>>();
 
@@ -1992,10 +2095,9 @@ namespace mde.common
                 {
                     FlushPendingItem();
 
-                    int indent = m.Groups[1].Value.Length;
+                    int indent = ListIndentWidth(m.Groups[1].Value);
                     bool orderedFlg = m.Groups[3].Success;
                     string bulletMarker = orderedFlg ? null : m.Groups[2].Value;
-                    int level = Math.Max(0, (int)Math.Round(indent / 3.0));
                     string text = m.Groups[4].Value;
 
                     // タスクリスト項目（"[ ] " / "[x] " / "[X] "）かどうかを判定する。
@@ -2015,11 +2117,12 @@ namespace mde.common
                     }
 
                     while (stack.Count > 1 &&
-                           stack[stack.Count - 1].level > level)
+                           stack[stack.Count - 1].level > indent)
                         stack.RemoveAt(stack.Count - 1);
 
                     var top = stack[stack.Count - 1];
-                    if (top.level < level &&
+                    int level = indent;
+                    if (top.level + LIST_NEST_MIN_INDENT <= indent &&
                         top.list.ListItems.Count > 0)
                     {
                         var lastLi = top.list.ListItems.Cast<ListItem>().Last();
