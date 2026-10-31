@@ -894,14 +894,14 @@ namespace mde.common
                      "inline-code" == tag))
                 {
                     var spanText = new StringBuilder();
-                    spanText.Append(run.Text.Replace("​", ""));
+                    spanText.Append(BlockStyles.StripUrlBreakJoiners(run.Text.Replace("​", "")));
                     int j = i + 1;
                     while (j + 1 < inlineList.Count &&
                            inlineList[j] is LineBreak &&
                            inlineList[j + 1] is Run nextRun &&
                            (nextRun.Tag as string) == tag)
                     {
-                        spanText.Append('\n').Append(nextRun.Text.Replace("​", ""));
+                        spanText.Append('\n').Append(BlockStyles.StripUrlBreakJoiners(nextRun.Text.Replace("​", "")));
                         j += 2;
                     }
 
@@ -945,7 +945,7 @@ namespace mde.common
                 }
                 else if (inline is Run linkRun && linkRun.Tag is LinkInfo linkInfo)
                 {
-                    string content = linkRun.Text.Replace("​", "");
+                    string content = BlockStyles.StripUrlBreakJoiners(linkRun.Text.Replace("​", ""));
                     if (linkInfo.IsBareEmailFlg)
                     {
                         // 文中にそのまま書かれていたメールアドレス：書かれたままの文字を書き出す
@@ -985,7 +985,7 @@ namespace mde.common
                 }
                 else if (inline is Run plainRun)
                 {
-                    a_sb.Append(plainRun.Text.Replace("​", ""));
+                    a_sb.Append(BlockStyles.StripUrlBreakJoiners(plainRun.Text.Replace("​", "")));
                 }
                 else if (inline is InlineUIContainer iuc && iuc.Child is Image img)
                 {
@@ -1401,6 +1401,8 @@ namespace mde.common
                     // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて
                     // 設定する（詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
                     BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
+                    // 閉じ括弧で終わるセルは、mdew・mdee と同じく括弧の半分の幅だけ右の余白にはみ出してよいようにする
+                    BlockStyles.ApplyClosingBracketLineEndAllowance(table);
                     RecordBlankLinesBeforeBlock(table);
                     AttachPendingComments(table);
                     a_doc.Blocks.Add(table);
@@ -2384,7 +2386,7 @@ namespace mde.common
         public Run BuildLinkRun(string a_linkText, string a_url, bool a_isAutoLinkFlg, string a_title = null, bool a_isEmailAutoLinkFlg = false,
             bool a_isBareEmailFlg = false)
         {
-            return new Run(a_linkText)
+            return new Run(BlockStyles.AddUrlBreakJoiners(a_linkText))
             {
                 Foreground = m_linkBrush,
                 TextDecorations = BlockStyles.LinkTextDecorations,
@@ -2592,7 +2594,7 @@ namespace mde.common
                     SplitUrlAndTitle(m.Groups[17].Value, out string urlRaw, out string titleRaw);
                     string url = RestorePlaceholders(urlRaw);
                     string title = null == titleRaw ? null : RestorePlaceholders(titleRaw);
-                    var run = new Run(linkText, cursor)
+                    var run = new Run(BlockStyles.AddUrlBreakJoiners(linkText), cursor)
                     {
                         Foreground = m_linkBrush,
                         TextDecorations = BlockStyles.LinkTextDecorations,
@@ -2604,7 +2606,7 @@ namespace mde.common
                 else if (m.Groups[18].Success)
                 {
                     string url = RestorePlaceholders(m.Groups[19].Value);
-                    var run = new Run(url, cursor)
+                    var run = new Run(BlockStyles.AddUrlBreakJoiners(url), cursor)
                     {
                         Foreground = m_linkBrush,
                         TextDecorations = BlockStyles.LinkTextDecorations,

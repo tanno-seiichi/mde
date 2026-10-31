@@ -23,6 +23,48 @@ namespace mde.common
     /// <summary>見出し・コードブロックの段落スタイルを適用する静的ヘルパー群。</summary>
     public static class BlockStyles
     {
+        /// <summary>
+        /// リンクの文字が URL の時に、「/」の後ろに入れる見えない文字（U+034F COMBINING GRAPHEME JOINER）。WPF は URL を「/」の
+        /// 後ろで折り返すが、mdew・mdee（Chromium）は「/」の後ろでは折り返さず、列や本文の端の文字で折り返す。この文字を
+        /// 「/」の後ろに入れると、WPF も「/」の後ろで折り返さなくなり、mdew・mdee と同じ位置で折り返す（実機で確かめた）。
+        /// 結合文字のため、キャレットが止まる位置は増えない（U+2060 WORD JOINER・U+200D ZWJ は、矢印キーで止まる位置が増えるため
+        /// 使わない）。表示のためだけのもので、保存（MarkdownConverter）・コピー（MainWindow.EditorHandleCopying）・検索
+        /// （SearchReplaceService）の時は取り除く。
+        /// </summary>
+        public const char URL_BREAK_JOINER = '\u034F';
+
+        /// <summary>URL とみなす文字（「https://」等で始まるか「www.」で始まり、空白を含まない）。</summary>
+        private static readonly Regex s_urlTextRegex = new Regex("^(?:[A-Za-z][A-Za-z0-9+.-]*://|www\\.)\\S+$", RegexOptions.Compiled);
+
+        /// <summary>リンクの文字が URL なら、「/」の後ろに URL_BREAK_JOINER を入れる（既に入っていれば入れない）。</summary>
+        /// <param name="a_text">リンクの文字。</param>
+        /// <returns>表示に使う文字。URL でなければそのまま。</returns>
+        public static string AddUrlBreakJoiners(string a_text)
+        {
+            if (string.IsNullOrEmpty(a_text) || !s_urlTextRegex.IsMatch(StripUrlBreakJoiners(a_text)))
+            {
+                return a_text;
+            }
+            var sb = new StringBuilder(a_text.Length + 16);
+            for (int i = 0; i < a_text.Length; i++)
+            {
+                sb.Append(a_text[i]);
+                if ('/' == a_text[i] && i + 1 < a_text.Length && URL_BREAK_JOINER != a_text[i + 1])
+                {
+                    sb.Append(URL_BREAK_JOINER);
+                }
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>URL_BREAK_JOINER を取り除く（保存・コピー・検索用）。</summary>
+        /// <param name="a_text">対象の文字。</param>
+        /// <returns>取り除いた文字。</returns>
+        public static string StripUrlBreakJoiners(string a_text)
+        {
+            return null != a_text && 0 <= a_text.IndexOf(URL_BREAK_JOINER) ? a_text.Replace(URL_BREAK_JOINER.ToString(), "") : a_text;
+        }
+
         /// <summary>本文の文字を書く幅の上限（px。メニュー「表示」→「本文の幅」→「読みやすい幅にする」の時。mdew・mdee と
         /// 同じ 884px。MainWindow.ApplyDocumentWidth）。</summary>
         public const double READABLE_DOCUMENT_WIDTH_PX = 884;
@@ -109,17 +151,17 @@ namespace mde.common
         /// <summary>表の見出しの行の背景（VSCodeスタイルは背景なし＝null）。</summary>
         public static Brush TableHeaderBackground => VsCodeStyleFlg ? null : m_tableHeaderBackground;
 
-        /// <summary>表のセルの内側の余白（GitHubスタイル 8,6、VSCodeスタイル 10,5）。</summary>
-        public static Thickness TableCellPadding => VsCodeStyleFlg ? new Thickness(10, 5, 10, 5) : new Thickness(8, 6, 8, 6);
+        /// <summary>表のセルの内側の余白（mdew・mdee と同じ。GitHubスタイル 左右10・上下4、VSCodeスタイル 左右10・上下5）。</summary>
+        public static Thickness TableCellPadding => VsCodeStyleFlg ? new Thickness(10, 5, 10, 5) : new Thickness(10, 4, 10, 4);
 
         /// <summary>引用の上・下の余白。</summary>
         public static double QuoteTopMargin => VsCodeStyleFlg ? 0 : 4;
         public static double QuoteBottomMargin => VsCodeStyleFlg ? 12.6 : 10;
 
-        /// <summary>表のセルの行の高さ。GitHubスタイルは NaN（フォントの自然な高さ）。VSCodeスタイルは
-        /// VSCode の表と同じ 22.4（14px の 1.6 倍）。フォントの自然な高さ（約 18.6）だと、VSCode より
+        /// <summary>表のセルの行の高さ。GitHubスタイルは本文と同じ 25（mdew・mdee の表のセルと同じ。16px の 1.5625 倍）。
+        /// VSCodeスタイルは VSCode の表と同じ 22.4（14px の 1.6 倍）。フォントの自然な高さ（約 18.6）だと、VSCode より
         /// 1行あたり約 4px 狭くなるため。</summary>
-        public static double TableCellLineHeight => VsCodeStyleFlg ? 22.4 : double.NaN;
+        public static double TableCellLineHeight => VsCodeStyleFlg ? 22.4 : 25;
 
         /// <summary>コードブロックの背景色（他クラスからも参照できるよう公開）。</summary>
         public static Brush CodeBlockBackgroundBrush => VsCodeStyleFlg ? m_vsCodeCodeBlockBackground : m_codeBlockBackground;
@@ -220,10 +262,13 @@ namespace mde.common
             }
             else
             {
-                double[] sizes = { 0, 30, 24, 20, 18, 16.5, 15.5 };
-                a_p.FontSize = sizes[a_level];
+                // GitHubスタイル：mdew・mdee と同じく、本文 16px に対して 2.25/1.75/1.5/1.25/1/1 倍、上に文字の 1.2 倍・
+                // 下に 0.6 倍の余白（前の段落の下の余白とは重ならず、大きい方になる。HTML と同じ）
+                double[] ems = { 0, 2.25, 1.75, 1.5, 1.25, 1, 1 };
+                double size = 16 * ems[a_level];
+                a_p.FontSize = size;
                 a_p.FontWeight = FontWeights.Bold;
-                a_p.Margin = new Thickness(0, a_level <= 2 ? 20 : 14, 0, 10);
+                a_p.Margin = new Thickness(0, size * 1.2, 0, size * 0.6);
                 // 見出しのLineHeightは、本文用のEditorLineHeight（25。MainWindow.xaml参照。以前は「表示」→
                 // 「行間を設定」で変更可）をそのまま使うのではなく、見出しのFontSizeに応じた
                 // 専用の値をローカル値として指定する（RichTextBoxのStyle側のLineHeightより、
@@ -232,8 +277,8 @@ namespace mde.common
                 // 広がらないようにしている（LineStackingStrategy=BlockLineHeightと組み合わせる
                 // ことで、フォント（新しいフォント／以前のフォント）が変わってもこの値がそのまま
                 // 使われる。MainWindow.xamlのStyle TargetType="Paragraph"参照）。
-                double[] lineHeights = { 0, 36, 28.8, 24, 21.6, 19.8, 18.6 };
-                a_p.LineHeight = lineHeights[a_level];
+                // 行の高さは mdew・mdee と同じ、文字の 1.4 倍。
+                a_p.LineHeight = size * 1.4;
                 if (a_level <= 2)
                 {
                     a_p.BorderBrush = m_cellBorder;
@@ -573,6 +618,76 @@ namespace mde.common
         // ======================================================================
         //  表の罫線（境界線の単線化）
         // ======================================================================
+
+        /// <summary>行の終わりで、文字の幅の半分だけ詰めて表示できる閉じ括弧（全角）。mdew・mdee（Chromium）は、行に入り切らない
+        /// 時、行の終わりの閉じ括弧を半分の幅に詰めて（CSS の text-spacing-trim の既定値。allow-end）同じ行に収める。読点・句点
+        /// （、。）等は詰めない（Chromium で確かめた）。</summary>
+        private const string LINE_END_TRIMMABLE_BRACKETS = "）〕］｝〉》」』】〙〗〟";
+
+        /// <summary>
+        /// 表のセルの段落が閉じ括弧で終わる場合に、mdew・mdee（Chromium）と同じく、その閉じ括弧が文字の幅の半分だけセルの右の
+        /// 余白にはみ出してもよいようにする（例えば「（x64 用）」が、括弧の半分の幅だけ足りない列でも1行に収まる）。WPF は
+        /// 括弧を詰めて表示できないため、その段落のあるセルの右の余白（Padding）を半文字分だけ小さくし、同じセルの閉じ括弧で
+        /// 終わらない段落には、その分の右の余白（Margin）を付けて、見た目の余白は変えない。表を作る時（MarkdownConverter・
+        /// TableEditor.InsertParsedTable）だけ行う（編集中に変えると、元に戻すの操作に見えない変更が入るため）。
+        /// 段落の途中の行の終わりの閉じ括弧は対象外（WPF ではどこで折り返すか分からないため）。
+        /// </summary>
+        /// <param name="a_table">対象の表。</param>
+        public static void ApplyClosingBracketLineEndAllowance(Table a_table)
+        {
+            double allowance = BodyFontSize / 2;
+            Thickness basePadding = TableCellPadding;
+            foreach (TableRowGroup rg in a_table.RowGroups)
+            {
+                foreach (TableRow row in rg.Rows)
+                {
+                    foreach (TableCell cell in row.Cells)
+                    {
+                        var paras = cell.Blocks.OfType<Paragraph>().ToList();
+                        if (!paras.Any(EndsWithTrimmableBracket))
+                        {
+                            continue;
+                        }
+                        Thickness pad = cell.Padding;
+                        cell.Padding = new Thickness(pad.Left, pad.Top, Math.Max(0, basePadding.Right - allowance), pad.Bottom);
+                        foreach (Paragraph p in paras)
+                        {
+                            Thickness m = p.Margin;
+                            p.Margin = new Thickness(m.Left, m.Top, EndsWithTrimmableBracket(p) ? 0 : allowance, m.Bottom);
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>段落の文字が、LINE_END_TRIMMABLE_BRACKETS の閉じ括弧で終わるか（後ろの空白・見えない文字は除く）。</summary>
+        /// <param name="a_para">対象の段落。</param>
+        /// <returns>閉じ括弧で終わるなら true。</returns>
+        private static bool EndsWithTrimmableBracket(Paragraph a_para)
+        {
+            var sb = new StringBuilder();
+            void Append(InlineCollection a_inlines)
+            {
+                foreach (Inline inline in a_inlines)
+                {
+                    if (inline is Run run)
+                    {
+                        sb.Append(run.Text);
+                    }
+                    else if (inline is Span span)
+                    {
+                        Append(span.Inlines);
+                    }
+                    else
+                    {
+                        sb.Append('\uFFFC'); // 改行・画像等：その前の文字は段落の終わりではない
+                    }
+                }
+            }
+            Append(a_para.Inlines);
+            string text = StripUrlBreakJoiners(sb.ToString()).Replace("\u200B", "").TrimEnd();
+            return 0 < text.Length && 0 <= LINE_END_TRIMMABLE_BRACKETS.IndexOf(text[text.Length - 1]);
+        }
 
         /// <summary>
         /// 表の全セルに、隣接セルと境界線が二重に重ならないよう調整した罫線を設定する。
@@ -1327,23 +1442,23 @@ namespace mde.common
         }
 
         /// <summary>
-        /// 自動計算の列で、各列が最低限確保する幅（px）。セルの左右の余白と、全角1文字分の幅と、
-        /// 測定の誤差のための余裕（TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX）。ブラウザ（mdew・mdee の
-        /// 「編集ペインの幅に合わせる」）で、セルの中の長い URL 等も途中で折り返す時の、列の最小の幅
-        /// （1文字＋余白）に相当する。
+        /// 自動計算の列で、各列が最低限確保する幅（px）。セルの左右の余白と、全角1文字分の幅と、罫線（1px）。
+        /// ブラウザ（mdew・mdee の「編集ペインの幅に合わせる」）で、セルの中の長い URL 等も途中で折り返す時の、
+        /// 列の最小の幅（1文字＋余白＋罫線。Chromium で測ると 37px）と同じ。
         /// </summary>
         private static double TABLE_AUTO_COLUMN_MIN_WIDTH_PX =>
-            TABLE_CELL_HORIZONTAL_PADDING + TABLE_MEASURE_FONT_SIZE + TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX;
+            TABLE_CELL_HORIZONTAL_PADDING + TABLE_MEASURE_FONT_SIZE + TABLE_CELL_BORDER_PX;
+
+        /// <summary>表のセルの罫線の太さ（px。ブラウザの列の幅には、罫線の分も含まれる）。</summary>
+        private const double TABLE_CELL_BORDER_PX = 1;
 
         /// <summary>
         /// まだ調整されていない表の各列の幅（px）を、ブラウザ（mdew・mdee）の表の自動レイアウトと
         /// 同じ考え方で決める（3つのアプリで、同じ表がおおむね同じ列幅で表示されるように）。
         ///  - 各列の「最大の幅」：セルの内容を折り返さずに並べた時の幅（MeasureUncappedColumnWidthsPx）。
-        ///  - 各列の「最小の幅」：いちばん長い単語（空白で区切った語。日本語等は1文字ずつ）の幅
-        ///    （MeasureMinWordColumnWidthsPx。ブラウザと同じく、「Microsoft」等の語が途中で折り返されない幅）。
-        ///    ただし、長い URL 等で最小の幅の合計が表示できる幅を超える時は、長い語の列から順に、合計が収まる
-        ///    幅まで狭くする（WPFは列より長い語も途中で折り返すため、ブラウザのように表がはみ出すことはない。
-        ///    いちばん狭くて TABLE_AUTO_COLUMN_MIN_WIDTH_PX＝1文字分）。
+        ///  - 各列の「最小の幅」：TABLE_AUTO_COLUMN_MIN_WIDTH_PX（1文字分。mdew・mdee の「編集ペインの幅に合わせる」の
+        ///    表は、セルの中の語・URL をどこでも折り返せる（overflow-wrap: anywhere）ため、ブラウザでも1文字分になる。
+        ///    Chromium で実際に測って確かめた）。
         ///  - 最大の幅の合計が表示できる幅に収まる時：各列を最大の幅にする（短い表は内容に合わせて
         ///    コンパクトに表示する）。
         ///  - 収まらない時：各列に最小の幅を配った上で、残りの幅を「最大の幅 − 最小の幅」の比で配る
@@ -1369,30 +1484,14 @@ namespace mde.common
                 return maxWidths;
             }
             double targetWidthPx = a_availableWidthPx.Value - TABLE_RIGHT_EDGE_SAFETY_MARGIN_PX;
+            // 配る時の「最大の幅」は、ブラウザと同じく、余裕（TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX。折り返さずに収める時に、
+            // 最後の文字が次の行へ送られないためのもの）を足さない幅（内容＋余白＋罫線）にする（余裕を足すと、内容の短い列
+            // ほど相対的に広くなり、ブラウザの列幅とずれる）
+            maxWidths = MeasureRawColumnContentWidthsPx(a_table).Select(w => w + TABLE_CELL_BORDER_PX).ToArray();
+            // 最小の幅は1文字分（mdew・mdee の「編集ペインの幅に合わせる」の表は、セルの中の語・URL をどこでも折り返せる
+            // （overflow-wrap: anywhere）ため、ブラウザの計算でも列の最小の幅が1文字分になる。それと同じにする）
             double minColumnWidth = TABLE_AUTO_COLUMN_MIN_WIDTH_PX;
-            var floorWidths = maxWidths.Select(w => Math.Min(w, minColumnWidth)).ToArray();
-            if (floorWidths.Sum() >= targetWidthPx)
-            {
-                return null;
-            }
-            // 最小の幅：いちばん長い語の幅（1文字分〜最大の幅の間）。合計が収まらなければ、長い語の列から順に、
-            // 同じ幅（cap）で頭打ちにして収める（合計が targetWidthPx の半分までに収まる cap を探す。残りの半分は、
-            // 下の「最大の幅 − 最小の幅」の比で配る分として残す）
-            var wordWidths = MeasureMinWordColumnWidthsPx(a_table);
-            var minWidths = new double[maxWidths.Length];
-            for (int c = 0; c < minWidths.Length; c++)
-            {
-                minWidths[c] = Math.Max(floorWidths[c], Math.Min(maxWidths[c], wordWidths[c]));
-            }
-            double minBudget = Math.Max(floorWidths.Sum(), targetWidthPx / 2);
-            if (minWidths.Sum() > minBudget)
-            {
-                double cap = FindCapForTotal(minWidths, floorWidths, minBudget);
-                for (int c = 0; c < minWidths.Length; c++)
-                {
-                    minWidths[c] = Math.Max(floorWidths[c], Math.Min(minWidths[c], cap));
-                }
-            }
+            var minWidths = maxWidths.Select(w => Math.Min(w, minColumnWidth)).ToArray();
             double sumMin = minWidths.Sum();
             double sumMax = maxWidths.Sum();
             if (sumMin >= targetWidthPx || sumMax - sumMin <= 0.01)
@@ -1404,132 +1503,6 @@ namespace mde.common
             for (int c = 0; c < widths.Length; c++)
             {
                 widths[c] = minWidths[c] + (maxWidths[c] - minWidths[c]) * ratio;
-            }
-            return widths;
-        }
-
-        /// <summary>各列の幅を同じ値（cap）で頭打ちにした時（ただし a_floors より狭くはしない）、合計が a_total 以下になる、
-        /// いちばん大きい cap を求める（ComputeAutoColumnWidthsPx）。</summary>
-        /// <param name="a_widths">各列の幅。</param>
-        /// <param name="a_floors">各列の、これより狭くしない幅。</param>
-        /// <param name="a_total">合計の上限。</param>
-        /// <returns>頭打ちにする幅。</returns>
-        private static double FindCapForTotal(double[] a_widths, double[] a_floors, double a_total)
-        {
-            double Total(double a_cap)
-            {
-                double sum = 0;
-                for (int c = 0; c < a_widths.Length; c++)
-                {
-                    sum += Math.Max(a_floors[c], Math.Min(a_widths[c], a_cap));
-                }
-                return sum;
-            }
-            double low = 0;
-            double high = a_widths.Max();
-            for (int i = 0; i < 40; i++)
-            {
-                double mid = (low + high) / 2;
-                if (Total(mid) <= a_total)
-                {
-                    low = mid;
-                }
-                else
-                {
-                    high = mid;
-                }
-            }
-            return low;
-        }
-
-        /// <summary>セルの文字（段落・改行の間は空白にする）。表を文書に入れる前（MarkdownConverter で組み立て中）にも
-        /// 使うため、TextRange ではなく Run を直接たどる。</summary>
-        /// <param name="a_cell">対象のセル。</param>
-        /// <returns>セルの文字。</returns>
-        private static string CellPlainText(TableCell a_cell)
-        {
-            var sb = new StringBuilder();
-            void AppendInlines(InlineCollection a_inlines)
-            {
-                foreach (Inline inline in a_inlines)
-                {
-                    if (inline is Run run)
-                    {
-                        sb.Append(run.Text);
-                    }
-                    else if (inline is Span span)
-                    {
-                        AppendInlines(span.Inlines);
-                    }
-                    else if (inline is LineBreak)
-                    {
-                        sb.Append(' ');
-                    }
-                }
-            }
-            foreach (Block block in a_cell.Blocks)
-            {
-                if (block is Paragraph p)
-                {
-                    AppendInlines(p.Inlines);
-                    sb.Append(' ');
-                }
-            }
-            return sb.ToString();
-        }
-
-        /// <summary>空白・改行で区切った語（日本語等の文字は1文字ずつ。ブラウザもその間で折り返す）。</summary>
-        private static readonly Regex s_tableWordRegex = new Regex(
-            "[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]|[^\\s\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]+", RegexOptions.Compiled);
-
-        /// <summary>
-        /// 各列の、いちばん長い語（s_tableWordRegex）の幅（px。セルの左右の余白と、測定の誤差のための余裕を含む）。
-        /// ブラウザ（mdew・mdee）の表の自動レイアウトの「列の最小の幅」に当たる（ComputeAutoColumnWidthsPx）。
-        /// 文字の大きさ・太さは、セルの既定（見出しの行は太字）で測る（インラインコード等の違いは無視する。目安のため）。
-        /// </summary>
-        /// <param name="a_table">対象の表。</param>
-        /// <returns>各列の幅（px）。</returns>
-        private static double[] MeasureMinWordColumnWidthsPx(Table a_table)
-        {
-            int colCount = a_table.Columns.Count;
-            var widths = new double[colCount];
-            double pixelsPerDip = GetMeasurementPixelsPerDip();
-            foreach (TableRowGroup rg in a_table.RowGroups)
-            {
-                foreach (TableRow row in rg.Rows)
-                {
-                    for (int c = 0; c < row.Cells.Count && c < colCount; c++)
-                    {
-                        TableCell cell = row.Cells[c];
-                        var typeface = new Typeface(m_tableMeasureFontFamily, FontStyles.Normal, cell.FontWeight, FontStretches.Normal);
-                        string text = CellPlainText(cell);
-                        string longest = "";
-                        double longestWidth = 0;
-                        foreach (Match m in s_tableWordRegex.Matches(text))
-                        {
-                            // 文字数の少ない語は測らない（測る回数を減らす。幅は文字数にほぼ比例するため）
-                            if (m.Length + 2 < longest.Length)
-                            {
-                                continue;
-                            }
-                            double w = new FormattedText(m.Value, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface,
-                                TABLE_MEASURE_FONT_SIZE, Brushes.Black, pixelsPerDip).Width;
-                            if (w > longestWidth)
-                            {
-                                longestWidth = w;
-                                longest = m.Value;
-                            }
-                        }
-                        if (longestWidth > widths[c])
-                        {
-                            widths[c] = longestWidth;
-                        }
-                    }
-                }
-            }
-            for (int c = 0; c < colCount; c++)
-            {
-                widths[c] += TABLE_CELL_HORIZONTAL_PADDING + TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX;
             }
             return widths;
         }

@@ -38,10 +38,8 @@
              BlockStyles の値で上書きする（メニュー「表示」→「表示スタイル」）。 -->
         <Thickness x:Key="EditorListPadding">32,0,0,0</Thickness>
         <Thickness x:Key="EditorDecimalListPadding">34,0,0,0</Thickness>
-        <!-- エディタの表示フォント。メニュー「表示」→「表示フォント」で切り替えられる。
-             ここでの初期値は既定（フォント変更後）のものだが、実際にはMainWindow
-             コンストラクタで保存済み設定に応じて新しいフォント／以前のフォントのどちらかに
-             起動直後に上書きされる（EditorLineHeightと同じパターン）。 -->
+        <!-- エディタの表示フォント（mdew・mdee と同じ Meiryo。VSCodeスタイルの時は MainWindow.ApplyEditorFontFamily が
+             VSCodeスタイルのフォントに上書きする。EditorLineHeightと同じパターン）。 -->
         <FontFamily x:Key="EditorFontFamily">Meiryo, Segoe UI</FontFamily>
         <!-- 右クリックのメニューの項目。見た目はすべてのメニューと同じ（MenuStyles.xaml の MenuItem のスタイル）。
              メニューの見出し（MenuHeading）も MenuStyles.xaml にある。 -->
@@ -124,16 +122,6 @@
                           IsCheckable="True" Click="MarkerStyleWpfStandardChecked"/>
                 <MenuItem x:Name="m_markerStyleUniformMenuItem" Header="すべての階層に同じ記号を使用する(_U)"
                           IsCheckable="True" Click="MarkerStyleUniformChecked"/>
-                <Separator/>
-                <MenuItem Header="表" Style="{StaticResource MenuHeading}"/>
-                <MenuItem x:Name="m_correctColumnWidthsMenuItem" Header="列幅を補正する(_T)"
-                          IsCheckable="True" Click="CorrectColumnWidthsMenuItemChecked"/>
-                <Separator/>
-                <MenuItem Header="表示フォント" Style="{StaticResource MenuHeading}"/>
-                <MenuItem x:Name="m_fontModeNewMenuItem" Header="新しいフォント（Meiryo）(_N)"
-                          IsCheckable="True" Click="FontModeNewChecked"/>
-                <MenuItem x:Name="m_fontModeLegacyMenuItem" Header="以前のフォント（Yu Gothic UI）(_L)"
-                          IsCheckable="True" Click="FontModeLegacyChecked"/>
                 <Separator/>
                 <MenuItem Header="文字の色" Style="{StaticResource MenuHeading}"/>
                 <MenuItem x:Name="m_textColorSharpMenuItem" Header="くっきりした色(_K)"
@@ -321,7 +309,7 @@
                     <RichTextBox x:Name="m_editor"
                                  BorderThickness="0"
                                  Background="Transparent"
-                                 Padding="20,0,4,0"
+                                 Padding="25,0,25,0"
                                  FontSize="16"
                                  SelectionBrush="#3390FF"
                                  SelectionOpacity="0.45"
@@ -457,7 +445,7 @@
                              BorderThickness="0"
                              Background="#F0F0F0"
                              Foreground="#000000"
-                             Padding="40,32"
+                             Padding="30,32"
                              FontFamily="{DynamicResource EditorFontFamily}"
                              FontSize="16"
                              AcceptsReturn="True"

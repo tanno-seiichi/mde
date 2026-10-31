@@ -224,7 +224,7 @@ namespace mde.editor
             html.Append("</table>");
 
             var data = new DataObject();
-            data.SetData(DataFormats.Text, string.Join("\r\n", textLines));
+            data.SetData(DataFormats.Text, BlockStyles.StripUrlBreakJoiners(string.Join("\r\n", textLines)));
             data.SetData(DataFormats.Html, TableEditor.BuildHtmlClipboardFragment(html.ToString()));
             Clipboard.SetDataObject(data);
             return true;
@@ -537,22 +537,24 @@ namespace mde.editor
 
         private void AppendRun(Row a_row, Run a_run)
         {
+            // リンクの URL の折り返し用の見えない文字（BlockStyles.URL_BREAK_JOINER）は、コピーする文字に含めない
+            string runText = BlockStyles.StripUrlBreakJoiners(a_run.Text);
             if (a_run.Tag is AnchorInfo)
             {
                 return;
             }
-            if (string.IsNullOrEmpty(a_run.Text))
+            if (string.IsNullOrEmpty(runText))
             {
                 return;
             }
             if (a_run.Tag is LinkInfo linkInfo)
             {
-                AppendLinkRun(a_row, a_run.Text, linkInfo.Url);
+                AppendLinkRun(a_row, runText, linkInfo.Url);
                 return;
             }
 
-            a_row.m_text.Append(a_run.Text);
-            string encoded = WebUtility.HtmlEncode(a_run.Text);
+            a_row.m_text.Append(runText);
+            string encoded = WebUtility.HtmlEncode(runText);
             string styleTag = a_run.Tag as string;
             if ("bold" == styleTag)
             {

@@ -93,7 +93,7 @@ namespace mde
         private const double EDITOR_TOP_PADDING = 24;
 
         /// <summary>文書の先頭の段落（見出し等）の上の余白を、文書の上の余白に足す時の倍率（EditorTopPadding 参照）。</summary>
-        private const double EDITOR_FIRST_BLOCK_MARGIN_RATIO = 1.25;
+        private const double EDITOR_FIRST_BLOCK_MARGIN_RATIO = 0;
 
         /// <summary>編集ペインの文書の下の余白（px。FlowDocument.PagePadding の下）。末尾までスクロールした時に、最後の行の
         /// 下に余白を表示する（mdew と同じ 120px）。</summary>
@@ -106,7 +106,7 @@ namespace mde
         /// するか（false）。メニュー「表示」→「段落中の改行」で切り替えられる。</summary>
         private bool m_preserveSourceLineBreaksFlg = true;
 
-        /// <summary>メニュー「表示」→「列幅を補正する」の状態。オンなら、列幅調整ダイアログで
+        /// <summary>以前のメニュー「表示」→「列幅を補正する」の状態（メニューは無くしたため、常に true）。オンなら、列幅調整ダイアログで
         /// 明示的に調整済みの表はその比率で、未調整（|---|）の表は内容量に応じて自動計算した
         /// 比率で表示する。オフなら、両方とも既定の均等幅（Auto）で表示する（表全体の列幅機能の
         /// マスタースイッチ）。既定値はtrue。詳細はBlockStyles.ApplyEffectiveColumnWidths参照。</summary>
@@ -118,10 +118,8 @@ namespace mde
         /// 参照。既定値はfalse。</summary>
         private bool m_uniformMarkerStyleFlg = false;
 
-        /// <summary>メニュー「表示」→「表示フォント」の状態。falseなら既定の表示フォント
-        /// （Meiryo, Segoe UI。既定）、trueならフォント変更前の以前の
-        /// 表示フォント（Yu Gothic UI, Segoe UI）を使う。詳細はSetUseLegacyFontFlg参照。
-        /// 既定値はfalse。</summary>
+        /// <summary>以前のメニュー「表示」→「表示フォント」の状態（trueなら以前の表示フォント Yu Gothic UI）。メニューは
+        /// 無くしたため、常に false（Meiryo, Segoe UI。mdew・mdee と同じ）。</summary>
         private bool m_useLegacyFontFlg = false;
 
         /// <summary>メニュー「表示」→「文字の色」の設定。falseなら「くっきりした色」（既定）、trueなら
@@ -301,10 +299,13 @@ namespace mde
             m_editor.Loaded += (s, e) => ApplyEditorEdgeMode();
             m_requireCtrlForLinkClickFlg = m_savedSettings.RequireCtrlForLinkClickFlg;
             m_preserveSourceLineBreaksFlg = m_savedSettings.PreserveSourceLineBreaksFlg;
-            m_correctColumnWidthsFlg = m_savedSettings.CorrectColumnWidthsFlg;
-            m_correctColumnWidthsMenuItem.IsChecked = m_correctColumnWidthsFlg;
+            // メニュー「表示」→「列幅を補正する」は無くした（mdew・mdee と同じく、表の列幅は常に内容に合わせる）。以前の版で
+            // オフにして保存した設定は使わない
+            m_correctColumnWidthsFlg = true;
             m_uniformMarkerStyleFlg = m_savedSettings.UniformMarkerStyleFlg;
-            m_useLegacyFontFlg = m_savedSettings.UseLegacyFontFlg;
+            // メニュー「表示」→「表示フォント」は無くした（mdew・mdee と同じ Meiryo だけにする）。以前の版で「以前のフォント」を
+            // 選んで保存した設定は使わない
+            m_useLegacyFontFlg = false;
             m_softTextColorFlg = m_savedSettings.SoftTextColorFlg;
             m_vsCodeStyleFlg = m_savedSettings.UseVsCodeStyleFlg;
             m_limitDocWidthFlg = m_savedSettings.LimitDocWidthFlg;
@@ -330,7 +331,6 @@ namespace mde
             UpdateLinkModeMenuChecks();
             UpdateLineBreakModeMenuChecks();
             UpdateMarkerStyleMenuChecks();
-            UpdateFontModeMenuChecks();
             UpdateTextColorMenuChecks();
             UpdateDocStyleMenuChecks();
             UpdateDocWidthMenuChecks();
@@ -429,6 +429,8 @@ namespace mde
             DataObject.AddPastingHandler(m_editor, EditorHandleHtmlPasting);
             DataObject.AddPastingHandler(m_editor, m_tableEditor.HandlePasting);
             DataObject.AddPastingHandler(m_editor, EditorHandleInlineMarkdownPasting);
+            // コピー・切り取りした文字から、リンクの URL の折り返し用の見えない文字を取り除く（EditorHandleCopying）
+            DataObject.AddCopyingHandler(m_editor, EditorHandleCopying);
 
             // タスクリストのチェックボックス（[ ]/[x]）のトグルを検知する。埋め込まれた各
             // CheckBoxに個別のハンドラを付けるのではなく、ToggleButton.CheckedEvent/
@@ -1658,6 +1660,68 @@ namespace mde
         }
 
         /// <summary>
+        /// コピー・切り取り（WPF 標準。Ctrl+C・Ctrl+X）の後に、クリップボードの文字（UnicodeText・Text・OEMText・HTML）から、
+        /// リンクの URL の折り返し用の見えない文字（BlockStyles.URL_BREAK_JOINER）を取り除く。取り除かないと、コピーした URL を
+        /// ブラウザ等に貼った時に、見えない文字の入った別の URL になってしまう。コピーの処理（WPF 標準）が終わった後で
+        /// クリップボードを読み直して書き直す（コピーの途中の DataObject は書き換えられないため）。mde どうしの貼り付けに使う
+        /// Xaml 等の形式はそのまま残す（貼った後のリンクは、保存時に取り除かれる）。
+        /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">コピーのイベントの引数。</param>
+        private void EditorHandleCopying(object a_sender, DataObjectCopyingEventArgs a_args)
+        {
+            if (m_isSourceModeFlg || a_args.IsDragDrop)
+            {
+                return;
+            }
+            Dispatcher.BeginInvoke(new Action(StripUrlBreakJoinersFromClipboard), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        /// <summary>クリップボードの文字から、BlockStyles.URL_BREAK_JOINER を取り除く（EditorHandleCopying）。含まれていなければ
+        /// 何もしない。</summary>
+        private static void StripUrlBreakJoinersFromClipboard()
+        {
+            try
+            {
+                IDataObject source = Clipboard.GetDataObject();
+                string unicodeText = source?.GetData(DataFormats.UnicodeText) as string;
+                if (null == unicodeText || 0 > unicodeText.IndexOf(BlockStyles.URL_BREAK_JOINER))
+                {
+                    return;
+                }
+                var textFormats = new HashSet<string> { DataFormats.UnicodeText, DataFormats.Text, DataFormats.OemText, DataFormats.Html, "System.String" };
+                var result = new DataObject();
+                foreach (string format in source.GetFormats(false))
+                {
+                    object value;
+                    try
+                    {
+                        value = source.GetData(format, false);
+                    }
+                    catch (Exception)
+                    {
+                        continue; // 読めない形式は写さない
+                    }
+                    if (null == value)
+                    {
+                        continue;
+                    }
+                    if (value is string text && textFormats.Contains(format))
+                    {
+                        value = BlockStyles.StripUrlBreakJoiners(text);
+                    }
+                    result.SetData(format, value, false);
+                }
+                Clipboard.SetDataObject(result, true);
+            }
+            catch (Exception ex)
+            {
+                // クリップボードを書き直せなくても、コピー自体はできている
+                DebugLogger.Log($"StripUrlBreakJoinersFromClipboard: クリップボードを書き直せなかった（{ex.Message}）");
+            }
+        }
+
+        /// <summary>
         /// 他アプリや、Xaml/Rtf形式を伴わない生のテキストが貼り付けられた時、そのテキストを
         /// Markdownとして解釈しながら挿入する（PasteMarkdown）。1つの段落だけなら、これまで通り
         /// インライン記法（**太字**・~~取り消し線~~・&lt;u&gt;下線&lt;/u&gt;・`コード`・[リンク](url)等）を
@@ -2736,6 +2800,11 @@ namespace mde
                 // 同じ「既に見えていれば何も起きない」問題への対策）、改めてスクロール先の
                 // 段落を一番上へ表示する。
                 m_editor.UpdateLayout();
+                // 表の列幅・画像の大きさは、文書を作った時（編集ペインが隠れていて幅が分からない時）の仮の幅で決まって
+                // いるため、表示された今の幅で計算し直す（EditorSizeChanged と同じ）
+                ApplyDocumentWidth();
+                RefreshImageAndTableWidths();
+                m_editor.UpdateLayout();
                 if (null == m_editorScrollViewer)
                 {
                     m_editorScrollViewer = FindVisualChild<ScrollViewer>(m_editor);
@@ -3600,7 +3669,7 @@ namespace mde
             string text = m_isSourceModeFlg
                 ? m_sourceEditor.SelectedText
                 : (m_editor.Selection.IsEmpty ? "" : m_editor.Selection.Text);
-            text = (text ?? "").Replace("\u200B", "");
+            text = BlockStyles.StripUrlBreakJoiners((text ?? "").Replace("\u200B", ""));
             return text.IndexOfAny(new[] { '\r', '\n' }) >= 0 ? "" : text;
         }
 
@@ -3865,47 +3934,6 @@ namespace mde
             m_lineBreakModeBlankOnlyMenuItem.IsChecked = !m_preserveSourceLineBreaksFlg;
         }
 
-        /// <summary>メニュー「表示」→「列幅を補正する」。</summary>
-        /// <param name="a_sender">メニュー項目。</param>
-        /// <param name="a_args">Click event.</param>
-        private void CorrectColumnWidthsMenuItemChecked(object a_sender, RoutedEventArgs a_args)
-        {
-            SetCorrectColumnWidthsFlg(m_correctColumnWidthsMenuItem.IsChecked);
-        }
-
-        /// <summary>メニュー「表示」→「列幅を補正する」の状態を変更する。列幅調整ダイアログで
-        /// 明示的に調整済みの表・自動計算による比率のどちらも含めた、表全体の列幅表示の
-        /// マスタースイッチである。オフにすると、調整済みの表も含めてすべての表が既定の
-        /// 均等幅（Auto）で表示される（ダッシュ数はMarkdownソース側にそのまま残るため、
-        /// オンに戻せば元の比率が復元され、情報が失われることはない）。
-        /// SetPreserveSourceLineBreaksFlgと同じ理由・同じ方法（現在の文書をいったんMarkdownへ
-        /// 変換し、フラグを切り替えた上で再度解析し直す）で、開いている文書全体に即座に反映する。</summary>
-        /// <param name="a_value">true＝列幅の調整・自動計算比率を反映する（既定）、false＝
-        /// すべての表を均等幅で表示する。</param>
-        private void SetCorrectColumnWidthsFlg(bool a_value)
-        {
-            if (m_correctColumnWidthsFlg != a_value)
-            {
-                if (m_isSourceModeFlg)
-                {
-                    m_correctColumnWidthsFlg = a_value;
-                }
-                else
-                {
-                    string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
-                    m_correctColumnWidthsFlg = a_value;
-                    RebuildScrollAnchor scrollAnchor = CaptureRebuildScrollAnchor();
-                    bool wasDirtyFlg = m_currentFileIsDirtyFlg;
-                    RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
-                    m_outlineManager.Refresh();
-                    m_editor.CaretPosition = m_editor.Document.ContentStart;
-                    RestoreRebuildScrollAnchor(scrollAnchor);
-                    KeepCleanAfterRebuild(wasDirtyFlg);
-                }
-            }
-            m_correctColumnWidthsMenuItem.IsChecked = m_correctColumnWidthsFlg;
-        }
-
         /// <summary>メニュー「表示」→「箇条書きの記号」→「WPF標準」（1段目Disc・2段目Circle・
         /// 3段目以降Box。既定値）。</summary>
         /// <param name="a_sender">メニュー項目。</param>
@@ -3924,8 +3952,8 @@ namespace mde
             SetUniformMarkerStyleFlg(true);
         }
 
-        /// <summary>箇条書きの記号の割り当て方式を変更する。SetPreserveSourceLineBreaksFlg・
-        /// SetCorrectColumnWidthsFlgと同じ理由・同じ方法（現在の文書をいったんMarkdownへ変換し、
+        /// <summary>箇条書きの記号の割り当て方式を変更する。SetPreserveSourceLineBreaksFlgと
+        /// 同じ理由・同じ方法（現在の文書をいったんMarkdownへ変換し、
         /// フラグを切り替えた上で再度解析し直す）で、開いている文書全体に即座に反映する
         /// （既存の箇条書きは、作成時に決まったMarkerStyleをそのまま持ち続けており、設定を
         /// 変えただけでは自動的には追従しないため）。</summary>
@@ -3963,69 +3991,13 @@ namespace mde
             m_markerStyleUniformMenuItem.IsChecked = m_uniformMarkerStyleFlg;
         }
 
-        /// <summary>メニュー「表示」→「表示フォント」→「新しいフォント（Meiryo）」。</summary>
-        /// <param name="a_sender">メニュー項目。</param>
-        /// <param name="a_args">Click event.</param>
-        private void FontModeNewChecked(object a_sender, RoutedEventArgs a_args)
-        {
-            SetUseLegacyFontFlg(false);
-        }
-
-        /// <summary>メニュー「表示」→「表示フォント」→「以前のフォント（Yu Gothic UI）」。</summary>
-        /// <param name="a_sender">メニュー項目。</param>
-        /// <param name="a_args">Click event.</param>
-        private void FontModeLegacyChecked(object a_sender, RoutedEventArgs a_args)
-        {
-            SetUseLegacyFontFlg(true);
-        }
-
-        /// <summary>表示フォントの設定を変更する。エディタ自体のフォントは、DynamicResource
-        /// "EditorFontFamily"（ApplyEditorFontFamily参照）を更新することで即座に切り替わる。
-        /// 一方、表の列幅はMarkdown変換時にしか再計測されないため、SetPreserveSourceLineBreaksFlg
-        /// 等と同じ理由・同じ方法（現在の文書をいったんMarkdownへ変換し、フラグを切り替えた上で
-        /// 再度解析し直す）で、開いている文書全体を再変換し、新しいフォントでの幅に追従させる。</summary>
-        /// <param name="a_value">true＝フォント変更前の以前のフォント（Yu Gothic UI, Segoe UI）、
-        /// false（既定）＝現在の既定フォント（Meiryo, Segoe UI）。</param>
-        private void SetUseLegacyFontFlg(bool a_value)
-        {
-            if (m_useLegacyFontFlg != a_value)
-            {
-                ApplyEditorFontFamily(a_value);
-                if (m_isSourceModeFlg)
-                {
-                    m_useLegacyFontFlg = a_value;
-                }
-                else
-                {
-                    string md = m_markdownConverter.DocumentToMarkdown(m_editor.Document);
-                    m_useLegacyFontFlg = a_value;
-                    RebuildScrollAnchor scrollAnchor = CaptureRebuildScrollAnchor();
-                    bool wasDirtyFlg = m_currentFileIsDirtyFlg;
-                    RunAsProgrammaticChange(() => m_markdownConverter.MarkdownToDocument(md, m_editor.Document));
-                    m_outlineManager.Refresh();
-                    m_editor.CaretPosition = m_editor.Document.ContentStart;
-                    RestoreRebuildScrollAnchor(scrollAnchor);
-                    KeepCleanAfterRebuild(wasDirtyFlg);
-                }
-            }
-            UpdateFontModeMenuChecks();
-        }
-
-        /// <summary>「表示フォント」メニューの2項目を、現在の設定に合わせてラジオボタンのように
-        /// 片方だけチェック状態にする。</summary>
-        private void UpdateFontModeMenuChecks()
-        {
-            m_fontModeNewMenuItem.IsChecked = !m_useLegacyFontFlg;
-            m_fontModeLegacyMenuItem.IsChecked = m_useLegacyFontFlg;
-        }
-
         /// <summary>エディタの表示フォントを、指定した設定へ反映する。DynamicResource
         /// "EditorFontFamily"（MainWindow.xamlのWindow.Resources参照）を更新することで、
         /// m_editorDocument（FlowDocument）・m_sourceEditor（TextBox）双方のFontFamilyへ、
         /// WPFの通常のプロパティ継承・DynamicResourceの仕組みで即座に反映される
         /// （行の間隔の EditorLineHeight 等と同じ DynamicResource の仕組み）。表のセル幅計測用フォント
-        /// （BlockStyles.SetTableMeasureFontFamily）も合わせて更新するが、既存の表の列幅自体は、
-        /// SetUseLegacyFontFlgでの再変換が実行されて初めて新しいフォントでの幅に更新される。</summary>
+        /// （BlockStyles.SetTableMeasureFontFamily）も合わせて更新する（既存の表の列幅は、文書を作り直した時に更新される。
+        /// 表示スタイルの切り替え（SetVsCodeStyleFlg）は文書を作り直す）。</summary>
         /// <param name="a_useLegacyFontFlg">true＝以前のフォント、false＝既定の新しいフォント。</param>
         private void ApplyEditorFontFamily(bool a_useLegacyFontFlg)
         {
@@ -4109,7 +4081,7 @@ namespace mde
         }
 
         /// <summary>表示スタイルを切り替える。見出し・コードブロック・表等の見た目は段落やRunを作る時に
-        /// 決まる（BlockStyles.VsCodeStyleFlg 参照）ため、表示フォントの切り替え（SetUseLegacyFontFlg）と
+        /// 決まる（BlockStyles.VsCodeStyleFlg 参照）ため、段落中の改行の切り替え（SetPreserveSourceLineBreaksFlg）と
         /// 同じ方法で、現在の文書をいったんMarkdownへ変換し、スタイルを切り替えた上で解析し直す。</summary>
         /// <param name="a_value">true＝VSCodeスタイル、false＝GitHubスタイル。</param>
         private void SetVsCodeStyleFlg(bool a_value)
@@ -4161,8 +4133,9 @@ namespace mde
         /// 編集ペインの文書の上の余白（px）。mdew と同じく、ファイルの先頭に余白（24px）を空け、さらに文書の先頭の段落の
         /// 上の余白（見出しなら BlockStyles.ApplyHeadingStyle で付けた上の余白）を足す。mdew（HTML）は先頭の見出しの上の余白もそのまま
         /// 空けるが、WPF は文書の先頭の段落の上の余白を無視するため、その分をここで足している。倍率
-        /// （EDITOR_FIRST_BLOCK_MARGIN_RATIO）は、mdew の見出しの上の余白が mde より大きい分を補うためのもので、
-        /// 同じファイル（先頭が大見出し）を mdew と並べて、見出しの位置がそろうように合わせた値。
+        /// （EDITOR_FIRST_BLOCK_MARGIN_RATIO）は、以前は mdew の見出しの上の余白が mde より大きい分を補うため 1.25 に
+        /// していたが、今の mdew・mdee は文書の先頭のまとまりの上の余白を 0 にする（app.css の「#doc &gt; :first-child」）ため、
+        /// 0（文書の上の余白は 24px だけ）にした（見出しの大きさ・余白も mdew・mdee と同じ。BlockStyles.ApplyHeadingStyle）。
         /// </summary>
         private double EditorTopPadding
         {
@@ -4337,11 +4310,8 @@ namespace mde
             m_editor.FontSize = BlockStyles.BodyFontSize;
             ApplyEditorFontFamily(m_useLegacyFontFlg);
             ApplyTextColor(m_softTextColorFlg);
-            // VSCodeスタイルのフォントは決まっているので、「表示フォント」は選べなくする。
             // VSCodeスタイルのリンクは、ふだんは下線なしで、マウスを乗せた時だけ下線を表示する（mdew と同じ）
             m_linkHoverUnderline.Enabled = m_vsCodeStyleFlg;
-            m_fontModeNewMenuItem.IsEnabled = !m_vsCodeStyleFlg;
-            m_fontModeLegacyMenuItem.IsEnabled = !m_vsCodeStyleFlg;
             // VSCodeスタイルの時は、文書の線をくっきり描く（ApplyEditorEdgeMode 参照）
             ApplyEditorEdgeMode();
         }

@@ -481,6 +481,49 @@ namespace mde.findreplace
             return true;
         }
 
+        /// <summary>文字から BlockStyles.URL_BREAK_JOINER を除き、除いた後の各文字が元の文字の何文字目だったかを返す。</summary>
+        /// <param name="a_text">元の文字。</param>
+        /// <param name="a_map">除いた後の i 文字目の、元の位置（最後に元の長さ）。除く文字が無ければ null。</param>
+        /// <returns>除いた後の文字。</returns>
+        private static string StripJoinersWithMap(string a_text, out int[] a_map)
+        {
+            a_map = null;
+            if (string.IsNullOrEmpty(a_text) || 0 > a_text.IndexOf(BlockStyles.URL_BREAK_JOINER))
+            {
+                return a_text;
+            }
+            var sb = new StringBuilder(a_text.Length);
+            var map = new List<int>(a_text.Length + 1);
+            for (int i = 0; i < a_text.Length; i++)
+            {
+                if (BlockStyles.URL_BREAK_JOINER == a_text[i])
+                {
+                    continue;
+                }
+                map.Add(i);
+                sb.Append(a_text[i]);
+            }
+            map.Add(a_text.Length);
+            a_map = map.ToArray();
+            return sb.ToString();
+        }
+
+        /// <summary>StripJoinersWithMap で除いた後の文字での一致箇所（位置・長さ）を、元の文字での位置・長さに直す。</summary>
+        /// <param name="a_map">StripJoinersWithMap の a_map（null なら何もしない）。</param>
+        /// <param name="a_index">位置。</param>
+        /// <param name="a_length">長さ。</param>
+        private static void MapToRawRange(int[] a_map, ref int a_index, ref int a_length)
+        {
+            if (null == a_map)
+            {
+                return;
+            }
+            int start = a_map[a_index];
+            int end = 0 < a_length ? a_map[a_index + a_length - 1] + 1 : start;
+            a_index = start;
+            a_length = end - start;
+        }
+
         /// <summary>
         /// FindNextInCurrentFileと同様だが、見つからなければ文書の先頭へ折り返さない
         /// （フォルダ全体での「次を検索」の1件ずつの歩みで使う。折り返してしまうと、
@@ -538,7 +581,9 @@ namespace mde.findreplace
             {
                 if (navigator.GetPointerContext(LogicalDirection.Forward) == TextPointerContext.Text)
                 {
-                    string runText = navigator.GetTextInRun(LogicalDirection.Forward);
+                    string rawRunText = navigator.GetTextInRun(LogicalDirection.Forward);
+                    // リンクの URL の折り返し用の見えない文字（BlockStyles.URL_BREAK_JOINER）は除いて探す（位置は元の文字に戻す）
+                    string runText = StripJoinersWithMap(rawRunText, out int[] map);
                     if (!string.IsNullOrEmpty(runText))
                     {
                         int idx, len;
@@ -556,6 +601,7 @@ namespace mde.findreplace
 
                         if (idx >= 0)
                         {
+                            MapToRawRange(map, ref idx, ref len);
                             TextPointer matchStart = navigator.GetPositionAtOffset(idx);
                             TextPointer matchEnd = matchStart?.GetPositionAtOffset(len);
                             if (null != matchStart &&
@@ -594,7 +640,8 @@ namespace mde.findreplace
             {
                 if (navigator.GetPointerContext(LogicalDirection.Backward) == TextPointerContext.Text)
                 {
-                    string runText = navigator.GetTextInRun(LogicalDirection.Backward);
+                    string rawRunText = navigator.GetTextInRun(LogicalDirection.Backward);
+                    string runText = StripJoinersWithMap(rawRunText, out int[] map);
                     if (!string.IsNullOrEmpty(runText))
                     {
                         int idx, len;
@@ -616,7 +663,8 @@ namespace mde.findreplace
 
                         if (idx >= 0)
                         {
-                            TextPointer runStart = navigator.GetPositionAtOffset(-runText.Length);
+                            MapToRawRange(map, ref idx, ref len);
+                            TextPointer runStart = navigator.GetPositionAtOffset(-rawRunText.Length);
                             TextPointer matchStart = runStart?.GetPositionAtOffset(idx);
                             TextPointer matchEnd = matchStart?.GetPositionAtOffset(len);
                             if (null != matchStart &&

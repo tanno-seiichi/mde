@@ -233,7 +233,7 @@ namespace mde.editor
             {
                 TextPointer start = m_editor.Selection.Start;
                 m_editor.Selection.Text = "";
-                var newRun = new Run(text, start)
+                var newRun = new Run(BlockStyles.AddUrlBreakJoiners(text), start)
                 {
                     Foreground = m_linkBrush,
                     TextDecorations = BlockStyles.LinkTextDecorations,
@@ -404,7 +404,7 @@ namespace mde.editor
             string md = sb.ToString();
             if (!string.IsNullOrEmpty(md))
             {
-                Clipboard.SetText(md);
+                Clipboard.SetText(BlockStyles.StripUrlBreakJoiners(md));
             }
         }
 
@@ -1104,7 +1104,7 @@ namespace mde.editor
             m_runAsProgrammaticChange(() =>
             {
                 new TextRange(a_start, a_caret).Text = "";
-                var newRun = new Run(a_linkText, a_start)
+                var newRun = new Run(BlockStyles.AddUrlBreakJoiners(a_linkText), a_start)
                 {
                     Foreground = m_linkBrush,
                     TextDecorations = BlockStyles.LinkTextDecorations,

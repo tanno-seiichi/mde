@@ -553,8 +553,12 @@ namespace mde.editor
             {
                 return 560; // 初回レイアウト前の妥当なフォールバック値
             }
+            // 文字を書く幅と同じにする（mdew・mdee の表・画像の最大の幅は本文の幅）：左右の余白（RichTextBox の Padding と
+            // 文書の PagePadding）とスクロールバーの幅を除く
             w -= m_editor.Padding.Left + m_editor.Padding.Right;
-            w -= 24; // スクロールバー＋右端が詰まりすぎないための余白
+            Thickness page = m_editor.Document.PagePadding;
+            w -= (double.IsNaN(page.Left) ? 0 : page.Left) + (double.IsNaN(page.Right) ? 0 : page.Right);
+            w -= SystemParameters.VerticalScrollBarWidth;
             return Math.Max(100, w);
         }
 
@@ -722,8 +726,9 @@ namespace mde.editor
             string tsv = TableToTsv(table);
             string htmlFragment = TableToHtmlFragment(table);
             var data = new DataObject();
-            data.SetData(DataFormats.Text, tsv);
-            data.SetData(DataFormats.Html, BuildHtmlClipboardFragment(htmlFragment));
+            // リンクの URL の折り返し用の見えない文字（BlockStyles.URL_BREAK_JOINER）は、コピーする文字に含めない
+            data.SetData(DataFormats.Text, BlockStyles.StripUrlBreakJoiners(tsv));
+            data.SetData(DataFormats.Html, BuildHtmlClipboardFragment(BlockStyles.StripUrlBreakJoiners(htmlFragment)));
             Clipboard.SetDataObject(data);
         }
 
@@ -1121,8 +1126,9 @@ namespace mde.editor
             string tsv = null != range ? RangeToTsv(rows, range) : TableToTsv(table);
             string htmlFragment = null != range ? RangeToHtmlFragment(rows, range) : TableToHtmlFragment(table);
             var data = new DataObject();
-            data.SetData(DataFormats.Text, tsv);
-            data.SetData(DataFormats.Html, BuildHtmlClipboardFragment(htmlFragment));
+            // リンクの URL の折り返し用の見えない文字（BlockStyles.URL_BREAK_JOINER）は、コピーする文字に含めない
+            data.SetData(DataFormats.Text, BlockStyles.StripUrlBreakJoiners(tsv));
+            data.SetData(DataFormats.Html, BuildHtmlClipboardFragment(BlockStyles.StripUrlBreakJoiners(htmlFragment)));
             Clipboard.SetDataObject(data);
             return true;
         }
@@ -1214,6 +1220,7 @@ namespace mde.editor
             // 隣接セルの境界線が二重に重ならないよう、表全体へまとめて罫線を設定する
             // （BlockStyles.ApplyTableCellBorders参照）。
             BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
+            BlockStyles.ApplyClosingBracketLineEndAllowance(table);
 
             // MarkdownConverter.csと同じ理由で一時的に無効化（BlockStyles.ApplyContentBasedColumnWidths参照）。
             // BlockStyles.ApplyContentBasedColumnWidths(table);

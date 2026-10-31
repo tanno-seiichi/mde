@@ -97,7 +97,8 @@ namespace mde.manager
             {
                 Tag = new ImageInfo { OriginalSrc = src, Alt = alt, Style = style, Format = "html" },
                 Stretch = Stretch.Uniform,
-                Margin = new Thickness(0, 4, 0, 4)
+                // 上下の余白は付けない（mdew・mdee の画像と同じ。付けると、表のセル等で画像のある行だけ高くなる）
+                Margin = new Thickness(0)
             };
             AutomationProperties.SetName(img, alt ?? "");
             img.ToolTip = src;
@@ -117,7 +118,8 @@ namespace mde.manager
             {
                 Tag = new ImageInfo { OriginalSrc = a_src, Alt = a_alt, Format = "md", Title = a_title },
                 Stretch = Stretch.Uniform,
-                Margin = new Thickness(0, 4, 0, 4)
+                // 上下の余白は付けない（mdew・mdee の画像と同じ。付けると、表のセル等で画像のある行だけ高くなる）
+                Margin = new Thickness(0)
             };
             AutomationProperties.SetName(img, a_alt ?? "");
             img.ToolTip = string.IsNullOrEmpty(a_title) ? a_src : a_title;
@@ -624,8 +626,12 @@ namespace mde.manager
             {
                 return 560; // 初回レイアウト前の妥当なフォールバック値
             }
+            // 文字を書く幅と同じにする（mdew・mdee の表・画像の最大の幅は本文の幅）：左右の余白（RichTextBox の Padding と
+            // 文書の PagePadding）とスクロールバーの幅を除く
             w -= m_editor.Padding.Left + m_editor.Padding.Right;
-            w -= 24; // スクロールバー＋右端が詰まりすぎないための余白
+            Thickness page = m_editor.Document.PagePadding;
+            w -= (double.IsNaN(page.Left) ? 0 : page.Left) + (double.IsNaN(page.Right) ? 0 : page.Right);
+            w -= SystemParameters.VerticalScrollBarWidth;
             return Math.Max(100, w);
         }
 

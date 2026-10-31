@@ -437,6 +437,25 @@ mde 自身のコードとは無関係に、.NET の apphost（`UseAppHost` の�
 
 ### 15.3 本文の幅・表示の設定の切り替え
 
+見た目の寸法は mdew・mdee（app.css）にそろえている：編集ペインの左右の余白は 30px（`RichTextBox` の `Padding` 25px と
+`PagePadding` の 5px。ソースモードの入力欄も左右 30px）、文書の上の余白は 24px（mdew・mdee は文書の先頭のまとまりの上の
+余白を 0 にするため、先頭の見出しの上の余白は足さない）。GitHubスタイルの見出しは本文 16px の 2.25/1.75/1.5/1.25/1/1 倍、
+行の高さは文字の 1.4 倍、上に文字の 1.2 倍・下に 0.6 倍の余白（`BlockStyles.ApplyHeadingStyle`）。表のセルの余白は
+左右 10px・上下 4px、行の高さは本文と同じ 25px。表・画像の表示できる幅は、本文の幅（余白とスクロールバーを除いた幅）。
+リンクの文字が URL の時は、mdew・mdee（Chromium）と同じく、「/」の後ろでは折り返さず、列や本文の端の文字で折り返す。
+WPF は「/」の後ろで折り返すため、表示用に「/」の後ろへ見えない結合文字 U+034F（COMBINING GRAPHEME JOINER。
+`BlockStyles.URL_BREAK_JOINER`）を入れている（`BlockStyles.AddUrlBreakJoiners`。リンクの Run を作る時）。結合文字の
+ため矢印キーで止まる位置は増えない（U+2060・U+200D は止まる位置が増えるため使わない）。保存（MarkdownConverter）・
+コピー（`MainWindow.EditorHandleCopying`。コピーの後にクリップボードの文字から取り除く）・Excel 用のコピー・検索
+（`SearchReplaceService`。取り除いた文字で探し、位置を元の文字に戻す）では取り除く。
+画像には上下の余白を付けない（mdew・mdee と同じ。付けると、表のセルで画像のある行だけ高くなる）。
+表のセルの段落が閉じ括弧（）」』】等）で終わる時は、mdew・mdee（Chromium の text-spacing-trim の既定値。行に入り切らない
+時、行の終わりの閉じ括弧を半分の幅に詰める）と同じ位置で折り返すよう、その括弧が半文字分だけ右の余白にはみ出してよいようにして
+いる（セルの右の Padding を半文字分小さくし、閉じ括弧で終わらない段落には同じ分の右の Margin を付ける。
+`BlockStyles.ApplyClosingBracketLineEndAllowance`。表を作る時だけ行う）。
+同じく、揃えの指定の無い表の見出しの行は、mdew・mdee は中央揃え、mde は左揃え（mde は見出しの行の揃えを区切り行の
+`:---:` 等として保存に使うため）。
+
 「表示」→「本文の幅」→「読みやすい幅にする」は、`RichTextBox` の左右の `Padding` を広げて本文を最大 884px
 で中央に置く（`MainWindow.ApplyDocumentWidth`。`PagePadding` の左右は RichTextBox が管理するため使わない）。
 画像・表の表示できる幅は `Padding` を除いた幅で計算しているため、そのまま本文の幅に合う。
