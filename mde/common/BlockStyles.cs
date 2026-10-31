@@ -768,6 +768,123 @@ namespace mde.common
             }
         }
 
+        /// <summary>PDF出力時の表の罫線の太さ（px。1px = 0.75pt）。画面と同じ 1px にそろえる
+        /// （画面ではヘッダー行のセル間の縦線だけ太いため、そのまま書き出すとその線だけ太く見えていた）。</summary>
+        public const double PRINT_TABLE_BORDER_THICKNESS = 1;
+
+        /// <summary>PDF出力時の表の罫線の色。画面の色（#DDDFE2）のままだと、PDFビューアで線が
+        /// 画素の境目にかかった時に2画素へ薄く分かれて、ほとんど見えなくなる。分かれた時でも
+        /// 画面の線と同じくらいの濃さに見えるよう、少しだけ濃くした灰色にする。</summary>
+        private static readonly Brush m_printTableBorder = CreateFrozenBrush(0xB4, 0xB8, 0xBD);
+
+        /// <summary>固定した（変更できない・スレッドをまたいで使える）単色のブラシを作る。</summary>
+        /// <param name="a_r">赤。</param>
+        /// <param name="a_g">緑。</param>
+        /// <param name="a_b">青。</param>
+        /// <returns>ブラシ。</returns>
+        private static Brush CreateFrozenBrush(byte a_r, byte a_g, byte a_b)
+        {
+            var brush = new SolidColorBrush(Color.FromRgb(a_r, a_g, a_b));
+            brush.Freeze();
+            return brush;
+        }
+
+        /// <summary>
+        /// PDF出力の間だけ、表の罫線を <see cref="m_printTableBorder"/>・<see cref="PRINT_TABLE_BORDER_THICKNESS"/> にそろえる。
+        /// ・画面で線を引いている辺（太さが0より大きい辺）だけを対象にし、すべて同じ太さにする
+        /// 　（画面ではヘッダー行のセル間の縦線だけ HEADER_VERTICAL_BORDER_THICKNESS で太いため、
+        /// 　そのまま書き出すとその線だけ太く見えていた）。
+        /// ・ヘッダー行の背景色は、書き出す間だけセルから行（TableRow）へ移す。セルの背景は
+        /// 　隣のセルの右辺の罫線に重なって描かれることがあり、ヘッダー行の縦線だけが消える
+        /// 　原因になっていた。行の背景はセルとその罫線より先（下）に描かれるため、罫線を隠さない。
+        /// 書き出し後は、戻り値の処理を呼んで元の罫線・背景に戻すこと。
+        /// </summary>
+        /// <param name="a_table">対象の表。</param>
+        /// <returns>元の罫線・背景に戻す処理。</returns>
+        public static Action ApplyPrintTableBorders(Table a_table)
+        {
+            var restores = new List<Action>();
+            Brush borderBrush = m_printTableBorder;
+
+            restores.Add(SaveLocalValue(a_table, Block.BorderBrushProperty));
+            restores.Add(SaveLocalValue(a_table, Block.BorderThicknessProperty));
+            a_table.BorderBrush = borderBrush;
+            a_table.BorderThickness = ToPrintBorderThickness(a_table.BorderThickness);
+
+            foreach (TableRowGroup rg in a_table.RowGroups)
+            {
+                foreach (TableRow row in rg.Rows)
+                {
+                    // 行のすべてのセルが同じ背景色を持つ（＝ヘッダー行）なら、背景を行へ移す。
+                    Brush rowBackground = null;
+                    if (0 < row.Cells.Count && null == row.Background)
+                    {
+                        Brush first = row.Cells[0].Background;
+                        if (null != first && row.Cells.All(c => ReferenceEquals(c.Background, first)))
+                        {
+                            rowBackground = first;
+                        }
+                    }
+                    if (null != rowBackground)
+                    {
+                        restores.Add(SaveLocalValue(row, TextElement.BackgroundProperty));
+                        row.Background = rowBackground;
+                    }
+
+                    foreach (TableCell cell in row.Cells)
+                    {
+                        restores.Add(SaveLocalValue(cell, TableCell.BorderBrushProperty));
+                        restores.Add(SaveLocalValue(cell, TableCell.BorderThicknessProperty));
+                        cell.BorderBrush = borderBrush;
+                        cell.BorderThickness = ToPrintBorderThickness(cell.BorderThickness);
+                        if (null != rowBackground)
+                        {
+                            restores.Add(SaveLocalValue(cell, TextElement.BackgroundProperty));
+                            cell.Background = null;
+                        }
+                    }
+                }
+            }
+
+            return () =>
+            {
+                for (int i = restores.Count - 1; i >= 0; i--)
+                {
+                    restores[i]();
+                }
+            };
+        }
+
+        /// <summary>線を引いている辺（0より大きい辺）だけを PRINT_TABLE_BORDER_THICKNESS にする。</summary>
+        /// <param name="a_thickness">画面用の太さ。</param>
+        /// <returns>PDF出力用の太さ。</returns>
+        private static Thickness ToPrintBorderThickness(Thickness a_thickness)
+        {
+            static double Side(double a_value) => 0 < a_value ? PRINT_TABLE_BORDER_THICKNESS : 0;
+            return new Thickness(Side(a_thickness.Left), Side(a_thickness.Top), Side(a_thickness.Right), Side(a_thickness.Bottom));
+        }
+
+        /// <summary>プロパティのローカル値を覚えておき、それに戻す処理を返す（値が未設定だった
+        /// 場合は、戻す時に未設定へ戻す）。</summary>
+        /// <param name="a_obj">対象。</param>
+        /// <param name="a_property">プロパティ。</param>
+        /// <returns>元に戻す処理。</returns>
+        private static Action SaveLocalValue(DependencyObject a_obj, DependencyProperty a_property)
+        {
+            object value = a_obj.ReadLocalValue(a_property);
+            return () =>
+            {
+                if (DependencyProperty.UnsetValue == value)
+                {
+                    a_obj.ClearValue(a_property);
+                }
+                else
+                {
+                    a_obj.SetValue(a_property, value);
+                }
+            };
+        }
+
         // ======================================================================
         //  表の列幅（内容に合わせたコンパクトな列幅）
         // ======================================================================

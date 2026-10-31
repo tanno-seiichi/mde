@@ -2991,6 +2991,15 @@ namespace mde
                     }
                 }
 
+                // 表の罫線は、書き出す間だけ少し濃い灰色・同じ太さ（BlockStyles.PRINT_TABLE_BORDER_THICKNESS）に
+                // そろえる（画面用の線のままだと、PDFで一部消えたり、一部だけ太く見えたりするため。
+                // 詳細は BlockStyles.ApplyPrintTableBorders）。書き出し後に画面用の線へ戻す。
+                var tableBorderRestores = new List<Action>();
+                foreach (var table in m_tableEditor.FindAllTables(m_editor.Document))
+                {
+                    tableBorderRestores.Add(BlockStyles.ApplyPrintTableBorders(table));
+                }
+
                 // FlowDocumentは、既定では印刷可能幅に応じて自動的に段組み（複数列）にしてしまう
                 // ことがある。ColumnWidthを「余白を差し引いた実際の本文の幅」に合わせておくことで、
                 // 画面表示と同じ単一列のレイアウトのまま印刷されるようにする。
@@ -3034,6 +3043,10 @@ namespace mde
                 finally
                 {
                     m_editor.Document.ColumnWidth = originalColumnWidth;
+                    foreach (var restore in tableBorderRestores)
+                    {
+                        restore();
+                    }
                     foreach (var kv in originalImageSizes)
                     {
                         kv.Key.Width = kv.Value.Width;
