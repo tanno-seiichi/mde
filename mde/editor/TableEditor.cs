@@ -80,8 +80,7 @@ namespace mde.editor
             this.m_imageManager = a_imageManager;
         }
 
-        // 表の罫線の色（mdew・mdee と同じ #C8CCD1。BlockStyles.TableBorderBrush）
-        private static readonly Brush m_cellBorder = BlockStyles.TableBorderBrush;
+        private static readonly Brush m_cellBorder = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
 
         // ---------------- セル間の矢印キー移動 ----------------
 

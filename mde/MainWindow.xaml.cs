@@ -2991,14 +2991,6 @@ namespace mde
                     }
                 }
 
-                // 表の見出しの行のセルの間の縦の線は、書き出す間だけ太くする（細い線が PDF で消えることがあるため。
-                // BlockStyles.HEADER_VERTICAL_BORDER_THICKNESS。画面では mdew・mdee と同じ 1px）。書き出し後に戻す
-                var printBorderTables = m_tableEditor.FindAllTables(m_editor.Document);
-                foreach (var table in printBorderTables)
-                {
-                    BlockStyles.ApplyTableCellBorders(table, BlockStyles.TableBorderBrush, true);
-                }
-
                 // FlowDocumentは、既定では印刷可能幅に応じて自動的に段組み（複数列）にしてしまう
                 // ことがある。ColumnWidthを「余白を差し引いた実際の本文の幅」に合わせておくことで、
                 // 画面表示と同じ単一列のレイアウトのまま印刷されるようにする。
@@ -3054,10 +3046,6 @@ namespace mde
                         {
                             cols[c].Width = kv.Value[c];
                         }
-                    }
-                    foreach (var table in printBorderTables)
-                    {
-                        BlockStyles.ApplyTableCellBorders(table, BlockStyles.TableBorderBrush, false);
                     }
                     foreach (var swap in linkSwaps)
                     {
