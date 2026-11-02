@@ -143,7 +143,15 @@ namespace mde.editor
         public void ChangeHeadingLevel(Paragraph a_p, int a_level)
         {
             m_originalTextTracker.InvalidateForBlock(a_p);
-            m_runAsProgrammaticChange(() => BlockStyles.ApplyHeadingStyle(a_p, a_level));
+            m_editor.BeginChange();
+            try
+            {
+                m_runAsProgrammaticChange(() => BlockStyles.ApplyHeadingStyle(a_p, a_level));
+            }
+            finally
+            {
+                m_editor.EndChange();
+            }
         }
 
         /// <summary>見出し段落の中身をBackSpaceで空にした状態から、もう一度BackSpaceが
@@ -159,11 +167,19 @@ namespace mde.editor
             // 遅延は使わず、同期的に書き換えてその場でUpdateLayout・ClearFocus/Focusを行う
             // パターンにする。
             m_originalTextTracker.InvalidateForBlock(a_p);
-            m_runAsProgrammaticChange(() =>
+            m_editor.BeginChange();
+            try
             {
-                BlockStyles.ApplyHeadingStyle(a_p, 0);
-                m_editor.CaretPosition = a_p.ContentStart;
-            });
+                m_runAsProgrammaticChange(() =>
+                {
+                    BlockStyles.ApplyHeadingStyle(a_p, 0);
+                    m_editor.CaretPosition = a_p.ContentStart;
+                });
+            }
+            finally
+            {
+                m_editor.EndChange();
+            }
             m_editor.UpdateLayout();
             Keyboard.ClearFocus();
             m_editor.Focus();
