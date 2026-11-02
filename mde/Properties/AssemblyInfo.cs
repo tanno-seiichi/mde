@@ -48,5 +48,5 @@ using System.Windows;
 //      ビルド番号
 //      リビジョン
 //
-[assembly: AssemblyVersion( "1.6.11.0" )]
-[assembly: AssemblyFileVersion( "1.6.11.0" )]
+[assembly: AssemblyVersion( "1.6.12.0" )]
+[assembly: AssemblyFileVersion( "1.6.12.0" )]
