@@ -507,7 +507,7 @@ namespace mde.editor
                         }
                         m_runAsProgrammaticChange(() =>
                         {
-                            Paragraph targetPara = CreateOrExitListItem(a_li, currentList);
+                            Paragraph targetPara = CreateOrExitListItemInUndoUnit(a_li, currentList);
                             m_editor.CaretPosition = GetCaretPositionForNewListParagraph(targetPara);
                         });
                     },
@@ -518,7 +518,7 @@ namespace mde.editor
             {
                 m_runAsProgrammaticChange(() =>
                 {
-                    Paragraph targetPara = CreateOrExitListItem(a_li, a_parentList);
+                    Paragraph targetPara = CreateOrExitListItemInUndoUnit(a_li, a_parentList);
                     m_editor.CaretPosition = GetCaretPositionForNewListParagraph(targetPara);
                 });
                 FinishCaretMoveToNewParagraph();
@@ -593,6 +593,20 @@ namespace mde.editor
             return (a_para.Inlines.FirstInline is InlineUIContainer iuc) ? iuc.ElementEnd : a_para.ContentStart;
         }
 
+        /// <summary>Enterによるリスト構造の変更を、RichTextBoxのUndoで1操作としてまとめる。</summary>
+        private Paragraph CreateOrExitListItemInUndoUnit(ListItem a_li, List a_parentList)
+        {
+            m_editor.BeginChange();
+            try
+            {
+                return CreateOrExitListItem(a_li, a_parentList);
+            }
+            finally
+            {
+                m_editor.EndChange();
+            }
+        }
+
         /// <summary>
         /// HandleListEnterの本体：項目が空ならリストを抜けて新しい通常の段落を作り、空でなければ
         /// 新しい項目を後ろに追加する。項目の文字列の途中にキャレットがある場合は、キャレットより
@@ -605,6 +619,21 @@ namespace mde.editor
         /// <returns>キャレットを移す先の新しい段落。</returns>
         private Paragraph CreateOrExitListItem(ListItem a_li, List a_parentList)
         {
+            // リスト項目の本文先頭でEnterを押した場合は、空の項目を現在の項目の前に作る。
+            // 特に現在の項目が末尾にサブリストを持つ場合、通常の後方分割処理はサブリストを
+            // 理由に本文分割をスキップするため、空項目がサブリスト全体の後ろにできてしまう。
+            // Typoraと同じく本文とサブリストをそのまま保ち、空項目だけを前に挿入する。
+            Paragraph caretPara = m_editor.CaretPosition?.Paragraph;
+            if (null != caretPara && caretPara.Parent == a_li &&
+                GetOwnListItemText(a_li).Length > 0 &&
+                IsCaretAtParagraphStart(caretPara, m_editor.CaretPosition))
+            {
+                var emptyPara = new Paragraph { Margin = new Thickness(0) };
+                a_parentList.ListItems.InsertBefore(a_li, new ListItem(emptyPara));
+                // 新しい空項目ではなく、元の文字列（Enter後の2行目）の先頭へキャレットを置く。
+                return caretPara;
+            }
+
             // 項目はShift+Enterによる段落分割（InsertParagraphSplitAtCaret）で、入れ子のサブリストが
             // 無くても複数の「自分自身の段落」を持ちうるため、「Blocks.Count > 1」だけでは入れ子判定
             // にならない。OutdentListItemと同様、Blocks.LastBlockが実際にListかどうかで判定する。
@@ -648,14 +677,12 @@ namespace mde.editor
                     newPara.Inlines.Add(BlockStyles.CreateTaskCheckboxContainer(false));
                 }
 
-                // 項目自身の段落（入れ子のサブリストがある場合は対象外。サブリストごと動かすのは
-                // 複雑になるため新しい項目は空のままにする）の中で、キャレットより後ろの内容を
+                // 項目自身の段落の中で、キャレットより後ろの内容を
                 // 新しい項目へ移す。項目は複数の自分自身の段落を持ちうる（上記hasNestedListFlgの
                 // 説明参照）ため、常にBlocks.FirstBlockではなくキャレットが実際にある段落を対象
-                // にし（見つからなければFirstBlockへフォールバック）、その段落より後ろに残る段落は
-                // 丸ごと新しい項目へ移して複数段落の構成を保つ。
-                var laterOwnParas = new List<Paragraph>();
-                if (!hasNestedListFlg)
+                // にし（見つからなければFirstBlockへフォールバック）、その段落より後ろにある
+                // 段落やサブリストを新しい項目へ移して、後半の内容とその子項目を保つ。
+                var trailingBlocks = new List<Block>();
                 {
                     TextPointer caret = m_editor.CaretPosition;
                     Paragraph caretOwnPara = caret?.Paragraph;
@@ -679,14 +706,14 @@ namespace mde.editor
                                 foundFlg = true;
                                 continue;
                             }
-                            if (foundFlg && block is Paragraph laterPara)
+                            if (foundFlg)
                             {
-                                laterOwnParas.Add(laterPara);
+                                trailingBlocks.Add(block);
                             }
                         }
-                        foreach (Paragraph laterPara in laterOwnParas)
+                        foreach (Block trailingBlock in trailingBlocks)
                         {
-                            a_li.Blocks.Remove(laterPara);
+                            a_li.Blocks.Remove(trailingBlock);
                         }
                     }
                 }
@@ -699,13 +726,25 @@ namespace mde.editor
                 }
 
                 var newLi = new ListItem(newPara);
-                foreach (Paragraph laterPara in laterOwnParas)
+                foreach (Block trailingBlock in trailingBlocks)
                 {
-                    newLi.Blocks.Add(laterPara);
+                    newLi.Blocks.Add(trailingBlock);
                 }
                 a_parentList.ListItems.InsertAfter(a_li, newLi);
                 return newPara;
             }
+        }
+
+        /// <summary>キャレットが段落の先頭（最初の本文文字より前）にあるかを判定する。</summary>
+        private static bool IsCaretAtParagraphStart(Paragraph a_para, TextPointer a_caret)
+        {
+            if (null == a_caret)
+            {
+                return false;
+            }
+            TextPointer caret = a_caret.GetInsertionPosition(LogicalDirection.Forward);
+            TextPointer start = a_para.ContentStart.GetInsertionPosition(LogicalDirection.Forward);
+            return 0 >= caret.CompareTo(start);
         }
 
         /// <summary>指定したInlineCollection（項目自身の段落、または入れ子のSpanの中身）から、
