@@ -2623,6 +2623,17 @@ namespace mde
                 }
             }
 
+            // 引用の続きの行の先頭では、自前の段落結合を行う。WPF標準に任せると、段落削除と
+            // QuoteContinuationInfoの復元がUndoで分離され、見た目と保存内容がずれることがある。
+            if (a_args.Key == Key.Back && para.Tag is QuoteContinuationInfo &&
+                m_editor.Selection.IsEmpty &&
+                0 == new TextRange(para.ContentStart, m_editor.Selection.Start).Text.Length)
+            {
+                a_args.Handled = true;
+                m_headingCodeBlockEditor.MergeQuoteContinuationIntoPrevious(para);
+                return;
+            }
+
             // 文字のあるコードブロックの先頭行の先頭でのBackSpaceは何もしない。WPF標準の動作に任せると、
             // コードの1行目が前の段落（引用・見出し等）の末尾へつながり、コードが本文に混ざっていた。
             // 1行だけの空のコードブロックは、これまで通り標準の動作（前の段落へつながって消える）のまま。
@@ -4090,7 +4101,9 @@ namespace mde
                 a_args.Handled = true;
                 if (m_editor.CanUndo)
                 {
+                    m_headingCodeBlockEditor.PrepareSemanticUndo();
                     m_editor.Undo();
+                    m_headingCodeBlockEditor.RestoreSemanticTagsAfterUndo();
                 }
             }
             // Ctrl+Yは「やり直し」のショートカットとして扱う（ソースモードでは、TextBox標準の
@@ -4102,7 +4115,9 @@ namespace mde
                 a_args.Handled = true;
                 if (m_editor.CanRedo)
                 {
+                    m_headingCodeBlockEditor.PrepareSemanticRedo();
                     m_editor.Redo();
+                    m_headingCodeBlockEditor.RestoreSemanticTagsAfterRedo();
                 }
             }
             // Ctrl+左カーソルキーは「1つ前に開いていたファイルを開く」のショートカットとして扱う。
