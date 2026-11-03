@@ -199,6 +199,9 @@ namespace mde
         // ======================================================================
 
         private readonly OriginalTextTracker m_originalTextTracker;
+        /// <summary>見出し・太字・リンク等の意味情報（Tag）を、WPF の Undo／Redo に合わせて戻す役（RunAsProgrammaticChange・
+        /// EditorTextChanged から使う）。</summary>
+        private readonly SemanticUndoTracker m_semanticUndoTracker;
         private readonly LineEndingTracker m_lineEndingTracker;
         private readonly ImageManager m_imageManager;
         private readonly MarkdownConverter m_markdownConverter;
@@ -348,6 +351,7 @@ namespace mde
             }
 
             m_originalTextTracker = new OriginalTextTracker(m_editor);
+            m_semanticUndoTracker = new SemanticUndoTracker(m_editor);
             m_lineEndingTracker = new LineEndingTracker(PathsReferToSameFile);
             // GetMarkdownOffsetForBlockはクロージャで渡す：m_markdownConverterはこの後で構築
             // されるが、実際に呼ばれるのは構築完了後（見出しクリック時）なので問題ない。
@@ -366,7 +370,7 @@ namespace mde
                 () => m_uniformMarkerStyleFlg);
             m_listEditor = new ListEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange,
                 () => m_uniformMarkerStyleFlg);
-            m_headingCodeBlockEditor = new HeadingCodeBlockEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange);
+            m_headingCodeBlockEditor = new HeadingCodeBlockEditor(m_editor, m_originalTextTracker, RunAsProgrammaticChange, m_semanticUndoTracker);
             m_tableEditor = new TableEditor(
                 m_editor, m_originalTextTracker, MarkDirty, RunAsProgrammaticChange, () => m_isSourceModeFlg,
                 m_outlineManager.Refresh, InsertPlainTextWithLineBreaksForCodeBlock, () => m_correctColumnWidthsFlg,
@@ -433,6 +437,9 @@ namespace mde
             DataObject.AddPastingHandler(m_editor, EditorHandleInlineMarkdownPasting);
             // コピー・切り取りした文字から、リンクの URL の折り返し用の見えない文字を取り除く（EditorHandleCopying）
             DataObject.AddCopyingHandler(m_editor, EditorHandleCopying);
+            // EditorPreviewKeyDown が処理しなかったキー（WPF 標準の処理に任せるキー）だけを受け取る
+            // （EditorPreviewKeyDownUnhandled。XAML で付けた EditorPreviewKeyDown より後に呼ばれる）
+            m_editor.AddHandler(UIElement.PreviewKeyDownEvent, new KeyEventHandler(EditorPreviewKeyDownUnhandled), false);
 
             // タスクリストのチェックボックス（[ ]/[x]）のトグルを検知する。埋め込まれた各
             // CheckBoxに個別のハンドラを付けるのではなく、ToggleButton.CheckedEvent/
@@ -911,13 +918,18 @@ namespace mde
         // ======================================================================
 
         /// <summary>渡された処理を「プログラムによる変更」として実行する。実行中は
-        /// Editor_TextChangedの自動変換ロジック（*や#での自動変換など）が働かない。</summary>
+        /// Editor_TextChangedの自動変換ロジック（*や#での自動変換など）が働かない。
+        /// 処理全体を Undo 履歴の1操作にまとめ、見出し・太字・リンク等の意味情報（Tag）も Undo／Redo で戻るようにする
+        /// （SemanticUndoTracker.Run。まとめないと、1回の Ctrl+Z で書式だけが戻り、Tag の残った「見た目は普通の文字なのに
+        /// 保存すると太字になる」文字ができていた）。TextChanged は処理の最後（EndChange）にまとめて起きるため、
+        /// フラグは EndChange の後で戻す。入れ子で呼ばれた場合は、外側の状態に戻す。</summary>
         /// <param name="a_action">実行する処理。</param>
         private void RunAsProgrammaticChange(Action a_action)
         {
+            bool previousFlg = m_isProgrammaticChangeFlg;
             m_isProgrammaticChangeFlg = true;
-            try { a_action(); }
-            finally { m_isProgrammaticChangeFlg = false; }
+            try { m_semanticUndoTracker.Run(a_action); }
+            finally { m_isProgrammaticChangeFlg = previousFlg; }
         }
 
         /// <summary>渡された処理を「ハイライトの適用/解除のみ」として実行する。実行中は
@@ -1133,6 +1145,9 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorTextChanged(object a_sender, TextChangedEventArgs a_args)
         {
+            // Undo 履歴の深さを数え、見出し・太字等の意味情報（Tag）を Undo／Redo に合わせて戻す。入力中の自動変換（この中で
+            // さらに文書が変わる）より先に呼ぶ必要があるため、一番最初に呼ぶ（SemanticUndoTracker.NotifyTextChanged）
+            m_semanticUndoTracker?.NotifyTextChanged(a_args);
             // IME固まり調査用：各変更が追加/削除どちらか（挿入/削除文字数）も記録する。
             // ユーザーの明示的なキー入力ログと対応する変更が見当たらない場合、IME側や
             // Undoスタックなどアプリの外側から文書が書き換えられたことを疑う手がかりになる。
@@ -2342,6 +2357,21 @@ namespace mde
                 return "code";
             }
             return null;
+        }
+
+        /// <summary>
+        /// EditorPreviewKeyDown が処理しなかった Enter・BackSpace・Delete・Tab（WPF 標準の処理に任せるキー）で、
+        /// WPF 標準の処理の最中であることを記録する（ImeCaretMoveHelper.MarkWpfKeyCommandInProgress）。WPF は速く打たれて
+        /// まだ反映していない文字を、これらのキーの処理の始めにまとめて反映し、その TextChanged から自動変換が動くため。
+        /// </summary>
+        /// <param name="a_sender">イベントの発生元。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void EditorPreviewKeyDownUnhandled(object a_sender, KeyEventArgs a_args)
+        {
+            if (Key.Enter == a_args.Key || Key.Back == a_args.Key || Key.Delete == a_args.Key || Key.Tab == a_args.Key)
+            {
+                ImeCaretMoveHelper.MarkWpfKeyCommandInProgress(m_editor);
+            }
         }
 
         /// <summary>
@@ -4108,9 +4138,8 @@ namespace mde
                 a_args.Handled = true;
                 if (m_editor.CanUndo)
                 {
-                    m_headingCodeBlockEditor.PrepareSemanticUndo();
+                    // 見出し・引用・コードブロックの意味情報（Tag）も、HeadingCodeBlockEditor が TextChanged で戻す
                     m_editor.Undo();
-                    m_headingCodeBlockEditor.RestoreSemanticTagsAfterUndo();
                 }
             }
             // Ctrl+Yは「やり直し」のショートカットとして扱う（ソースモードでは、TextBox標準の
@@ -4122,9 +4151,7 @@ namespace mde
                 a_args.Handled = true;
                 if (m_editor.CanRedo)
                 {
-                    m_headingCodeBlockEditor.PrepareSemanticRedo();
                     m_editor.Redo();
-                    m_headingCodeBlockEditor.RestoreSemanticTagsAfterRedo();
                 }
             }
             // Ctrl+左カーソルキーは「1つ前に開いていたファイルを開く」のショートカットとして扱う。

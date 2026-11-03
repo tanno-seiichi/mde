@@ -27,201 +27,15 @@ namespace mde.editor
         private readonly RichTextBox m_editor;
         private readonly OriginalTextTracker m_originalTextTracker;
         private readonly Action<Action> m_runAsProgrammaticChange;
-        private readonly Stack<SemanticUndoEntry> m_semanticUndoEntries = new Stack<SemanticUndoEntry>();
-        private readonly Stack<SemanticUndoEntry> m_semanticRedoEntries = new Stack<SemanticUndoEntry>();
-        private SemanticUndoEntry m_pendingUndoEntry;
-        private SemanticUndoEntry m_pendingRedoEntry;
+        /// <summary>見出し・引用・コードブロックの意味情報（Tag）を、WPF の Undo／Redo に合わせて戻す役。</summary>
+        private readonly SemanticUndoTracker m_semanticUndoTracker;
 
-        private sealed class ParagraphTagSnapshot
-        {
-            public Paragraph Paragraph { get; set; }
-            public object Parent { get; set; }
-            public string Text { get; set; }
-            public object Tag { get; set; }
-            public double FontSize { get; set; }
-            public FontWeight FontWeight { get; set; }
-            public FontFamily FontFamily { get; set; }
-            public Brush Foreground { get; set; }
-            public Brush Background { get; set; }
-            public Brush BorderBrush { get; set; }
-            public Thickness BorderThickness { get; set; }
-            public Thickness Margin { get; set; }
-            public Thickness Padding { get; set; }
-            public double LineHeight { get; set; }
-        }
-
-        private sealed class SemanticUndoEntry
-        {
-            public List<ParagraphTagSnapshot> Before { get; set; }
-            public List<ParagraphTagSnapshot> After { get; set; }
-        }
-
-        /// <summary>複数の段落変更をRichTextBoxのUndo履歴で一操作にまとめる。</summary>
+        /// <summary>複数の段落変更を、RichTextBox の Undo 履歴の1操作にまとめ、Tag も Undo／Redo で戻るようにする
+        /// （SemanticUndoTracker.Run）。</summary>
+        /// <param name="a_action">文書を変更する処理。</param>
         private void RunInUndoUnit(Action a_action)
         {
-            List<ParagraphTagSnapshot> before = CaptureParagraphTags();
-            m_editor.BeginChange();
-            try
-            {
-                a_action();
-            }
-            finally
-            {
-                m_editor.EndChange();
-            }
-            m_semanticUndoEntries.Push(new SemanticUndoEntry
-            {
-                Before = before,
-                After = CaptureParagraphTags()
-            });
-            while (m_semanticUndoEntries.Count > 200)
-            {
-                // Stackの末尾（最も古い操作）を落とし、WPFのUndoLimitと同様に履歴を有限に保つ。
-                SemanticUndoEntry[] entries = m_semanticUndoEntries.ToArray();
-                m_semanticUndoEntries.Clear();
-                for (int i = Math.Min(199, entries.Length - 1); i >= 0; i--)
-                {
-                    m_semanticUndoEntries.Push(entries[i]);
-                }
-            }
-            m_semanticRedoEntries.Clear();
-        }
-
-        /// <summary>Undo前に、次のUndoが意味情報変更操作に当たるかを判定する。</summary>
-        public void PrepareSemanticUndo()
-        {
-            m_pendingUndoEntry = m_semanticUndoEntries.Count > 0 &&
-                MatchesParagraphSnapshot(m_semanticUndoEntries.Peek().After)
-                    ? m_semanticUndoEntries.Peek()
-                    : null;
-        }
-
-        /// <summary>直前のUndoが意味情報を変更する操作だった場合、そのTag状態をUndo後に復元する。</summary>
-        public void RestoreSemanticTagsAfterUndo()
-        {
-            SemanticUndoEntry entry = m_pendingUndoEntry;
-            m_pendingUndoEntry = null;
-            if (null == entry || m_semanticUndoEntries.Count == 0 ||
-                !ReferenceEquals(entry, m_semanticUndoEntries.Peek()))
-            {
-                return;
-            }
-            RestoreParagraphTags(entry.Before);
-            m_semanticUndoEntries.Pop();
-            m_semanticRedoEntries.Push(entry);
-        }
-
-        /// <summary>Redo前に、次のRedoが意味情報変更操作に当たるかを判定する。</summary>
-        public void PrepareSemanticRedo()
-        {
-            m_pendingRedoEntry = m_semanticRedoEntries.Count > 0 &&
-                MatchesParagraphSnapshot(m_semanticRedoEntries.Peek().Before)
-                    ? m_semanticRedoEntries.Peek()
-                    : null;
-        }
-
-        /// <summary>直前のRedoが意味情報を変更する操作だった場合、そのTag状態をRedo後に復元する。</summary>
-        public void RestoreSemanticTagsAfterRedo()
-        {
-            SemanticUndoEntry entry = m_pendingRedoEntry;
-            m_pendingRedoEntry = null;
-            if (null == entry || m_semanticRedoEntries.Count == 0 ||
-                !ReferenceEquals(entry, m_semanticRedoEntries.Peek()))
-            {
-                return;
-            }
-            RestoreParagraphTags(entry.After);
-            m_semanticRedoEntries.Pop();
-            m_semanticUndoEntries.Push(entry);
-        }
-
-        private List<ParagraphTagSnapshot> CaptureParagraphTags()
-        {
-            return EnumerateParagraphs(m_editor.Document.Blocks)
-                .Select(p => new ParagraphTagSnapshot
-                {
-                    Paragraph = p,
-                    Parent = p.Parent,
-                    Text = new TextRange(p.ContentStart, p.ContentEnd).Text,
-                    Tag = p.Tag,
-                    FontSize = p.FontSize,
-                    FontWeight = p.FontWeight,
-                    FontFamily = p.FontFamily,
-                    Foreground = p.Foreground,
-                    Background = p.Background,
-                    BorderBrush = p.BorderBrush,
-                    BorderThickness = p.BorderThickness,
-                    Margin = p.Margin,
-                    Padding = p.Padding,
-                    LineHeight = p.LineHeight
-                })
-                .ToList();
-        }
-
-        private bool MatchesParagraphSnapshot(List<ParagraphTagSnapshot> a_snapshot)
-        {
-            List<Paragraph> current = EnumerateParagraphs(m_editor.Document.Blocks).ToList();
-            if (current.Count != a_snapshot.Count)
-            {
-                return false;
-            }
-            for (int i = 0; i < current.Count; i++)
-            {
-                if (!ReferenceEquals(current[i], a_snapshot[i].Paragraph) ||
-                    !ReferenceEquals(current[i].Parent, a_snapshot[i].Parent) ||
-                    new TextRange(current[i].ContentStart, current[i].ContentEnd).Text != a_snapshot[i].Text ||
-                    current[i].FontSize != a_snapshot[i].FontSize ||
-                    current[i].FontWeight != a_snapshot[i].FontWeight ||
-                    !Equals(current[i].FontFamily, a_snapshot[i].FontFamily) ||
-                    !Equals(current[i].Foreground, a_snapshot[i].Foreground) ||
-                    !Equals(current[i].Background, a_snapshot[i].Background) ||
-                    !Equals(current[i].BorderBrush, a_snapshot[i].BorderBrush) ||
-                    current[i].BorderThickness != a_snapshot[i].BorderThickness ||
-                    current[i].Margin != a_snapshot[i].Margin ||
-                    current[i].Padding != a_snapshot[i].Padding ||
-                    current[i].LineHeight != a_snapshot[i].LineHeight)
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        private void RestoreParagraphTags(List<ParagraphTagSnapshot> a_snapshot)
-        {
-            foreach (ParagraphTagSnapshot item in a_snapshot)
-            {
-                item.Paragraph.Tag = item.Tag;
-            }
-        }
-
-        private static IEnumerable<Paragraph> EnumerateParagraphs(BlockCollection a_blocks)
-        {
-            foreach (Block block in a_blocks)
-            {
-                if (block is Paragraph paragraph)
-                {
-                    yield return paragraph;
-                }
-                else if (block is Section section)
-                {
-                    foreach (Paragraph nested in EnumerateParagraphs(section.Blocks)) yield return nested;
-                }
-                else if (block is List list)
-                {
-                    foreach (ListItem item in list.ListItems)
-                    {
-                        foreach (Paragraph nested in EnumerateParagraphs(item.Blocks)) yield return nested;
-                    }
-                }
-                else if (block is Table table)
-                {
-                    foreach (TableRowGroup group in table.RowGroups)
-                    foreach (TableRow row in group.Rows)
-                    foreach (TableCell cell in row.Cells)
-                    foreach (Paragraph nested in EnumerateParagraphs(cell.Blocks)) yield return nested;
-                }
-            }
+            m_semanticUndoTracker.Run(a_action);
         }
 
         /// <summary>
@@ -230,11 +44,14 @@ namespace mde.editor
         /// <param name="a_editor">編集対象のRichTextBox。</param>
         /// <param name="a_originalTextTracker">「元テキスト保持」の追跡役。</param>
         /// <param name="a_runAsProgrammaticChange">処理を「プログラムによる変更」として実行するdelegate。</param>
-        public HeadingCodeBlockEditor(RichTextBox a_editor, OriginalTextTracker a_originalTextTracker, Action<Action> a_runAsProgrammaticChange)
+        /// <param name="a_semanticUndoTracker">意味情報（Tag）を Undo／Redo に合わせて戻す役。</param>
+        public HeadingCodeBlockEditor(RichTextBox a_editor, OriginalTextTracker a_originalTextTracker, Action<Action> a_runAsProgrammaticChange,
+            SemanticUndoTracker a_semanticUndoTracker)
         {
             this.m_editor = a_editor;
             this.m_originalTextTracker = a_originalTextTracker;
             this.m_runAsProgrammaticChange = a_runAsProgrammaticChange;
+            this.m_semanticUndoTracker = a_semanticUndoTracker;
         }
 
         /// <summary>指定した位置から、実際の文字数で数えてa_charCount文字分だけ先へ進んだ位置を
@@ -294,8 +111,7 @@ namespace mde.editor
                 m_editor.CaretPosition = a_p.ContentStart;
             }));
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
         }
 
         /// <summary>段落を引用に変換する。マーカー文字列だけを先頭から取り除き、それ以降に
@@ -330,8 +146,7 @@ namespace mde.editor
                 m_editor.CaretPosition = a_p.ContentStart;
             }));
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
         }
 
         /// <summary>右クリックメニューから見出しレベルを変更する（本文に戻す場合も含む）。
@@ -363,8 +178,7 @@ namespace mde.editor
                     m_editor.CaretPosition = a_p.ContentStart;
                 }));
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
             DebugLogger.Log($"RevertEmptyHeadingOnBackspace: 完了 Tag={a_p.Tag ?? "null"}");
         }
 
@@ -382,8 +196,7 @@ namespace mde.editor
                 m_editor.CaretPosition = a_p.ContentStart;
             }));
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
             DebugLogger.Log($"RevertEmptyQuoteOnBackspace: 完了 Tag={a_p.Tag ?? "null"}");
         }
 
@@ -421,8 +234,7 @@ namespace mde.editor
                 m_editor.CaretPosition = joinPoint;
             }));
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
         }
 
         /// <summary>引用の先頭行（QuoteInfo）がBackSpaceで空になった時点で、直後に続きの行
@@ -455,8 +267,7 @@ namespace mde.editor
                 m_editor.CaretPosition = a_nextContinuationPara.ContentStart;
             }));
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
             DebugLogger.Log($"PromoteQuoteContinuationOnEmptyFirstLineBackspace: 完了 Tag={a_nextContinuationPara.Tag?.GetType().Name ?? "null"}");
         }
 
@@ -501,8 +312,7 @@ namespace mde.editor
                 m_editor.CaretPosition = a_p.ContentEnd;
             });
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
             DebugLogger.Log(
                 "DeleteLastCharInHeading: 完了 text=[" +
                 new TextRange(a_p.ContentStart, a_p.ContentEnd).Text.Replace(" ", "[SP]").Replace("\u00A0", "[NBSP]").Replace("\r", "[CR]").Replace("\n", "[LF]") + "]");
@@ -526,8 +336,7 @@ namespace mde.editor
                 m_editor.CaretPosition = a_p.ContentEnd;
             });
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
             DebugLogger.Log(
                 "DeleteLastCharInQuote: 完了 text=[" +
                 new TextRange(a_p.ContentStart, a_p.ContentEnd).Text.Replace(" ", "[SP]").Replace(" ", "[NBSP]").Replace("\r", "[CR]").Replace("\n", "[LF]") + "]");
@@ -578,8 +387,7 @@ namespace mde.editor
                 }
             });
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
         }
 
         /// <summary>
@@ -640,8 +448,7 @@ namespace mde.editor
                 DebugLogger.Log("InsertQuoteContinuationParagraph: 段落を分割し、新しい段落の先頭へキャレットを移動した");
             }));
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
         }
 
         /// <summary>段落をコードブロックに変換し、その後ろに新しい通常の段落を追加する。</summary>
@@ -662,8 +469,7 @@ namespace mde.editor
                 m_editor.CaretPosition = a_p.ContentStart;
             }));
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
         }
 
         /// <summary>段落を水平線（&lt;hr&gt;相当）に変換し、その後ろに新しい通常の段落を追加する
@@ -683,8 +489,7 @@ namespace mde.editor
                 m_editor.CaretPosition = trailingPara.ContentStart;
             }));
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
         }
 
         /// <summary>コードブロック内でキャレット位置の段落を2つに分割する、分割そのものだけを
@@ -748,8 +553,7 @@ namespace mde.editor
                 SplitCodeBlockParagraphAtCaret(a_para);
             });
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
             DebugLogger.Log("InsertCodeBlockContinuationParagraph: 完了");
         }
 
@@ -805,8 +609,7 @@ namespace mde.editor
                 m_editor.CaretPosition = joinPoint;
             }));
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
             DebugLogger.Log("MergeCodeBlockContinuationIntoPrevious: 完了");
         }
 
@@ -949,8 +752,7 @@ namespace mde.editor
                 DebugLogger.Log("InsertBrContinuationParagraph: 段落を分割し、新しい段落の先頭へキャレットを移動した");
             });
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
         }
 
         /// <summary>

@@ -548,9 +548,13 @@ namespace mde.manager
             }
             else
             {
+                // 拡張子が画像の形式（.png 等）の時だけそのまま使う。バッジの文字に「.」が入る、よくある
+                // バッジ（/badge/version-1.0.2-blue 等）は、最後の「.」以降を拡張子とみなさずに .png を付ける
+                // （以前は「.」があるだけでそのまま SVG を読み込み、表示されなかった）。
                 int lastSlash = path.LastIndexOf('/');
                 string lastSegment = path.Substring(lastSlash + 1);
-                if (lastSegment.Contains('.'))
+                string extension = Path.GetExtension(lastSegment).ToLowerInvariant();
+                if (".png" == extension || ".jpg" == extension || ".jpeg" == extension || ".gif" == extension)
                 {
                     return a_uri;
                 }

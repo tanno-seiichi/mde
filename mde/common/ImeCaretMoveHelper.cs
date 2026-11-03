@@ -24,6 +24,54 @@ namespace mde.common
     public static class ImeCaretMoveHelper
     {
         /// <summary>
+        /// WPF 標準のキー操作（mde が処理しなかった Enter・BackSpace 等）を処理している最中か。WPF は、速く打たれて
+        /// まだ文書に反映していない文字を、Enter 等の処理の始めにまとめて反映する（TextEditorTyping._FlushPending
+        /// InputItems）。その TextChanged から自動変換（「- 」→箇条書き等）が動き、その場でフォーカスを当て直すと、
+        /// IME（TSF）の文書ロックの最中にもう一度ロックを求めることになり、StackOverflowException で落ちた
+        /// （実機で確認。RefocusEditor）。
+        /// </summary>
+        private static bool s_wpfKeyCommandInProgressFlg;
+
+        /// <summary>
+        /// WPF 標準のキー操作の処理が始まることを記録する（MainWindow が、自分で処理しなかった Enter・BackSpace・
+        /// Delete・Tab の PreviewKeyDown で呼ぶ）。キー入力の処理が一通り終わった後（Background）に記録を消す。
+        /// </summary>
+        /// <param name="a_editor">対象のRichTextBox。</param>
+        public static void MarkWpfKeyCommandInProgress(RichTextBox a_editor)
+        {
+            if (s_wpfKeyCommandInProgressFlg)
+            {
+                return;
+            }
+            s_wpfKeyCommandInProgressFlg = true;
+            a_editor.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() => s_wpfKeyCommandInProgressFlg = false));
+        }
+
+        /// <summary>
+        /// 文書を書き換えてキャレットを動かした後に、フォーカスを当て直して IME の関連付けを作り直す
+        /// （Keyboard.ClearFocus()→Focus()。IME の変換候補が固まる不具合の対策）。WPF 標準のキー操作の処理の
+        /// 最中（MarkWpfKeyCommandInProgress）は、その場で当て直すと落ちることがあるため、処理が終わった直後
+        /// （Input）に当て直す。
+        /// </summary>
+        /// <param name="a_editor">対象のRichTextBox。</param>
+        public static void RefocusEditor(RichTextBox a_editor)
+        {
+            if (s_wpfKeyCommandInProgressFlg)
+            {
+                DebugLogger.Log("RefocusEditor: WPF標準のキー操作の処理中のため、フォーカスの当て直しを遅らせる");
+                a_editor.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
+                {
+                    Keyboard.ClearFocus();
+                    a_editor.Focus();
+                }));
+                return;
+            }
+            Keyboard.ClearFocus();
+            a_editor.Focus();
+        }
+
+        /// <summary>
         /// 指定したキャレット移動処理を、Dispatcher.BeginInvokeで1テンポ（以上）遅らせてから
         /// 実行する。実行の直前にUpdateLayout・WPF内部状態のリセット（TryClearSuggestedX）・
         /// フォーカスの当て直し（ClearFocus→Focus）もあわせて行う。

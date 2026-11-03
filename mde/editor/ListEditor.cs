@@ -347,8 +347,7 @@ namespace mde.editor
         private void FinishCaretMoveToNewParagraph()
         {
             m_editor.UpdateLayout();
-            Keyboard.ClearFocus();
-            m_editor.Focus();
+            ImeCaretMoveHelper.RefocusEditor(m_editor);
         }
 
         /// <summary>リスト項目自身のテキストを取得する（入れ子のサブリストは含まない）。
@@ -624,7 +623,8 @@ namespace mde.editor
             // 理由に本文分割をスキップするため、空項目がサブリスト全体の後ろにできてしまう。
             // Typoraと同じく本文とサブリストをそのまま保ち、空項目だけを前に挿入する。
             Paragraph caretPara = m_editor.CaretPosition?.Paragraph;
-            if (null != caretPara && caretPara.Parent == a_li &&
+            // 項目の2つ目以降の段落（続きの行）の先頭では、これまで通りその位置で分ける。
+            if (null != caretPara && caretPara.Parent == a_li && ReferenceEquals(caretPara, a_li.Blocks.FirstBlock) &&
                 GetOwnListItemText(a_li).Length > 0 &&
                 IsCaretAtParagraphStart(caretPara, m_editor.CaretPosition))
             {
