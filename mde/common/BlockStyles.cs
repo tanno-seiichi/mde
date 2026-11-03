@@ -82,9 +82,8 @@ namespace mde.common
         private const double HEADER_VERTICAL_BORDER_THICKNESS = 1.75;
         // ハイライト（==text==）の背景色。
         private static readonly Brush m_highlightBackground = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0x8A));
-        // 引用（&gt; ）の背景色・文字色。コードブロックの背景色（暖色系のベージュ）とは
-        // 区別できるよう、無彩色のごく薄いグレーにしている。
-        private static readonly Brush m_quoteBackground = new SolidColorBrush(Color.FromRgb(0xF2, 0xF2, 0xF2));
+        // GitHubスタイルの引用（&gt; ）は背景を付けず、左の縦線と文字色で本文と区別する。
+        private static readonly Brush m_quoteBackground = Brushes.Transparent;
         // 引用の文字色（本文より少し薄いグレー。引用らしい「落ち着いた」印象にするため）。
         private static readonly Brush m_quoteForeground = new SolidColorBrush(Color.FromRgb(0x59, 0x59, 0x59));
 
