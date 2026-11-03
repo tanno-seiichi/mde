@@ -485,7 +485,7 @@ namespace mde.manager
                      "https" == absoluteUri.Scheme ||
                      "data" == absoluteUri.Scheme))
                 {
-                    uri = absoluteUri;
+                    uri = GetRenderableImageUri(absoluteUri);
                 }
                 else if (Path.IsPathRooted(a_src) && File.Exists(a_src))
                 {
@@ -527,6 +527,41 @@ namespace mde.manager
             {
                 // 解決できなければ何もしない（その場所は空白のまま表示される）。
             }
+        }
+
+        /// <summary>
+        /// WPFのBitmapImageはSVGを表示できないため、Shields.ioのSVGバッジと拡張子なしのバッジは
+        /// 同サービスのPNGラスターバッジへ切り替えて読み込む。Markdownに保存する元URL
+        /// （ImageInfo.OriginalSrc）は変更しない。
+        /// </summary>
+        private static Uri GetRenderableImageUri(Uri a_uri)
+        {
+            if (!"img.shields.io".Equals(a_uri.Host, StringComparison.OrdinalIgnoreCase))
+            {
+                return a_uri;
+            }
+
+            string path = a_uri.AbsolutePath;
+            if (path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+            {
+                path = path.Substring(0, path.Length - ".svg".Length) + ".png";
+            }
+            else
+            {
+                int lastSlash = path.LastIndexOf('/');
+                string lastSegment = path.Substring(lastSlash + 1);
+                if (lastSegment.Contains('.'))
+                {
+                    return a_uri;
+                }
+                path += ".png";
+            }
+
+            var builder = new UriBuilder(a_uri)
+            {
+                Path = path
+            };
+            return builder.Uri;
         }
 
         /// <summary>

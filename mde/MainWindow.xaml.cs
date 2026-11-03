@@ -2974,9 +2974,16 @@ namespace mde
                 return;
             }
 
+            Image img = FindVisualAncestorOrSelf<Image>(hit?.VisualHit);
+            if (img?.Tag is ImageInfo imageInfo && !string.IsNullOrWhiteSpace(imageInfo.LinkUrl) &&
+                m_inlineStyleEditor.HandleImageLinkClick(imageInfo.LinkUrl))
+            {
+                a_args.Handled = true;
+                return;
+            }
+
             if (a_args.ClickCount >= 2)
             {
-                Image img = FindVisualAncestorOrSelf<Image>(hit?.VisualHit);
                 if (null != img)
                 {
                     a_args.Handled = true;

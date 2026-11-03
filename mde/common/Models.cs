@@ -33,6 +33,12 @@ namespace mde.common
 
         /// <summary>Markdown形式の場合の、![alt](src "title")のタイトル部分（省略時はnull）。</summary>
         public string Title { get; set; }
+
+        /// <summary>Markdown形式で画像を囲んでいるリンクのURL。通常の画像ではnull。</summary>
+        public string LinkUrl { get; set; }
+
+        /// <summary>画像リンクのタイトル属性（省略時はnull）。</summary>
+        public string LinkTitle { get; set; }
     }
 
     /// <summary>

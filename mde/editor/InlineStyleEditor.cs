@@ -676,6 +676,21 @@ namespace mde.editor
             }
         }
 
+        /// <summary>画像リンクをクリックした時、通常のリンクと同じCtrl要件で開く。</summary>
+        /// <param name="a_url">画像を囲むリンクのURL。</param>
+        /// <returns>設定を満たしてリンクを開いた場合はtrue。</returns>
+        public bool HandleImageLinkClick(string a_url)
+        {
+            bool requireCtrlFlg = m_requireCtrlForLinkClick?.Invoke() ?? true;
+            if (requireCtrlFlg && Keyboard.Modifiers != ModifierKeys.Control)
+            {
+                return false;
+            }
+
+            NavigateLink(a_url);
+            return true;
+        }
+
         // ======================================================================
         //  入力中のリアルタイム変換
         // ======================================================================

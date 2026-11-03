@@ -47,6 +47,7 @@ namespace mde.common
         /// 文中の画像（HTML/Markdown）、`コード`、**太字**、~~取り消し線~~、&lt;u&gt;下線&lt;/u&gt;、
         /// ==ハイライト==、[リンク](a_url)、&lt;https://...&gt; 自動リンク、
         /// &lt;email@example.com&gt; メールアドレス自動リンク を検出する正規表現。
+        /// 画像を囲むリンクは名前付きグループ linkedImage で先に検出し、既存の数値グループ番号を維持する。
         /// CommonMark/GFMには下線の標準的な記法がないため、下線はHTMLの&lt;u&gt;タグをそのまま
         /// 埋め込む方式にしている（既存の&lt;a id="..."&gt;アンカー・&lt;url&gt;自動リンクと同じ
         /// 「HTMLタグをそのまま埋め込む」という前例に倣った）。
@@ -59,6 +60,7 @@ namespace mde.common
         /// 24,25:文中にそのまま書かれたメールアドレス（BARE_EMAIL_PATTERN）
         /// </summary>
         private static readonly Regex m_inlineContentRegex = new Regex(
+            "(?<linkedImage>\\[(?<linkedImageImage>!\\[(?<linkedImageAlt>[^\\]]*)\\]\\((?<linkedImageSrc>(?:[^()]|\\([^()]*\\))+)\\))\\]\\((?<linkedImageHref>(?:[^()]|\\([^()]*\\))+)\\))|" +
             "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|((?<!`)(?<bt>`+)(?!`)([\\s\\S]+?)(?<!`)\\k<bt>(?!`))|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|(<u>([^<]+)</u>)|(==([^=]+)==)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)|(" +
             BARE_EMAIL_PREV_PATTERN + "(" + BARE_EMAIL_PATTERN + ")" + BARE_EMAIL_NEXT_PATTERN + ")" +
             "|" + ITALIC_PATTERN,
@@ -1036,7 +1038,20 @@ namespace mde.common
                 }
                 else if (inline is InlineUIContainer iuc && iuc.Child is Image img)
                 {
-                    a_sb.Append(ImageToMarkdownString(img));
+                    string imageMarkdown = ImageToMarkdownString(img);
+                    if (img.Tag is ImageInfo imageInfo && !string.IsNullOrEmpty(imageInfo.LinkUrl))
+                    {
+                        a_sb.Append('[').Append(imageMarkdown).Append("](").Append(imageInfo.LinkUrl);
+                        if (!string.IsNullOrEmpty(imageInfo.LinkTitle))
+                        {
+                            a_sb.Append(" \"").Append(imageInfo.LinkTitle).Append('"');
+                        }
+                        a_sb.Append(')');
+                    }
+                    else
+                    {
+                        a_sb.Append(imageMarkdown);
+                    }
                 }
                 else if (inline is InlineUIContainer cbIuc && cbIuc.Child is CheckBox taskCheckBox)
                 {
@@ -2389,6 +2404,23 @@ namespace mde.common
             return sb.ToString();
         }
 
+        /// <summary>画像を内包するMarkdownリンクを、表示用画像とリンク情報を持つImageへ変換する。</summary>
+        private Image BuildLinkedImageFromMarkdown(Match a_match)
+        {
+            SplitUrlAndTitle(a_match.Groups["linkedImageSrc"].Value, out string imageSrcRaw, out string imageTitleRaw);
+            SplitUrlAndTitle(a_match.Groups["linkedImageHref"].Value, out string linkUrlRaw, out string linkTitleRaw);
+            var image = m_imageManager.BuildImageFromMarkdown(
+                RestorePlaceholders(a_match.Groups["linkedImageAlt"].Value),
+                RestorePlaceholders(imageSrcRaw),
+                null == imageTitleRaw ? null : RestorePlaceholders(imageTitleRaw));
+            if (image.Tag is ImageInfo info)
+            {
+                info.LinkUrl = RestorePlaceholders(linkUrlRaw);
+                info.LinkTitle = null == linkTitleRaw ? null : RestorePlaceholders(linkTitleRaw);
+            }
+            return image;
+        }
+
         public void AppendInlineMarkdownToParagraph(Paragraph a_p, string a_text, bool a_appendFlg)
         {
             if (!a_appendFlg)
@@ -2404,7 +2436,11 @@ namespace mde.common
                     AppendPlainTextWithLineBreaks(a_p, a_text.Substring(lastIndex, m.Index - lastIndex));
                 }
 
-                if (m.Groups[1].Success)
+                if (m.Groups["linkedImage"].Success)
+                {
+                    a_p.Inlines.Add(new InlineUIContainer(BuildLinkedImageFromMarkdown(m)));
+                }
+                else if (m.Groups[1].Success)
                 {
                     a_p.Inlines.Add(new InlineUIContainer(m_imageManager.BuildImageFromHtmlTag(m.Groups[1].Value)));
                 }
@@ -2658,7 +2694,13 @@ namespace mde.common
                     cursor = InsertPlainTextWithLineBreaksAt(cursor, a_text.Substring(lastIndex, m.Index - lastIndex));
                 }
 
-                if (m.Groups[1].Success)
+                if (m.Groups["linkedImage"].Success)
+                {
+                    var linkedImage = new InlineUIContainer(BuildLinkedImageFromMarkdown(m), cursor);
+                    BlockStyles.ApplyImageParagraphLineHeightFor(linkedImage);
+                    cursor = linkedImage.ElementEnd;
+                }
+                else if (m.Groups[1].Success)
                 {
                     var img = new InlineUIContainer(m_imageManager.BuildImageFromHtmlTag(m.Groups[1].Value), cursor);
                     BlockStyles.ApplyImageParagraphLineHeightFor(img);
