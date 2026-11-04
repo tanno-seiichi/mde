@@ -434,6 +434,13 @@
                                 <MenuItem Header="ページトップに戻る" Style="{StaticResource CtxMenuItem}" Click="ScrollToPageTopClick"/>
                                 <MenuItem x:Name="m_toggleModeMenuItem" Header="ソースモードに切り替え"
                                           Style="{StaticResource CtxMenuItem}" Click="ToggleModeBtnClick"/>
+                                <!-- フォルダビュー・アウトラインビューの表示・非表示（メニュー「表示」と同じ。✓ は開く時に
+                                     EditorContextMenuOpening で今の状態に合わせる） -->
+                                <Separator/>
+                                <MenuItem x:Name="m_ctxFolderPaneMenuItem" Header="フォルダを表示"
+                                          Style="{StaticResource CtxMenuItem}" Click="ToggleFolderPaneBtnClick"/>
+                                <MenuItem x:Name="m_ctxOutlinePaneMenuItem" Header="アウトラインを表示"
+                                          Style="{StaticResource CtxMenuItem}" Click="ToggleOutlinePaneBtnClick"/>
                             </ContextMenu>
                         </RichTextBox.ContextMenu>
                         <FlowDocument x:Name="m_editorDocument" FontFamily="{DynamicResource EditorFontFamily}"
@@ -453,11 +460,15 @@
                              TextWrapping="Wrap"
                              VerticalScrollBarVisibility="Auto"
                              TextChanged="SourceEditorTextChanged"
+                             ContextMenuOpening="SourceEditorContextMenuOpening"
                              PreviewMouseWheel="SourceEditorPreviewMouseWheel">
                         <TextBox.ContextMenu>
                             <ContextMenu x:Name="m_sourceEditorContextMenu">
                                 <MenuItem Header="ページトップに戻る" Click="ScrollToPageTopClick"/>
                                 <MenuItem Header="Markdownモードに切り替え" Click="ToggleModeBtnClick"/>
+                                <Separator/>
+                                <MenuItem x:Name="m_sourceCtxFolderPaneMenuItem" Header="フォルダを表示" Click="ToggleFolderPaneBtnClick"/>
+                                <MenuItem x:Name="m_sourceCtxOutlinePaneMenuItem" Header="アウトラインを表示" Click="ToggleOutlinePaneBtnClick"/>
                             </ContextMenu>
                         </TextBox.ContextMenu>
                     </TextBox>

@@ -4,7 +4,7 @@
         Title="検索と置換"
         Width="550"
         SizeToContent="Height"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="Manual"
         ResizeMode="CanResizeWithGrip"
         FontFamily="Yu Gothic UI, Meiryo UI, Segoe UI"
         FontSize="12"

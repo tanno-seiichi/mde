@@ -455,6 +455,151 @@ namespace mde.findreplace
             m_statusText.Text = "見つかりませんでした。";
         }
 
+        // ===== 開く位置 =====
+
+        /// <summary>ウィンドウを、メインのウィンドウ（Owner）の周りの空いている所に開く（FindReplaceLauncher.Open から
+        /// 呼ばれる）。開く位置の決め方は ComputeVisiblePosition 参照。</summary>
+        public void ShowBesideOwner()
+        {
+            PlaceBesideOwner();
+            Show();
+            AdjustToVisibleFrame();
+        }
+
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr a_window, out RECT a_rect);
+
+        [DllImport("dwmapi.dll")]
+        private static extern int DwmGetWindowAttribute(IntPtr a_window, int a_attribute, out RECT a_rect, int a_size);
+
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetricsForDpi(int a_index, uint a_dpi);
+
+        private const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+        private const int SM_CXSIZEFRAME = 32;
+        private const int SM_CXPADDEDBORDER = 92;
+        /// <summary>メインのウィンドウの上端・（内側に開く時の）右端からの間隔（WPF の単位）。</summary>
+        private const double INSIDE_MARGIN = 12;
+        /// <summary>外側に開く時の間隔（WPF の単位）：メインのウィンドウとの間隔と、画面の端との間隔。</summary>
+        private const double OUTSIDE_GAP = 4;
+
+        /// <summary>開く位置を決めるための、メインのウィンドウの見えている枠・画面（タスクバーを除く）の範囲・間隔
+        /// （すべて物理的な画素）。PlaceBesideOwner で決め、開いた後に AdjustToVisibleFrame で、実際の幅で位置を
+        /// 決め直す。null：決めていない（メインのウィンドウの情報が取れなかった）。</summary>
+        private (RECT Owner, RECT Work, double Margin, double Gap)? m_placement;
+
+        /// <summary>
+        /// 開く位置（見えている枠の左上。物理的な画素）。次の順に、収まる所に開く。上端は、どれもメインのウィンドウの上端から少し下。
+        /// 1. メインのウィンドウの右の外側。
+        /// 2. メインのウィンドウの左の外側。
+        /// 3. どちらにも収まらない時は、メインのウィンドウの右上の内側（重ねる）。
+        /// 外側に開く時は、メインのウィンドウ・画面の端との間に OUTSIDE_GAP を空けて収まることを条件にする。
+        /// </summary>
+        /// <param name="a_width">このウィンドウの見えている幅。</param>
+        private (double Left, double Top) ComputeVisiblePosition(double a_width)
+        {
+            var (owner, work, margin, gap) = m_placement.Value;
+            // 上端：メインのウィンドウの上の端が少し見える位置
+            double top = Math.Max(owner.Top, work.Top) + margin;
+            // 1. 右の外側
+            if (owner.Right + gap + a_width + gap <= work.Right)
+            {
+                return (owner.Right + gap, top);
+            }
+            // 2. 左の外側
+            if (work.Left + gap <= owner.Left - gap - a_width)
+            {
+                return (owner.Left - gap - a_width, top);
+            }
+            // 3. 右上の内側（画面からはみ出さないように）
+            double insideLeft = Math.Min(owner.Right, work.Right) - margin - a_width;
+            return (Math.Max(insideLeft, work.Left), top);
+        }
+
+        /// <summary>ウィンドウの見えている枠（Windows 10・11 の、見えない縁を除いた枠。物理的な画素）と、ウィンドウの大きさ。</summary>
+        private static bool GetFrames(IntPtr a_handle, out RECT a_window, out RECT a_visible)
+        {
+            a_visible = default;
+            if (!GetWindowRect(a_handle, out a_window))
+            {
+                return false;
+            }
+            if (0 != DwmGetWindowAttribute(a_handle, DWMWA_EXTENDED_FRAME_BOUNDS, out a_visible, Marshal.SizeOf<RECT>()))
+            {
+                a_visible = a_window;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// 開く前に、仮の位置に置く（ComputeVisiblePosition）。開く前は、このウィンドウの見えない縁の幅が分からないので、
+        /// Windows の既定の幅で仮に置く（開いた後に AdjustToVisibleFrame で、実際の幅で合わせ直す）。
+        /// </summary>
+        private void PlaceBesideOwner()
+        {
+            m_placement = null;
+            if (!(Owner is Window owner))
+            {
+                return;
+            }
+            IntPtr ownerHandle = new WindowInteropHelper(owner).Handle;
+            PresentationSource source = PresentationSource.FromVisual(owner);
+            var monitorInfo = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (IntPtr.Zero == ownerHandle || null == source?.CompositionTarget ||
+                !GetMonitorInfo(MonitorFromWindow(ownerHandle, MONITOR_DEFAULTTONEAREST), ref monitorInfo) ||
+                !GetFrames(ownerHandle, out _, out RECT visible))
+            {
+                return;
+            }
+            // 画面の位置は、すべて物理的な画素で計算する
+            Matrix toDevice = source.CompositionTarget.TransformToDevice;
+            double scale = toDevice.M11;
+            m_placement = (visible, monitorInfo.rcWork, INSIDE_MARGIN * scale, OUTSIDE_GAP * scale);
+            // このウィンドウの見えない縁の幅（仮。Windows の既定の幅）と、見えている幅
+            uint dpi = (uint)Math.Round(96 * scale);
+            double border = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+            double width = Width * scale - 2 * border;
+            var (left, top) = ComputeVisiblePosition(width);
+            // 仮の位置（見えない縁は左右・下だけ。上には無い）
+            Point position = source.CompositionTarget.TransformFromDevice.Transform(new Point(left - border, top));
+            Left = position.X;
+            Top = position.Y;
+        }
+
+        /// <summary>開いた後、このウィンドウの実際の見えない縁の幅で、見えている枠が決めた位置に来るよう合わせ直す。
+        /// また、下端が画面（タスクバーを除く）からはみ出していたら、上へずらす。</summary>
+        private void AdjustToVisibleFrame()
+        {
+            IntPtr handle = new WindowInteropHelper(this).Handle;
+            PresentationSource source = PresentationSource.FromVisual(this);
+            var monitorInfo = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (IntPtr.Zero == handle || null == source?.CompositionTarget ||
+                !GetMonitorInfo(MonitorFromWindow(handle, MONITOR_DEFAULTTONEAREST), ref monitorInfo) ||
+                !GetFrames(handle, out RECT window, out RECT visible))
+            {
+                return;
+            }
+            double left = window.Left;
+            double top = window.Top;
+            if (m_placement.HasValue)
+            {
+                // 実際の見えている幅で、位置を決め直す
+                var (visibleLeft, visibleTop) = ComputeVisiblePosition(visible.Right - visible.Left);
+                left = visibleLeft - (visible.Left - window.Left);
+                top = visibleTop - (visible.Top - window.Top);
+            }
+            // 下端がはみ出す分だけ上へ（見えている枠の上端が画面の上端より上にならない範囲で）
+            double overflow = top + (visible.Bottom - window.Top) - monitorInfo.rcWork.Bottom;
+            if (0 < overflow)
+            {
+                double visibleTop = top + (visible.Top - window.Top);
+                top -= Math.Min(overflow, Math.Max(0, visibleTop - monitorInfo.rcWork.Top));
+            }
+            Point position = source.CompositionTarget.TransformFromDevice.Transform(new Point(left, top));
+            Left = position.X;
+            Top = position.Y;
+        }
+
         private const int MONITOR_DEFAULTTONEAREST = 2;
 
         [StructLayout(LayoutKind.Sequential)]

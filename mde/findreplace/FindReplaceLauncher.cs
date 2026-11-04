@@ -54,7 +54,8 @@ namespace mde.findreplace
             m_openFindReplaceWindow = m_createFindReplaceWindow();
             m_openFindReplaceWindow.SetSearchText(a_selectedText);
             m_openFindReplaceWindow.Closed += (s, e) => m_openFindReplaceWindow = null;
-            m_openFindReplaceWindow.Show();
+            // メインのウィンドウの周りの空いている所（右の外側→左の外側→右上の内側の順）に開く
+            m_openFindReplaceWindow.ShowBesideOwner();
         }
     }
 }

@@ -2823,6 +2823,8 @@ namespace mde
             m_textStyleMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
             m_linkMenuItem.Visibility = null != m_inlineStyleEditor.ContextLinkRun ? Visibility.Visible : Visibility.Collapsed;
             m_toggleModeMenuItem.Header = m_isSourceModeFlg ? "Markdownモードに切り替え" : "ソースモードに切り替え";
+            m_ctxFolderPaneMenuItem.IsChecked = m_folderPaneVisibleFlg;
+            m_ctxOutlinePaneMenuItem.IsChecked = m_outlinePaneVisibleFlg;
             UpdateHeadingMenuState();
         }
 
@@ -2843,12 +2845,13 @@ namespace mde
             }
         }
 
-        /// <summary>ソースモードの右クリックメニュー。カット/コピー/貼り付けのみで、独自の
-        /// 項目は追加しない。</summary>
+        /// <summary>ソースモードの右クリックメニューを開く時：フォルダ・アウトラインの表示の ✓ を、今の状態に合わせる。</summary>
         /// <param name="a_sender">イベントの発生元。</param>
         /// <param name="a_args">イベントの引数。</param>
         private void SourceEditorContextMenuOpening(object a_sender, ContextMenuEventArgs a_args)
         {
+            m_sourceCtxFolderPaneMenuItem.IsChecked = m_folderPaneVisibleFlg;
+            m_sourceCtxOutlinePaneMenuItem.IsChecked = m_outlinePaneVisibleFlg;
         }
 
         // ---- 見出し ----
