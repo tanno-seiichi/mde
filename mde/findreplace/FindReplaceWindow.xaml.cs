@@ -482,15 +482,19 @@ namespace mde.findreplace
         private const double INSIDE_MARGIN = 12;
         /// <summary>外側に開く時の間隔（WPF の単位）：メインのウィンドウとの間隔と、画面の端との間隔。</summary>
         private const double OUTSIDE_GAP = 4;
+        /// <summary>右の余白が足りない時に、画面の右端に寄せて、メインのウィンドウの右上に重ねてよい幅の最大
+        /// （WPF の単位。メインのウィンドウの最大化・閉じるボタンが隠れるくらい）。これより多く重なる時は、左の外側か内側に開く。</summary>
+        private const double MAX_RIGHT_OVERLAP = 130;
 
         /// <summary>開く位置を決めるための、メインのウィンドウの見えている枠・画面（タスクバーを除く）の範囲・間隔
         /// （すべて物理的な画素）。PlaceBesideOwner で決め、開いた後に AdjustToVisibleFrame で、実際の幅で位置を
         /// 決め直す。null：決めていない（メインのウィンドウの情報が取れなかった）。</summary>
-        private (RECT Owner, RECT Work, double Margin, double Gap)? m_placement;
+        private (RECT Owner, RECT Work, double Margin, double Gap, double MaxOverlap)? m_placement;
 
         /// <summary>
         /// 開く位置（見えている枠の左上。物理的な画素）。次の順に、収まる所に開く。上端は、どれもメインのウィンドウの上端から少し下。
-        /// 1. メインのウィンドウの右の外側。
+        /// 1. メインのウィンドウの右の外側。右の余白が足りない時は、画面の右端に寄せて、メインのウィンドウの右上に
+        ///    MAX_RIGHT_OVERLAP まで重ねる。
         /// 2. メインのウィンドウの左の外側。
         /// 3. どちらにも収まらない時は、メインのウィンドウの右上の内側（重ねる）。
         /// 外側に開く時は、メインのウィンドウ・画面の端との間に OUTSIDE_GAP を空けて収まることを条件にする。
@@ -498,13 +502,14 @@ namespace mde.findreplace
         /// <param name="a_width">このウィンドウの見えている幅。</param>
         private (double Left, double Top) ComputeVisiblePosition(double a_width)
         {
-            var (owner, work, margin, gap) = m_placement.Value;
+            var (owner, work, margin, gap, maxOverlap) = m_placement.Value;
             // 上端：メインのウィンドウの上の端が少し見える位置
             double top = Math.Max(owner.Top, work.Top) + margin;
-            // 1. 右の外側
-            if (owner.Right + gap + a_width + gap <= work.Right)
+            // 1. 右の外側（余白が足りなければ、画面の右端に寄せて、メインのウィンドウに少しだけ重ねる）
+            double rightLeft = Math.Min(owner.Right + gap, work.Right - gap - a_width);
+            if (owner.Right - rightLeft <= maxOverlap && work.Left <= rightLeft)
             {
-                return (owner.Right + gap, top);
+                return (rightLeft, top);
             }
             // 2. 左の外側
             if (work.Left + gap <= owner.Left - gap - a_width)
@@ -554,7 +559,7 @@ namespace mde.findreplace
             // 画面の位置は、すべて物理的な画素で計算する
             Matrix toDevice = source.CompositionTarget.TransformToDevice;
             double scale = toDevice.M11;
-            m_placement = (visible, monitorInfo.rcWork, INSIDE_MARGIN * scale, OUTSIDE_GAP * scale);
+            m_placement = (visible, monitorInfo.rcWork, INSIDE_MARGIN * scale, OUTSIDE_GAP * scale, MAX_RIGHT_OVERLAP * scale);
             // このウィンドウの見えない縁の幅（仮。Windows の既定の幅）と、見えている幅
             uint dpi = (uint)Math.Round(96 * scale);
             double border = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
