@@ -1056,6 +1056,23 @@ namespace mde.common
         /// （アプリ起動前後の一時的な文書など）は安全側として1.0にフォールバックする。</summary>
         private static double GetMeasurementPixelsPerDip()
         {
+            // 列幅の計算の途中（MeasureScope の中）では、1回目に取得した値を使い回す（同じ計算の中で値は変わらないため。
+            // 段落ごとに取得すると、大きな表では取得の時間が積み重なる）
+            if (0 < s_measureScopeDepth && !double.IsNaN(s_scopePixelsPerDip))
+            {
+                return s_scopePixelsPerDip;
+            }
+            double pixelsPerDip = GetMeasurementPixelsPerDipCore();
+            if (0 < s_measureScopeDepth)
+            {
+                s_scopePixelsPerDip = pixelsPerDip;
+            }
+            return pixelsPerDip;
+        }
+
+        /// <summary>GetMeasurementPixelsPerDip の本体（メインウィンドウから実際の PixelsPerDip を取得する）。</summary>
+        private static double GetMeasurementPixelsPerDipCore()
+        {
             Window mainWindow = Application.Current?.MainWindow;
             if (null == mainWindow)
             {
@@ -1123,9 +1140,9 @@ namespace mde.common
         }
 
         /// <summary>
-        /// 1つのセルの内容を、実際に使われているRunごとのフォント（太字・インラインコード等の
+        /// 1つの段落（表のセルの中の段落）の内容を、実際に使われているRunごとのフォント（太字・インラインコード等の
         /// 装飾で明示的に指定されているフォントファミリー・サイズ・太さ）を反映して測定し、
-        /// 幅（px）を返す。
+        /// 幅（px）を測るための材料（連結した文字列と、Runごとのフォントの区間）を集める（測定は MeasureParagraphWidthPx）。
         /// 以前は、Runごとに別々のFormattedTextで個別に幅を測定し、それを単純に足し算して
         /// いた。しかしWPFが実際に1行を描画する際は、複数のRunを1つながりの文字列として
         /// レイアウト（シェーピング）するため、文字どうしの間隔（特に日本語と半角英数字が
@@ -1145,118 +1162,326 @@ namespace mde.common
         /// 無ければセルの既定を使う（ローカル値の有無で判定するのは、まだFlowDocumentに
         /// 組み込まれる前のRunでも、親子関係に左右されず同じ結果を得るため）。
         /// </summary>
-        /// <param name="a_cell">対象のセル。</param>
-        private static double MeasureCellContentWidthPx(TableCell a_cell)
+        /// <param name="a_para">対象の段落。</param>
+        /// <param name="a_defaultWeight">セルの既定の太さ（セルの FontWeight）。</param>
+        /// <returns>測定の材料。文字が無い段落（画像だけ等）は null（幅 0 として扱う）。</returns>
+        private static ParagraphMeasureInput BuildParagraphMeasureInput(Paragraph a_para, FontWeight a_defaultWeight)
         {
             FontFamily defaultFamily = m_tableMeasureFontFamily;
             double defaultSize = TABLE_MEASURE_FONT_SIZE;
-            FontWeight defaultWeight = a_cell.FontWeight;
+            var sb = new StringBuilder();
+            var ranges = new List<(int Start, int Length, FontFamily Family, double Size, FontWeight Weight)>();
 
-            double maxParaWidth = 0;
-            foreach (Block block in a_cell.Blocks)
+            foreach (Inline inline in a_para.Inlines)
             {
-                if (!(block is Paragraph p))
+                // セルの画像（InlineUIContainerで包まれたImage）は、列幅の自動計算には
+                // 含めない（テキストの内容量だけで列幅を決める）。画像は、この計算で
+                // 確定した列幅に収まるよう、後段のConstrainCellImagesToColumnWidthsで
+                // 別途縮小する。ここで画像の表示幅を列幅計算に含めてしまうと、画像1枚の
+                // ためだけに列（表全体）が編集領域を超えて広がってしまう。
+                if (inline is InlineUIContainer iuc && iuc.Child is Image)
                 {
                     continue;
                 }
-
-                var sb = new StringBuilder();
-                var ranges = new List<(int Start, int Length, FontFamily Family, double Size, FontWeight Weight)>();
-
-                foreach (Inline inline in p.Inlines)
-                {
-                    // セルの画像（InlineUIContainerで包まれたImage）は、列幅の自動計算には
-                    // 含めない（テキストの内容量だけで列幅を決める）。画像は、この計算で
-                    // 確定した列幅に収まるよう、後段のConstrainCellImagesToColumnWidthsで
-                    // 別途縮小する。ここで画像の表示幅を列幅計算に含めてしまうと、画像1枚の
-                    // ためだけに列（表全体）が編集領域を超えて広がってしまう。
-                    if (inline is InlineUIContainer iuc && iuc.Child is Image)
-                    {
-                        continue;
-                    }
-                    if (!(inline is Run run))
-                    {
-                        continue;
-                    }
-                    string text = run.Text;
-                    if (string.IsNullOrEmpty(text))
-                    {
-                        continue;
-                    }
-                    FontFamily fontFamily = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontFamilyProperty)
-                        ? run.FontFamily : defaultFamily;
-                    double fontSize = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontSizeProperty)
-                        ? run.FontSize : defaultSize;
-                    FontWeight fontWeight = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontWeightProperty)
-                        ? run.FontWeight : defaultWeight;
-
-                    int start = sb.Length;
-                    sb.Append(text);
-                    ranges.Add((start, text.Length, fontFamily, fontSize, fontWeight));
-                }
-
-                if (0 == sb.Length)
+                if (!(inline is Run run))
                 {
                     continue;
                 }
-
-                var baseTypeface = new Typeface(defaultFamily, FontStyles.Normal, defaultWeight, FontStretches.Normal);
-                var formatted = new FormattedText(
-                    sb.ToString(), CultureInfo.CurrentCulture, FlowDirection.LeftToRight, baseTypeface,
-                    defaultSize, Brushes.Black, GetMeasurementPixelsPerDip());
-
-                foreach (var r in ranges)
+                string text = run.Text;
+                if (string.IsNullOrEmpty(text))
                 {
-                    // 既定値と同じ区間はそのまま（ベースのTypeface設定を使う）にし、異なる
-                    // 区間（インラインコード等）だけ明示的に上書きする。
-                    if (!r.Family.Equals(defaultFamily))
-                    {
-                        formatted.SetFontFamily(r.Family, r.Start, r.Length);
-                    }
-                    if (Math.Abs(r.Size - defaultSize) > 0.01)
-                    {
-                        formatted.SetFontSize(r.Size, r.Start, r.Length);
-                    }
-                    if (r.Weight != defaultWeight)
-                    {
-                        formatted.SetFontWeight(r.Weight, r.Start, r.Length);
-                    }
+                    continue;
                 }
+                FontFamily fontFamily = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontFamilyProperty)
+                    ? run.FontFamily : defaultFamily;
+                double fontSize = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontSizeProperty)
+                    ? run.FontSize : defaultSize;
+                FontWeight fontWeight = DependencyProperty.UnsetValue != run.ReadLocalValue(TextElement.FontWeightProperty)
+                    ? run.FontWeight : a_defaultWeight;
 
-                if (formatted.Width > maxParaWidth)
+                int start = sb.Length;
+                sb.Append(text);
+                ranges.Add((start, text.Length, fontFamily, fontSize, fontWeight));
+            }
+
+            if (0 == sb.Length)
+            {
+                return null;
+            }
+            string joined = sb.ToString();
+            return new ParagraphMeasureInput(joined, ranges, defaultFamily, defaultSize, a_defaultWeight,
+                ComputeWidthUpperBoundPx(joined, ranges, defaultSize));
+        }
+
+        /// <summary>段落の幅を測るための材料（BuildParagraphMeasureInput が集め、MeasureParagraphWidthPx が測る）。</summary>
+        private sealed class ParagraphMeasureInput
+        {
+            public ParagraphMeasureInput(string a_text, List<(int Start, int Length, FontFamily Family, double Size, FontWeight Weight)> a_ranges,
+                FontFamily a_defaultFamily, double a_defaultSize, FontWeight a_defaultWeight, double a_upperBoundPx)
+            {
+                Text = a_text;
+                Ranges = a_ranges;
+                DefaultFamily = a_defaultFamily;
+                DefaultSize = a_defaultSize;
+                DefaultWeight = a_defaultWeight;
+                UpperBoundPx = a_upperBoundPx;
+            }
+
+            /// <summary>段落の Run の文字を連結したもの。</summary>
+            public string Text { get; }
+            /// <summary>Run ごとの区間とフォント。</summary>
+            public List<(int Start, int Length, FontFamily Family, double Size, FontWeight Weight)> Ranges { get; }
+            public FontFamily DefaultFamily { get; }
+            public double DefaultSize { get; }
+            public FontWeight DefaultWeight { get; }
+            /// <summary>実際に測った幅が、これを超えることはない値（ComputeWidthUpperBoundPx）。測れない文字を含む時は無限大。</summary>
+            public double UpperBoundPx { get; }
+        }
+
+        /// <summary>
+        /// 段落の幅（MeasureParagraphWidthPx で測る値）が、これを超えることはないという上限（px）。
+        /// 文字ごとの幅の上限（文字の大きさ × CHAR_WIDTH_UPPER_BOUND_EM。全角の漢字・かなは文字の大きさちょうど、英数字は
+        /// それより狭いので、十分な余裕がある）の合計に、丸めの分の余裕を足したもの。上限が分からない文字（記号・絵文字・
+        /// タブ等）を含む時は無限大（必ず測る）。列幅の計算で、すでに測った最大の幅以下にしかならない段落の測定を省く
+        /// ために使う（省いても、列の最大の幅は測った場合と全く同じになる）。
+        /// </summary>
+        /// <param name="a_text">段落の Run の文字を連結したもの。</param>
+        /// <param name="a_ranges">Run ごとの区間とフォント。</param>
+        /// <param name="a_defaultSize">既定の文字の大きさ。</param>
+        /// <returns>幅の上限（px）。</returns>
+        private static double ComputeWidthUpperBoundPx(string a_text,
+            List<(int Start, int Length, FontFamily Family, double Size, FontWeight Weight)> a_ranges, double a_defaultSize)
+        {
+            double bound = 0;
+            foreach (var r in a_ranges)
+            {
+                double em = Math.Max(r.Size, a_defaultSize);
+                for (int i = r.Start; i < r.Start + r.Length; i++)
                 {
-                    maxParaWidth = formatted.Width;
+                    if (!IsCharWidthBounded(a_text[i]))
+                    {
+                        return double.PositiveInfinity;
+                    }
+                    bound += em * CHAR_WIDTH_UPPER_BOUND_EM;
                 }
             }
-            return maxParaWidth;
+            return bound + CHAR_WIDTH_UPPER_BOUND_SLACK_PX;
+        }
+
+        /// <summary>1文字の幅の上限（文字の大きさに対する倍率）。全角の文字は 1、英数字はそれ以下なので、太字や画面の
+        /// 画素への丸めを含めても超えない値にしてある。</summary>
+        private const double CHAR_WIDTH_UPPER_BOUND_EM = 1.25;
+
+        /// <summary>幅の上限に足す余裕（px）。</summary>
+        private const double CHAR_WIDTH_UPPER_BOUND_SLACK_PX = 2;
+
+        /// <summary>文字の幅の上限が CHAR_WIDTH_UPPER_BOUND_EM だと言える文字か（英数字・記号（ASCII）・ラテン文字の補助・
+        /// 一般句読点（ゼロ幅の文字を含む）・CJK の記号とかな・漢字・全角／半角の文字）。それ以外の文字（絵文字・
+        /// 特殊な記号・タブ等の制御文字等）は、幅が分からないものとして扱う。</summary>
+        /// <param name="a_char">文字。</param>
+        /// <returns>上限が言えるなら true。</returns>
+        private static bool IsCharWidthBounded(char a_char)
+        {
+            return (0x20 <= a_char && a_char <= 0x7E) ||
+                   (0xA0 <= a_char && a_char <= 0xFF) ||
+                   (0x2000 <= a_char && a_char <= 0x206F) ||
+                   (0x3000 <= a_char && a_char <= 0x30FF) ||
+                   (0x3400 <= a_char && a_char <= 0x4DBF) ||
+                   (0x4E00 <= a_char && a_char <= 0x9FFF) ||
+                   (0xF900 <= a_char && a_char <= 0xFAFF) ||
+                   (0xFF00 <= a_char && a_char <= 0xFFEF);
+        }
+
+        /// <summary>
+        /// 段落の幅（px）を測る（1本の FormattedText として測り、既定と異なる Run の区間だけフォントを上書きする。
+        /// 詳細は BuildParagraphMeasureInput のコメント参照）。列幅の計算の途中（MeasureScope の中）では、同じ文字・
+        /// 同じフォントの段落を測った結果を使い回す（「同上」等、同じ内容のセルが多い表で測る回数を減らすため。
+        /// 同じ材料からは必ず同じ幅になる）。
+        /// </summary>
+        /// <param name="a_input">測定の材料。</param>
+        /// <returns>幅（px）。</returns>
+        private static double MeasureParagraphWidthPx(ParagraphMeasureInput a_input)
+        {
+            double pixelsPerDip = GetMeasurementPixelsPerDip();
+            string cacheKey = null;
+            if (null != s_paragraphWidthCache)
+            {
+                cacheKey = BuildParagraphWidthCacheKey(a_input, pixelsPerDip);
+                if (s_paragraphWidthCache.TryGetValue(cacheKey, out double cachedWidth))
+                {
+                    return cachedWidth;
+                }
+            }
+
+            var baseTypeface = new Typeface(a_input.DefaultFamily, FontStyles.Normal, a_input.DefaultWeight, FontStretches.Normal);
+            var formatted = new FormattedText(
+                a_input.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, baseTypeface,
+                a_input.DefaultSize, Brushes.Black, pixelsPerDip);
+
+            foreach (var r in a_input.Ranges)
+            {
+                // 既定値と同じ区間はそのまま（ベースのTypeface設定を使う）にし、異なる
+                // 区間（インラインコード等）だけ明示的に上書きする。
+                if (!r.Family.Equals(a_input.DefaultFamily))
+                {
+                    formatted.SetFontFamily(r.Family, r.Start, r.Length);
+                }
+                if (Math.Abs(r.Size - a_input.DefaultSize) > 0.01)
+                {
+                    formatted.SetFontSize(r.Size, r.Start, r.Length);
+                }
+                if (r.Weight != a_input.DefaultWeight)
+                {
+                    formatted.SetFontWeight(r.Weight, r.Start, r.Length);
+                }
+            }
+
+            double width = formatted.Width;
+            if (null != cacheKey)
+            {
+                s_paragraphWidthCache[cacheKey] = width;
+            }
+            return width;
+        }
+
+        /// <summary>段落の幅の使い回し（s_paragraphWidthCache）のキー（測定に使うすべての値を含める）。</summary>
+        private static string BuildParagraphWidthCacheKey(ParagraphMeasureInput a_input, double a_pixelsPerDip)
+        {
+            var key = new StringBuilder();
+            key.Append(FontFamilyKey(a_input.DefaultFamily)).Append('\u0001')
+               .Append(a_input.DefaultSize.ToString("R", CultureInfo.InvariantCulture)).Append('\u0001')
+               .Append(a_input.DefaultWeight.ToOpenTypeWeight()).Append('\u0001')
+               .Append(a_pixelsPerDip.ToString("R", CultureInfo.InvariantCulture)).Append('\u0001');
+            foreach (var r in a_input.Ranges)
+            {
+                key.Append(r.Start).Append(',').Append(r.Length).Append(',')
+                   .Append(FontFamilyKey(r.Family)).Append(',')
+                   .Append(r.Size.ToString("R", CultureInfo.InvariantCulture)).Append(',')
+                   .Append(r.Weight.ToOpenTypeWeight()).Append('\u0002');
+            }
+            key.Append('\u0003').Append(a_input.Text);
+            return key.ToString();
+        }
+
+        /// <summary>フォントファミリーを区別する文字（名前と、名前を解決する基準の場所）。</summary>
+        private static string FontFamilyKey(FontFamily a_family) => a_family.Source + "\u0004" + a_family.BaseUri;
+
+        // ----------------------------------------------------------------------
+        //  列幅の計算の途中だけ有効な、測定結果の使い回し（MeasureScope）
+        // ----------------------------------------------------------------------
+
+        /// <summary>MeasureScope の入れ子の深さ（0 なら使い回しをしない）。</summary>
+        private static int s_measureScopeDepth;
+        /// <summary>MeasureScope の中で測った表と、その列ごとの幅（MeasureRawColumnContentWidthsPx の結果）。</summary>
+        private static Table s_measuredTable;
+        private static double[] s_measuredRawWidths;
+        /// <summary>MeasureScope の中で測った段落の幅（MeasureParagraphWidthPx）。</summary>
+        private static Dictionary<string, double> s_paragraphWidthCache;
+        /// <summary>MeasureScope の中で取得した PixelsPerDip（GetMeasurementPixelsPerDip）。</summary>
+        private static double s_scopePixelsPerDip = double.NaN;
+
+        /// <summary>
+        /// 列幅を決める処理1回分（ApplyEffectiveColumnWidths 等の公開メソッド1回の呼び出し）の間だけ、表の測定結果を
+        /// 使い回す範囲。1回の処理の中で同じ表を何度も測っていた（Pixel にできるかの判断と、できない時の配分の計算等）
+        /// ため、大きな表では列幅の計算に時間がかかっていた。範囲の中では表の内容（文字）は変わらない（変わるのは
+        /// 列の幅と、セルの画像の大きさだけで、どちらも測定には使わない）ので、使い回しても結果は同じになる。
+        /// </summary>
+        private readonly struct MeasureScope : IDisposable
+        {
+            public void Dispose()
+            {
+                if (0 == --s_measureScopeDepth)
+                {
+                    s_measuredTable = null;
+                    s_measuredRawWidths = null;
+                    s_paragraphWidthCache = null;
+                    s_scopePixelsPerDip = double.NaN;
+                }
+            }
+        }
+
+        /// <summary>MeasureScope を始める（using で囲んで使う）。</summary>
+        private static MeasureScope BeginMeasureScope()
+        {
+            if (0 == s_measureScopeDepth++)
+            {
+                s_measuredTable = null;
+                s_measuredRawWidths = null;
+                s_paragraphWidthCache = new Dictionary<string, double>();
+                s_scopePixelsPerDip = double.NaN;
+            }
+            return new MeasureScope();
         }
 
         /// <summary>各列の実際のセル内容から、「内容にちょうど収まる幅」を、頭打ち・余裕を
         /// 加える前の生の値（px。セルのPadding分は含む）として測る。MeasureNaturalColumnWidthsPx
         /// （Star比率で使う、頭打ち・余裕あり版）とMeasureUncappedColumnWidthsPx（Pixelで使う、
-        /// 頭打ち無し・余裕あり版）の両方が、この共通の測定処理を経由する。</summary>
+        /// 頭打ち無し・余裕あり版）の両方が、この共通の測定処理を経由する。
+        /// 列の幅は、その列のすべてのセルのすべての段落の幅の最大。幅の上限（ComputeWidthUpperBoundPx）の大きい段落から
+        /// 測り、上限がそれまでに測った最大の幅以下の段落は測らない（その段落が最大になることはないため、結果は
+        /// すべて測った場合と同じ）。MeasureScope の中では、同じ表の結果を使い回す。</summary>
         /// <param name="a_table">対象の表。</param>
         private static double[] MeasureRawColumnContentWidthsPx(Table a_table)
         {
+            if (0 < s_measureScopeDepth && ReferenceEquals(s_measuredTable, a_table) && null != s_measuredRawWidths)
+            {
+                return (double[])s_measuredRawWidths.Clone();
+            }
             int colCount = a_table.Columns.Count;
             var widths = new double[colCount];
+            var columnInputs = new List<ParagraphMeasureInput>[colCount];
+            for (int c = 0; c < colCount; c++)
+            {
+                columnInputs[c] = new List<ParagraphMeasureInput>();
+            }
             foreach (TableRowGroup rg in a_table.RowGroups)
             {
                 foreach (TableRow row in rg.Rows)
                 {
                     for (int c = 0; c < row.Cells.Count && c < colCount; c++)
                     {
-                        double cellWidth = MeasureCellContentWidthPx(row.Cells[c]);
-                        if (cellWidth > widths[c])
+                        TableCell cell = row.Cells[c];
+                        foreach (Block block in cell.Blocks)
                         {
-                            widths[c] = cellWidth;
+                            if (block is Paragraph p)
+                            {
+                                ParagraphMeasureInput input = BuildParagraphMeasureInput(p, cell.FontWeight);
+                                if (null != input)
+                                {
+                                    columnInputs[c].Add(input);
+                                }
+                            }
                         }
                     }
                 }
             }
             for (int c = 0; c < colCount; c++)
             {
+                // 上限の大きい順（同じなら表の上から）に測る。上限がそれまでの最大以下になったら、残りは測らない
+                List<ParagraphMeasureInput> inputs = columnInputs[c];
+                var order = Enumerable.Range(0, inputs.Count)
+                    .OrderByDescending(i => inputs[i].UpperBoundPx).ThenBy(i => i);
+                foreach (int i in order)
+                {
+                    if (inputs[i].UpperBoundPx <= widths[c])
+                    {
+                        break;
+                    }
+                    double paraWidth = MeasureParagraphWidthPx(inputs[i]);
+                    if (paraWidth > widths[c])
+                    {
+                        widths[c] = paraWidth;
+                    }
+                }
+            }
+            for (int c = 0; c < colCount; c++)
+            {
                 widths[c] = widths[c] <= 0 ? DEFAULT_NATURAL_COLUMN_WIDTH_PX : widths[c] + TABLE_CELL_HORIZONTAL_PADDING;
+            }
+            if (0 < s_measureScopeDepth)
+            {
+                s_measuredTable = a_table;
+                s_measuredRawWidths = (double[])widths.Clone();
             }
             return widths;
         }
@@ -1393,50 +1618,53 @@ namespace mde.common
         public static (List<string> Labels, List<int> DashCounts, bool IsAutoCalculated) BuildColumnWidthDialogInfo(
             Table a_table, double? a_availableWidthPx = null)
         {
-            var labels = new List<string>();
-            var dashCounts = new List<int>();
-            int colCount = a_table.Columns.Count;
-            // 自動計算の値：実際に表示している列幅（ComputeAutoColumnWidthsPx）。表示できる幅が分からない時は、
-            // 内容から測った幅（頭打ちあり）
-            var naturalWidths = ComputeAutoColumnWidthsPx(a_table, a_availableWidthPx) ?? MeasureNaturalColumnWidthsPx(a_table);
-
-            var sourceDashCounts = GetSourceDashCounts(a_table);
-            bool isAutoCalculatedFlg = IsAutoCalculatedDashCounts(sourceDashCounts);
-
-            TableRow headerRow = null;
-            foreach (TableRowGroup rg in a_table.RowGroups)
+            using (BeginMeasureScope())
             {
-                foreach (TableRow row in rg.Rows)
+                var labels = new List<string>();
+                var dashCounts = new List<int>();
+                int colCount = a_table.Columns.Count;
+                // 自動計算の値：実際に表示している列幅（ComputeAutoColumnWidthsPx）。表示できる幅が分からない時は、
+                // 内容から測った幅（頭打ちあり）
+                var naturalWidths = ComputeAutoColumnWidthsPx(a_table, a_availableWidthPx) ?? MeasureNaturalColumnWidthsPx(a_table);
+
+                var sourceDashCounts = GetSourceDashCounts(a_table);
+                bool isAutoCalculatedFlg = IsAutoCalculatedDashCounts(sourceDashCounts);
+
+                TableRow headerRow = null;
+                foreach (TableRowGroup rg in a_table.RowGroups)
                 {
-                    headerRow = row;
+                    foreach (TableRow row in rg.Rows)
+                    {
+                        headerRow = row;
+                        break;
+                    }
                     break;
                 }
-                break;
-            }
 
-            for (int c = 0; c < colCount; c++)
-            {
-                string label = "";
-                if (null != headerRow && c < headerRow.Cells.Count)
+                for (int c = 0; c < colCount; c++)
                 {
-                    label = new TextRange(headerRow.Cells[c].ContentStart, headerRow.Cells[c].ContentEnd).Text?.Trim() ?? "";
-                }
-                labels.Add(label);
+                    string label = "";
+                    if (null != headerRow && c < headerRow.Cells.Count)
+                    {
+                        label = new TextRange(headerRow.Cells[c].ContentStart, headerRow.Cells[c].ContentEnd).Text?.Trim() ?? "";
+                    }
+                    labels.Add(label);
 
-                int dashCount;
-                if (isAutoCalculatedFlg)
-                {
-                    // 自動計算の場合は、常にその場の内容から測り直した値を表示する（表示中に
-                    // 内容が変わっていた場合も最新の内容に基づく比率になるようにするため）。
-                    dashCount = PixelWidthToDashCount(c < naturalWidths.Length ? naturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX);
+                    int dashCount;
+                    if (isAutoCalculatedFlg)
+                    {
+                        // 自動計算の場合は、常にその場の内容から測り直した値を表示する（表示中に
+                        // 内容が変わっていた場合も最新の内容に基づく比率になるようにするため）。
+                        dashCount = PixelWidthToDashCount(c < naturalWidths.Length ? naturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX);
+                    }
+                    else
+                    {
+                        dashCount = ClampDashCount(c < sourceDashCounts.Count ? sourceDashCounts[c] : TABLE_COLUMN_DEFAULT_DASH_COUNT);
+                    }
+                    dashCounts.Add(dashCount);
                 }
-                else
-                {
-                    dashCount = ClampDashCount(c < sourceDashCounts.Count ? sourceDashCounts[c] : TABLE_COLUMN_DEFAULT_DASH_COUNT);
-                }
-                dashCounts.Add(dashCount);
+                return (labels, dashCounts, isAutoCalculatedFlg);
             }
-            return (labels, dashCounts, isAutoCalculatedFlg);
         }
 
         /// <summary>
@@ -1474,42 +1702,45 @@ namespace mde.common
         /// 画像も縮小の対象外とする）。</param>
         public static void ApplyExplicitColumnWidths(Table a_table, IReadOnlyList<int?> a_dashCounts, double? a_availableWidthPx = null)
         {
-            int colCount = a_table.Columns.Count;
-            double unitPx = DashUnitWidthPx();
-            var uncappedNaturalWidths = MeasureUncappedColumnWidthsPx(a_table);
-
-            // Pixel候補の幅（頭打ち無し。他の列と幅を奪い合わないため）。
-            var pixelCandidateWidths = new double[colCount];
-            for (int c = 0; c < colCount; c++)
+            using (BeginMeasureScope())
             {
-                int? dashCount = c < a_dashCounts.Count ? a_dashCounts[c] : null;
-                pixelCandidateWidths[c] = dashCount.HasValue
-                    ? ClampDashCount(dashCount.Value) * unitPx + TABLE_CELL_HORIZONTAL_PADDING
-                    : (c < uncappedNaturalWidths.Length ? uncappedNaturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX);
-            }
+                int colCount = a_table.Columns.Count;
+                double unitPx = DashUnitWidthPx();
+                var uncappedNaturalWidths = MeasureUncappedColumnWidthsPx(a_table);
 
-            if (a_availableWidthPx.HasValue && pixelCandidateWidths.Sum() <= a_availableWidthPx.Value)
-            {
+                // Pixel候補の幅（頭打ち無し。他の列と幅を奪い合わないため）。
+                var pixelCandidateWidths = new double[colCount];
                 for (int c = 0; c < colCount; c++)
                 {
-                    a_table.Columns[c].Width = new GridLength(pixelCandidateWidths[c], GridUnitType.Pixel);
+                    int? dashCount = c < a_dashCounts.Count ? a_dashCounts[c] : null;
+                    pixelCandidateWidths[c] = dashCount.HasValue
+                        ? ClampDashCount(dashCount.Value) * unitPx + TABLE_CELL_HORIZONTAL_PADDING
+                        : (c < uncappedNaturalWidths.Length ? uncappedNaturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX);
+                }
+
+                if (a_availableWidthPx.HasValue && pixelCandidateWidths.Sum() <= a_availableWidthPx.Value)
+                {
+                    for (int c = 0; c < colCount; c++)
+                    {
+                        a_table.Columns[c].Width = new GridLength(pixelCandidateWidths[c], GridUnitType.Pixel);
+                    }
+                    ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
+                    return;
+                }
+
+                // Star比率へフォールバックする場合は、複数列が幅を奪い合うため頭打ちした幅を使う
+                // （ApplyAutoCalculatedColumnWidthsのStarフォールバックと同じ考え方）。
+                var cappedNaturalWidths = MeasureNaturalColumnWidthsPx(a_table);
+                for (int c = 0; c < colCount; c++)
+                {
+                    int? dashCount = c < a_dashCounts.Count ? a_dashCounts[c] : null;
+                    int starValue = dashCount.HasValue
+                        ? ClampDashCount(dashCount.Value)
+                        : PixelWidthToDashCount(c < cappedNaturalWidths.Length ? cappedNaturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX);
+                    a_table.Columns[c].Width = new GridLength(starValue, GridUnitType.Star);
                 }
                 ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
-                return;
             }
-
-            // Star比率へフォールバックする場合は、複数列が幅を奪い合うため頭打ちした幅を使う
-            // （ApplyAutoCalculatedColumnWidthsのStarフォールバックと同じ考え方）。
-            var cappedNaturalWidths = MeasureNaturalColumnWidthsPx(a_table);
-            for (int c = 0; c < colCount; c++)
-            {
-                int? dashCount = c < a_dashCounts.Count ? a_dashCounts[c] : null;
-                int starValue = dashCount.HasValue
-                    ? ClampDashCount(dashCount.Value)
-                    : PixelWidthToDashCount(c < cappedNaturalWidths.Length ? cappedNaturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX);
-                a_table.Columns[c].Width = new GridLength(starValue, GridUnitType.Star);
-            }
-            ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
         }
 
         /// <summary>
@@ -1532,31 +1763,34 @@ namespace mde.common
         /// 把握していない場合はnull（その場合は常にStar比率にする）。</param>
         public static void ApplyAutoCalculatedColumnWidths(Table a_table, double? a_availableWidthPx)
         {
-            int colCount = a_table.Columns.Count;
-            // ブラウザ（mdew・mdee）の表の自動レイアウトと同じ計算で、各列の幅（px）を決める
-            // （ComputeAutoColumnWidthsPx参照）。決められた時は、全列Pixel（固定px）にする。
-            var autoWidths = ComputeAutoColumnWidthsPx(a_table, a_availableWidthPx);
-            if (null != autoWidths)
+            using (BeginMeasureScope())
             {
+                int colCount = a_table.Columns.Count;
+                // ブラウザ（mdew・mdee）の表の自動レイアウトと同じ計算で、各列の幅（px）を決める
+                // （ComputeAutoColumnWidthsPx参照）。決められた時は、全列Pixel（固定px）にする。
+                var autoWidths = ComputeAutoColumnWidthsPx(a_table, a_availableWidthPx);
+                if (null != autoWidths)
+                {
+                    for (int c = 0; c < colCount; c++)
+                    {
+                        a_table.Columns[c].Width = new GridLength(autoWidths[c], GridUnitType.Pixel);
+                    }
+                    ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
+                    return;
+                }
+
+                // 表示できる幅が分からない時（保存専用の使い捨て文書等）や、列が多すぎて各列の最小の幅でも
+                // 収まらない時だけ、複数列が幅を奪い合うStar比率へフォールバックする（頭打ちした幅を
+                // そのまま比率として使う）。
+                var naturalWidths = MeasureNaturalColumnWidthsPx(a_table);
+                var dashCounts = new List<int?>();
                 for (int c = 0; c < colCount; c++)
                 {
-                    a_table.Columns[c].Width = new GridLength(autoWidths[c], GridUnitType.Pixel);
+                    double px = c < naturalWidths.Length ? naturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX;
+                    dashCounts.Add(PixelWidthToDashCount(px));
                 }
-                ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
-                return;
+                ApplyExplicitColumnWidths(a_table, dashCounts, a_availableWidthPx);
             }
-
-            // 表示できる幅が分からない時（保存専用の使い捨て文書等）や、列が多すぎて各列の最小の幅でも
-            // 収まらない時だけ、複数列が幅を奪い合うStar比率へフォールバックする（頭打ちした幅を
-            // そのまま比率として使う）。
-            var naturalWidths = MeasureNaturalColumnWidthsPx(a_table);
-            var dashCounts = new List<int?>();
-            for (int c = 0; c < colCount; c++)
-            {
-                double px = c < naturalWidths.Length ? naturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX;
-                dashCounts.Add(PixelWidthToDashCount(px));
-            }
-            ApplyExplicitColumnWidths(a_table, dashCounts, a_availableWidthPx);
         }
 
         /// <summary>
@@ -1592,42 +1826,45 @@ namespace mde.common
         /// <returns>各列の幅（px）。決められない時はnull。</returns>
         public static double[] ComputeAutoColumnWidthsPx(Table a_table, double? a_availableWidthPx)
         {
-            if (!a_availableWidthPx.HasValue || 0 == a_table.Columns.Count)
+            using (BeginMeasureScope())
             {
-                return null;
+                if (!a_availableWidthPx.HasValue || 0 == a_table.Columns.Count)
+                {
+                    return null;
+                }
+                var maxWidths = MeasureUncappedColumnWidthsPx(a_table);
+                if (maxWidths.Sum() <= a_availableWidthPx.Value)
+                {
+                    return maxWidths;
+                }
+                double targetWidthPx = a_availableWidthPx.Value - TABLE_RIGHT_EDGE_SAFETY_MARGIN_PX;
+                // 配る時の「最大の幅」は、ブラウザと同じく、余裕（TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX。折り返さずに収める時に、
+                // 最後の文字が次の行へ送られないためのもの）を足さない幅（内容＋余白＋罫線）にする（余裕を足すと、内容の短い列
+                // ほど相対的に広くなり、ブラウザの列幅とずれる）
+                maxWidths = MeasureRawColumnContentWidthsPx(a_table).Select(w => w + TABLE_CELL_BORDER_PX).ToArray();
+                // 最小の幅は1文字分（mdew・mdee の「編集ペインの幅に合わせる」の表は、セルの中の語・URL をどこでも折り返せる
+                // （overflow-wrap: anywhere）ため、ブラウザの計算でも列の最小の幅が1文字分になる。それと同じにする）
+                double minColumnWidth = TABLE_AUTO_COLUMN_MIN_WIDTH_PX;
+                var minWidths = maxWidths.Select(w => Math.Min(w, minColumnWidth)).ToArray();
+                double sumMin = minWidths.Sum();
+                double sumMax = maxWidths.Sum();
+                if (sumMin >= targetWidthPx || sumMax - sumMin <= 0.01)
+                {
+                    return null;
+                }
+                double ratio = (targetWidthPx - sumMin) / (sumMax - sumMin);
+                var widths = new double[maxWidths.Length];
+                for (int c = 0; c < widths.Length; c++)
+                {
+                    widths[c] = minWidths[c] + (maxWidths[c] - minWidths[c]) * ratio;
+                }
+                return widths;
             }
-            var maxWidths = MeasureUncappedColumnWidthsPx(a_table);
-            if (maxWidths.Sum() <= a_availableWidthPx.Value)
-            {
-                return maxWidths;
-            }
-            double targetWidthPx = a_availableWidthPx.Value - TABLE_RIGHT_EDGE_SAFETY_MARGIN_PX;
-            // 配る時の「最大の幅」は、ブラウザと同じく、余裕（TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX。折り返さずに収める時に、
-            // 最後の文字が次の行へ送られないためのもの）を足さない幅（内容＋余白＋罫線）にする（余裕を足すと、内容の短い列
-            // ほど相対的に広くなり、ブラウザの列幅とずれる）
-            maxWidths = MeasureRawColumnContentWidthsPx(a_table).Select(w => w + TABLE_CELL_BORDER_PX).ToArray();
-            // 最小の幅は1文字分（mdew・mdee の「編集ペインの幅に合わせる」の表は、セルの中の語・URL をどこでも折り返せる
-            // （overflow-wrap: anywhere）ため、ブラウザの計算でも列の最小の幅が1文字分になる。それと同じにする）
-            double minColumnWidth = TABLE_AUTO_COLUMN_MIN_WIDTH_PX;
-            var minWidths = maxWidths.Select(w => Math.Min(w, minColumnWidth)).ToArray();
-            double sumMin = minWidths.Sum();
-            double sumMax = maxWidths.Sum();
-            if (sumMin >= targetWidthPx || sumMax - sumMin <= 0.01)
-            {
-                return null;
-            }
-            double ratio = (targetWidthPx - sumMin) / (sumMax - sumMin);
-            var widths = new double[maxWidths.Length];
-            for (int c = 0; c < widths.Length; c++)
-            {
-                widths[c] = minWidths[c] + (maxWidths[c] - minWidths[c]) * ratio;
-            }
-            return widths;
         }
 
         /// <summary>
         /// 表内の画像を、確定した列の実際の幅に収まるよう（画像の自然なピクセルサイズを上限に）
-        /// 縮小する。列幅の自動計算そのものからは画像を除外している（MeasureCellContentWidthPx
+        /// 縮小する。列幅の自動計算そのものからは画像を除外している（BuildParagraphMeasureInput
         /// 参照）ため、これを行わないと、テキストの内容量だけで決まった狭い列から画像が
         /// はみ出してしまう。Pixel列は列幅の値をそのまま使い、Star列は<paramref name="a_availableWidthPx"/>
         /// とStar比率の合計から実際の表示幅を概算する（正確な値はレイアウト後でないと分からないが、
@@ -1743,17 +1980,20 @@ namespace mde.common
         /// <param name="a_availableWidthPx">現在、表を表示できる幅（px）。</param>
         public static void RefreshAutoCalculatedColumnWidths(Table a_table, double a_availableWidthPx)
         {
-            var sourceDashCounts = GetSourceDashCounts(a_table);
-            if (IsAutoCalculatedDashCounts(sourceDashCounts))
+            using (BeginMeasureScope())
             {
-                ApplyAutoCalculatedColumnWidths(a_table, a_availableWidthPx);
-            }
-            else
-            {
-                var explicitDashCounts = sourceDashCounts
-                    .Select(d => TABLE_COLUMN_DEFAULT_DASH_COUNT == d ? (int?)null : d)
-                    .ToList();
-                ApplyExplicitColumnWidths(a_table, explicitDashCounts, a_availableWidthPx);
+                var sourceDashCounts = GetSourceDashCounts(a_table);
+                if (IsAutoCalculatedDashCounts(sourceDashCounts))
+                {
+                    ApplyAutoCalculatedColumnWidths(a_table, a_availableWidthPx);
+                }
+                else
+                {
+                    var explicitDashCounts = sourceDashCounts
+                        .Select(d => TABLE_COLUMN_DEFAULT_DASH_COUNT == d ? (int?)null : d)
+                        .ToList();
+                    ApplyExplicitColumnWidths(a_table, explicitDashCounts, a_availableWidthPx);
+                }
             }
         }
 
@@ -1806,21 +2046,24 @@ namespace mde.common
         public static void ApplyEffectiveColumnWidths(
             Table a_table, IReadOnlyList<int> a_dashCounts, bool a_correctColumnWidthsFlg, double? a_availableWidthPx)
         {
-            if (!a_correctColumnWidthsFlg)
+            using (BeginMeasureScope())
             {
-                ResetColumnWidthsToAuto(a_table);
-                return;
-            }
-            if (IsAutoCalculatedDashCounts(a_dashCounts))
-            {
-                ApplyAutoCalculatedColumnWidths(a_table, a_availableWidthPx);
-            }
-            else
-            {
-                var explicitDashCounts = a_dashCounts
-                    .Select(d => TABLE_COLUMN_DEFAULT_DASH_COUNT == d ? (int?)null : d)
-                    .ToList();
-                ApplyExplicitColumnWidths(a_table, explicitDashCounts, a_availableWidthPx);
+                if (!a_correctColumnWidthsFlg)
+                {
+                    ResetColumnWidthsToAuto(a_table);
+                    return;
+                }
+                if (IsAutoCalculatedDashCounts(a_dashCounts))
+                {
+                    ApplyAutoCalculatedColumnWidths(a_table, a_availableWidthPx);
+                }
+                else
+                {
+                    var explicitDashCounts = a_dashCounts
+                        .Select(d => TABLE_COLUMN_DEFAULT_DASH_COUNT == d ? (int?)null : d)
+                        .ToList();
+                    ApplyExplicitColumnWidths(a_table, explicitDashCounts, a_availableWidthPx);
+                }
             }
         }
     }

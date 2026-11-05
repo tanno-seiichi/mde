@@ -59,6 +59,12 @@ namespace mde.common
         /// 18,19:&lt;http(s)://url&gt;／20,21:&lt;email&gt;／22,23:&lt;a id="..."&gt;&lt;/a&gt;／
         /// 24,25:文中にそのまま書かれたメールアドレス（BARE_EMAIL_PATTERN）
         /// </summary>
+        /// <summary>m_inlineContentRegex のどの書き方にも、必ず1つは含まれる文字（画像・リンク [ !、HTML の &lt;、コード `、
+        /// 太字・斜体 * _、取り消し線 ~、強調 =、メールアドレス @）。これを1つも含まない文字は、どの書き方にも当てはまらない
+        /// （AppendInlineMarkdownToParagraph で、正規表現で探すのを省くために使う）。m_inlineContentRegex に書き方を
+        /// 足す時は、ここも見直すこと。</summary>
+        private static readonly char[] m_inlineMarkupChars = { '[', '!', '<', '`', '*', '_', '~', '=', '@' };
+
         private static readonly Regex m_inlineContentRegex = new Regex(
             "(?<linkedImage>\\[(?<linkedImageImage>!\\[(?<linkedImageAlt>[^\\]]*)\\]\\((?<linkedImageSrc>(?:[^()]|\\([^()]*\\))+)\\))\\]\\((?<linkedImageHref>(?:[^()]|\\([^()]*\\))+)\\))|" +
             "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|((?<!`)(?<bt>`+)(?!`)([\\s\\S]+?)(?<!`)\\k<bt>(?!`))|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|(<u>([^<]+)</u>)|(==([^=]+)==)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)|(" +
@@ -2428,6 +2434,17 @@ namespace mde.common
                 a_p.Inlines.Clear();
             }
             a_text = PreprocessEscapes(a_text);
+            // 書式の記号（m_inlineContentRegex のどの書き方にも必ず含まれる文字）を1つも含まない文字（普通の文章だけの
+            // 表のセル等）は、正規表現で探さずに、そのまま文字として追加する（探しても何も見つからないので、結果は同じ）
+            if (a_text.IndexOfAny(m_inlineMarkupChars) < 0)
+            {
+                if (0 < a_text.Length)
+                {
+                    AppendPlainTextWithLineBreaks(a_p, a_text);
+                }
+                BlockStyles.ApplyImageParagraphLineHeight(a_p);
+                return;
+            }
             int lastIndex = 0;
             foreach (Match m in m_inlineContentRegex.Matches(a_text))
             {

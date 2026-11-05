@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:sys="clr-namespace:System;assembly=mscorlib"
         xmlns:common="clr-namespace:mde.common"
+        xmlns:editor="clr-namespace:mde.editor"
         Title="mde"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
@@ -306,7 +307,9 @@
             <Border Grid.Column="4" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource LineBrush}"
                     BorderThickness="0,0,0,0" CornerRadius="0">
                 <Grid>
-                    <RichTextBox x:Name="m_editor"
+                    <!-- 編集ペイン。MdeRichTextBox は、UI オートメーションに文書の中の要素（表のセル等）を見せない RichTextBox
+                         （大きな表で、他のアプリからの問い合わせのたびに固まるのを防ぐため。MdeRichTextBox のコメント参照） -->
+                    <editor:MdeRichTextBox x:Name="m_editor"
                                  BorderThickness="0"
                                  Background="Transparent"
                                  Padding="25,0,25,0"
@@ -445,7 +448,7 @@
                         </RichTextBox.ContextMenu>
                         <FlowDocument x:Name="m_editorDocument" FontFamily="{DynamicResource EditorFontFamily}"
                                       LineHeight="{DynamicResource EditorLineHeight}"/>
-                    </RichTextBox>
+                    </editor:MdeRichTextBox>
 
                     <TextBox x:Name="m_sourceEditor"
                              Visibility="Collapsed"
