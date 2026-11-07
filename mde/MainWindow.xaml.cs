@@ -5795,11 +5795,6 @@ namespace mde
         // ラッパーだけを残している。ペインの表示/非表示切り替え（幅の記憶・GridColumn操作）は、
         // エディタペインのスクロール位置保持処理と密接に絡んでいるため、別区画に残している。
 
-        /// <summary>フォルダビューの「…」ボタン：フォルダを選んで開く。</summary>
-        /// <param name="a_sender">イベントの発生元。</param>
-        /// <param name="a_args">イベントの引数。</param>
-        private void OpenFolderTreeBtnClick(object a_sender, RoutedEventArgs a_args) => ChooseAndOpenFolder();
-
         /// <summary>メニュー「ファイル」→「フォルダを開く…」：フォルダを選んで開く（フォルダビューの
         /// 「…」ボタンと同じ）。</summary>
         /// <param name="a_sender">イベントの発生元。</param>

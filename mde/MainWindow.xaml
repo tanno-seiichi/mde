@@ -190,9 +190,6 @@
                     <Grid DockPanel.Dock="Top" Margin="8,8,4,6">
                         <TextBlock Text="フォルダ" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"
                                    Foreground="{StaticResource InkBrush}"/>
-                        <Button Content="…" Width="24" Height="22" HorizontalAlignment="Right"
-                                Style="{StaticResource ToolbarButton}" Margin="0" Padding="0"
-                                Click="OpenFolderTreeBtnClick"/>
                     </Grid>
                     <TreeView x:Name="m_folderTree" BorderThickness="0" Background="Transparent"
                               Loaded="FolderTreeLoaded"
