@@ -79,7 +79,7 @@ namespace mde.common
             var block = GetTopLevelBlock(a_position);
             if (null != block)
             {
-                m_table.Remove(block);
+                m_table.Remove(ToRecordedBlock(block));
             }
         }
 
@@ -94,11 +94,20 @@ namespace mde.common
             {
                 if (node is Block b && ReferenceEquals(b.Parent, m_editor.Document))
                 {
-                    m_table.Remove(b);
+                    m_table.Remove(ToRecordedBlock(b));
                     return;
                 }
                 node = (node as TextElement)?.Parent;
             }
+        }
+
+        /// <summary>元テキストを記録しているブロックを返す。大きな表を分けたかたまり（TableChunks）は、表全体の元テキストを
+        /// 先頭のかたまりに記録しているため、続きのかたまりは先頭のかたまりにする。</summary>
+        /// <param name="a_block">トップレベルブロック。</param>
+        /// <returns>元テキストを記録しているブロック。</returns>
+        private static Block ToRecordedBlock(Block a_block)
+        {
+            return a_block is Table table ? TableChunks.GetHead(table) : a_block;
         }
 
         /// <summary>

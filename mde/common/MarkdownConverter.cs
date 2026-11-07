@@ -448,6 +448,15 @@ namespace mde.common
                     }
                     continue;
                 }
+                // 大きな表を分けた続きのかたまり（TableChunks）は、先頭のかたまりが表全体を書き出すため、ここでは何も書き出さない
+                if (TableChunks.IsContinuation(block))
+                {
+                    if (m_trailingComments.TryGetValue(block, out var trailingGroupForTableCont))
+                    {
+                        AppendCommentGroup(trailingGroupForTableCont);
+                    }
+                    continue;
+                }
                 // このBlockの直前にあったHTMLコメント（Blockとしては存在しない。
                 // m_leadingComments参照）を、元のソースにあった空行の数を再現しながら先に出力する。
                 if (m_leadingComments.TryGetValue(block, out var leadingGroup))
@@ -505,6 +514,39 @@ namespace mde.common
                     offset += item.Text.Length;
                     firstFlg = false;
                 }
+            }
+
+            // 大きな表を分けた続きのかたまり（TableChunks）：表の先頭のかたまりの位置から、そのかたまりの最初の行の位置まで
+            // 進めた位置（表の1行目は見出しの行、2行目は区切りの行で、表全体で n 番目（0始まり）の行は n + 1 行目）
+            if (a_targetBlock is Table targetTable && TableChunks.IsContinuation(targetTable))
+            {
+                Table head = TableChunks.GetHead(targetTable);
+                int headOffset = GetMarkdownOffsetForBlock(a_doc, head);
+                if (headOffset < 0)
+                {
+                    return -1;
+                }
+                string tableText = m_originalTextTracker.TryGetOriginal(head, out var headOriginal) ? headOriginal : BlockToMarkdown(head);
+                int rowsBefore = 0;
+                foreach (Table chunk in TableChunks.GetChunks(head))
+                {
+                    if (ReferenceEquals(chunk, targetTable))
+                    {
+                        break;
+                    }
+                    rowsBefore += TableChunks.CountRows(chunk);
+                }
+                int pos = 0;
+                for (int line = 0; line < rowsBefore + 1; line++)
+                {
+                    int newline = tableText.IndexOf('\n', pos);
+                    if (newline < 0)
+                    {
+                        return headOffset;
+                    }
+                    pos = newline + 1;
+                }
+                return headOffset + pos;
             }
 
             foreach (Block block in a_doc.Blocks)
@@ -575,6 +617,15 @@ namespace mde.common
                     }
                     continue;
                 }
+                // DocumentToMarkdownと同じく、大きな表の続きのかたまりは何も書き出さない
+                if (TableChunks.IsContinuation(block))
+                {
+                    if (m_trailingComments.TryGetValue(block, out var trailingGroupForTableCont))
+                    {
+                        AddCommentGroupOffset(trailingGroupForTableCont);
+                    }
+                    continue;
+                }
                 // DocumentToMarkdownと同じく、このBlockの直前のHTMLコメント分もオフセットに
                 // 加算してから本体へ進む（対象ブロック自身がコメントになることはない）。
                 if (m_leadingComments.TryGetValue(block, out var leadingGroup))
@@ -621,6 +672,11 @@ namespace mde.common
             bool firstFlg = true;
             foreach (Block block in a_blocks)
             {
+                // 大きな表を分けた続きのかたまり（TableChunks）は、先頭のかたまりが表全体を書き出す
+                if (TableChunks.IsContinuation(block))
+                {
+                    continue;
+                }
                 string s = BlockToMarkdown(block);
                 if (block is Paragraph contPara &&
                     (contPara.Tag is BrContinuationInfo || contPara.Tag is QuoteContinuationInfo || contPara.Tag is CodeBlockContinuationInfo))
@@ -790,14 +846,13 @@ namespace mde.common
         /// <returns>変換後のMarkdown文字列。</returns>
         private string TableToMarkdown(Table a_table)
         {
-            var rows = new List<TableRow>();
-            foreach (TableRowGroup rg in a_table.RowGroups)
+            // 大きな表を分けたかたまり（TableChunks）は、先頭のかたまりが、すべてのかたまりの行を1つの表として書き出す
+            // （続きのかたまりは何も書き出さない）
+            if (TableChunks.IsContinuation(a_table))
             {
-                foreach (TableRow r in rg.Rows)
-                {
-                    rows.Add(r);
-                }
+                return "";
             }
+            var rows = TableChunks.GetRows(a_table);
             if (0 == rows.Count)
             {
                 return "";
@@ -1483,7 +1538,15 @@ namespace mde.common
                     BlockStyles.ApplyClosingBracketLineEndAllowance(table);
                     RecordBlankLinesBeforeBlock(table);
                     AttachPendingComments(table);
-                    a_doc.Blocks.Add(table);
+                    // 大きな表は、内部では複数のかたまり（Table）に分ける（TableChunks 参照。表のセルに1文字打つたびに、表全体が
+                    // 組み直されて遅くなるのを防ぐ）。元テキスト・前の空行の数・直前のコメントは、先頭のかたまりに結び付ける
+                    List<Table> chunks = TableChunks.SplitIfLarge(table);
+                    foreach (Table chunk in chunks)
+                    {
+                        a_doc.Blocks.Add(chunk);
+                    }
+                    // 最後のかたまりの下の余白は、前のブロックで決まる（文書に入れた後に決める。TableChunks.ApplyChunkFrame）
+                    TableChunks.ApplyChunkFrame(chunks);
                     m_originalTextTracker.Record(table, lines, blockStart, i);
                     continue;
                 }
@@ -1572,7 +1635,14 @@ namespace mde.common
                 trailingGroup.m_items.AddRange(pendingComments);
                 if (a_doc.Blocks.Count > 0)
                 {
-                    m_trailingComments.Add(a_doc.Blocks.LastBlock, trailingGroup);
+                    // 最後が大きな表の続きのかたまり（TableChunks）なら、表の先頭のかたまりに結び付ける（表全体は先頭のかたまりが
+                    // 書き出し、続きのかたまりは行の削除等で取り除かれることがあるため）
+                    Block lastBlock = a_doc.Blocks.LastBlock;
+                    if (lastBlock is Table lastTable)
+                    {
+                        lastBlock = TableChunks.GetHead(lastTable);
+                    }
+                    m_trailingComments.Add(lastBlock, trailingGroup);
                 }
                 else
                 {

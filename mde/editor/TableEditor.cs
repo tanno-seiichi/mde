@@ -122,20 +122,22 @@ namespace mde.editor
             {
                 return;
             }
-            if (!(row.Parent is TableRowGroup rg))
+            if (!(row.Parent is TableRowGroup rg) || !(rg.Parent is Table chunk))
             {
                 return;
             }
-            int rIdx = rg.Rows.IndexOf(row);
+            // 大きな表を分けたかたまり（TableChunks）も、1つの表の行として移動する
+            var rows = TableChunks.GetRows(chunk);
+            int rIdx = rows.IndexOf(row);
             int cIdx = row.Cells.IndexOf(a_cell);
             int targetIdx = rIdx + a_dir;
             if (targetIdx < 0 ||
-                targetIdx >= rg.Rows.Count)
+                targetIdx >= rows.Count)
             {
-                MoveOutOfTable(rg, a_dir);
+                MoveOutOfTable(chunk, a_dir);
                 return;
             }
-            var targetRow = rg.Rows[targetIdx];
+            var targetRow = rows[targetIdx];
             if (cIdx < targetRow.Cells.Count && targetRow.Cells[cIdx].Blocks.LastBlock is Paragraph tp)
             {
                 m_editor.CaretPosition = tp.ContentEnd;
@@ -145,14 +147,12 @@ namespace mde.editor
         /// <summary>表の先頭行で上キー・末尾行で下キーが押された時に、キャレットを表の外
         /// （直前/直後のブロック）へ移す。前後にブロックが存在しない場合（表がドキュメントの
         /// 先頭/末尾に隣接ブロックなしで存在する場合）は、新しい空の段落を作ってそこへ移す。</summary>
-        /// <param name="a_rg">現在の表の行グループ。</param>
+        /// <param name="a_chunk">現在の表（大きな表を分けたかたまりなら、そのいずれか。TableChunks）。</param>
         /// <param name="a_dir">-1で上（表の直前へ）、+1で下（表の直後へ）。</param>
-        private void MoveOutOfTable(TableRowGroup a_rg, int a_dir)
+        private void MoveOutOfTable(Table a_chunk, int a_dir)
         {
-            if (!(a_rg.Parent is Table table))
-            {
-                return;
-            }
+            // 分けた表は、先頭のかたまりの前・最後のかたまりの後ろが、表の外
+            Table table = a_dir < 0 ? TableChunks.GetHead(a_chunk) : TableChunks.GetLastChunk(a_chunk);
             Block neighbor = a_dir < 0 ? table.PreviousBlock : table.NextBlock;
             if (null == neighbor)
             {
@@ -181,11 +181,13 @@ namespace mde.editor
             {
                 return;
             }
-            if (!(row.Parent is TableRowGroup rg))
+            if (!(row.Parent is TableRowGroup rg) || !(rg.Parent is Table chunk))
             {
                 return;
             }
-            int rIdx = rg.Rows.IndexOf(row);
+            // 大きな表を分けたかたまり（TableChunks）も、1つの表の行として移動する
+            var rows = TableChunks.GetRows(chunk);
+            int rIdx = rows.IndexOf(row);
             int cIdx = row.Cells.IndexOf(a_cell);
 
             if (1 == a_dir)
@@ -198,9 +200,9 @@ namespace mde.editor
                     }
                     return;
                 }
-                if (rIdx + 1 < rg.Rows.Count)
+                if (rIdx + 1 < rows.Count)
                 {
-                    var nr = rg.Rows[rIdx + 1];
+                    var nr = rows[rIdx + 1];
                     if (nr.Cells.Count > 0 && nr.Cells[0].Blocks.FirstBlock is Paragraph np2)
                     {
                         m_editor.CaretPosition = np2.ContentStart;
@@ -219,7 +221,7 @@ namespace mde.editor
                 }
                 if (rIdx - 1 >= 0)
                 {
-                    var pr = rg.Rows[rIdx - 1];
+                    var pr = rows[rIdx - 1];
                     if (pr.Cells.Count > 0 && pr.Cells[pr.Cells.Count - 1].Blocks.LastBlock is Paragraph pp2)
                     {
                         m_editor.CaretPosition = pp2.ContentEnd;
@@ -241,7 +243,9 @@ namespace mde.editor
             {
                 return;
             }
-            var cells = table.RowGroups.SelectMany(g => g.Rows).SelectMany(r => r.Cells).ToList();
+            // 大きな表を分けたかたまり（TableChunks）も、1つの表のセルの並びとして移動する
+            var tableRows = TableChunks.GetRows(table);
+            var cells = tableRows.SelectMany(r => r.Cells).ToList();
             int index = cells.IndexOf(a_cell) + (a_backwardFlg ? -1 : 1);
             if (index < 0)
             {
@@ -250,7 +254,7 @@ namespace mde.editor
             if (index >= cells.Count)
             {
                 // 最後のセル：下に行を追加する（InsertRowが、新しい行の先頭のセルにキャレットを置く）
-                var lastRow = table.RowGroups.Last().Rows.Last();
+                var lastRow = tableRows.Last();
                 ContextCell = lastRow.Cells[lastRow.Cells.Count - 1];
                 InsertRow(false);
                 return;
@@ -270,17 +274,19 @@ namespace mde.editor
         /// <param name="a_cell">今のセル。</param>
         public void InsertRowBelowFromKey(TableCell a_cell)
         {
-            if (!(a_cell.Parent is TableRow row) || !(row.Parent is TableRowGroup rg))
+            if (!(a_cell.Parent is TableRow row) || !(row.Parent is TableRowGroup))
             {
                 return;
             }
             int column = row.Cells.IndexOf(a_cell);
             ContextCell = a_cell;
             InsertRow(false);
-            int newRowIndex = rg.Rows.IndexOf(row) + 1;
-            if (newRowIndex < rg.Rows.Count)
+            // 行を挿入した後は、かたまりが分け直されて行が別のかたまりへ移っていることがある（TableChunks.RebalanceIfLarge）
+            var rows = TableChunks.GetRows(TableChunks.GetChunkOfRow(row));
+            int newRowIndex = rows.IndexOf(row) + 1;
+            if (0 < newRowIndex && newRowIndex < rows.Count)
             {
-                var newRow = rg.Rows[newRowIndex];
+                var newRow = rows[newRowIndex];
                 if (column >= 0 && column < newRow.Cells.Count && newRow.Cells[column].Blocks.FirstBlock is Paragraph np)
                 {
                     m_editor.CaretPosition = np.ContentStart;
@@ -339,6 +345,8 @@ namespace mde.editor
             // 隣接セルの境界線が二重に重ならないよう、表全体へまとめて罫線を設定する
             // （BlockStyles.ApplyTableCellBorders参照）。
             BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
+            // 大きな表は、内部では複数のかたまりに分ける（TableChunks）
+            List<Table> chunks = TableChunks.SplitIfLarge(table);
 
             var trailingPara = new Paragraph();
 
@@ -346,14 +354,24 @@ namespace mde.editor
             {
                 if (null != ContextParagraph && ContextParagraph.Parent is FlowDocument)
                 {
-                    m_editor.Document.Blocks.InsertAfter(ContextParagraph, table);
-                    m_editor.Document.Blocks.InsertAfter(table, trailingPara);
+                    Block insertAfter = ContextParagraph;
+                    foreach (Table chunk in chunks)
+                    {
+                        m_editor.Document.Blocks.InsertAfter(insertAfter, chunk);
+                        insertAfter = chunk;
+                    }
+                    m_editor.Document.Blocks.InsertAfter(insertAfter, trailingPara);
                 }
                 else
                 {
-                    m_editor.Document.Blocks.Add(table);
+                    foreach (Table chunk in chunks)
+                    {
+                        m_editor.Document.Blocks.Add(chunk);
+                    }
                     m_editor.Document.Blocks.Add(trailingPara);
                 }
+                // 最後のかたまりの下の余白は、前のブロックで決まる（文書に入れた後に決める。TableChunks.ApplyChunkFrame）
+                TableChunks.ApplyChunkFrame(chunks);
             });
 
             if (headerRow.Cells[0].Blocks.FirstBlock is Paragraph hp)
@@ -364,9 +382,39 @@ namespace mde.editor
             m_markDirty();
         }
 
+        /// <summary>
+        /// 表の構造を変える処理を、元に戻す（Undo）の1操作にまとめて実行する。大きな表を分けたかたまり（TableChunks）では、
+        /// 行・列の挿入や削除に合わせて、かたまりの分け直し・罫線・余白・列の幅も変わるため、まとめないと Undo の途中で
+        /// 見た目のそろっていない状態が見えてしまう。
+        /// </summary>
+        /// <param name="a_action">処理。</param>
+        /// <param name="a_updateLayoutFlg">終わった後にレイアウトを強制再計算するか（DeleteRow 参照）。</param>
+        private void RunAsOneUndoUnit(Action a_action, bool a_updateLayoutFlg = false)
+        {
+            m_editor.BeginChange();
+            try
+            {
+                a_action();
+            }
+            finally
+            {
+                m_editor.EndChange();
+            }
+            if (a_updateLayoutFlg)
+            {
+                // 行・列の削除後、残ったセルの枠線が消えて見えることがあるため、念のためレイアウトを強制再計算する
+                // （罫線の再設定だけでは解消しない場合がある）。変更をまとめ終えた後に行う
+                m_editor.UpdateLayout();
+            }
+        }
+
         /// <summary>ContextCellの表に新しい空の行を挿入する。</summary>
         /// <param name="a_aboveFlg">true なら現在の行の上に、false なら下に挿入する。</param>
-        public void InsertRow(bool a_aboveFlg)
+        public void InsertRow(bool a_aboveFlg) => RunAsOneUndoUnit(() => InsertRowCore(a_aboveFlg));
+
+        /// <summary>InsertRow の本体。</summary>
+        /// <param name="a_aboveFlg">true なら現在の行の上に、false なら下に挿入する。</param>
+        private void InsertRowCore(bool a_aboveFlg)
         {
             if (null == ContextCell)
             {
@@ -403,6 +451,8 @@ namespace mde.editor
             // 同じ領域のため、挿入のたびに明示的に設定する。下のDeleteRow参照）。
             if (rg.Parent is Table refreshTable)
             {
+                // 行を足してかたまりが大きくなり過ぎたら、分け直す（TableChunks。大きな表の入力が遅くならないように）
+                TableChunks.RebalanceIfLarge(refreshTable);
                 BlockStyles.ApplyTableCellBorders(refreshTable, m_cellBorder);
             }
 
@@ -416,7 +466,11 @@ namespace mde.editor
 
         /// <summary>ContextCellの表に新しい空の列を挿入する。</summary>
         /// <param name="a_leftFlg">true なら現在の列の左に、false なら右に挿入する。</param>
-        public void InsertColumn(bool a_leftFlg)
+        public void InsertColumn(bool a_leftFlg) => RunAsOneUndoUnit(() => InsertColumnCore(a_leftFlg));
+
+        /// <summary>InsertColumn の本体。</summary>
+        /// <param name="a_leftFlg">true なら現在の列の左に、false なら右に挿入する。</param>
+        private void InsertColumnCore(bool a_leftFlg)
         {
             if (null == ContextCell)
             {
@@ -436,9 +490,12 @@ namespace mde.editor
                 return;
             }
 
+            // 大きな表を分けたかたまり（TableChunks）は、すべてのかたまりの行に列を足す（列の情報は先頭のかたまりに足し、
+            // 続きのかたまりへは ApplyTableCellBorders（TableChunks.ApplyChunkFrame）が写す）
+            table = TableChunks.GetHead(table);
             int colIdx = row.Cells.IndexOf(ContextCell);
             int insertIdx = a_leftFlg ? colIdx : colIdx + 1;
-            var rows = rg.Rows.Cast<TableRow>().ToList();
+            var rows = TableChunks.GetRows(table);
 
             TableCell firstNewCell = null;
             for (int r = 0; r < rows.Count; r++)
@@ -539,7 +596,16 @@ namespace mde.editor
             // 既定の均等幅へ戻っても、この記録は保持される。
             BlockStyles.SetSourceDashCounts(table, a_dashCounts);
             bool correctColumnWidthsFlg = m_correctColumnWidthsFlg?.Invoke() ?? true;
-            BlockStyles.ApplyEffectiveColumnWidths(table, a_dashCounts, correctColumnWidthsFlg, GetAvailableTableWidth());
+            // 列の幅の変更は、元に戻す（Undo）の1操作にまとめる（RefreshAutoCalculatedColumnWidthsForResize と同じ理由）
+            m_editor.BeginChange();
+            try
+            {
+                BlockStyles.ApplyEffectiveColumnWidths(table, a_dashCounts, correctColumnWidthsFlg, GetAvailableTableWidth());
+            }
+            finally
+            {
+                m_editor.EndChange();
+            }
             m_markDirty();
         }
 
@@ -563,14 +629,15 @@ namespace mde.editor
         }
 
         /// <summary>文書内の表をすべて見つける（表は常に文書の最上位ブロックとして挿入される
-        /// ため、トップレベルのBlocksだけを見れば十分）。</summary>
+        /// ため、トップレベルのBlocksだけを見れば十分）。大きな表を分けたかたまり（TableChunks）は、先頭のかたまりだけ。</summary>
         /// <param name="a_doc">対象の文書。</param>
         public List<Table> FindAllTables(FlowDocument a_doc)
         {
             var tables = new List<Table>();
             foreach (Block b in a_doc.Blocks)
             {
-                if (b is Table t)
+                // 大きな表を分けたかたまり（TableChunks）は、先頭のかたまりだけを返す（列の幅等は先頭のかたまりで表全体を扱う）
+                if (b is Table t && !TableChunks.IsContinuation(t))
                 {
                     tables.Add(t);
                 }
@@ -592,14 +659,27 @@ namespace mde.editor
                 return;
             }
             double availableWidth = GetAvailableTableWidth();
-            foreach (var table in FindAllTables(m_editor.Document))
+            // 列の幅の変更は、元に戻す（Undo）の1操作にまとめる（大きな表を分けたかたまり（TableChunks）は、かたまりごとに
+            // 列の幅を変えるため、まとめないと Undo の履歴がかたまりの数だけ増える）
+            m_editor.BeginChange();
+            try
             {
-                BlockStyles.RefreshAutoCalculatedColumnWidths(table, availableWidth);
+                foreach (var table in FindAllTables(m_editor.Document))
+                {
+                    BlockStyles.RefreshAutoCalculatedColumnWidths(table, availableWidth);
+                }
+            }
+            finally
+            {
+                m_editor.EndChange();
             }
         }
 
         /// <summary>ContextCellが属する行を削除する（表の唯一の行なら表ごと削除する）。</summary>
-        public void DeleteRow()
+        public void DeleteRow() => RunAsOneUndoUnit(DeleteRowCore, true);
+
+        /// <summary>DeleteRow の本体。</summary>
+        private void DeleteRowCore()
         {
             if (null == ContextCell)
             {
@@ -610,35 +690,38 @@ namespace mde.editor
             {
                 return;
             }
-            if (!(row.Parent is TableRowGroup rg))
+            if (!(row.Parent is TableRowGroup rg) || !(rg.Parent is Table chunk))
             {
                 return;
             }
 
-            if (rg.Rows.Count <= 1)
+            // 大きな表を分けたかたまり（TableChunks）は、すべてのかたまりの行を合わせて1つの表として数える
+            if (TableChunks.GetRows(chunk).Count <= 1)
             {
-                if (rg.Parent is Table table)
-                {
-                    m_editor.Document.Blocks.Remove(table);
-                }
+                TableChunks.RemoveAll(chunk);
                 m_markDirty();
                 return;
             }
             rg.Rows.Remove(row);
+            // かたまりの行が無くなったら、そのかたまりを取り除く（先頭のかたまりなら、次のかたまりの行を移す）
+            Table refreshTable = TableChunks.RemoveIfEmpty(chunk);
             // 削除した行が最上段だった場合、繰り上がった新しい最上段のセルに上辺の罫線が
             // 必要になるため、表全体の罫線をApplyTableCellBordersで設定し直す。
-            if (rg.Parent is Table refreshTable)
+            if (null != refreshTable)
             {
                 BlockStyles.ApplyTableCellBorders(refreshTable, m_cellBorder);
             }
             // 行削除後、残ったセルの枠線が消えて見えることがあるため、念のため
-            // レイアウトを強制再計算する（上の罫線再設定だけでは解消しない場合がある）。
-            m_editor.UpdateLayout();
+            // レイアウトを強制再計算する（上の罫線再設定だけでは解消しない場合がある。DeleteRow が、変更をまとめ終えた
+            // 後に行う。RunAsOneUndoUnit 参照）。
             m_markDirty();
         }
 
         /// <summary>ContextCellが属する列を削除する（表の唯一の列なら表ごと削除する）。</summary>
-        public void DeleteColumn()
+        public void DeleteColumn() => RunAsOneUndoUnit(DeleteColumnCore, true);
+
+        /// <summary>DeleteColumn の本体。</summary>
+        private void DeleteColumnCore()
         {
             if (null == ContextCell)
             {
@@ -662,12 +745,15 @@ namespace mde.editor
 
             if (row.Cells.Count <= 1)
             {
-                m_editor.Document.Blocks.Remove(table);
+                TableChunks.RemoveAll(table);
                 m_markDirty();
                 return;
             }
 
-            foreach (TableRow r in rg.Rows)
+            // 大きな表を分けたかたまり（TableChunks）は、すべてのかたまりの行から列を取り除く（列の情報は先頭のかたまりから
+            // 取り除き、続きのかたまりへは ApplyTableCellBorders（TableChunks.ApplyChunkFrame）が写す）
+            table = TableChunks.GetHead(table);
+            foreach (TableRow r in TableChunks.GetRows(table))
             {
                 if (colIndex < r.Cells.Count)
                 {
@@ -685,14 +771,16 @@ namespace mde.editor
             // 削除した列が最左列だった場合、繰り上がった新しい最左列のセルに左辺の罫線が
             // 必要になるため、表全体の罫線を設定し直す（DeleteRow側と同じ理由）。
             BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
-            // DeleteRow側と同じ理由による対症療法。
-            m_editor.UpdateLayout();
+            // DeleteRow側と同じ理由による対症療法（レイアウトの強制再計算は DeleteColumn が、変更をまとめ終えた後に行う）。
             m_markDirty();
         }
 
         /// <summary>ContextCellが属する表全体を削除する（行・列を1つずつ削除するのではなく、
         /// 表そのものを右クリックメニューから直接削除したい場合用）。</summary>
-        public void DeleteTable()
+        public void DeleteTable() => RunAsOneUndoUnit(DeleteTableCore);
+
+        /// <summary>DeleteTable の本体。</summary>
+        private void DeleteTableCore()
         {
             if (null == ContextCell)
             {
@@ -704,7 +792,7 @@ namespace mde.editor
             {
                 return;
             }
-            m_editor.Document.Blocks.Remove(table);
+            TableChunks.RemoveAll(table);
             m_markDirty();
         }
 
@@ -734,19 +822,13 @@ namespace mde.editor
 
         // ---------------- Excelとのコピー&ペースト連携 ----------------
 
+        /// <summary>表の行の並び（大きな表を分けたかたまり（TableChunks）は、すべてのかたまりの行）。</summary>
         private List<TableRow> GetTableRows(Table a_table)
         {
-            var rows = new List<TableRow>();
-            foreach (TableRowGroup rg in a_table.RowGroups)
-            {
-                foreach (TableRow r in rg.Rows)
-                {
-                    rows.Add(r);
-                }
-            }
-            return rows;
+            return TableChunks.GetRows(a_table);
         }
 
+        /// <summary>セルが属する表を返す（大きな表を分けたかたまり（TableChunks）は、先頭のかたまり）。</summary>
         private Table FindEnclosingTable(TableCell a_cell)
         {
             if (!(a_cell.Parent is TableRow row))
@@ -757,7 +839,7 @@ namespace mde.editor
             {
                 return null;
             }
-            return rg.Parent as Table;
+            return TableChunks.GetHead(rg.Parent as Table);
         }
 
         private class CellRange
@@ -1230,6 +1312,8 @@ namespace mde.editor
             var dashCounts = Enumerable.Repeat(BlockStyles.TABLE_COLUMN_DEFAULT_DASH_COUNT, colCount).ToList();
             BlockStyles.SetSourceDashCounts(table, dashCounts);
             BlockStyles.ApplyEffectiveColumnWidths(table, dashCounts, m_correctColumnWidthsFlg?.Invoke() ?? true, GetAvailableTableWidth());
+            // 大きな表は、内部では複数のかたまりに分ける（TableChunks）
+            List<Table> chunks = TableChunks.SplitIfLarge(table);
 
             m_runAsProgrammaticChange(() =>
             {
@@ -1237,8 +1321,13 @@ namespace mde.editor
                 var trailingPara = new Paragraph();
                 if (null != para && para.Parent is FlowDocument)
                 {
-                    m_editor.Document.Blocks.InsertAfter(para, table);
-                    m_editor.Document.Blocks.InsertAfter(table, trailingPara);
+                    Block insertAfter = para;
+                    foreach (Table chunk in chunks)
+                    {
+                        m_editor.Document.Blocks.InsertAfter(insertAfter, chunk);
+                        insertAfter = chunk;
+                    }
+                    m_editor.Document.Blocks.InsertAfter(insertAfter, trailingPara);
                     if (string.IsNullOrWhiteSpace(new TextRange(para.ContentStart, para.ContentEnd).Text))
                     {
                         m_editor.Document.Blocks.Remove(para);
@@ -1246,9 +1335,14 @@ namespace mde.editor
                 }
                 else
                 {
-                    m_editor.Document.Blocks.Add(table);
+                    foreach (Table chunk in chunks)
+                    {
+                        m_editor.Document.Blocks.Add(chunk);
+                    }
                     m_editor.Document.Blocks.Add(trailingPara);
                 }
+                // 最後のかたまりの下の余白は、前のブロックで決まる（文書に入れた後に決める。TableChunks.ApplyChunkFrame）
+                TableChunks.ApplyChunkFrame(chunks);
 
                 if (rg.Rows.Count > 0 &&
                     rg.Rows[0].Cells.Count > 0 &&

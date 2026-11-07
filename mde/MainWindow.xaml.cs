@@ -447,6 +447,9 @@ namespace mde
             // 利用し、m_editor自身に登録した単一のハンドラでまとめて受け取る。
             m_editor.AddHandler(ToggleButton.CheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
             m_editor.AddHandler(ToggleButton.UncheckedEvent, new RoutedEventHandler(TaskCheckboxToggled));
+            // 大きな表を分けたかたまり（TableChunks）の間にキャレットが止まらないようにする（KeepCaretOutOfTableChunkGap。
+            // 表から出たと誤って判定しないよう、RefreshTableWidthsOnLeave より先に登録する）
+            m_editor.SelectionChanged += (s, e) => KeepCaretOutOfTableChunkGap();
             // 表の中を編集してキャレットが表の外へ出た時に、その表の列幅を内容に合わせ直す（RefreshTableWidthsOnLeave）
             m_editor.SelectionChanged += (s, e) => RefreshTableWidthsOnLeave();
 
@@ -984,7 +987,9 @@ namespace mde
             {
                 return false;
             }
-            bool headerRowFlg = ReferenceEquals(table.RowGroups.FirstOrDefault(), rowGroup) &&
+            // 大きな表を分けた続きのかたまり（TableChunks）の最初の行は、見出しの行ではない
+            bool headerRowFlg = !TableChunks.IsContinuation(table) &&
+                ReferenceEquals(table.RowGroups.FirstOrDefault(), rowGroup) &&
                 ReferenceEquals(rowGroup.Rows.FirstOrDefault(), row);
             return !headerRowFlg;
         }
@@ -1175,6 +1180,9 @@ namespace mde
                 return;
             }
 
+            // 大きな表を分けたかたまり（TableChunks）の見た目のずれを、後で直す（表の外から表の途中までを選んで削除した等）
+            ScheduleTableChunkRepair(a_args.UndoAction);
+
             // 検索結果のハイライト（背景色）の適用/解除も、WPFの仕様上TextChangedを発生させて
             // しまうが、これは実際の編集ではないため、ダーティ扱いにしたり元テキスト保持の
             // 記憶を破棄したりしてはいけない。
@@ -1345,6 +1353,14 @@ namespace mde
         /// <param name="a_args">イベントの引数。</param>
         private void EditorPreviewTextInput(object a_sender, TextCompositionEventArgs a_args)
         {
+            // 大きな表を分けたかたまり（TableChunks）にまたがってセルを選んだまま文字を打った時は、1つの表の中でセルを
+            // 選んでいた時と同じく、最初のセルの文字だけを置き換える（WPF 標準のままだと、選んだ行が消える）
+            if (!m_isSourceModeFlg && !string.IsNullOrEmpty(a_args.Text) &&
+                GetCrossChunkSelectedRows()?.FirstOrDefault()?.Cells.FirstOrDefault() is TableCell firstSelectedCell &&
+                firstSelectedCell.Blocks.FirstBlock is Paragraph firstCellPara && firstSelectedCell.Blocks.LastBlock is Paragraph lastCellPara)
+            {
+                m_editor.Selection.Select(firstCellPara.ContentStart, lastCellPara.ContentEnd);
+            }
             if (m_isSourceModeFlg || " " != a_args.Text)
             {
                 return;
@@ -1768,6 +1784,16 @@ namespace mde
                 {
                     return null;
                 }
+                // 大きな表を分けたかたまり（TableChunks）は、表のすべてのかたまりを選んでいる時だけ、表全体として書き出す
+                // （先頭のかたまりが表全体を書き出す）。一部のかたまりだけの時は、表の途中から（まで）として扱う
+                foreach (Block block in picked)
+                {
+                    if (block is Table pickedTable &&
+                        TableChunks.GetChunks(pickedTable).Any(chunk => !picked.Contains(chunk)))
+                    {
+                        return null;
+                    }
+                }
                 if (picked[0] is Paragraph firstPara && firstPara.Tag is CodeBlockContinuationInfo)
                 {
                     return null; // コードブロックの途中から
@@ -2094,6 +2120,245 @@ namespace mde
             MarkDirty();
         }
 
+        /// <summary>
+        /// 選択範囲が、大きな表を分けた2つ以上のかたまり（TableChunks）にまたがっていて、表の外を含まないなら、選択範囲に
+        /// かかっている行を返す。WPF は、2つの表にまたがる選択を行単位に広げるため（1つの表の中ならセルの範囲）、
+        /// Delete 等をそのまま WPF に任せると、選んだ行が丸ごと消えてしまう。
+        /// </summary>
+        /// <returns>選択範囲にかかっている行。かたまりにまたがっていなければ null。</returns>
+        private List<TableRow> GetCrossChunkSelectedRows()
+        {
+            TextSelection sel = m_editor.Selection;
+            if (m_isSourceModeFlg || sel.IsEmpty)
+            {
+                return null;
+            }
+            Table startChunk = FindEnclosingTableOfPosition(sel.Start);
+            Table endChunk = FindEnclosingTableOfPosition(sel.End);
+            if (null == startChunk || null == endChunk || ReferenceEquals(startChunk, endChunk))
+            {
+                return null;
+            }
+            Table head = TableChunks.GetHead(startChunk);
+            if (!ReferenceEquals(head, TableChunks.GetHead(endChunk)))
+            {
+                return null;
+            }
+            var rows = TableChunks.GetRows(head)
+                .Where(r => 0 < r.ContentEnd.CompareTo(sel.Start) && 0 > r.ContentStart.CompareTo(sel.End))
+                .ToList();
+            return 0 < rows.Count ? rows : null;
+        }
+
+        /// <summary>位置を含む表（かたまり）を返す。表の中でなければ null。</summary>
+        /// <param name="a_position">位置。</param>
+        /// <returns>表。</returns>
+        private static Table FindEnclosingTableOfPosition(TextPointer a_position)
+        {
+            for (DependencyObject node = a_position?.Parent; null != node; node = (node as TextElement)?.Parent)
+            {
+                if (node is Table table)
+                {
+                    return table;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 行のすべてのセルの文字を消す（行は残す。各セルは最初の段落だけを空にして残す）。1つの表の中でセルを選んで
+        /// Delete を押した時（WPF 標準）と同じ結果にする（GetCrossChunkSelectedRows）。元に戻す（Undo）の1操作にまとめる。
+        /// </summary>
+        /// <param name="a_rows">行。</param>
+        private void ClearCellsOfRows(List<TableRow> a_rows)
+        {
+            RunAsProgrammaticChange(() =>
+            {
+                m_originalTextTracker.InvalidateForBlock(TableChunks.GetChunkOfRow(a_rows[0]));
+                Paragraph caretPara = null;
+                foreach (TableRow row in a_rows)
+                {
+                    foreach (TableCell cell in row.Cells)
+                    {
+                        var firstPara = cell.Blocks.FirstBlock as Paragraph;
+                        foreach (Block block in cell.Blocks.ToList())
+                        {
+                            if (!ReferenceEquals(block, firstPara))
+                            {
+                                cell.Blocks.Remove(block);
+                            }
+                        }
+                        if (null == firstPara)
+                        {
+                            firstPara = new Paragraph { Margin = new Thickness(0), LineHeight = BlockStyles.TableCellLineHeight, KeepTogether = true };
+                            cell.Blocks.Add(firstPara);
+                        }
+                        firstPara.Inlines.Clear();
+                        caretPara ??= firstPara;
+                    }
+                }
+                if (null != caretPara)
+                {
+                    m_editor.Selection.Select(caretPara.ContentStart, caretPara.ContentStart);
+                }
+            });
+            MarkDirty();
+        }
+
+        /// <summary>直前のキャレットの位置（KeepCaretOutOfTableChunkGap。キャレットが進んだ向きを調べる）。</summary>
+        private TextPointer m_lastCaretPositionForChunkGap;
+        /// <summary>KeepCaretOutOfTableChunkGap がキャレットを動かしている最中か。</summary>
+        private bool m_movingCaretOutOfChunkGapFlg;
+
+        /// <summary>
+        /// 大きな表を分けたかたまり（TableChunks）の間（2つの Table の境目）にキャレットが来たら、進んでいた向きの隣のセルへ
+        /// 移す（前へ進んでいたら次のかたまりの最初のセルの先頭、後ろへ戻っていたら前のかたまりの最後のセルの末尾）。
+        /// WPF は、隣り合う2つの表の境目にもキャレットを置ける（表の最後のセルの末尾で右矢印キーを押した時等）ため、
+        /// そこで文字を打つと表の間に段落ができ、1つの表が2つに分かれてしまう。1つの表だった時は、同じ操作で隣の行のセルへ
+        /// 移っていたので、それと同じ動きにする。
+        /// </summary>
+        private void KeepCaretOutOfTableChunkGap()
+        {
+            if (m_isSourceModeFlg || m_movingCaretOutOfChunkGapFlg)
+            {
+                return;
+            }
+            TextPointer caret = m_editor.CaretPosition;
+            TextPointer last = m_lastCaretPositionForChunkGap;
+            m_lastCaretPositionForChunkGap = caret;
+            if (null == caret || !m_editor.Selection.IsEmpty || null != caret.Paragraph)
+            {
+                return;
+            }
+            // キャレットの前後のかたまり：表の中の段落の外（行の前後等）なら、その表と、前（後）のかたまり。
+            // 2つの表の間なら、その2つの表
+            Table previousChunk = null;
+            Table nextChunk = null;
+            Table enclosing = null;
+            for (DependencyObject node = caret.Parent; null != node; node = (node as TextElement)?.Parent)
+            {
+                if (node is Table table)
+                {
+                    enclosing = table;
+                    break;
+                }
+            }
+            if (null != enclosing)
+            {
+                Paragraph firstPara = TableChunks.GetRows(new[] { enclosing }).FirstOrDefault()?.Cells.FirstOrDefault()?.Blocks.FirstBlock as Paragraph;
+                if (null != firstPara && 0 >= caret.CompareTo(firstPara.ContentStart))
+                {
+                    previousChunk = TableChunks.IsContinuation(enclosing) ? (Table)enclosing.PreviousBlock : null;
+                    nextChunk = enclosing;
+                }
+                else
+                {
+                    previousChunk = enclosing;
+                    nextChunk = enclosing.NextBlock is Table next && TableChunks.IsContinuation(next) ? next : null;
+                }
+            }
+            else if (caret.GetAdjacentElement(LogicalDirection.Backward) is Table backwardTable &&
+                     caret.GetAdjacentElement(LogicalDirection.Forward) is Table forwardTable &&
+                     TableChunks.IsContinuation(forwardTable))
+            {
+                previousChunk = backwardTable;
+                nextChunk = forwardTable;
+            }
+            if (null == previousChunk || null == nextChunk)
+            {
+                return; // かたまりの間ではない（表の最初・最後等）：これまで通り WPF に任せる
+            }
+            bool backwardFlg = null != last && last.IsInSameDocument(caret) && 0 < last.CompareTo(caret);
+            TextPointer target = null;
+            if (backwardFlg)
+            {
+                TableRow lastRow = TableChunks.GetRows(new[] { previousChunk }).LastOrDefault();
+                if (lastRow?.Cells.LastOrDefault()?.Blocks.LastBlock is Paragraph lastPara)
+                {
+                    target = lastPara.ContentEnd;
+                }
+            }
+            else
+            {
+                TableRow firstRow = TableChunks.GetRows(new[] { nextChunk }).FirstOrDefault();
+                if (firstRow?.Cells.FirstOrDefault()?.Blocks.FirstBlock is Paragraph nextFirstPara)
+                {
+                    target = nextFirstPara.ContentStart;
+                }
+            }
+            if (null == target)
+            {
+                return;
+            }
+            m_movingCaretOutOfChunkGapFlg = true;
+            try
+            {
+                m_editor.CaretPosition = target;
+            }
+            finally
+            {
+                m_movingCaretOutOfChunkGapFlg = false;
+            }
+            m_lastCaretPositionForChunkGap = m_editor.CaretPosition;
+        }
+
+        /// <summary>TableChunks の見た目の後始末（ScheduleTableChunkRepair）を予約済みか。</summary>
+        private bool m_tableChunkRepairScheduledFlg;
+        /// <summary>予約した後始末で、余白・線まで直すか（false なら列の幅だけ）。</summary>
+        private bool m_tableChunkRepairFullFlg;
+        /// <summary>直前に数えた、文書の最上位のブロックの数（ScheduleTableChunkRepair）。</summary>
+        private int m_lastTopLevelBlockCount = -1;
+
+        /// <summary>
+        /// 文書の最上位のブロックの数が変わった時（ブロックが削除・追加された時）に、大きな表を分けたかたまり（TableChunks）の
+        /// 見た目（余白・外周の線・列の幅）が1つの表と同じになっているかを後で調べ、ずれていれば直す（TableChunks.RepairDocument）。
+        /// WPF 標準の操作（表の外から表の途中までを選んで削除した等）で、先頭・最後のかたまりが丸ごと消えた時のずれを直すため。
+        /// 元に戻す・やり直しの後は、列の幅だけを直す（余白・線は元に戻す側が戻す。ここで直すと、やり直しの履歴が消えるため）。
+        /// 文字の入力（ブロックの数が変わらない）では何もしない。
+        /// </summary>
+        /// <param name="a_undoAction">TextChanged の UndoAction。</param>
+        private void ScheduleTableChunkRepair(UndoAction a_undoAction)
+        {
+            int count = m_editor.Document.Blocks.Count;
+            if (count == m_lastTopLevelBlockCount)
+            {
+                return;
+            }
+            m_lastTopLevelBlockCount = count;
+            if (UndoAction.Undo != a_undoAction && UndoAction.Redo != a_undoAction)
+            {
+                m_tableChunkRepairFullFlg = true;
+            }
+            if (m_tableChunkRepairScheduledFlg)
+            {
+                return;
+            }
+            m_tableChunkRepairScheduledFlg = true;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                bool fullFlg = m_tableChunkRepairFullFlg;
+                m_tableChunkRepairScheduledFlg = false;
+                m_tableChunkRepairFullFlg = false;
+                if (m_isSourceModeFlg)
+                {
+                    return;
+                }
+                RunWithoutDirtyMarking(() =>
+                {
+                    // 直した内容は、元に戻す（Undo）の1操作にまとめる
+                    m_editor.BeginChange();
+                    try
+                    {
+                        TableChunks.RepairDocument(m_editor.Document, !fullFlg);
+                    }
+                    finally
+                    {
+                        m_editor.EndChange();
+                    }
+                });
+            }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
         /// <summary>直前にキャレットがあった表（RefreshTableWidthsOnLeave）。表の外なら null。</summary>
         private Table m_lastCaretTable;
 
@@ -2114,7 +2379,8 @@ namespace mde
             {
                 if (node is Table table)
                 {
-                    current = table;
+                    // 大きな表を分けたかたまり（TableChunks）の間の移動は、同じ表の中の移動として扱う
+                    current = TableChunks.GetHead(table);
                     break;
                 }
             }
@@ -2129,7 +2395,20 @@ namespace mde
             {
                 if (!m_isSourceModeFlg && ReferenceEquals(left.Parent, m_editor.Document))
                 {
-                    RunWithoutDirtyMarking(() => BlockStyles.RefreshAutoCalculatedColumnWidths(left, m_tableEditor.GetAvailableTableWidth()));
+                    RunWithoutDirtyMarking(() =>
+                    {
+                        // 列の幅の変更は、元に戻す（Undo）の1操作にまとめる（大きな表を分けたかたまり（TableChunks）は、かたまり
+                        // ごとに列の幅を変えるため、まとめないと Undo の履歴がかたまりの数だけ増える）
+                        m_editor.BeginChange();
+                        try
+                        {
+                            BlockStyles.RefreshAutoCalculatedColumnWidths(left, m_tableEditor.GetAvailableTableWidth());
+                        }
+                        finally
+                        {
+                            m_editor.EndChange();
+                        }
+                    });
                 }
             }), System.Windows.Threading.DispatcherPriority.Background);
         }
@@ -2398,6 +2677,23 @@ namespace mde
             if (m_isSourceModeFlg)
             {
                 return;
+            }
+            // 大きな表を分けたかたまり（TableChunks）にまたがってセルを選んでいる時の Delete・BackSpace・Ctrl+X は、
+            // 1つの表の中でセルを選んでいた時と同じく、選んだセルの文字だけを消す（行は消さない。ClearCellsOfRows）
+            if ((ModifierKeys.None == Keyboard.Modifiers && (Key.Delete == a_args.Key || Key.Back == a_args.Key)) ||
+                (ModifierKeys.Control == Keyboard.Modifiers && Key.X == a_args.Key))
+            {
+                List<TableRow> crossChunkRows = GetCrossChunkSelectedRows();
+                if (null != crossChunkRows)
+                {
+                    a_args.Handled = true;
+                    if (Key.X == a_args.Key)
+                    {
+                        m_editor.Copy();
+                    }
+                    ClearCellsOfRows(crossChunkRows);
+                    return;
+                }
             }
             // 書式のショートカット（mdew・mdee と同じキー）。WPF の RichTextBox 標準の Ctrl+B・Ctrl+I・Ctrl+U は、
             // mde の書式（Run の Tag）を付けずに見た目だけを変え、保存すると書式が消えるため、ここで代わりに処理する
@@ -3357,10 +3653,23 @@ namespace mde
                 var originalTableColumnWidths = new Dictionary<Table, GridLength[]>();
                 if (m_correctColumnWidthsFlg)
                 {
-                    foreach (var table in m_tableEditor.FindAllTables(m_editor.Document))
+                    // 大きな表を分けたかたまり（TableChunks）は、すべてのかたまりの幅を覚えておき、列幅の再計算は先頭のかたまりで
+                    // 表全体に対して行う（FindAllTables は先頭のかたまりだけを返す）
+                    foreach (var table in m_editor.Document.Blocks.OfType<Table>())
                     {
                         originalTableColumnWidths[table] = table.Columns.Select(c => c.Width).ToArray();
-                        BlockStyles.RefreshAutoCalculatedColumnWidths(table, contentWidth);
+                    }
+                    m_editor.BeginChange();
+                    try
+                    {
+                        foreach (var table in m_tableEditor.FindAllTables(m_editor.Document))
+                        {
+                            BlockStyles.RefreshAutoCalculatedColumnWidths(table, contentWidth);
+                        }
+                    }
+                    finally
+                    {
+                        m_editor.EndChange();
                     }
                 }
 
@@ -3368,7 +3677,8 @@ namespace mde
                 // そろえる（画面用の線のままだと、PDFで一部消えたり、一部だけ太く見えたりするため。
                 // 詳細は BlockStyles.ApplyPrintTableBorders）。書き出し後に画面用の線へ戻す。
                 var tableBorderRestores = new List<Action>();
-                foreach (var table in m_tableEditor.FindAllTables(m_editor.Document))
+                // 大きな表を分けたかたまり（TableChunks）も、それぞれのかたまりの線を書き出す間だけそろえる
+                foreach (var table in m_editor.Document.Blocks.OfType<Table>())
                 {
                     tableBorderRestores.Add(BlockStyles.ApplyPrintTableBorders(table));
                 }
@@ -3425,13 +3735,21 @@ namespace mde
                         kv.Key.Width = kv.Value.Width;
                         kv.Key.Height = kv.Value.Height;
                     }
-                    foreach (var kv in originalTableColumnWidths)
+                    m_editor.BeginChange();
+                    try
                     {
-                        var cols = kv.Key.Columns;
-                        for (int c = 0; c < cols.Count && c < kv.Value.Length; c++)
+                        foreach (var kv in originalTableColumnWidths)
                         {
-                            cols[c].Width = kv.Value[c];
+                            var cols = kv.Key.Columns;
+                            for (int c = 0; c < cols.Count && c < kv.Value.Length; c++)
+                            {
+                                cols[c].Width = kv.Value[c];
+                            }
                         }
+                    }
+                    finally
+                    {
+                        m_editor.EndChange();
                     }
                     foreach (var swap in linkSwaps)
                     {

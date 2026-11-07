@@ -242,6 +242,8 @@ namespace mde.editor
         private void CollectRowsInBlocks(IEnumerable<Block> a_blocks, TextPointer a_selStart, TextPointer a_selEnd, int a_depth, List<Row> a_rows)
         {
             Row previousRow = null;
+            // 書き出した表（大きな表を分けたかたまり（TableChunks）は先頭のかたまり。表全体を1回だけ書き出すため）
+            var emittedTables = new HashSet<Table>();
             foreach (Block block in a_blocks)
             {
                 if (block is Paragraph contPara && contPara.Tag is BrContinuationInfo)
@@ -311,11 +313,15 @@ namespace mde.editor
                     // 見出しや段落と表が混在する選択範囲のうち、表を含む部分。m_tableEditorが
                     // 無い場合（通常は無いはずだが念のため）は対象外とする。
                     previousRow = null;
-                    if (null != m_tableEditor && Intersects(table, a_selStart, a_selEnd))
+                    // 大きな表を分けたかたまり（TableChunks）は、いずれかのかたまりが選択範囲にかかっていれば、表全体を1回だけ書き出す
+                    Table headTable = TableChunks.GetHead(table);
+                    if (null != m_tableEditor && !emittedTables.Contains(headTable) &&
+                        TableChunks.GetChunks(headTable).Any(chunk => Intersects(chunk, a_selStart, a_selEnd)))
                     {
+                        emittedTables.Add(headTable);
                         var row = new Row { m_hasContent = true };
-                        row.m_rawTrHtml = m_tableEditor.BuildTableRowsHtml(table);
-                        row.m_text.Append(m_tableEditor.TableToTsv(table));
+                        row.m_rawTrHtml = m_tableEditor.BuildTableRowsHtml(headTable);
+                        row.m_text.Append(m_tableEditor.TableToTsv(headTable));
                         a_rows.Add(row);
                     }
                 }

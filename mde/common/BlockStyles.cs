@@ -110,6 +110,9 @@ namespace mde.common
         private static readonly Brush m_vsCodeQuoteBorder = new SolidColorBrush(Color.FromRgb(0x80, 0xBD, 0xE6));
         // 表の見出しの行の下の線（黒）。
         private static readonly Brush m_vsCodeTableHeaderBorder = new SolidColorBrush(Color.FromRgb(0x00, 0x00, 0x00));
+        /// <summary>GitHubスタイルの表の罫線の色（TableEditor・MarkdownConverter の m_cellBorder と同じ色。TableChunks が、
+        /// かたまりの罫線を設定し直す時に、先頭のかたまりの線の色が無い場合に使う）。</summary>
+        public static readonly Brush TableCellBorderBrush = new SolidColorBrush(Color.FromRgb(0xDD, 0xDF, 0xE2));
         // GitHubスタイルの表の見出しの行の背景。
         private static readonly Brush m_tableHeaderBackground = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
         private static readonly TextDecorationCollection m_noTextDecorations = new TextDecorationCollection();
@@ -710,61 +713,89 @@ namespace mde.common
         /// 呼び出し側は、行・列の挿入や削除など表の構造を変えた直後に、表全体に対して
         /// 毎回呼び直すこと（個々の操作ごとに追いかけるより、常に表全体を作り直す方が
         /// 境界線の消失・重複を防ぎやすい）。
+        /// 大きな表を分けたかたまり（TableChunks）は、すべてのかたまりの行を1つの表の行として扱い（行の位置で決まる線は、
+        /// 表全体での位置で決める）、かたまりの間の見た目（余白・列の幅）もそろえる（TableChunks.ApplyChunkFrame）。
         /// </summary>
-        /// <param name="a_table">対象の表（RowGroups・Rows・Cellsまで構築済みであること）。</param>
+        /// <param name="a_table">対象の表（RowGroups・Rows・Cellsまで構築済みであること。分けた表は、いずれのかたまりでもよい）。</param>
         /// <param name="a_borderBrush">罫線の色（呼び出し側が使っているm_cellBorderを渡す）。</param>
         public static void ApplyTableCellBorders(Table a_table, Brush a_borderBrush)
         {
-            if (VsCodeStyleFlg)
-            {
-                ApplyVsCodeTableCellBorders(a_table);
-                return;
-            }
-            // 表自身の外周（上辺・左辺）を1回だけ描く。
-            a_table.BorderBrush = a_borderBrush;
-            a_table.BorderThickness = new Thickness(1, 1, 0, 0);
+            ApplyTableCellBorders(TableChunks.GetChunks(a_table), a_borderBrush);
+        }
 
-            // 全セルの右辺・下辺に罫線を描く。ヘッダー行の内部区切り線だけ太くする
-            // （HEADER_VERTICAL_BORDER_THICKNESS）。行内最後のセルの右辺（表の外周）は
-            // 本文行と同じ太さ（1）のまま。
+        /// <summary>
+        /// ApplyTableCellBorders(Table, Brush) の本体。表のかたまりの並び（TableChunks。分けていない表は、その表だけ）に対して
+        /// 罫線を設定する（文書に入れる前の、かたまりに分けたばかりの表にも使う）。
+        /// かたまりに分けた表は、最後のかたまり以外の、かたまりの最後の行の下の線を、セルではなくそのかたまり（Table）自身の
+        /// 下の線として引く（線の位置・太さ・色は同じ）。WPF は、下に線も余白（Padding）も無い表の後ろへ、その表の前の
+        /// ブロックの下の余白をそのまま持ち越し、次の表の上に空けてしまう（MarginCollapsingState.CollapseBottomMargin）ため、
+        /// かたまりの間に隙間ができていた。かたまり自身に下の線があれば、持ち越さない。
+        /// </summary>
+        /// <param name="a_chunks">表のかたまりの並び（先頭から順）。</param>
+        /// <param name="a_borderBrush">罫線の色（GitHub スタイル）。</param>
+        public static void ApplyTableCellBorders(IList<Table> a_chunks, Brush a_borderBrush)
+        {
+            var rows = TableChunks.GetRows(a_chunks);
             int rowIndex = 0;
-            foreach (TableRowGroup rg in a_table.RowGroups)
+            for (int ci = 0; ci < a_chunks.Count; ci++)
             {
-                foreach (TableRow row in rg.Rows)
+                Table chunk = a_chunks[ci];
+                bool lastChunkFlg = ci == a_chunks.Count - 1;
+                List<TableRow> chunkRows = TableChunks.GetRows(new[] { chunk });
+                // 表自身の外周：GitHub スタイルは上辺（先頭のかたまりだけ）・左辺を1回だけ描く。VSCode スタイルは描かない
+                var frame = VsCodeStyleFlg ? new Thickness(0) : new Thickness(1, 0 == ci ? 1 : 0, 0, 0);
+                Brush frameBrush = VsCodeStyleFlg ? null : a_borderBrush;
+                for (int r = 0; r < chunkRows.Count; r++, rowIndex++)
                 {
+                    TableRow row = chunkRows[r];
+                    bool boundaryRowFlg = !lastChunkFlg && r == chunkRows.Count - 1;
                     int cellCount = row.Cells.Count;
                     int cellIndex = 0;
                     foreach (TableCell cell in row.Cells)
                     {
-                        bool isLastCellInRow = (cellIndex == cellCount - 1);
-                        double right = (0 == rowIndex && !isLastCellInRow) ? HEADER_VERTICAL_BORDER_THICKNESS : 1;
-                        cell.BorderBrush = a_borderBrush;
-                        cell.BorderThickness = new Thickness(0, 0, right, 1);
+                        Brush brush;
+                        Thickness thickness;
+                        if (VsCodeStyleFlg)
+                        {
+                            // 縦の線と外周の線は引かず、見出しの行の下だけ黒い線、本文の行と行の間は淡い灰色の線にする
+                            // （最後の行の下には引かない）
+                            bool headerFlg = 0 == rowIndex;
+                            bool lastRowFlg = rowIndex == rows.Count - 1;
+                            brush = headerFlg ? m_vsCodeTableHeaderBorder : m_vsCodeSeparator;
+                            thickness = new Thickness(0, 0, 0, headerFlg || !lastRowFlg ? 1 : 0);
+                        }
+                        else
+                        {
+                            // 全セルの右辺・下辺に罫線を描く。ヘッダー行の内部区切り線だけ太くする
+                            // （HEADER_VERTICAL_BORDER_THICKNESS）。行内最後のセルの右辺（表の外周）は
+                            // 本文行と同じ太さ（1）のまま。
+                            bool isLastCellInRow = (cellIndex == cellCount - 1);
+                            double right = (0 == rowIndex && !isLastCellInRow) ? HEADER_VERTICAL_BORDER_THICKNESS : 1;
+                            brush = a_borderBrush;
+                            thickness = new Thickness(0, 0, right, 1);
+                        }
+                        if (boundaryRowFlg)
+                        {
+                            // かたまりの最後の行の下の線は、かたまり自身の下の線にする（上のコメント参照）
+                            if (frame.Bottom < thickness.Bottom)
+                            {
+                                frame.Bottom = thickness.Bottom;
+                            }
+                            if (null == frameBrush && 0 < thickness.Bottom)
+                            {
+                                frameBrush = brush;
+                            }
+                            thickness = new Thickness(thickness.Left, thickness.Top, thickness.Right, 0);
+                        }
+                        cell.BorderBrush = brush;
+                        cell.BorderThickness = thickness;
                         cellIndex++;
                     }
-                    rowIndex++;
                 }
+                chunk.BorderBrush = frameBrush;
+                chunk.BorderThickness = frame;
             }
-        }
-
-        /// <summary>VSCodeスタイルの表の罫線：縦の線と外周の線は引かず、見出しの行の下だけ黒い線、
-        /// 本文の行と行の間は淡い灰色の線にする（最後の行の下には引かない）。</summary>
-        /// <param name="a_table">対象の表。</param>
-        private static void ApplyVsCodeTableCellBorders(Table a_table)
-        {
-            a_table.BorderBrush = null;
-            a_table.BorderThickness = new Thickness(0);
-            var rows = a_table.RowGroups.SelectMany(rg => rg.Rows).ToList();
-            for (int rowIndex = 0; rowIndex < rows.Count; rowIndex++)
-            {
-                bool headerFlg = 0 == rowIndex;
-                bool lastRowFlg = rowIndex == rows.Count - 1;
-                foreach (TableCell cell in rows[rowIndex].Cells)
-                {
-                    cell.BorderBrush = headerFlg ? m_vsCodeTableHeaderBorder : m_vsCodeSeparator;
-                    cell.BorderThickness = new Thickness(0, 0, 0, headerFlg || !lastRowFlg ? 1 : 0);
-                }
-            }
+            TableChunks.ApplyChunkFrame(a_chunks);
         }
 
         /// <summary>PDF出力時の表の罫線の太さ（px。1px = 0.75pt）。画面と同じ 1px にそろえる
@@ -1434,7 +1465,7 @@ namespace mde.common
             {
                 columnInputs[c] = new List<ParagraphMeasureInput>();
             }
-            foreach (TableRowGroup rg in a_table.RowGroups)
+            foreach (TableRowGroup rg in TableChunks.GetChunks(a_table).SelectMany(t => t.RowGroups))
             {
                 foreach (TableRow row in rg.Rows)
                 {
@@ -1552,6 +1583,7 @@ namespace mde.common
         /// <param name="a_dashCounts">列ごとのダッシュ数。</param>
         public static void SetSourceDashCounts(Table a_table, IReadOnlyList<int> a_dashCounts)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             m_sourceDashCounts.Remove(a_table);
             m_sourceDashCounts.Add(a_table, a_dashCounts.ToArray());
         }
@@ -1562,6 +1594,7 @@ namespace mde.common
         /// <param name="a_table">対象の表。</param>
         public static IReadOnlyList<int> GetSourceDashCounts(Table a_table)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             return m_sourceDashCounts.TryGetValue(a_table, out var counts) ? counts : null;
         }
 
@@ -1572,6 +1605,7 @@ namespace mde.common
         /// <param name="a_index">新しい列の挿入位置（0始まり）。</param>
         public static void InsertIntoSourceDashCounts(Table a_table, int a_index)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             if (!m_sourceDashCounts.TryGetValue(a_table, out var counts))
             {
                 return;
@@ -1590,6 +1624,7 @@ namespace mde.common
         /// <param name="a_index">削除する列の位置（0始まり）。</param>
         public static void RemoveFromSourceDashCounts(Table a_table, int a_index)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             if (!m_sourceDashCounts.TryGetValue(a_table, out var counts))
             {
                 return;
@@ -1618,6 +1653,7 @@ namespace mde.common
         public static (List<string> Labels, List<int> DashCounts, bool IsAutoCalculated) BuildColumnWidthDialogInfo(
             Table a_table, double? a_availableWidthPx = null)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             using (BeginMeasureScope())
             {
                 var labels = new List<string>();
@@ -1702,6 +1738,7 @@ namespace mde.common
         /// 画像も縮小の対象外とする）。</param>
         public static void ApplyExplicitColumnWidths(Table a_table, IReadOnlyList<int?> a_dashCounts, double? a_availableWidthPx = null)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             using (BeginMeasureScope())
             {
                 int colCount = a_table.Columns.Count;
@@ -1724,6 +1761,7 @@ namespace mde.common
                     {
                         a_table.Columns[c].Width = new GridLength(pixelCandidateWidths[c], GridUnitType.Pixel);
                     }
+                    TableChunks.SyncColumns(a_table);
                     ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
                     return;
                 }
@@ -1739,6 +1777,7 @@ namespace mde.common
                         : PixelWidthToDashCount(c < cappedNaturalWidths.Length ? cappedNaturalWidths[c] : DEFAULT_NATURAL_COLUMN_WIDTH_PX);
                     a_table.Columns[c].Width = new GridLength(starValue, GridUnitType.Star);
                 }
+                TableChunks.SyncColumns(a_table);
                 ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
             }
         }
@@ -1763,6 +1802,7 @@ namespace mde.common
         /// 把握していない場合はnull（その場合は常にStar比率にする）。</param>
         public static void ApplyAutoCalculatedColumnWidths(Table a_table, double? a_availableWidthPx)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             using (BeginMeasureScope())
             {
                 int colCount = a_table.Columns.Count;
@@ -1775,6 +1815,7 @@ namespace mde.common
                     {
                         a_table.Columns[c].Width = new GridLength(autoWidths[c], GridUnitType.Pixel);
                     }
+                    TableChunks.SyncColumns(a_table);
                     ConstrainCellImagesToColumnWidths(a_table, a_availableWidthPx);
                     return;
                 }
@@ -1826,6 +1867,7 @@ namespace mde.common
         /// <returns>各列の幅（px）。決められない時はnull。</returns>
         public static double[] ComputeAutoColumnWidthsPx(Table a_table, double? a_availableWidthPx)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             using (BeginMeasureScope())
             {
                 if (!a_availableWidthPx.HasValue || 0 == a_table.Columns.Count)
@@ -1882,6 +1924,7 @@ namespace mde.common
         /// 上限を付けられない列のフォールバックに使う。呼び出し側が把握していない場合はnull。</param>
         public static void ConstrainCellImagesToColumnWidths(Table a_table, double? a_availableWidthPx)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             int colCount = a_table.Columns.Count;
             double starSum = 0;
             for (int c = 0; c < colCount; c++)
@@ -1916,7 +1959,7 @@ namespace mde.common
                 // a_availableWidthPxそのものが不明な場合のみ対象外（nullのまま）。
             }
 
-            foreach (TableRowGroup rg in a_table.RowGroups)
+            foreach (TableRowGroup rg in TableChunks.GetChunks(a_table).SelectMany(t => t.RowGroups))
             {
                 foreach (TableRow row in rg.Rows)
                 {
@@ -1980,6 +2023,7 @@ namespace mde.common
         /// <param name="a_availableWidthPx">現在、表を表示できる幅（px）。</param>
         public static void RefreshAutoCalculatedColumnWidths(Table a_table, double a_availableWidthPx)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             using (BeginMeasureScope())
             {
                 var sourceDashCounts = GetSourceDashCounts(a_table);
@@ -2005,10 +2049,12 @@ namespace mde.common
         /// <param name="a_table">対象の表。</param>
         private static void ResetColumnWidthsToAuto(Table a_table)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             foreach (TableColumn col in a_table.Columns)
             {
                 col.Width = new GridLength(0, GridUnitType.Auto);
             }
+            TableChunks.SyncColumns(a_table);
         }
 
         /// <summary>
@@ -2046,6 +2092,7 @@ namespace mde.common
         public static void ApplyEffectiveColumnWidths(
             Table a_table, IReadOnlyList<int> a_dashCounts, bool a_correctColumnWidthsFlg, double? a_availableWidthPx)
         {
+            a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
             using (BeginMeasureScope())
             {
                 if (!a_correctColumnWidthsFlg)
