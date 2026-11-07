@@ -42,6 +42,13 @@ namespace mde.manager
         /// <summary>右クリック時にマウス下にあった画像。右クリックメニューの「画像を保存…」から参照される。</summary>
         public Image ContextImage { get; set; }
 
+        /// <summary>
+        /// クリップボードの画像を貼り付けた直後に呼ぶ処理。画像の後ろで改行して、次の行の先頭へキャレットを移す
+        /// （MainWindow が設定する。段落の種類によって改行のしかたが違うため）。画像の挿入と同じ Undo の1操作の
+        /// 中で呼ぶので、Ctrl+Z を1回押すと、改行と画像がまとめて元に戻る。
+        /// </summary>
+        public Action AfterClipboardImageInserted { get; set; }
+
         private Point? m_imageDragStartPoint;
 
         /// <summary>m_imageDragStartPointを記録した時刻（InputEventArgs.Timestamp、ミリ秒）。
@@ -836,6 +843,8 @@ namespace mde.manager
                 var container = new InlineUIContainer(img, m_editor.CaretPosition);
                 BlockStyles.ApplyImageParagraphLineHeightFor(container);
                 m_editor.CaretPosition = container.ElementEnd;
+                // 画像の後ろで改行して、次の行の先頭へキャレットを移す（続けて文字を書きやすいように）
+                AfterClipboardImageInserted?.Invoke();
             });
 
             m_refreshOutline();

@@ -572,6 +572,14 @@ namespace mde.common
             ApplyImageParagraphLineHeight(parent as Paragraph);
         }
 
+        /// <summary>段落に画像（Span内も含む）が1つでもあるかを返す。</summary>
+        /// <param name="a_p">調べる段落（nullならfalse）。</param>
+        /// <returns>画像を含む場合true。</returns>
+        public static bool ParagraphContainsImage(Paragraph a_p)
+        {
+            return null != a_p && InlinesContainImage(a_p.Inlines);
+        }
+
         /// <summary>インライン列（Span内も含む）に画像が1つでもあるかを返す。</summary>
         /// <param name="a_inlines">調べるインライン列。</param>
         /// <returns>画像を含む場合true。</returns>

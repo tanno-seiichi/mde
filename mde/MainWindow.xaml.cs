@@ -362,6 +362,7 @@ namespace mde
                 m_editor, m_originalTextTracker, () => m_isSourceModeFlg, () => m_currentFileDirectory,
                 () => m_currentFilePath,
                 RunAsProgrammaticChange, m_outlineManager.Refresh, m_instanceTempId);
+            m_imageManager.AfterClipboardImageInserted = InsertLineBreakAfterPastedImage;
             // 表の表示幅（() => m_tableEditor.GetAvailableTableWidth()）もクロージャで渡す：
             // m_tableEditorはこの後で構築されるが、呼ばれるのは構築完了後なので問題ない。
             m_markdownConverter = new MarkdownConverter(
@@ -933,6 +934,99 @@ namespace mde
             m_isProgrammaticChangeFlg = true;
             try { m_semanticUndoTracker.Run(a_action); }
             finally { m_isProgrammaticChangeFlg = previousFlg; }
+        }
+
+        /// <summary>
+        /// クリップボードの画像を貼り付けた直後に、画像の後ろで改行して、次の行の先頭へキャレットを移す
+        /// （ImageManager.AfterClipboardImageInserted。画像の挿入と同じ Undo の1操作の中で呼ばれる）。
+        /// 改行のしかたは、なるべく Enter キーと同じにする（EditorPreviewKeyDown の Enter の処理を参照）。ただし、
+        /// 次の場合は Enter キーと違う：
+        /// ・箇条書きの項目と表のセルでは、Shift+Enter と同じく、同じ項目・セルの中で行を増やす（画像の後に、その
+        /// 　項目・セルの説明を続けて書けるように。表のセルの Enter は、下のセルへ移るため）。
+        /// ・見出しでは、見出しの後ろに新しい段落を作る（HandleHeadingEnter は、キャレットの前の文字数で見出しの
+        /// 　先頭かどうかを決めるため、文字の無い見出しの画像の後ろでも、見出しの前に段落を作ってしまう）。
+        /// 貼り付けの処理（WPF 標準のキー操作と同じく、文書を変える途中）の中でフォーカスを当て直すと、IME が
+        /// 止まることがあるため、当て直しは貼り付けが終わった後にする（ImeCaretMoveHelper.MarkWpfKeyCommandInProgress）。
+        /// 画像の段落は、画像の高さに合わせて行が広がる設定（BlockStyles.ApplyImageParagraphLineHeight）を持つため、
+        /// 改行でその設定が新しい行へ引き継がれた場合は、ふつうの行の高さに戻す（RestoreLineHeightAfterPastedImage）。
+        /// </summary>
+        private void InsertLineBreakAfterPastedImage()
+        {
+            Paragraph imagePara = ResolveParagraph(m_editor.CaretPosition, m_editor.Document);
+            if (null == imagePara)
+            {
+                return;
+            }
+            ImeCaretMoveHelper.MarkWpfKeyCommandInProgress(m_editor);
+            RunAsProgrammaticChange(() =>
+            {
+                if (imagePara.Parent is ListItem || imagePara.Parent is TableCell)
+                {
+                    m_headingCodeBlockEditor.InsertParagraphSplitAtCaret(imagePara);
+                }
+                else if (imagePara.Tag is int level && level > 0)
+                {
+                    var newPara = new Paragraph();
+                    m_editor.Document.Blocks.InsertAfter(imagePara, newPara);
+                    m_editor.CaretPosition = newPara.ContentStart;
+                }
+                else if (imagePara.Tag is QuoteInfo || imagePara.Tag is QuoteContinuationInfo)
+                {
+                    m_headingCodeBlockEditor.InsertQuoteContinuationParagraph(imagePara);
+                }
+                else if (imagePara.Tag is CodeBlockInfo || imagePara.Tag is CodeBlockContinuationInfo)
+                {
+                    m_headingCodeBlockEditor.InsertCodeBlockContinuationParagraph(imagePara);
+                }
+                else if (imagePara.Parent is FlowDocument && imagePara.PreviousBlock is Table)
+                {
+                    // 表の直後の段落は、WPF 標準の改行に任せると表が壊れるため、Enter キーと同じく自前で分ける
+                    m_headingCodeBlockEditor.InsertParagraphSplitAtCaret(imagePara);
+                }
+                else
+                {
+                    // ふつうの段落：Enter キーと同じ、WPF 標準の改行（段落を分ける）
+                    m_editor.CaretPosition = m_editor.CaretPosition.InsertParagraphBreak();
+                }
+                RestoreLineHeightAfterPastedImage(imagePara, ResolveParagraph(m_editor.CaretPosition, m_editor.Document));
+            });
+        }
+
+        /// <summary>
+        /// 画像の段落を改行して新しくできた段落が、画像の高さに合わせて行が広がる設定（BlockStyles.
+        /// ApplyImageParagraphLineHeight）を引き継いでいたら、ふつうの行の高さに戻す（表のセルは
+        /// BlockStyles.TableCellLineHeight）。新しい段落にも画像がある場合（画像を文の途中に貼り付けて、後ろに
+        /// 別の画像が残った場合）は、そのままにする。
+        /// </summary>
+        /// <param name="a_imagePara">画像を貼り付けた段落。</param>
+        /// <param name="a_newPara">改行して新しくできた段落（キャレットのある段落）。</param>
+        private static void RestoreLineHeightAfterPastedImage(Paragraph a_imagePara, Paragraph a_newPara)
+        {
+            if (null == a_newPara || ReferenceEquals(a_imagePara, a_newPara) || BlockStyles.ParagraphContainsImage(a_newPara))
+            {
+                return;
+            }
+            if (!(a_imagePara.ReadLocalValue(Block.LineStackingStrategyProperty) is LineStackingStrategy imageStrategy) ||
+                LineStackingStrategy.MaxHeight != imageStrategy)
+            {
+                return; // 画像の段落に、行が広がる設定が無い（表のセル等、元から行の高さを決めていない段落）
+            }
+            if (double.IsNaN(a_newPara.LineHeight) && DependencyProperty.UnsetValue != a_newPara.ReadLocalValue(Block.LineHeightProperty))
+            {
+                if (a_newPara.Parent is TableCell)
+                {
+                    a_newPara.LineHeight = BlockStyles.TableCellLineHeight;
+                }
+                else
+                {
+                    a_newPara.ClearValue(Block.LineHeightProperty);
+                }
+            }
+            if (a_newPara.ReadLocalValue(Block.LineStackingStrategyProperty) is LineStackingStrategy newStrategy &&
+                LineStackingStrategy.MaxHeight == newStrategy)
+            {
+                a_newPara.ClearValue(Block.LineStackingStrategyProperty);
+            }
         }
 
         /// <summary>渡された処理を「ハイライトの適用/解除のみ」として実行する。実行中は
