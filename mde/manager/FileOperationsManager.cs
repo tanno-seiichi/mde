@@ -265,8 +265,8 @@ namespace mde.manager
         {
             string title = string.IsNullOrEmpty(a_fileNameOrNull)
                 ? Assembly.GetExecutingAssembly().GetName().Name
-                : Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version +
-                    " - " + a_fileNameOrNull;
+                : a_fileNameOrNull + " - " + 
+                  Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version;
             m_setWindowTitle(title);
         }
 
