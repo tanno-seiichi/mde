@@ -64,6 +64,10 @@ namespace mde
         public double PdfMarginLeft { get; set; } = 80;
         public double PdfMarginRight { get; set; } = 80;
 
+        /// <summary>メニュー「ファイル」→「表のヘッダ行をページ毎に表示する」のチェック状態。true なら、PDFで表が次のページへ
+        /// 続く時、ページの先頭に見出しの行を表示する。false なら、ページの先頭の行の上に線を引く。既定は true。</summary>
+        public bool PdfRepeatTableHeaderFlg { get; set; } = true;
+
         /// <summary>メニュー「表示」→「デバッグログを有効にする」のチェック状態。既定は無効。</summary>
         public bool DebugLogEnabledFlg { get; set; } = false;
 

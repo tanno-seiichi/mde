@@ -37,6 +37,7 @@ namespace mde.dialog
         private readonly ManualResetEventSlim m_readyEvent = new ManualResetEventSlim(false);
         private Dispatcher m_dispatcher;
         private Window m_window;
+        private TextBlock m_titleText;
         private TextBlock m_detailText;
         private Border m_barTrack;
         private Border m_barFill;
@@ -63,7 +64,7 @@ namespace mde.dialog
         /// 進み具合のウィンドウを、a_owner の中央に表示する（専用のスレッドで表示する）。
         /// </summary>
         /// <param name="a_owner">中央に表示する基準のウィンドウ（メインウィンドウ）。</param>
-        /// <param name="a_title">見出し（「PDFに書き出しています」等）。</param>
+        /// <param name="a_title">見出し（「PDF用のデータを生成しています」等。後から SetTitle で変えられる）。</param>
         /// <returns>表示したウィンドウ。使い終わったら Dispose で閉じること。</returns>
         public static PdfExportProgress Show(Window a_owner, string a_title)
         {
@@ -103,6 +104,19 @@ namespace mde.dialog
                 }
                 m_targetFraction = System.Math.Max(m_targetFraction, Clamp(a_fraction));
                 m_creepLimit = System.Math.Max(m_targetFraction, Clamp(a_nextFraction));
+            }));
+        }
+
+        /// <summary>見出しを変える（PDF用のデータを作り終えて、書き出しを始める時等）。</summary>
+        /// <param name="a_title">見出し。</param>
+        public void SetTitle(string a_title)
+        {
+            m_dispatcher?.BeginInvoke(new System.Action(() =>
+            {
+                if (null != m_titleText)
+                {
+                    m_titleText.Text = a_title;
+                }
             }));
         }
 
@@ -196,7 +210,7 @@ namespace mde.dialog
         /// <summary>ウィンドウを組み立てる。</summary>
         private Window BuildWindow(string a_title)
         {
-            var title = new TextBlock
+            m_titleText = new TextBlock
             {
                 Text = a_title,
                 FontWeight = FontWeights.Bold,
@@ -225,7 +239,7 @@ namespace mde.dialog
                 Child = m_barFill,
             };
             var panel = new StackPanel { Margin = new Thickness(22, 20, 22, 24) };
-            panel.Children.Add(title);
+            panel.Children.Add(m_titleText);
             panel.Children.Add(m_detailText);
             panel.Children.Add(m_barTrack);
             return new Window

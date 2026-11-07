@@ -4,6 +4,7 @@
 // 大きな表を、内部では複数の Table（かたまり）に分けて持ち、見た目・保存・編集の操作では1つの表として扱うための処理。
 
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Documents;
@@ -122,6 +123,24 @@ namespace mde.common
                 }
             }
             return rows;
+        }
+
+        /// <summary>
+        /// 行が属する表の見出しの行（表の先頭のかたまりの最初の行）を返す。PDF出力の間に、改ページのための空の段落
+        /// （BreakPageBeforeRowForPrint）の後ろへ移したかたまりは、表の先頭として扱われるが、その最初の行には見出しの行の
+        /// 写しを入れているため、その写しを返す（見た目は同じ）。
+        /// </summary>
+        /// <param name="a_row">行。</param>
+        /// <returns>見出しの行。表の中の行でなければ null。</returns>
+        public static TableRow GetHeaderRow(TableRow a_row)
+        {
+            Table head = GetHead(GetChunkOfRow(a_row));
+            if (null == head)
+            {
+                return null;
+            }
+            List<TableRow> rows = GetRows(new[] { head });
+            return 0 < rows.Count ? rows[0] : null;
         }
 
         /// <summary>セルが属する表のかたまり（Table）を返す。</summary>
@@ -553,13 +572,17 @@ namespace mde.common
         /// 改ページする。かたまりの途中の行なら、その行から後ろを新しい続きのかたまりへ移し、そのかたまりの前で改ページする。
         /// WPF は表（Table）の BreakPageBefore を使わない（表の組み立て（TableParagraph）が読まない）ため、改ページは、
         /// 表の前に入れた高さのほとんど無い空の段落（BreakPageBefore を設定）で行う（CreatePageBreakParagraph）。
-        /// ページの先頭に来る行の上には線を引き（GitHub スタイル）、移した行の下の線（かたまりの下の線）と下の余白は、
-        /// 新しいかたまりへ移す。行は、行グループの先頭から取り出して移す（MoveRowsIntoNewGroups 参照）。
+        /// ページの先頭に来る行の前には、a_repeatHeaderFlg が true なら表の見出しの行の写しを入れ（CreateHeaderCopyForPrint。
+        /// 行が見出しの行そのものなら入れない）、その上に表の上の線を引く（GitHub スタイル。表の始まりと同じ見た目にする）。
+        /// a_repeatHeaderFlg が false なら、ページの先頭に来る行の上に線を引く。移した行の下の線
+        /// （かたまりの下の線）と下の余白は、新しいかたまりへ移す。行は、行グループの先頭から取り出して移す
+        /// （MoveRowsIntoNewGroups 参照。見出しの行の写しも、元に戻す時は行グループの先頭から取り除く）。
         /// 書き出しが終わったら、戻り値の処理を呼んで元に戻すこと（複数の行で呼んだ場合は、呼んだ順と逆の順に戻す）。
         /// </summary>
         /// <param name="a_row">ページの先頭に送る行。</param>
+        /// <param name="a_repeatHeaderFlg">行の前に、表の見出しの行の写しを入れるなら true。</param>
         /// <returns>元に戻す処理。行が表の中に無ければ null。</returns>
-        public static System.Action BreakPageBeforeRowForPrint(TableRow a_row)
+        public static System.Action BreakPageBeforeRowForPrint(TableRow a_row, bool a_repeatHeaderFlg)
         {
             Table chunk = GetChunkOfRow(a_row);
             if (null == chunk)
@@ -569,16 +592,24 @@ namespace mde.common
             List<TableRow> rows = GetRows(new[] { chunk });
             int index = rows.IndexOf(a_row);
             double topLine = BlockStyles.VsCodeStyleFlg ? 0 : BlockStyles.PRINT_TABLE_BORDER_THICKNESS;
+            // 見出しの行の写しは、移す前に作る（移した後は、移した先のかたまりが表の先頭として扱われるため）
+            TableRow header = a_repeatHeaderFlg ? GetHeaderRow(a_row) : null;
+            TableRow headerCopy = null != header && !ReferenceEquals(header, a_row) ? CreateHeaderCopyForPrint(header) : null;
             if (0 >= index)
             {
-                // かたまりの最初の行：かたまりの前で改ページし、ページの先頭に来る行の上に線を引く
+                // かたまりの最初の行：かたまりの前で改ページし、行の前に見出しの行の写しを入れて、その上に線を引く
                 System.Action restoreBorder = SaveLocalValue(chunk, Block.BorderThicknessProperty);
                 Thickness border = chunk.BorderThickness;
                 chunk.BorderThickness = new Thickness(border.Left, System.Math.Max(border.Top, topLine), border.Right, border.Bottom);
                 Paragraph pageBreak = CreatePageBreakParagraph();
                 chunk.SiblingBlocks.InsertBefore(chunk, pageBreak);
+                if (null != headerCopy)
+                {
+                    ((TableRowGroup)a_row.Parent).Rows.Insert(0, headerCopy);
+                }
                 return () =>
                 {
+                    RemoveHeaderCopy(headerCopy);
                     pageBreak.SiblingBlocks.Remove(pageBreak);
                     restoreBorder();
                 };
@@ -589,6 +620,10 @@ namespace mde.common
             System.Action restoreChunkBorder = SaveLocalValue(chunk, Block.BorderThicknessProperty);
             var front = new TableRowGroup();
             var back = new TableRowGroup();
+            if (null != headerCopy)
+            {
+                back.Rows.Add(headerCopy);
+            }
             foreach (TableRowGroup source in chunk.RowGroups.ToList())
             {
                 while (0 < source.Rows.Count)
@@ -617,7 +652,8 @@ namespace mde.common
             breakBeforeNext.SiblingBlocks.InsertAfter(breakBeforeNext, next);
             return () =>
             {
-                // 行をすべて、新しい行グループへ先頭から順に入れ直して、元のかたまりへ戻す
+                // 見出しの行の写しを取り除き、行をすべて、新しい行グループへ先頭から順に入れ直して、元のかたまりへ戻す
+                RemoveHeaderCopy(headerCopy);
                 var group = new TableRowGroup();
                 foreach (Table table in new[] { chunk, next })
                 {
@@ -641,6 +677,107 @@ namespace mde.common
                 restoreChunkBorder();
                 restoreMargin();
             };
+        }
+
+        /// <summary>
+        /// PDF出力の間だけ使う、見出しの行の写しを作る（BreakPageBeforeRowForPrint）。行・セル・段落の見た目（罫線・背景・
+        /// 文字揃え等のローカル値）を写し、段落の中身は、文字の書式ごと写す（TextRange の保存と読み込み。リンク・画像も
+        /// 写る）。Tag 等の意味情報は、書き出しには使わないため、中身には写さない。
+        /// 見出しの行が、かたまりの最後の行（見出しの行だけのかたまり）の場合、見出しの行の下の線はセルではなくかたまり
+        /// 自身の下の線になっている（BlockStyles.ApplyTableCellBorders）ため、写しではセルの下の線にする。
+        /// </summary>
+        /// <param name="a_header">見出しの行。</param>
+        /// <returns>見出しの行の写し。</returns>
+        private static TableRow CreateHeaderCopyForPrint(TableRow a_header)
+        {
+            var copy = new TableRow();
+            CopyLocalValues(a_header, copy);
+            Table headChunk = GetChunkOfRow(a_header);
+            bool boundaryFlg = null != headChunk && ReferenceEquals(GetRows(new[] { headChunk }).LastOrDefault(), a_header) &&
+                0 < headChunk.BorderThickness.Bottom;
+            foreach (TableCell cell in a_header.Cells)
+            {
+                var cellCopy = new TableCell();
+                CopyLocalValues(cell, cellCopy);
+                if (boundaryFlg && 0 == cellCopy.BorderThickness.Bottom)
+                {
+                    Thickness thickness = cellCopy.BorderThickness;
+                    cellCopy.BorderThickness = new Thickness(thickness.Left, thickness.Top, thickness.Right, headChunk.BorderThickness.Bottom);
+                    if (null != headChunk.BorderBrush)
+                    {
+                        cellCopy.BorderBrush = headChunk.BorderBrush;
+                    }
+                }
+                foreach (Block block in cell.Blocks)
+                {
+                    var paraCopy = new Paragraph();
+                    if (block is Paragraph para)
+                    {
+                        CopyLocalValues(para, paraCopy);
+                    }
+                    cellCopy.Blocks.Add(paraCopy);
+                    CopyContent(block, paraCopy);
+                }
+                copy.Cells.Add(cellCopy);
+            }
+            return copy;
+        }
+
+        /// <summary>見出しの行の写し（CreateHeaderCopyForPrint）を、文書から取り除く。</summary>
+        /// <param name="a_headerCopy">見出しの行の写し。null なら何もしない。</param>
+        private static void RemoveHeaderCopy(TableRow a_headerCopy)
+        {
+            if (a_headerCopy?.Parent is TableRowGroup group)
+            {
+                group.Rows.Remove(a_headerCopy);
+            }
+        }
+
+        /// <summary>ローカル値（書き込めるもの）を、別の要素へ写す。</summary>
+        /// <param name="a_source">写す元。</param>
+        /// <param name="a_target">写す先。</param>
+        private static void CopyLocalValues(DependencyObject a_source, DependencyObject a_target)
+        {
+            LocalValueEnumerator values = a_source.GetLocalValueEnumerator();
+            while (values.MoveNext())
+            {
+                LocalValueEntry entry = values.Current;
+                if (entry.Property.ReadOnly || entry.Value is System.Windows.Expression)
+                {
+                    continue;
+                }
+                try
+                {
+                    a_target.SetValue(entry.Property, entry.Value);
+                }
+                catch (System.Exception)
+                {
+                    // 写せない値は写さない（見た目に関わらない値）
+                }
+            }
+        }
+
+        /// <summary>ブロックの中身を、文字の書式ごと段落へ写す（TextRange の保存と読み込み）。書式ごと写せなかった場合は、
+        /// 文字だけを写す。</summary>
+        /// <param name="a_source">写す元のブロック。</param>
+        /// <param name="a_target">写す先の段落（空であること）。</param>
+        private static void CopyContent(Block a_source, Paragraph a_target)
+        {
+            var sourceRange = new TextRange(a_source.ContentStart, a_source.ContentEnd);
+            try
+            {
+                using (var stream = new MemoryStream())
+                {
+                    sourceRange.Save(stream, DataFormats.XamlPackage);
+                    stream.Position = 0;
+                    new TextRange(a_target.ContentStart, a_target.ContentEnd).Load(stream, DataFormats.XamlPackage);
+                }
+            }
+            catch (System.Exception)
+            {
+                a_target.Inlines.Clear();
+                a_target.Inlines.Add(new Run(sourceRange.Text.TrimEnd('\r', '\n')));
+            }
         }
 
         /// <summary>

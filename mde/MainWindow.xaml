@@ -81,6 +81,10 @@
                 <Separator/>
                 <MenuItem Header="PDFに書き出し…(_P)" Click="ExportPdfBtnClick" InputGestureText="Ctrl+P"/>
                 <MenuItem Header="PDFの余白を設定…(_M)" Click="PdfMarginBtnClick"/>
+                <!-- PDFで表が次のページへ続く時、ページの先頭に表の見出しの行を表示するか（✓ で切り替える。✓ を外すと、
+                     ページの先頭の行の上に線を引く） -->
+                    <MenuItem x:Name="m_pdfTableRepeatHeaderMenuItem" Header="表のヘッダ行をページ毎に表示する(_H)"
+                          IsCheckable="True" Click="PdfTableRepeatHeaderClick"/>
                 <Separator/>
                 <MenuItem Header="閉じる(_W)" Click="CloseBtnClick" InputGestureText="Ctrl+W"/>
             </MenuItem>

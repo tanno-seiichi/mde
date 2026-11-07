@@ -152,6 +152,10 @@ namespace mde
         private double m_pdfMarginLeft = 80;
         private double m_pdfMarginRight = 80;
 
+        /// <summary>PDFで表が次のページへ続く時、ページの先頭に見出しの行を表示するか（false なら、ページの先頭の行の上に
+        /// 線を引く）。メニュー「ファイル」→「表のヘッダ行をページ毎に表示する」で切り替え、次回起動時にも復元される。</summary>
+        private bool m_pdfRepeatTableHeaderFlg = true;
+
         /// <summary>メニュー「ファイル」→「最近使ったファイル」に表示する、最近開いた/保存した
         /// ファイルの絶対パス一覧（先頭が最新）。次回起動時にも復元される。FileOperationsManager
         /// と同じリストを共有する（OnClosedでの設定保存のため、フィールド自体はここに残す）。</summary>
@@ -326,12 +330,14 @@ namespace mde
             m_pdfMarginBottom = m_savedSettings.PdfMarginBottom > 0 ? m_savedSettings.PdfMarginBottom : 64;
             m_pdfMarginLeft = m_savedSettings.PdfMarginLeft > 0 ? m_savedSettings.PdfMarginLeft : 80;
             m_pdfMarginRight = m_savedSettings.PdfMarginRight > 0 ? m_savedSettings.PdfMarginRight : 80;
+            m_pdfRepeatTableHeaderFlg = m_savedSettings.PdfRepeatTableHeaderFlg;
             m_recentFiles = null != m_savedSettings.RecentFiles ? new List<string>(m_savedSettings.RecentFiles) : new List<string>();
             m_recentFolders = null != m_savedSettings.RecentFolders ? new List<string>(m_savedSettings.RecentFolders) : new List<string>();
             m_lastSaveDialogDirectory = m_savedSettings.LastSaveDialogDirectory;
             // 「最近使ったファイル」サブメニューの初回構築はFileOperationsManager構築後
             // （このコンストラクタの後半）で行う（RebuildRecentFilesMenu呼び出し箇所を参照）。
             UpdateLinkModeMenuChecks();
+            UpdatePdfTableMenuChecks();
             UpdateLineBreakModeMenuChecks();
             UpdateMarkerStyleMenuChecks();
             UpdateTextColorMenuChecks();
@@ -910,6 +916,7 @@ namespace mde
                 PdfMarginBottom = m_pdfMarginBottom,
                 PdfMarginLeft = m_pdfMarginLeft,
                 PdfMarginRight = m_pdfMarginRight,
+                PdfRepeatTableHeaderFlg = m_pdfRepeatTableHeaderFlg,
                 RecentFiles = m_recentFiles,
                 RecentFolders = m_recentFolders,
                 LastSaveDialogDirectory = m_lastSaveDialogDirectory
@@ -3709,7 +3716,8 @@ namespace mde
             }
 
             // 書き出しの進み具合を表示する（PdfExportProgress。書き出しの間は画面が止まるため、専用のスレッドで表示する）
-            using var progress = PdfExportProgress.Show(this, "PDFに書き出しています");
+            // 保存先のファイル名を選ぶまでは、PDF用のデータ（改ページの位置等）を作っている（書き出しはまだ始めていない）
+            using var progress = PdfExportProgress.Show(this, "PDF用のデータを生成しています");
 
             // これ以降、書き出しのためだけにリンクの一時置換・画像サイズの一時縮小・
             // ColumnWidthの変更を行うが、これらはRichTextBoxのTextChangedを発生させるため、
@@ -3979,10 +3987,11 @@ namespace mde
                 {
                     a_progress.Report("改ページの位置を調べています", PDF_PROGRESS_SCAN_START, PDF_PROGRESS_SCAN_START + 0.02);
                     double scanSpan = PDF_PROGRESS_SCAN_END - PDF_PROGRESS_SCAN_START;
-                    restoreRowBreaks = TablePrintPageBreaks.Apply(m_editor.Document, dynamicPaginator, (a_scanPage, a_fraction) =>
-                        a_progress.Report($"改ページの位置を調べています（{a_scanPage + 1} ページ目）",
-                            PDF_PROGRESS_SCAN_START + scanSpan * a_fraction,
-                            PDF_PROGRESS_SCAN_START + scanSpan * Math.Min(1, a_fraction + 0.02)));
+                    restoreRowBreaks = TablePrintPageBreaks.Apply(m_editor.Document, dynamicPaginator, m_pdfRepeatTableHeaderFlg,
+                        (a_scanPage, a_fraction) =>
+                            a_progress.Report($"改ページの位置を調べています（{a_scanPage + 1} ページ目）",
+                                PDF_PROGRESS_SCAN_START + scanSpan * a_fraction,
+                                PDF_PROGRESS_SCAN_START + scanSpan * Math.Min(1, a_fraction + 0.02)));
                     if (innerPaginator.IsPageCountValid)
                     {
                         knownPageCount = innerPaginator.PageCount;
@@ -4009,7 +4018,9 @@ namespace mde
 
                 // 保存先を選ぶ画面（「Microsoft Print to PDF」の場合）の邪魔にならないよう、最初のページを書き出すまで
                 // 進み具合のウィンドウを隠す
+                // 見出しは、また表示する時（保存先を選び終えて、書き出しを始めた時）のために、ここで変えておく
                 a_progress.Report("書き出しています", PDF_PROGRESS_SCAN_END, PDF_PROGRESS_SCAN_END);
+                a_progress.SetTitle("PDFに書き出しています");
                 a_progress.SetVisible(false);
                 a_dlg.PrintDocument(marginPaginator, docName);
                 a_progress.Report(null, 1, 1);
@@ -4844,6 +4855,22 @@ namespace mde
                 m_pdfMarginLeft = dialog.MarginLeft;
                 m_pdfMarginRight = dialog.MarginRight;
             }
+        }
+
+        /// <summary>メニュー「ファイル」→「表のヘッダ行をページ毎に表示する」。クリックするたびに ✓ を付け外しする
+        /// （IsCheckable のため、クリックした時点で ✓ の状態は切り替わっている）。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void PdfTableRepeatHeaderClick(object a_sender, RoutedEventArgs a_args)
+        {
+            m_pdfRepeatTableHeaderFlg = m_pdfTableRepeatHeaderMenuItem.IsChecked;
+            UpdatePdfTableMenuChecks();
+        }
+
+        /// <summary>メニュー「表のヘッダ行をページ毎に表示する」の ✓ を、現在の設定に合わせる。</summary>
+        private void UpdatePdfTableMenuChecks()
+        {
+            m_pdfTableRepeatHeaderMenuItem.IsChecked = m_pdfRepeatTableHeaderFlg;
         }
 
         /// <summary>メニュー「表示」→「リンクの開き方」→「Ctrl+クリックで開く」。</summary>
