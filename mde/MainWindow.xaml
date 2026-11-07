@@ -380,14 +380,17 @@
                         </RichTextBox.Resources>
                         <RichTextBox.ContextMenu>
                             <ContextMenu x:Name="m_editorContextMenu">
+                                <MenuItem Header="ページトップに戻る" Style="{StaticResource CtxMenuItem}" Click="ScrollToPageTopClick"/>
+                                <Separator/>
+
                                 <MenuItem x:Name="m_textStyleMenuItem" Header="文字装飾" Style="{StaticResource CtxMenuItem}"
                                           Visibility="Collapsed">
                                     <MenuItem Header="通常表記に戻す" Tag="normal" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="インラインコードにする" Tag="code" InputGestureText="Ctrl+Shift+@" Click="TextStyleItemClick"/>
                                     <MenuItem Header="太字にする" Tag="bold" InputGestureText="Ctrl+B" Click="TextStyleItemClick"/>
                                     <MenuItem Header="斜体にする" Tag="italic" InputGestureText="Ctrl+I" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="取り消し線にする" Tag="strikethrough" InputGestureText="Alt+Shift+5" Click="TextStyleItemClick"/>
                                     <MenuItem Header="下線を引く" Tag="underline" InputGestureText="Ctrl+U" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="取り消し線にする" Tag="strikethrough" InputGestureText="Alt+Shift+5" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="インラインコードにする" Tag="code" InputGestureText="Ctrl+Shift+@" Click="TextStyleItemClick"/>
                                     <MenuItem Header="ハイライトにする" Tag="highlight" Click="TextStyleItemClick"/>
                                     <MenuItem Header="リンクにする…" Tag="link" Click="TextStyleItemClick"/>
                                 </MenuItem>
@@ -437,10 +440,6 @@
                                           Click="SaveImageItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_deleteImageMenuItem" Header="画像を削除" Style="{StaticResource CtxMenuItem}"
                                           Click="DeleteImageItemClick" Visibility="Collapsed"/>
-                                <Separator/>
-                                <MenuItem Header="ページトップに戻る" Style="{StaticResource CtxMenuItem}" Click="ScrollToPageTopClick"/>
-                                <MenuItem x:Name="m_toggleModeMenuItem" Header="ソースモードに切り替え"
-                                          Style="{StaticResource CtxMenuItem}" Click="ToggleModeBtnClick"/>
                                 <!-- フォルダビュー・アウトラインビューの表示・非表示（メニュー「表示」と同じ。✓ は開く時に
                                      EditorContextMenuOpening で今の状態に合わせる） -->
                                 <Separator/>
@@ -448,7 +447,10 @@
                                           Style="{StaticResource CtxMenuItem}" Click="ToggleFolderPaneBtnClick"/>
                                 <MenuItem x:Name="m_ctxOutlinePaneMenuItem" Header="アウトラインを表示"
                                           Style="{StaticResource CtxMenuItem}" Click="ToggleOutlinePaneBtnClick"/>
-                            </ContextMenu>
+                                <Separator/>
+                                <MenuItem x:Name="m_toggleModeMenuItem" Header="ソースモードに切り替え"
+                                          Style="{StaticResource CtxMenuItem}" Click="ToggleModeBtnClick"/>
+                                </ContextMenu>
                         </RichTextBox.ContextMenu>
                         <FlowDocument x:Name="m_editorDocument" FontFamily="{DynamicResource EditorFontFamily}"
                                       LineHeight="{DynamicResource EditorLineHeight}"/>
@@ -472,10 +474,11 @@
                         <TextBox.ContextMenu>
                             <ContextMenu x:Name="m_sourceEditorContextMenu">
                                 <MenuItem Header="ページトップに戻る" Click="ScrollToPageTopClick"/>
-                                <MenuItem Header="Markdownモードに切り替え" Click="ToggleModeBtnClick"/>
                                 <Separator/>
                                 <MenuItem x:Name="m_sourceCtxFolderPaneMenuItem" Header="フォルダを表示" Click="ToggleFolderPaneBtnClick"/>
                                 <MenuItem x:Name="m_sourceCtxOutlinePaneMenuItem" Header="アウトラインを表示" Click="ToggleOutlinePaneBtnClick"/>
+                                <Separator/>
+                                <MenuItem Header="Markdownモードに切り替え" Click="ToggleModeBtnClick"/>
                             </ContextMenu>
                         </TextBox.ContextMenu>
                     </TextBox>
