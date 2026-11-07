@@ -547,6 +547,140 @@ namespace mde.common
             return groups;
         }
 
+        /// <summary>
+        /// PDF出力の間だけ、行の前で改ページする（TablePrintPageBreaks。行がページの境目で上下に分かれると、列ごとに
+        /// 別々に分かれるため、片方のページのセルが空に見えていた）。行がかたまりの最初の行なら、そのかたまりの前で
+        /// 改ページする。かたまりの途中の行なら、その行から後ろを新しい続きのかたまりへ移し、そのかたまりの前で改ページする。
+        /// WPF は表（Table）の BreakPageBefore を使わない（表の組み立て（TableParagraph）が読まない）ため、改ページは、
+        /// 表の前に入れた高さのほとんど無い空の段落（BreakPageBefore を設定）で行う（CreatePageBreakParagraph）。
+        /// ページの先頭に来る行の上には線を引き（GitHub スタイル）、移した行の下の線（かたまりの下の線）と下の余白は、
+        /// 新しいかたまりへ移す。行は、行グループの先頭から取り出して移す（MoveRowsIntoNewGroups 参照）。
+        /// 書き出しが終わったら、戻り値の処理を呼んで元に戻すこと（複数の行で呼んだ場合は、呼んだ順と逆の順に戻す）。
+        /// </summary>
+        /// <param name="a_row">ページの先頭に送る行。</param>
+        /// <returns>元に戻す処理。行が表の中に無ければ null。</returns>
+        public static System.Action BreakPageBeforeRowForPrint(TableRow a_row)
+        {
+            Table chunk = GetChunkOfRow(a_row);
+            if (null == chunk)
+            {
+                return null;
+            }
+            List<TableRow> rows = GetRows(new[] { chunk });
+            int index = rows.IndexOf(a_row);
+            double topLine = BlockStyles.VsCodeStyleFlg ? 0 : BlockStyles.PRINT_TABLE_BORDER_THICKNESS;
+            if (0 >= index)
+            {
+                // かたまりの最初の行：かたまりの前で改ページし、ページの先頭に来る行の上に線を引く
+                System.Action restoreBorder = SaveLocalValue(chunk, Block.BorderThicknessProperty);
+                Thickness border = chunk.BorderThickness;
+                chunk.BorderThickness = new Thickness(border.Left, System.Math.Max(border.Top, topLine), border.Right, border.Bottom);
+                Paragraph pageBreak = CreatePageBreakParagraph();
+                chunk.SiblingBlocks.InsertBefore(chunk, pageBreak);
+                return () =>
+                {
+                    pageBreak.SiblingBlocks.Remove(pageBreak);
+                    restoreBorder();
+                };
+            }
+
+            // かたまりの途中の行：その行から後ろを、新しい続きのかたまりへ移す
+            System.Action restoreMargin = SaveLocalValue(chunk, Block.MarginProperty);
+            System.Action restoreChunkBorder = SaveLocalValue(chunk, Block.BorderThicknessProperty);
+            var front = new TableRowGroup();
+            var back = new TableRowGroup();
+            foreach (TableRowGroup source in chunk.RowGroups.ToList())
+            {
+                while (0 < source.Rows.Count)
+                {
+                    TableRow row = source.Rows[0];
+                    source.Rows.Remove(row);
+                    (front.Rows.Count < index ? front : back).Rows.Add(row);
+                }
+            }
+            while (0 < chunk.RowGroups.Count)
+            {
+                chunk.RowGroups.Remove(chunk.RowGroups[0]);
+            }
+            Table next = CreateContinuationChunk(chunk);
+            next.BorderBrush = chunk.BorderBrush;
+            Thickness chunkBorder = chunk.BorderThickness;
+            next.BorderThickness = new Thickness(chunkBorder.Left, topLine, chunkBorder.Right, chunkBorder.Bottom);
+            chunk.BorderThickness = new Thickness(chunkBorder.Left, chunkBorder.Top, chunkBorder.Right, 0);
+            Thickness margin = chunk.Margin;
+            next.Margin = new Thickness(margin.Left, 0, margin.Right, margin.Bottom);
+            chunk.Margin = new Thickness(margin.Left, margin.Top, margin.Right, 0);
+            chunk.RowGroups.Add(front);
+            next.RowGroups.Add(back);
+            Paragraph breakBeforeNext = CreatePageBreakParagraph();
+            chunk.SiblingBlocks.InsertAfter(chunk, breakBeforeNext);
+            breakBeforeNext.SiblingBlocks.InsertAfter(breakBeforeNext, next);
+            return () =>
+            {
+                // 行をすべて、新しい行グループへ先頭から順に入れ直して、元のかたまりへ戻す
+                var group = new TableRowGroup();
+                foreach (Table table in new[] { chunk, next })
+                {
+                    foreach (TableRowGroup source in table.RowGroups.ToList())
+                    {
+                        while (0 < source.Rows.Count)
+                        {
+                            TableRow row = source.Rows[0];
+                            source.Rows.Remove(row);
+                            group.Rows.Add(row);
+                        }
+                    }
+                    while (0 < table.RowGroups.Count)
+                    {
+                        table.RowGroups.Remove(table.RowGroups[0]);
+                    }
+                }
+                next.SiblingBlocks.Remove(next);
+                breakBeforeNext.SiblingBlocks.Remove(breakBeforeNext);
+                chunk.RowGroups.Add(group);
+                restoreChunkBorder();
+                restoreMargin();
+            };
+        }
+
+        /// <summary>
+        /// 改ページのための空の段落（BreakPageBeforeRowForPrint）を作る。文字の大きさ・行の高さ・余白をほとんど 0 にし、
+        /// ページの先頭に入っても、見た目に影響しないようにする。
+        /// </summary>
+        /// <returns>段落。</returns>
+        private static Paragraph CreatePageBreakParagraph()
+        {
+            return new Paragraph
+            {
+                BreakPageBefore = true,
+                Margin = new Thickness(0),
+                Padding = new Thickness(0),
+                FontSize = 0.1,
+                LineHeight = 0.1,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+            };
+        }
+
+        /// <summary>プロパティのローカル値を覚えておき、それに戻す処理を返す（値が未設定だった場合は、戻す時に未設定へ戻す）。</summary>
+        /// <param name="a_obj">対象。</param>
+        /// <param name="a_property">プロパティ。</param>
+        /// <returns>元に戻す処理。</returns>
+        private static System.Action SaveLocalValue(DependencyObject a_obj, DependencyProperty a_property)
+        {
+            object value = a_obj.ReadLocalValue(a_property);
+            return () =>
+            {
+                if (DependencyProperty.UnsetValue == value)
+                {
+                    a_obj.ClearValue(a_property);
+                }
+                else
+                {
+                    a_obj.SetValue(a_property, value);
+                }
+            };
+        }
+
         /// <summary>続きのかたまり（行グループの無い Table）を作る。列は a_source と同じにする。</summary>
         /// <param name="a_source">列を写す元のかたまり。</param>
         /// <returns>続きのかたまり。</returns>

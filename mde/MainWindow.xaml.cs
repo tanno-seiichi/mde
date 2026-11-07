@@ -1151,8 +1151,12 @@ namespace mde
         private void EditorTextChanged(object a_sender, TextChangedEventArgs a_args)
         {
             // Undo 履歴の深さを数え、見出し・太字等の意味情報（Tag）を Undo／Redo に合わせて戻す。入力中の自動変換（この中で
-            // さらに文書が変わる）より先に呼ぶ必要があるため、一番最初に呼ぶ（SemanticUndoTracker.NotifyTextChanged）
-            m_semanticUndoTracker?.NotifyTextChanged(a_args);
+            // さらに文書が変わる）より先に呼ぶ必要があるため、一番最初に呼ぶ（SemanticUndoTracker.NotifyTextChanged）。
+            // PDFの書き出しの間は、Undo 履歴への記録を止めている（PauseUndoRecording）ため数えない
+            if (!m_exportingPdfFlg)
+            {
+                m_semanticUndoTracker?.NotifyTextChanged(a_args);
+            }
             // IME固まり調査用：各変更が追加/削除どちらか（挿入/削除文字数）も記録する。
             // ユーザーの明示的なキー入力ログと対応する変更が見当たらない場合、IME側や
             // Undoスタックなどアプリの外側から文書が書き換えられたことを疑う手がかりになる。
@@ -2219,7 +2223,8 @@ namespace mde
         /// </summary>
         private void KeepCaretOutOfTableChunkGap()
         {
-            if (m_isSourceModeFlg || m_movingCaretOutOfChunkGapFlg)
+            // PDFの書き出しの間は、表の行を一時的に移すためキャレットが動くことがあるが、書き出しの後に元の位置へ戻すため何もしない
+            if (m_isSourceModeFlg || m_movingCaretOutOfChunkGapFlg || m_exportingPdfFlg)
             {
                 return;
             }
@@ -2308,6 +2313,10 @@ namespace mde
         private bool m_tableChunkRepairFullFlg;
         /// <summary>直前に数えた、文書の最上位のブロックの数（ScheduleTableChunkRepair）。</summary>
         private int m_lastTopLevelBlockCount = -1;
+        /// <summary>PDFの書き出しの間に後始末の時が来たため、書き出しの後に行うか（ExportPdfBtnClick）。</summary>
+        private bool m_tableChunkRepairDeferredFlg;
+        /// <summary>書き出しの後に行う後始末で、余白・線まで直すか。</summary>
+        private bool m_tableChunkRepairDeferredFullFlg;
 
         /// <summary>
         /// 文書の最上位のブロックの数が変わった時（ブロックが削除・追加された時）に、大きな表を分けたかたまり（TableChunks）の
@@ -2319,6 +2328,12 @@ namespace mde
         /// <param name="a_undoAction">TextChanged の UndoAction。</param>
         private void ScheduleTableChunkRepair(UndoAction a_undoAction)
         {
+            // PDFの書き出し用の一時的な変更（表の行の前の改ページで、かたまりが増える等）は直さない。ブロックの数も数え直さない
+            // （書き出しの後は元の数に戻る）
+            if (m_exportingPdfFlg)
+            {
+                return;
+            }
             int count = m_editor.Document.Blocks.Count;
             if (count == m_lastTopLevelBlockCount)
             {
@@ -2341,6 +2356,13 @@ namespace mde
                 m_tableChunkRepairFullFlg = false;
                 if (m_isSourceModeFlg)
                 {
+                    return;
+                }
+                if (m_exportingPdfFlg)
+                {
+                    // PDFの保存先を選ぶ画面を出している間等に来た：書き出しの後に行う（書き出し用の一時的な状態を直さないため）
+                    m_tableChunkRepairDeferredFlg = true;
+                    m_tableChunkRepairDeferredFullFlg |= fullFlg;
                     return;
                 }
                 RunWithoutDirtyMarking(() =>
@@ -2370,7 +2392,8 @@ namespace mde
         /// </summary>
         private void RefreshTableWidthsOnLeave()
         {
-            if (m_isSourceModeFlg)
+            // PDFの書き出しの間は、表の行を一時的に移すためキャレットが表から出ることがあるが、表から出たのではないため何もしない
+            if (m_isSourceModeFlg || m_exportingPdfFlg)
             {
                 return;
             }
@@ -2393,7 +2416,7 @@ namespace mde
             // 選択の変更の通知の中では文書を変えず、後で行う
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (!m_isSourceModeFlg && ReferenceEquals(left.Parent, m_editor.Document))
+                if (!m_isSourceModeFlg && !m_exportingPdfFlg && ReferenceEquals(left.Parent, m_editor.Document))
                 {
                     RunWithoutDirtyMarking(() =>
                     {
@@ -3556,6 +3579,16 @@ namespace mde
         /// MainWindowPreviewKeyDownのShift+Ctrl+Sから直接呼ばれるため、このラッパーは維持している。</summary>
         private void SaveAs() => m_fileOperationsManager.SaveAs();
 
+        /// <summary>PDFへの書き出しの進み具合（0〜1）：改ページの位置を調べ始める所。それまでは準備（リンクの置換・列幅の計算等）。</summary>
+        private const double PDF_PROGRESS_SCAN_START = 0.03;
+        /// <summary>PDFへの書き出しの進み具合：改ページの位置を調べ終わる所。ここからページの書き出し。</summary>
+        private const double PDF_PROGRESS_SCAN_END = 0.45;
+        /// <summary>PDFへの書き出しの進み具合：最後のページを書き出し始める所。ページを渡した後、PDFのファイルを書き終わるまでにも
+        /// 時間がかかる（perf_table300.md の 92 ページで約 12 秒。ページを渡すのは約 3 秒）。</summary>
+        private const double PDF_PROGRESS_PRINT_END = 0.62;
+        /// <summary>PDFへの書き出しの進み具合：最後のページを渡した後、書き終わるまでゆっくり進める上限（終わる時間が分からないため）。</summary>
+        private const double PDF_PROGRESS_FINISH_LIMIT = 0.97;
+
         /// <summary>
         /// 現在の文書をPDFへ書き出す（Chromiumなし版）。追加ライブラリを使わず、Windows標準の
         /// 「Microsoft Print to PDF」仮想プリンタへの印刷として実現する（印刷ダイアログでこの
@@ -3581,184 +3614,347 @@ namespace mde
                 return;
             }
 
+            // 書き出しの進み具合を表示する（PdfExportProgress。書き出しの間は画面が止まるため、専用のスレッドで表示する）
+            using var progress = PdfExportProgress.Show(this, "PDFに書き出しています");
+
             // これ以降、書き出しのためだけにリンクの一時置換・画像サイズの一時縮小・
             // ColumnWidthの変更を行うが、これらはRichTextBoxのTextChangedを発生させるため、
             // RunWithoutDirtyMarking（検索ハイライトの適用/解除と同じ仕組み）で囲んで
             // ダーティフラグが立たないようにする。
-            RunWithoutDirtyMarking(() =>
+            // 書き出しの間は、編集ペインを隠す（Collapsed）。書き出し用の一時的な状態（狭い列幅・表の行の前の改ページ等）が
+            // 画面に見えないようにし、編集ペインがその状態の文書を表示し直す処理（PDFの保存先を選ぶ画面を出している間等。
+            // 大きな文書では時間がかかる）も行わせない。スクロールの位置・キーボードの入力先は、書き出しの後に戻す
+            m_exportingPdfFlg = true;
+            double editorVerticalOffset = m_editor.VerticalOffset;
+            bool editorFocusedFlg = m_editor.IsKeyboardFocusWithin;
+            m_editor.Visibility = Visibility.Collapsed;
+            try
             {
-                // mdeのリンクは独自のLinkInfoタグ付きRunで表現され、WPF標準のHyperlinkでは
-                // ないため、そのままではPDF上でクリックできない。書き出し中だけ本物のHyperlink
-                // に一時置換する。外部URLはNavigateUriへそのまま、見出しへのアンカーリンク
-                // （#始まり）は断片URIとして組み立てるが、XPS→PDF変換で失われる場合があるため
-                // 実際にジャンプするかは書き出し後にPDFビューアでの確認が必要。
-                var linkSwaps = new List<(InlineCollection Parent, Run OriginalRun, Hyperlink Wrapper)>();
-                foreach (var run in FindAllLinkRuns(m_editor.Document).ToList())
+                RunWithoutDirtyMarking(() =>
                 {
-                    InlineCollection parentInlines = run.Parent switch
-                    {
-                        Paragraph parentPara => parentPara.Inlines,
-                        Span parentSpan => parentSpan.Inlines,
-                        _ => null
-                    };
-                    if (null == parentInlines)
-                    {
-                        continue;
-                    }
-                    var info = (LinkInfo)run.Tag;
-                    Uri navigateUri = BuildPdfNavigateUri(info.Url);
-                    if (null == navigateUri)
-                    {
-                        continue;
-                    }
-                    var hyperlink = new Hyperlink { NavigateUri = navigateUri };
-                    parentInlines.InsertBefore(run, hyperlink);
-                    parentInlines.Remove(run);
-                    hyperlink.Inlines.Add(run);
-                    linkSwaps.Add((parentInlines, run, hyperlink));
-                }
-
-                // ページの上下左右の余白は、メニュー「ファイル」→「PDFの余白を設定…」で設定した
-                // 値（m_pdfMarginTop/Bottom/Left/Right。既定は上下64px、左右80px）をそのまま使う。
-                var margin = new Thickness(m_pdfMarginLeft, m_pdfMarginTop, m_pdfMarginRight, m_pdfMarginBottom);
-
-                // 余白を差し引いた、実際に本文が使える幅（画像のサイズ調整・ColumnWidthの両方で
-                // 同じ値を使い、整合を取る）。
-                double contentWidth = Math.Max(100, dlg.PrintableAreaWidth - m_pdfMarginLeft - m_pdfMarginRight - 8);
-
-                // 画像を、この幅に収まるよう一時的に縮小する（画面上ではエディタの表示幅を基準に
-                // サイズ調整されているため、この幅がそれより狭い場合、そのままではページから
-                // はみ出して欠けてしまうことがある）。書き出し後、画面表示用のサイズに戻す。
-                var originalImageSizes = new Dictionary<Image, (double Width, double Height)>();
-                foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
-                {
-                    originalImageSizes[img] = (img.Width, img.Height);
-                    if (img.Width > contentWidth)
-                    {
-                        double scale = contentWidth / img.Width;
-                        img.Width = contentWidth;
-                        img.Height *= scale;
-                    }
-                }
-
-                // 表（「列幅を補正する」オン時。未調整・調整済みのどちらも）の列幅も、画像と
-                // 同じ理由で一時的に再計算する。列幅は通常エディタの表示幅を基準に確定するため
-                // （BlockStyles.ApplyAutoCalculatedColumnWidths／ApplyExplicitColumnWidths）、
-                // 編集画面がPDF印刷可能幅（contentWidth）より広い環境では表の右端が見切れる
-                // 不具合があった。ウインドウリサイズ時と同じ再計算処理（BlockStyles.
-                // RefreshAutoCalculatedColumnWidths）を画面幅の代わりにcontentWidthで呼び、
-                // 印刷ページ幅に収まる列幅に揃える。調整済みの表も、比率での幅が固定幅（Pixel）
-                // で収まらなければStar比率になるため対象に含めている。書き出し後、画面表示用の
-                // 幅に戻す。
-                var originalTableColumnWidths = new Dictionary<Table, GridLength[]>();
-                if (m_correctColumnWidthsFlg)
-                {
-                    // 大きな表を分けたかたまり（TableChunks）は、すべてのかたまりの幅を覚えておき、列幅の再計算は先頭のかたまりで
-                    // 表全体に対して行う（FindAllTables は先頭のかたまりだけを返す）
-                    foreach (var table in m_editor.Document.Blocks.OfType<Table>())
-                    {
-                        originalTableColumnWidths[table] = table.Columns.Select(c => c.Width).ToArray();
-                    }
-                    m_editor.BeginChange();
+                    // 書き出しのための一時的な変更と、その戻しは、元に戻す（Undo）の履歴に残さない（PauseUndoRecording）。
+                    // 残すと、書き出した後に Ctrl+Z を押した時、戻しの方だけが取り消され、書き出し用の状態（表の行の前の改ページ・
+                    // 罫線・列幅等）が文書に残ってしまう。変更はすべて元に戻すため、それまでの履歴はそのまま使える。
+                    // 1つの操作にまとめる（BeginChange～EndChange で囲む）方法は使えない：囲んでいる間は WPF が画面のスレッドの
+                    // 処理（Dispatcher）を止めるため、PDFの保存先を選ぶ画面を出した時に例外になり、エラーの表示が止まらなくなった。
+                    // キャレット・選択範囲は、表の行を一時的に移すと動くことがあるため、書き出しの前の位置（文書の先頭からの距離）を
+                    // 覚えておき、最後に戻す
+                    int selectionStartOffset = m_editor.Document.ContentStart.GetOffsetToPosition(m_editor.Selection.Start);
+                    int selectionEndOffset = m_editor.Document.ContentStart.GetOffsetToPosition(m_editor.Selection.End);
+                    Action resumeUndoRecording = PauseUndoRecording();
                     try
                     {
-                        foreach (var table in m_tableEditor.FindAllTables(m_editor.Document))
-                        {
-                            BlockStyles.RefreshAutoCalculatedColumnWidths(table, contentWidth);
-                        }
+                        ExportPdfWithTemporaryChanges(dlg, progress);
                     }
                     finally
                     {
-                        m_editor.EndChange();
+                        resumeUndoRecording();
                     }
-                }
-
-                // 表の罫線は、書き出す間だけ少し濃い灰色・同じ太さ（BlockStyles.PRINT_TABLE_BORDER_THICKNESS）に
-                // そろえる（画面用の線のままだと、PDFで一部消えたり、一部だけ太く見えたりするため。
-                // 詳細は BlockStyles.ApplyPrintTableBorders）。書き出し後に画面用の線へ戻す。
-                var tableBorderRestores = new List<Action>();
-                // 大きな表を分けたかたまり（TableChunks）も、それぞれのかたまりの線を書き出す間だけそろえる
-                foreach (var table in m_editor.Document.Blocks.OfType<Table>())
+                    TextPointer selectionStart = m_editor.Document.ContentStart.GetPositionAtOffset(selectionStartOffset);
+                    TextPointer selectionEnd = m_editor.Document.ContentStart.GetPositionAtOffset(selectionEndOffset);
+                    if (null != selectionStart && null != selectionEnd)
+                    {
+                        m_editor.Selection.Select(selectionStart, selectionEnd);
+                    }
+                });
+            }
+            finally
+            {
+                // 編集ペインを表示し直す。大きさが変わった知らせ（EditorSizeChanged。隠した時に幅が 0 になった後、元の幅に戻る）で
+                // 列幅等を計算し直さないよう、書き出し中の印を消す前に組み直しておく
+                m_editor.Visibility = Visibility.Visible;
+                m_editor.UpdateLayout();
+                m_exportingPdfFlg = false;
+                m_editor.ScrollToVerticalOffset(editorVerticalOffset);
+                if (editorFocusedFlg)
                 {
-                    tableBorderRestores.Add(BlockStyles.ApplyPrintTableBorders(table));
+                    m_editor.Focus();
                 }
+            }
+            // 書き出しの間に、WPF が元に戻すの履歴を消した場合（保存先を選ぶ画面を出している間に、WPF の内部の処理で消える
+            // ことがある。以前の書き出しでも、書き出し用の一時的な変更で消えていた）は、見出し・太字等の意味情報の履歴
+            // （SemanticUndoTracker）も消す
+            if (!m_editor.CanUndo)
+            {
+                m_semanticUndoTracker?.Clear();
+            }
+            // 書き出しの間に予約されていた、表のかたまりの見た目の後始末（ScheduleTableChunkRepair）は、書き出しの後に行う
+            if (m_tableChunkRepairDeferredFlg)
+            {
+                m_tableChunkRepairDeferredFlg = false;
+                m_lastTopLevelBlockCount = -1;
+                ScheduleTableChunkRepair(m_tableChunkRepairDeferredFullFlg ? UndoAction.Create : UndoAction.Undo);
+                m_tableChunkRepairDeferredFullFlg = false;
+            }
+        }
 
-                // FlowDocumentは、既定では印刷可能幅に応じて自動的に段組み（複数列）にしてしまう
-                // ことがある。ColumnWidthを「余白を差し引いた実際の本文の幅」に合わせておくことで、
-                // 画面表示と同じ単一列のレイアウトのまま印刷されるようにする。
-                double originalColumnWidth = m_editor.Document.ColumnWidth;
-                m_editor.Document.ColumnWidth = contentWidth;
+        /// <summary>PDFへ書き出している最中か（書き出し用に文書を一時的に変えている間。ExportPdfBtnClick）。</summary>
+        private bool m_exportingPdfFlg;
 
-                try
+        /// <summary>
+        /// 元に戻す（Undo）の履歴への記録を、一時的に止める（PDFの書き出し用の一時的な変更を、履歴に残さないため）。
+        /// WPF に公開された方法が無い（IsUndoEnabled を false にすると、それまでの履歴が消える）ため、RichTextBox の
+        /// 履歴の管理（内部の UndoManager）の記録の有無だけを切り替える。止めている間の変更は、すべて元に戻すこと
+        /// （履歴は文書の位置で記録されているため、構造が変わったままだと、それまでの履歴で正しく戻せなくなる）。
+        /// 切り替えられなかった場合は何もしない（書き出しはそのまま行い、一時的な変更は履歴に残る）。
+        /// 止めている間は、RichTextBox.BeginChange（m_editor.BeginChange）を呼ばないこと（WPF の ChangeBlockUndoRecord が、
+        /// それまでの履歴をすべて消すことがあるため）。なお、PDFの保存先を選ぶ画面を出している間に、WPF の内部の処理で履歴が
+        /// 消えることがある（書き出しの後に元に戻せなくなる。この変更の前の書き出しでも消えていた）。
+        /// </summary>
+        /// <returns>記録を再開する処理。</returns>
+        private Action PauseUndoRecording()
+        {
+            try
+            {
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                object textContainer = typeof(FlowDocument).GetProperty("TextContainer", flags)?.GetValue(m_editor.Document);
+                object undoManager = textContainer?.GetType().GetProperty("UndoManager", flags)?.GetValue(textContainer);
+                PropertyInfo isEnabled = undoManager?.GetType().GetProperty("IsEnabled", flags);
+                if (null == isEnabled || !(isEnabled.GetValue(undoManager) is bool enabledFlg) || !enabledFlg)
                 {
-                    // FlowDocument.PagePaddingはこのRichTextBoxのpaginatorでは反映されないため、
-                    // 余白は各ページの描画内容をmarginだけずらして描画するMarginDocumentPaginator
-                    // （下記）で実現する。
-                    var innerPaginator = ((IDocumentPaginatorSource)m_editor.Document).DocumentPaginator;
-                    var pageSize = new Size(dlg.PrintableAreaWidth, dlg.PrintableAreaHeight);
-                    var marginPaginator = new MarginDocumentPaginator(innerPaginator, pageSize, margin);
-
-                    // 編集中のMarkdownファイル名から拡張子を除いたものを、書き出すPDFの既定の
-                    // ファイル名にする（例：「README.md」→「README.pdf」）。
-                    string docName = !string.IsNullOrEmpty(m_currentFilePath)
-                        ? Path.GetFileNameWithoutExtension(m_currentFilePath) : "無題";
-
-                    // 「Microsoft Print to PDF」の保存先ダイアログは、印刷ジョブの説明文字列や
-                    // XPSのTitleなどアプリ側の値を既定ファイル名に使わない仕様（Microsoft自身が
-                    // 非対応と回答している既知の制限）。次善の策として、ファイル名を先に
-                    // クリップボードへコピーしておき、保存ダイアログでCtrl+V貼り付けができるようにする。
+                    return () => { };
+                }
+                isEnabled.SetValue(undoManager, false);
+                if (isEnabled.GetValue(undoManager) is bool stillEnabledFlg && stillEnabledFlg)
+                {
+                    // 日本語入力の変換中等で、記録を止められない：元に戻して何もしない
+                    isEnabled.SetValue(undoManager, true);
+                    return () => { };
+                }
+                return () =>
+                {
                     try
                     {
-                        Clipboard.SetText(docName + ".pdf");
+                        isEnabled.SetValue(undoManager, true);
                     }
                     catch
                     {
-                        // クリップボードにコピーできなくても、PDFの書き出し自体には支障がないため無視する
                     }
+                };
+            }
+            catch
+            {
+                return () => { };
+            }
+        }
 
-                    dlg.PrintDocument(marginPaginator, docName);
-                }
-                catch (Exception ex)
+        /// <summary>
+        /// PDFへの書き出しの本体（ExportPdfBtnClick）。書き出しのためだけに文書を一時的に変え（リンクの置換・画像の縮小・
+        /// 列幅・罫線・表の行の前の改ページ等）、書き出した後に元に戻す。
+        /// </summary>
+        /// <param name="a_dlg">用紙・プリンターを選んだ印刷ダイアログ。</param>
+        /// <param name="a_progress">進み具合を表示するウィンドウ。</param>
+        private void ExportPdfWithTemporaryChanges(System.Windows.Controls.PrintDialog a_dlg, PdfExportProgress a_progress)
+        {
+            // mdeのリンクは独自のLinkInfoタグ付きRunで表現され、WPF標準のHyperlinkでは
+            // ないため、そのままではPDF上でクリックできない。書き出し中だけ本物のHyperlink
+            // に一時置換する。外部URLはNavigateUriへそのまま、見出しへのアンカーリンク
+            // （#始まり）は断片URIとして組み立てるが、XPS→PDF変換で失われる場合があるため
+            // 実際にジャンプするかは書き出し後にPDFビューアでの確認が必要。
+            var linkSwaps = new List<(InlineCollection Parent, Run OriginalRun, Hyperlink Wrapper)>();
+            foreach (var run in FindAllLinkRuns(m_editor.Document).ToList())
+            {
+                InlineCollection parentInlines = run.Parent switch
                 {
-                    MessageBox.Show("書き出しに失敗しました: " + ex.Message, "PDFに書き出し",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-                finally
+                    Paragraph parentPara => parentPara.Inlines,
+                    Span parentSpan => parentSpan.Inlines,
+                    _ => null
+                };
+                if (null == parentInlines)
                 {
-                    m_editor.Document.ColumnWidth = originalColumnWidth;
-                    foreach (var restore in tableBorderRestores)
+                    continue;
+                }
+                var info = (LinkInfo)run.Tag;
+                Uri navigateUri = BuildPdfNavigateUri(info.Url);
+                if (null == navigateUri)
+                {
+                    continue;
+                }
+                var hyperlink = new Hyperlink { NavigateUri = navigateUri };
+                parentInlines.InsertBefore(run, hyperlink);
+                parentInlines.Remove(run);
+                hyperlink.Inlines.Add(run);
+                linkSwaps.Add((parentInlines, run, hyperlink));
+            }
+
+            // ページの上下左右の余白は、メニュー「ファイル」→「PDFの余白を設定…」で設定した
+            // 値（m_pdfMarginTop/Bottom/Left/Right。既定は上下64px、左右80px）をそのまま使う。
+            var margin = new Thickness(m_pdfMarginLeft, m_pdfMarginTop, m_pdfMarginRight, m_pdfMarginBottom);
+
+            // 余白を差し引いた、実際に本文が使える幅（画像のサイズ調整・ColumnWidthの両方で
+            // 同じ値を使い、整合を取る）。
+            double contentWidth = Math.Max(100, a_dlg.PrintableAreaWidth - m_pdfMarginLeft - m_pdfMarginRight - 8);
+
+            // 画像を、この幅に収まるよう一時的に縮小する（画面上ではエディタの表示幅を基準に
+            // サイズ調整されているため、この幅がそれより狭い場合、そのままではページから
+            // はみ出して欠けてしまうことがある）。書き出し後、画面表示用のサイズに戻す。
+            var originalImageSizes = new Dictionary<Image, (double Width, double Height)>();
+            foreach (var img in m_imageManager.FindAllImages(m_editor.Document))
+            {
+                originalImageSizes[img] = (img.Width, img.Height);
+                if (img.Width > contentWidth)
+                {
+                    double scale = contentWidth / img.Width;
+                    img.Width = contentWidth;
+                    img.Height *= scale;
+                }
+            }
+
+            // 表（「列幅を補正する」オン時。未調整・調整済みのどちらも）の列幅も、画像と
+            // 同じ理由で一時的に再計算する。列幅は通常エディタの表示幅を基準に確定するため
+            // （BlockStyles.ApplyAutoCalculatedColumnWidths／ApplyExplicitColumnWidths）、
+            // 編集画面がPDF印刷可能幅（contentWidth）より広い環境では表の右端が見切れる
+            // 不具合があった。ウインドウリサイズ時と同じ再計算処理（BlockStyles.
+            // RefreshAutoCalculatedColumnWidths）を画面幅の代わりにcontentWidthで呼び、
+            // 印刷ページ幅に収まる列幅に揃える。調整済みの表も、比率での幅が固定幅（Pixel）
+            // で収まらなければStar比率になるため対象に含めている。書き出し後、画面表示用の
+            // 幅に戻す。
+            var originalTableColumnWidths = new Dictionary<Table, GridLength[]>();
+            if (m_correctColumnWidthsFlg)
+            {
+                // 大きな表を分けたかたまり（TableChunks）は、すべてのかたまりの幅を覚えておき、列幅の再計算は先頭のかたまりで
+                // 表全体に対して行う（FindAllTables は先頭のかたまりだけを返す）
+                foreach (var table in m_editor.Document.Blocks.OfType<Table>())
+                {
+                    originalTableColumnWidths[table] = table.Columns.Select(c => c.Width).ToArray();
+                }
+                // 変更をまとめる（m_editor.BeginChange で囲む）ことはしない：元に戻すの履歴への記録を止めている間
+                // （PauseUndoRecording）に RichTextBox.BeginChange を呼ぶと、WPF がそれまでの履歴をすべて消してしまう
+                // （ChangeBlockUndoRecord）。下の、元の列幅に戻す処理も同じ
+                foreach (var table in m_tableEditor.FindAllTables(m_editor.Document))
+                {
+                    BlockStyles.RefreshAutoCalculatedColumnWidths(table, contentWidth);
+                }
+            }
+
+            // 表の罫線は、書き出す間だけ少し濃い灰色・同じ太さ（BlockStyles.PRINT_TABLE_BORDER_THICKNESS）に
+            // そろえる（画面用の線のままだと、PDFで一部消えたり、一部だけ太く見えたりするため。
+            // 詳細は BlockStyles.ApplyPrintTableBorders）。書き出し後に画面用の線へ戻す。
+            var tableBorderRestores = new List<Action>();
+            // 大きな表を分けたかたまり（TableChunks）も、それぞれのかたまりの線を書き出す間だけそろえる
+            foreach (var table in m_editor.Document.Blocks.OfType<Table>())
+            {
+                tableBorderRestores.Add(BlockStyles.ApplyPrintTableBorders(table));
+            }
+
+            // FlowDocumentは、既定では印刷可能幅に応じて自動的に段組み（複数列）にしてしまう
+            // ことがある。ColumnWidthを「余白を差し引いた実際の本文の幅」に合わせておくことで、
+            // 画面表示と同じ単一列のレイアウトのまま印刷されるようにする。
+            double originalColumnWidth = m_editor.Document.ColumnWidth;
+            m_editor.Document.ColumnWidth = contentWidth;
+
+            // 表の行の前の改ページ（TablePrintPageBreaks）を元に戻す処理
+            Action restoreRowBreaks = null;
+            try
+            {
+                // FlowDocument.PagePaddingはこのRichTextBoxのpaginatorでは反映されないため、
+                // 余白は各ページの描画内容をmarginだけずらして描画するMarginDocumentPaginator
+                // （下記）で実現する。
+                var innerPaginator = ((IDocumentPaginatorSource)m_editor.Document).DocumentPaginator;
+                var pageSize = new Size(a_dlg.PrintableAreaWidth, a_dlg.PrintableAreaHeight);
+                // 書き出しの進み具合は、書き出すページ（MarginDocumentPaginator が求めたページ）の数で知らせる。最初のページで、
+                // 保存先を選ぶ間は隠していた進み具合のウィンドウを、また表示する
+                int lastPrintedPage = -1;
+                // 改ページの位置を調べ終えた時のページ数（書き出しの途中は、WPF が数え直すため、まだ組み立てていないページは
+                // 数に入らない）
+                int knownPageCount = 0;
+                Func<int, DocumentPage> getInnerPage = a_pageNumber =>
+                {
+                    if (a_pageNumber > lastPrintedPage)
                     {
-                        restore();
-                    }
-                    foreach (var kv in originalImageSizes)
-                    {
-                        kv.Key.Width = kv.Value.Width;
-                        kv.Key.Height = kv.Value.Height;
-                    }
-                    m_editor.BeginChange();
-                    try
-                    {
-                        foreach (var kv in originalTableColumnWidths)
+                        if (0 > lastPrintedPage)
                         {
-                            var cols = kv.Key.Columns;
-                            for (int c = 0; c < cols.Count && c < kv.Value.Length; c++)
-                            {
-                                cols[c].Width = kv.Value[c];
-                            }
+                            a_progress.SetVisible(true);
                         }
+                        lastPrintedPage = a_pageNumber;
+                        int total = Math.Max(a_pageNumber + 1, Math.Max(knownPageCount, innerPaginator.PageCount));
+                        double span = PDF_PROGRESS_PRINT_END - PDF_PROGRESS_SCAN_END;
+                        bool lastPageFlg = (0 < knownPageCount || innerPaginator.IsPageCountValid) && a_pageNumber + 1 >= total;
+                        a_progress.Report(lastPageFlg ? $"PDFのファイルを仕上げています（全 {total} ページ）" : $"書き出しています（{a_pageNumber + 1} / {total} ページ）",
+                            PDF_PROGRESS_SCAN_END + span * a_pageNumber / total,
+                            lastPageFlg ? PDF_PROGRESS_FINISH_LIMIT : PDF_PROGRESS_SCAN_END + span * (a_pageNumber + 1) / total);
                     }
-                    finally
+                    return innerPaginator.GetPage(a_pageNumber);
+                };
+                var marginPaginator = new MarginDocumentPaginator(innerPaginator, pageSize, margin, getInnerPage);
+
+                // 表の行がページの境目で上下に分かれないよう、分かれる行の前で改ページする（TablePrintPageBreaks。分かれた行は、
+                // 列によって片方のページのセルが空になり、歯抜けに見えていた）。ページの大きさは、MarginDocumentPaginator が
+                // innerPaginator に設定済み。印刷を始めた後は文書を変えられないため（TablePrintPageBreaks 参照）、印刷の前に行う
+                if (innerPaginator is DynamicDocumentPaginator dynamicPaginator)
+                {
+                    a_progress.Report("改ページの位置を調べています", PDF_PROGRESS_SCAN_START, PDF_PROGRESS_SCAN_START + 0.02);
+                    double scanSpan = PDF_PROGRESS_SCAN_END - PDF_PROGRESS_SCAN_START;
+                    restoreRowBreaks = TablePrintPageBreaks.Apply(m_editor.Document, dynamicPaginator, (a_scanPage, a_fraction) =>
+                        a_progress.Report($"改ページの位置を調べています（{a_scanPage + 1} ページ目）",
+                            PDF_PROGRESS_SCAN_START + scanSpan * a_fraction,
+                            PDF_PROGRESS_SCAN_START + scanSpan * Math.Min(1, a_fraction + 0.02)));
+                    if (innerPaginator.IsPageCountValid)
                     {
-                        m_editor.EndChange();
-                    }
-                    foreach (var swap in linkSwaps)
-                    {
-                        swap.Wrapper.Inlines.Remove(swap.OriginalRun);
-                        swap.Parent.InsertBefore(swap.Wrapper, swap.OriginalRun);
-                        swap.Parent.Remove(swap.Wrapper);
+                        knownPageCount = innerPaginator.PageCount;
                     }
                 }
-            });
+
+                // 編集中のMarkdownファイル名から拡張子を除いたものを、書き出すPDFの既定の
+                // ファイル名にする（例：「README.md」→「README.pdf」）。
+                string docName = !string.IsNullOrEmpty(m_currentFilePath)
+                    ? Path.GetFileNameWithoutExtension(m_currentFilePath) : "無題";
+
+                // 「Microsoft Print to PDF」の保存先ダイアログは、印刷ジョブの説明文字列や
+                // XPSのTitleなどアプリ側の値を既定ファイル名に使わない仕様（Microsoft自身が
+                // 非対応と回答している既知の制限）。次善の策として、ファイル名を先に
+                // クリップボードへコピーしておき、保存ダイアログでCtrl+V貼り付けができるようにする。
+                try
+                {
+                    Clipboard.SetText(docName + ".pdf");
+                }
+                catch
+                {
+                    // クリップボードにコピーできなくても、PDFの書き出し自体には支障がないため無視する
+                }
+
+                // 保存先を選ぶ画面（「Microsoft Print to PDF」の場合）の邪魔にならないよう、最初のページを書き出すまで
+                // 進み具合のウィンドウを隠す
+                a_progress.Report("書き出しています", PDF_PROGRESS_SCAN_END, PDF_PROGRESS_SCAN_END);
+                a_progress.SetVisible(false);
+                a_dlg.PrintDocument(marginPaginator, docName);
+                a_progress.Report(null, 1, 1);
+            }
+            catch (Exception ex)
+            {
+                a_progress.SetVisible(false);
+                MessageBox.Show("書き出しに失敗しました: " + ex.Message, "PDFに書き出し",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                // 表の行の前の改ページは、罫線・列幅等より先に戻す（改ページのために変えた罫線は、書き出し用の罫線を元にしているため）
+                restoreRowBreaks?.Invoke();
+                m_editor.Document.ColumnWidth = originalColumnWidth;
+                foreach (var restore in tableBorderRestores)
+                {
+                    restore();
+                }
+                foreach (var kv in originalImageSizes)
+                {
+                    kv.Key.Width = kv.Value.Width;
+                    kv.Key.Height = kv.Value.Height;
+                }
+                foreach (var kv in originalTableColumnWidths)
+                {
+                    var cols = kv.Key.Columns;
+                    for (int c = 0; c < cols.Count && c < kv.Value.Length; c++)
+                    {
+                        cols[c].Width = kv.Value[c];
+                    }
+                }
+                foreach (var swap in linkSwaps)
+                {
+                    swap.Wrapper.Inlines.Remove(swap.OriginalRun);
+                    swap.Parent.InsertBefore(swap.Wrapper, swap.OriginalRun);
+                    swap.Parent.Remove(swap.Wrapper);
+                }
+            }
         }
 
         /// <summary>文書内から、LinkInfoタグの付いたRun（mde独自のリンク表現）をすべて集める。</summary>
@@ -3871,6 +4067,7 @@ namespace mde
             private readonly DocumentPaginator m_inner;
             private readonly Size m_pageSize;
             private readonly Thickness m_margin;
+            private readonly Func<int, DocumentPage> m_getInnerPage;
 
             /// <summary>
             /// ラッパーを作成する。内部のpaginatorには、余白を差し引いた「実際に使える幅・
@@ -3880,11 +4077,14 @@ namespace mde
             /// <param name="a_inner">元のpaginator。</param>
             /// <param name="a_pageSize">用紙全体のサイズ（余白を含む）。</param>
             /// <param name="a_margin">上下左右の余白。</param>
-            public MarginDocumentPaginator(DocumentPaginator a_inner, Size a_pageSize, Thickness a_margin)
+            /// <param name="a_getInnerPage">元のページを求める処理（ページ番号。0から。表の行の前の改ページ・進み具合の表示用。
+            /// null なら a_inner から直接求める）。</param>
+            public MarginDocumentPaginator(DocumentPaginator a_inner, Size a_pageSize, Thickness a_margin, Func<int, DocumentPage> a_getInnerPage)
             {
                 m_inner = a_inner;
                 m_pageSize = a_pageSize;
                 m_margin = a_margin;
+                m_getInnerPage = a_getInnerPage;
                 m_inner.PageSize = new Size(
                     Math.Max(1, a_pageSize.Width - a_margin.Left - a_margin.Right),
                     Math.Max(1, a_pageSize.Height - a_margin.Top - a_margin.Bottom));
@@ -3892,7 +4092,11 @@ namespace mde
 
             public override DocumentPage GetPage(int a_pageNumber)
             {
-                DocumentPage innerPage = m_inner.GetPage(a_pageNumber);
+                DocumentPage innerPage = null != m_getInnerPage ? m_getInnerPage(a_pageNumber) : m_inner.GetPage(a_pageNumber);
+                if (null == innerPage || DocumentPage.Missing == innerPage)
+                {
+                    return DocumentPage.Missing;
+                }
                 var visual = new ContainerVisual { Transform = new TranslateTransform(m_margin.Left, m_margin.Top) };
                 visual.Children.Add(innerPage.Visual);
                 var pageBounds = new Rect(new Point(0, 0), m_pageSize);
@@ -4300,7 +4504,8 @@ namespace mde
             {
                 return; // InitializeComponent中の発火に対するガード
             }
-            if (m_isSourceModeFlg)
+            // PDFの書き出しの間は、編集ペインを隠している（幅が 0 になる）だけのため、何もしない（ExportPdfBtnClick）
+            if (m_isSourceModeFlg || m_exportingPdfFlg)
             {
                 return;
             }
