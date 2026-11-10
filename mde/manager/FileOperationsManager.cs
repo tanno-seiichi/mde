@@ -293,7 +293,8 @@ namespace mde.manager
         {
             var dlg = new Microsoft.Win32.OpenFileDialog
             {
-                Filter = "Markdownファイル (*.md;*.markdown)|*.md;*.markdown|すべてのファイル (*.*)|*.*"
+                Filter = Loc.T("Markdownファイル (*.md;*.markdown)|*.md;*.markdown|すべてのファイル (*.*)|*.*",
+                    "Markdown files (*.md;*.markdown)|*.md;*.markdown|All files (*.*)|*.*")
             };
             if (true == dlg.ShowDialog())
             {
@@ -336,8 +337,9 @@ namespace mde.manager
                 }
 
                 var result = MessageBox.Show(
-                    "このファイルには保存されていない変更があります。破棄して、保存済みの内容で開き直しますか？",
-                    "ファイルを開き直す", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+                    Loc.T("このファイルには保存されていない変更があります。破棄して、保存済みの内容で開き直しますか？",
+                        "This file has unsaved changes. Discard them and reopen the saved version?"),
+                    Loc.T("ファイルを開き直す", "Reopen File"), MessageBoxButton.OKCancel, MessageBoxImage.Warning);
                 if (result != MessageBoxResult.OK)
                 {
                     return;
@@ -348,7 +350,8 @@ namespace mde.manager
                 string onDiskContent = SafeReadFile(a_path);
                 if (null == onDiskContent)
                 {
-                    MessageBox.Show("ファイルを開けませんでした。", "ファイルを開く", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBox.Show(Loc.T("ファイルを開けませんでした。", "The file could not be opened."), Loc.T("ファイルを開く", "Open File"),
+                        MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
 
@@ -395,7 +398,7 @@ namespace mde.manager
                 md = SafeReadFile(a_path);
                 if (null == md)
                 {
-                    MessageBox.Show("ファイルを開けませんでした。", "ファイルを開く",
+                    MessageBox.Show(Loc.T("ファイルを開けませんでした。", "The file could not be opened."), Loc.T("ファイルを開く", "Open File"),
                         MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
@@ -551,7 +554,7 @@ namespace mde.manager
             m_recentFilesMenu.Items.Clear();
             if (0 == m_recentFiles.Count)
             {
-                m_recentFilesMenu.Items.Add(new MenuItem { Header = "（履歴なし）", IsEnabled = false });
+                m_recentFilesMenu.Items.Add(new MenuItem { Header = Loc.T("（履歴なし）", "(No History)"), IsEnabled = false });
                 return;
             }
             foreach (string path in m_recentFiles)
@@ -568,7 +571,7 @@ namespace mde.manager
                 m_recentFilesMenu.Items.Add(item);
             }
             m_recentFilesMenu.Items.Add(new Separator());
-            var clearItem = new MenuItem { Header = "履歴をクリア(_C)" };
+            var clearItem = new MenuItem { Header = Loc.T("履歴をクリア(_C)", "_Clear History") };
             clearItem.Click += ClearRecentFilesClick;
             m_recentFilesMenu.Items.Add(clearItem);
         }
@@ -582,7 +585,7 @@ namespace mde.manager
             string path = (string)((MenuItem)a_sender).Tag;
             if (!File.Exists(path))
             {
-                MessageBox.Show("ファイルが見つかりませんでした：" + path, "最近使ったファイル",
+                MessageBox.Show(Loc.T("ファイルが見つかりませんでした：", "File not found: ") + path, Loc.T("最近使ったファイル", "Recent Files"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 m_recentFiles.Remove(path);
                 RebuildRecentFilesMenu();
@@ -733,7 +736,7 @@ namespace mde.manager
             string oldFileDirectory = m_getCurrentFileDirectory();
             var dlg = new Microsoft.Win32.SaveFileDialog
             {
-                Filter = "Markdownファイル (*.md)|*.md|すべてのファイル (*.*)|*.*",
+                Filter = Loc.T("Markdownファイル (*.md)|*.md|すべてのファイル (*.*)|*.*", "Markdown files (*.md)|*.md|All files (*.*)|*.*"),
                 FileName = null != currentFilePath ? Path.GetFileName(currentFilePath) : "document.md"
             };
             // 「現在の文書の保存先フォルダ」「フォルダビューに表示中のフォルダ」は、それが
@@ -833,8 +836,8 @@ namespace mde.manager
             if (m_getCurrentFileIsDirty() || m_pendingFileEdits.Count > 0)
             {
                 var confirmResult = MessageBox.Show(
-                    "編集中のすべてのファイルを保存します。よろしいですか？",
-                    "すべて保存", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+                    Loc.T("編集中のすべてのファイルを保存します。よろしいですか？", "Save all files being edited?"),
+                    Loc.T("すべて保存", "Save All"), MessageBoxButton.OKCancel, MessageBoxImage.Question);
                 if (confirmResult != MessageBoxResult.OK)
                 {
                     return;
@@ -881,13 +884,13 @@ namespace mde.manager
 
             m_folderTreeManager.RefreshDirtyMarkers();
 
-            string message = savedCount + " 個のファイルを保存しました。";
+            string message = Loc.T(savedCount + " 個のファイルを保存しました。", "Saved " + savedCount + " file(s).");
             if (failures.Count > 0)
             {
-                message += "\n\n保存に失敗したファイル:\n" + string.Join("\n", failures);
+                message += Loc.T("\n\n保存に失敗したファイル:\n", "\n\nFiles that could not be saved:\n") + string.Join("\n", failures);
             }
 
-            MessageBox.Show(message, "すべて保存", MessageBoxButton.OK,
+            MessageBox.Show(message, Loc.T("すべて保存", "Save All"), MessageBoxButton.OK,
                 failures.Count > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
         }
 
@@ -943,8 +946,9 @@ namespace mde.manager
             m_folderTreeManager.RefreshDirtyMarkers();
             if (failures.Count > 0)
             {
-                MessageBox.Show("保存に失敗したファイルがあるため、閉じるのをやめました。\n\n" + string.Join("\n", failures),
-                    "閉じる", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("保存に失敗したファイルがあるため、閉じるのをやめました。\n\n",
+                        "Some files could not be saved, so the window was not closed.\n\n") + string.Join("\n", failures),
+                    Loc.T("閉じる", "Close"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return false;
             }
             return true;

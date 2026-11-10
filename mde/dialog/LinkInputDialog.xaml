@@ -1,7 +1,8 @@
 ﻿<Window x:Class="mde.dialog.LinkInputDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="リンク"
+        xmlns:common="clr-namespace:mde.common"
+        Title="リンク" common:Loc.En="Link"
         Width="380"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
@@ -16,7 +17,7 @@
         <ResourceDictionary Source="/mde;component/dialog/DialogStyles.xaml"/>
     </Window.Resources>
     <StackPanel Margin="22">
-        <TextBlock x:Name="m_titleText" Text="リンク先のURLを入力してください" Margin="0,0,0,16"
+        <TextBlock x:Name="m_titleText" Text="リンク先のURLを入力してください" common:Loc.En="Enter the URL of the link" Margin="0,0,0,16"
                    Foreground="#1C1C1C" FontWeight="Bold"/>
 
         <TextBlock Text="URL" Margin="0,0,0,4"
@@ -24,7 +25,7 @@
         <TextBox x:Name="m_urlBox" Margin="0,0,0,14" Padding="6,4"/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="キャンセル" MinWidth="84" Margin="0,0,8,0" Click="CancelClick"/>
+            <Button Content="キャンセル" common:Loc.En="Cancel" MinWidth="84" Margin="0,0,8,0" Click="CancelClick"/>
             <Button Content="OK" MinWidth="84" IsDefault="True" Click="OkClick"/>
         </StackPanel>
     </StackPanel>

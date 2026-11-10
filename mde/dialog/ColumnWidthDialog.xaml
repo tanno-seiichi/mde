@@ -1,7 +1,8 @@
 <Window x:Class="mde.dialog.ColumnWidthDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="列幅を調整"
+        xmlns:common="clr-namespace:mde.common"
+        Title="列幅を調整" common:Loc.En="Adjust Column Widths"
         Width="360"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
@@ -16,19 +17,19 @@
         <ResourceDictionary Source="/mde;component/dialog/DialogStyles.xaml"/>
     </Window.Resources>
     <StackPanel Margin="22">
-        <TextBlock Text="各列の幅を、他の列との比率を表す数値（大きいほど幅が広くなります。3未満は指定できません）で指定してください。表全体は編集領域の横幅に収まるように、この比率で分け合われます"
+        <TextBlock Text="各列の幅を、他の列との比率を表す数値（大きいほど幅が広くなります。3未満は指定できません）で指定してください。表全体は編集領域の横幅に収まるように、この比率で分け合われます" common:Loc.En="Specify the width of each column as a ratio relative to the other columns (larger numbers mean wider columns; values below 3 are not allowed). The table is fitted to the width of the editing area, and the columns share it in these ratios."
                    Margin="0,0,0,16" TextWrapping="Wrap"
                    Foreground="#1C1C1C" FontWeight="Bold"/>
 
         <StackPanel x:Name="m_columnsPanel" Margin="0,0,0,8"/>
 
-        <CheckBox x:Name="m_autoCalculateCheckBox" Content="自動計算" Margin="0,4,0,0"/>
-        <TextBlock Text="内容量に応じた比率を自動的に使用します。値を直接編集すると自動的にオフになります"
+        <CheckBox x:Name="m_autoCalculateCheckBox" Content="自動計算" common:Loc.En="Calculate automatically" Margin="0,4,0,0"/>
+        <TextBlock Text="内容量に応じた比率を自動的に使用します。値を直接編集すると自動的にオフになります" common:Loc.En="Uses ratios based on the amount of content. This turns off automatically when you edit a value."
                    Margin="0,2,0,0" FontSize="11" TextWrapping="Wrap"
                    Foreground="#555555"/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-            <Button Content="キャンセル" MinWidth="84" Margin="0,0,8,0" Click="CancelClick"/>
+            <Button Content="キャンセル" common:Loc.En="Cancel" MinWidth="84" Margin="0,0,8,0" Click="CancelClick"/>
             <Button Content="OK" MinWidth="84" IsDefault="True" Click="OkClick"/>
         </StackPanel>
     </StackPanel>

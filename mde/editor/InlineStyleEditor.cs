@@ -418,7 +418,7 @@ namespace mde.editor
             }
             catch (Exception ex)
             {
-                MessageBox.Show("リンクを開けませんでした: " + ex.Message, "リンクを開く",
+                MessageBox.Show(Loc.T("リンクを開けませんでした: ", "Could not open the link: ") + ex.Message, Loc.T("リンクを開く", "Open Link"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -469,7 +469,8 @@ namespace mde.editor
 
                 if (!System.IO.File.Exists(resolved))
                 {
-                    MessageBox.Show("リンク先のファイルが見つかりませんでした:\n" + resolved, "ファイルリンク",
+                    MessageBox.Show(Loc.T("リンク先のファイルが見つかりませんでした:\n", "The linked file was not found:\n") + resolved,
+                        Loc.T("ファイルリンク", "File Link"),
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }

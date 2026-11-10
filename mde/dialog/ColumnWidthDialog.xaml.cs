@@ -47,7 +47,7 @@ namespace mde.dialog
             var labelBrush = (Brush)FindResource("InkSoftBrush");
             for (int i = 0; i < a_labels.Count; i++)
             {
-                string label = string.IsNullOrWhiteSpace(a_labels[i]) ? "列" + (i + 1) : a_labels[i];
+                string label = string.IsNullOrWhiteSpace(a_labels[i]) ? Loc.T("列", "Column ") + (i + 1) : a_labels[i];
                 var labelBlock = new TextBlock
                 {
                     Text = label,

@@ -9,6 +9,7 @@ using mde.common;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Controls;
@@ -904,6 +905,12 @@ namespace mde.findreplace
         //  フォルダ全体を対象にした検索・置換
         // ======================================================================
 
+        /// <summary>
+        /// 読み込んでいるフォルダの中の、すべての Markdown ファイル（.md・.markdown）を、フォルダビューと同じ順に返す
+        /// （各フォルダの中で、先にサブフォルダ、その後にファイル。それぞれ Windows エクスプローラーと同じ自然順。
+        /// NaturalSort）。検索結果の一覧は、この順に並ぶ。
+        /// </summary>
+        /// <returns>ファイルのパスの一覧。</returns>
         private List<string> GetAllMarkdownFilesInRoot()
         {
             var result = new List<string>();
@@ -912,16 +919,30 @@ namespace mde.findreplace
             {
                 return result;
             }
+            CollectMarkdownFiles(root, result);
+            return result;
+        }
+
+        /// <summary>フォルダの中の Markdown ファイルを、サブフォルダの中も含めて、フォルダビューと同じ順に集める。</summary>
+        /// <param name="a_dir">フォルダ。</param>
+        /// <param name="a_result">集めたファイルのパスを足す先。</param>
+        private static void CollectMarkdownFiles(string a_dir, List<string> a_result)
+        {
             try
             {
-                result.AddRange(Directory.GetFiles(root, "*.md", SearchOption.AllDirectories));
-                result.AddRange(Directory.GetFiles(root, "*.markdown", SearchOption.AllDirectories));
+                foreach (string dir in Directory.GetDirectories(a_dir).OrderBy(d => d, NaturalSort.Comparer))
+                {
+                    CollectMarkdownFiles(dir, a_result);
+                }
+                a_result.AddRange(Directory.GetFiles(a_dir)
+                    .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
+                                f.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(f => f, NaturalSort.Comparer));
             }
             catch
             {
                 // アクセスできないフォルダなどは無視する
             }
-            return result;
         }
 
         /// <summary>読み込んでいるフォルダ内のすべてのMarkdownファイルを対象に、一致箇所を探す。</summary>

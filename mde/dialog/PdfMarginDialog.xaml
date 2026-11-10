@@ -1,7 +1,8 @@
 <Window x:Class="mde.dialog.PdfMarginDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="PDFの余白を設定"
+        xmlns:common="clr-namespace:mde.common"
+        Title="PDFの余白を設定" common:Loc.En="PDF Margins"
         Width="360"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
@@ -16,28 +17,28 @@
         <ResourceDictionary Source="/mde;component/dialog/DialogStyles.xaml"/>
     </Window.Resources>
     <StackPanel Margin="22">
-        <TextBlock Text="PDFに書き出す際の、上下左右の余白（px）を設定してください" Margin="0,0,0,16"
+        <TextBlock Text="PDFに書き出す際の、上下左右の余白（px）を設定してください" common:Loc.En="Set the top, bottom, left, and right margins (px) for PDF export" Margin="0,0,0,16"
                    Foreground="#1C1C1C" FontWeight="Bold" TextWrapping="Wrap"/>
 
-        <TextBlock Text="上の余白" Margin="0,0,0,4"
+        <TextBlock Text="上の余白" common:Loc.En="Top margin" Margin="0,0,0,4"
                    Foreground="#555555" FontSize="12"/>
         <TextBox x:Name="m_topBox" Margin="0,0,0,14" Padding="6,4"/>
 
-        <TextBlock Text="下の余白" Margin="0,0,0,4"
+        <TextBlock Text="下の余白" common:Loc.En="Bottom margin" Margin="0,0,0,4"
                    Foreground="#555555" FontSize="12"/>
         <TextBox x:Name="m_bottomBox" Margin="0,0,0,14" Padding="6,4"/>
 
-        <TextBlock Text="左の余白" Margin="0,0,0,4"
+        <TextBlock Text="左の余白" common:Loc.En="Left margin" Margin="0,0,0,4"
                    Foreground="#555555" FontSize="12"/>
         <TextBox x:Name="m_leftBox" Margin="0,0,0,14" Padding="6,4"/>
 
-        <TextBlock Text="右の余白" Margin="0,0,0,4"
+        <TextBlock Text="右の余白" common:Loc.En="Right margin" Margin="0,0,0,4"
                    Foreground="#555555" FontSize="12"/>
         <TextBox x:Name="m_rightBox" Margin="0,0,0,22" Padding="6,4"/>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="既定値に戻す" MinWidth="100" Margin="0,0,8,0" Click="ResetClick"/>
-            <Button Content="キャンセル" MinWidth="84" Margin="0,0,8,0" Click="CancelClick"/>
+            <Button Content="既定値に戻す" common:Loc.En="Restore Defaults" MinWidth="100" Margin="0,0,8,0" Click="ResetClick"/>
+            <Button Content="キャンセル" common:Loc.En="Cancel" MinWidth="84" Margin="0,0,8,0" Click="CancelClick"/>
             <Button Content="OK" MinWidth="84" IsDefault="True" Click="OkClick"/>
         </StackPanel>
     </StackPanel>

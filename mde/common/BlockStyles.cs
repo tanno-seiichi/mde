@@ -334,7 +334,8 @@ namespace mde.common
                 a_p.Margin = new Thickness(0, 4, 0, 0);
                 a_p.BorderThickness = new Thickness(1, 1, 1, 0);
             }
-            ToolTipService.SetToolTip(a_p, string.IsNullOrEmpty(a_language) ? "コードブロック" : "コードブロック (" + a_language + ")");
+            string codeBlockLabel = Loc.T("コードブロック", "Code block");
+            ToolTipService.SetToolTip(a_p, string.IsNullOrEmpty(a_language) ? codeBlockLabel : codeBlockLabel + " (" + a_language + ")");
         }
 
         /// <summary>段落に、コードブロックの2行目以降（Enterによる続きの行）のスタイルを適用する。
@@ -1210,9 +1211,18 @@ namespace mde.common
             double defaultSize = TABLE_MEASURE_FONT_SIZE;
             var sb = new StringBuilder();
             var ranges = new List<(int Start, int Length, FontFamily Family, double Size, FontWeight Weight)>();
+            // タスクリストのチェックボックス（CreateTaskCheckbox）の幅（px。余白を含む）。文字と違って縮まないため、段落の幅に
+            // そのまま足す（以前は含めておらず、チェックボックスのある列が狭くなりすぎて、チェックボックスの右端が欠けていた）
+            double fixedWidthPx = 0;
 
             foreach (Inline inline in a_para.Inlines)
             {
+                if (inline is InlineUIContainer checkBoxContainer && checkBoxContainer.Child is CheckBox checkBox)
+                {
+                    fixedWidthPx += (double.IsNaN(checkBox.Width) ? checkBox.ActualWidth : checkBox.Width) +
+                        checkBox.Margin.Left + checkBox.Margin.Right;
+                    continue;
+                }
                 // セルの画像（InlineUIContainerで包まれたImage）は、列幅の自動計算には
                 // 含めない（テキストの内容量だけで列幅を決める）。画像は、この計算で
                 // 確定した列幅に収まるよう、後段のConstrainCellImagesToColumnWidthsで
@@ -1243,21 +1253,22 @@ namespace mde.common
                 ranges.Add((start, text.Length, fontFamily, fontSize, fontWeight));
             }
 
-            if (0 == sb.Length)
+            if (0 == sb.Length && fixedWidthPx <= 0)
             {
                 return null;
             }
             string joined = sb.ToString();
-            return new ParagraphMeasureInput(joined, ranges, defaultFamily, defaultSize, a_defaultWeight,
-                ComputeWidthUpperBoundPx(joined, ranges, defaultSize));
+            double upperBoundPx = (0 < joined.Length ? ComputeWidthUpperBoundPx(joined, ranges, defaultSize) : 0) + fixedWidthPx;
+            return new ParagraphMeasureInput(joined, ranges, defaultFamily, defaultSize, a_defaultWeight, upperBoundPx, fixedWidthPx);
         }
 
         /// <summary>段落の幅を測るための材料（BuildParagraphMeasureInput が集め、MeasureParagraphWidthPx が測る）。</summary>
         private sealed class ParagraphMeasureInput
         {
             public ParagraphMeasureInput(string a_text, List<(int Start, int Length, FontFamily Family, double Size, FontWeight Weight)> a_ranges,
-                FontFamily a_defaultFamily, double a_defaultSize, FontWeight a_defaultWeight, double a_upperBoundPx)
+                FontFamily a_defaultFamily, double a_defaultSize, FontWeight a_defaultWeight, double a_upperBoundPx, double a_fixedWidthPx)
             {
+                FixedWidthPx = a_fixedWidthPx;
                 Text = a_text;
                 Ranges = a_ranges;
                 DefaultFamily = a_defaultFamily;
@@ -1273,8 +1284,11 @@ namespace mde.common
             public FontFamily DefaultFamily { get; }
             public double DefaultSize { get; }
             public FontWeight DefaultWeight { get; }
-            /// <summary>実際に測った幅が、これを超えることはない値（ComputeWidthUpperBoundPx）。測れない文字を含む時は無限大。</summary>
+            /// <summary>実際に測った幅が、これを超えることはない値（ComputeWidthUpperBoundPx に FixedWidthPx を足したもの）。
+            /// 測れない文字を含む時は無限大。</summary>
             public double UpperBoundPx { get; }
+            /// <summary>文字以外で、幅の決まっている部分（タスクリストのチェックボックス）の幅（px）。</summary>
+            public double FixedWidthPx { get; }
         }
 
         /// <summary>
@@ -1340,6 +1354,15 @@ namespace mde.common
         /// <param name="a_input">測定の材料。</param>
         /// <returns>幅（px）。</returns>
         private static double MeasureParagraphWidthPx(ParagraphMeasureInput a_input)
+        {
+            // 文字の幅に、チェックボックス等の幅の決まっている部分（FixedWidthPx）を足す
+            return (0 < a_input.Text.Length ? MeasureParagraphTextWidthPx(a_input) : 0) + a_input.FixedWidthPx;
+        }
+
+        /// <summary>段落の文字の部分の幅（px）を測る（MeasureParagraphWidthPx 参照）。</summary>
+        /// <param name="a_input">測定の材料。</param>
+        /// <returns>幅（px）。</returns>
+        private static double MeasureParagraphTextWidthPx(ParagraphMeasureInput a_input)
         {
             double pixelsPerDip = GetMeasurementPixelsPerDip();
             string cacheKey = null;
@@ -1896,6 +1919,35 @@ namespace mde.common
                 // （overflow-wrap: anywhere）ため、ブラウザの計算でも列の最小の幅が1文字分になる。それと同じにする）
                 double minColumnWidth = TABLE_AUTO_COLUMN_MIN_WIDTH_PX;
                 var minWidths = maxWidths.Select(w => Math.Min(w, minColumnWidth)).ToArray();
+                var (numericMinWidths, checkBoxMinWidths) = MeasureContentMinWidthsPx(a_table);
+                // タスクリストのチェックボックスのある列は、チェックボックスが欠けない幅を必ず確保する（チェックボックスは縮まず、
+                // 1文字分の幅より広いため、そのままでは右端が切れていた）
+                for (int c = 0; c < minWidths.Length && c < checkBoxMinWidths.Length; c++)
+                {
+                    if (checkBoxMinWidths[c] > minWidths[c])
+                    {
+                        minWidths[c] = checkBoxMinWidths[c];
+                        maxWidths[c] = Math.Max(maxWidths[c], checkBoxMinWidths[c]);
+                    }
+                }
+                // 数値だけのセル（「1543」「1,234.5」「12%」等）は、なるべく途中で折り返さない（1文字ずつ縦に並ぶと読みにくい。
+                // Typora と同じ）。その列の最小の幅を、数値が1行に収まる幅にする。それでは表示できる幅に収まらない時は、
+                // これまで通り1文字分にする
+                var numericAwareMin = (double[])minWidths.Clone();
+                var numericAwareMax = (double[])maxWidths.Clone();
+                for (int c = 0; c < numericAwareMin.Length && c < numericMinWidths.Length; c++)
+                {
+                    if (numericMinWidths[c] > numericAwareMin[c])
+                    {
+                        numericAwareMin[c] = numericMinWidths[c];
+                        numericAwareMax[c] = Math.Max(numericAwareMax[c], numericMinWidths[c]);
+                    }
+                }
+                if (numericAwareMin.Sum() < targetWidthPx)
+                {
+                    minWidths = numericAwareMin;
+                    maxWidths = numericAwareMax;
+                }
                 double sumMin = minWidths.Sum();
                 double sumMax = maxWidths.Sum();
                 if (sumMin >= targetWidthPx || sumMax - sumMin <= 0.01)
@@ -1910,6 +1962,71 @@ namespace mde.common
                 }
                 return widths;
             }
+        }
+
+        /// <summary>数値だけのセル（IsNumericCellText）と判断する文字列の形。符号・通貨記号・桁区切り・小数点・%・
+        /// 日付や時刻の区切り（/ : -）を含んでよい。</summary>
+        private static readonly System.Text.RegularExpressions.Regex s_numericCellRegex = new System.Text.RegularExpressions.Regex(
+            @"^[+\-−±]?[¥￥$€£]?[0-9０-９][0-9０-９,，.．:：/\-]*[%％]?$");
+
+        /// <summary>
+        /// 各列が最低限必要な幅（px。セルの余白・罫線・余裕を含む）。該当するセルが無い列は 0。
+        /// ・Numeric：数値だけのセルの、数値を1行に収める幅。セルの段落が1つで、その文字（前後の空白を除く）が数値だけの時を、
+        /// 　数値だけのセルとする。
+        /// ・CheckBox：タスクリストのチェックボックスのあるセルの、チェックボックスが欠けずに収まる幅（チェックボックスは
+        /// 　縮まないため。後ろの文字は、次の行へ折り返してよい）。
+        /// </summary>
+        /// <param name="a_table">対象の表。</param>
+        /// <returns>列ごとの幅。</returns>
+        private static (double[] Numeric, double[] CheckBox) MeasureContentMinWidthsPx(Table a_table)
+        {
+            int colCount = a_table.Columns.Count;
+            var widths = new double[colCount];
+            var checkBoxWidths = new double[colCount];
+            foreach (TableRowGroup rg in TableChunks.GetChunks(a_table).SelectMany(t => t.RowGroups))
+            {
+                foreach (TableRow row in rg.Rows)
+                {
+                    for (int c = 0; c < row.Cells.Count && c < colCount; c++)
+                    {
+                        TableCell cell = row.Cells[c];
+                        foreach (Paragraph para in cell.Blocks.OfType<Paragraph>())
+                        {
+                            ParagraphMeasureInput checkBoxInput = BuildParagraphMeasureInput(para, cell.FontWeight);
+                            if (null != checkBoxInput && 0 < checkBoxInput.FixedWidthPx)
+                            {
+                                double checkBoxWidth = checkBoxInput.FixedWidthPx + TABLE_CELL_HORIZONTAL_PADDING + TABLE_CELL_BORDER_PX + 1;
+                                checkBoxWidths[c] = Math.Max(checkBoxWidths[c], checkBoxWidth);
+                            }
+                        }
+                        if (1 != cell.Blocks.Count || !(cell.Blocks.FirstBlock is Paragraph p))
+                        {
+                            continue;
+                        }
+                        ParagraphMeasureInput input = BuildParagraphMeasureInput(p, cell.FontWeight);
+                        if (null == input || !IsNumericCellText(input.Text))
+                        {
+                            continue;
+                        }
+                        double width = MeasureParagraphWidthPx(input) + TABLE_CELL_HORIZONTAL_PADDING + TABLE_CELL_BORDER_PX +
+                            TABLE_COLUMN_WIDTH_SAFETY_MARGIN_PX;
+                        if (width > widths[c])
+                        {
+                            widths[c] = width;
+                        }
+                    }
+                }
+            }
+            return (widths, checkBoxWidths);
+        }
+
+        /// <summary>セルの文字が数値だけか（s_numericCellRegex）。長すぎる文字列は数値として扱わない。</summary>
+        /// <param name="a_text">セルの文字。</param>
+        /// <returns>数値だけなら true。</returns>
+        private static bool IsNumericCellText(string a_text)
+        {
+            string text = a_text?.Trim();
+            return !string.IsNullOrEmpty(text) && text.Length <= 24 && s_numericCellRegex.IsMatch(text);
         }
 
         /// <summary>

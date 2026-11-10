@@ -1050,7 +1050,7 @@ namespace mde.editor
             string fileUri = m_imageManager?.WriteTempFileForClipboard(a_img);
             if (string.IsNullOrEmpty(fileUri))
             {
-                a_sb.Append("[画像]");
+                a_sb.Append(Loc.T("[画像]", "[Image]"));
                 return;
             }
             // セルの左・上の罫線と画像が接して重なって見える点について、右下へずらす表示位置

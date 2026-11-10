@@ -192,8 +192,9 @@ namespace mde.manager
                 return;
             }
 
-            MessageBox.Show("この画像は開けません（元ファイルが見つからないか、埋め込み画像です）。",
-                "画像を開く", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(Loc.T("この画像は開けません（元ファイルが見つからないか、埋め込み画像です）。",
+                    "This image cannot be opened (the original file was not found, or it is an embedded image)."),
+                Loc.T("画像を開く", "Open Image"), MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
         /// <summary>指定したパス・URLをOS標準の関連付けアプリで開く。開けない環境でも例外を
@@ -395,15 +396,17 @@ namespace mde.manager
             string sourcePath = GetExportableFilePath(ContextImage);
             if (null == sourcePath)
             {
-                MessageBox.Show("この画像は保存できません（リモート画像か、元ファイルが見つかりません）。",
-                    "画像を保存", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(Loc.T("この画像は保存できません（リモート画像か、元ファイルが見つかりません）。",
+                        "This image cannot be saved (it is a remote image, or the original file was not found)."),
+                    Loc.T("画像を保存", "Save Image"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             var dlg = new Microsoft.Win32.SaveFileDialog
             {
                 FileName = Path.GetFileName(sourcePath),
-                Filter = "画像ファイル|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|すべてのファイル|*.*",
+                Filter = Loc.T("画像ファイル|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|すべてのファイル|*.*",
+                    "Image files|*.png;*.jpg;*.jpeg;*.gif;*.bmp;*.webp|All files|*.*"),
                 OverwritePrompt = false
             };
             if (true != dlg.ShowDialog())
@@ -430,7 +433,7 @@ namespace mde.manager
             }
             catch (Exception ex)
             {
-                MessageBox.Show("保存に失敗しました: " + ex.Message, "画像を保存",
+                MessageBox.Show(Loc.T("保存に失敗しました: ", "Save failed: ") + ex.Message, Loc.T("画像を保存", "Save Image"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -827,7 +830,8 @@ namespace mde.manager
             }
             catch (Exception ex)
             {
-                MessageBox.Show("クリップボードの画像の保存に失敗しました: " + ex.Message, "画像の貼り付け",
+                MessageBox.Show(Loc.T("クリップボードの画像の保存に失敗しました: ", "Failed to save the clipboard image: ") + ex.Message,
+                    Loc.T("画像の貼り付け", "Paste Image"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
@@ -959,7 +963,7 @@ namespace mde.manager
             }
             catch (Exception ex)
             {
-                MessageBox.Show("画像のコピーに失敗しました: " + ex.Message, "画像の追加",
+                MessageBox.Show(Loc.T("画像のコピーに失敗しました: ", "Failed to copy the image: ") + ex.Message, Loc.T("画像の追加", "Add Image"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return null;
             }

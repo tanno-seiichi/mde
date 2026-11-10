@@ -3,6 +3,7 @@
 // mde (Markdown インラインエディタ) の一部。
 // PDFへの書き出しの進み具合を表示する小さなウィンドウ。
 
+using mde.common;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
@@ -218,7 +219,7 @@ namespace mde.dialog
             };
             m_detailText = new TextBlock
             {
-                Text = "準備しています…",
+                Text = Loc.T("準備しています…", "Preparing…"),
                 Margin = new Thickness(0, 8, 0, 0),
                 Foreground = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
                 TextTrimming = TextTrimming.CharacterEllipsis,
@@ -244,7 +245,7 @@ namespace mde.dialog
             panel.Children.Add(m_barTrack);
             return new Window
             {
-                Title = "PDFに書き出し",
+                Title = Loc.T("PDFに書き出し", "Export to PDF"),
                 Width = WINDOW_WIDTH,
                 SizeToContent = SizeToContent.Height,
                 ResizeMode = ResizeMode.NoResize,

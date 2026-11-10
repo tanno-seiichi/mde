@@ -7,6 +7,7 @@
 // に委譲しており、このウィンドウ自身はUIの状態と、フォルダ範囲での1件ずつセッションの
 // ファイル/一致箇所間の移動だけを管理する。
 
+using mde.common;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -27,6 +28,18 @@ namespace mde.findreplace
     /// </summary>
     public partial class FindReplaceWindow : Window
     {
+        /// <summary>見つからなかった時の、状態の表示（今の言語。Loc）。</summary>
+        private static string NotFoundText => Loc.T("見つかりませんでした。", "Not found.");
+
+        /// <summary>フォルダ全体の検索で見つかった時の、状態の表示（今の言語。Loc）。</summary>
+        /// <param name="a_fileName">見つかったファイルの名前。</param>
+        /// <param name="a_index">そのファイルの中で、何件目か（1始まり）。</param>
+        /// <param name="a_count">そのファイルの中の件数。</param>
+        /// <returns>表示する文字。</returns>
+        private static string FoundText(string a_fileName, int a_index, int a_count) =>
+            Loc.T("見つかりました：" + a_fileName + "（" + a_index + " / " + a_count + "件目）",
+                "Found: " + a_fileName + " (" + a_index + " of " + a_count + ")");
+
         /// <summary>検索・置換の対象となるメインウィンドウ。</summary>
         private readonly MainWindow m_owner;
 
@@ -201,7 +214,7 @@ namespace mde.findreplace
             if (true == m_scopeCurrentFile.IsChecked)
             {
                 bool foundFlg = m_owner.SearchReplace.FindNextInCurrentFile(Term, CaseSensitive, UseRegex);
-                m_statusText.Text = foundFlg ? "見つかりました（エディタ内で強調表示しています）。" : "見つかりませんでした。";
+                m_statusText.Text = foundFlg ? Loc.T("見つかりました（エディタ内で強調表示しています）。", "Found (highlighted in the editor).") : NotFoundText;
             }
             else
             {
@@ -317,7 +330,7 @@ namespace mde.findreplace
         private void FindNextInFolder()
         {
             EnsureFolderWalkInitialized();
-            if (0 == m_folderFindFileList.Count) { m_statusText.Text = "見つかりませんでした。"; return; }
+            if (0 == m_folderFindFileList.Count) { m_statusText.Text = NotFoundText; return; }
 
             // 今のファイルの一致箇所一覧の中で、まだ次に進める一致箇所があるか。
             if (null != m_folderFindCurrentFileMatches &&
@@ -325,8 +338,8 @@ namespace mde.findreplace
             {
                 m_folderFindCurrentMatchIdx++;
                 m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[m_folderFindCurrentMatchIdx]);
-                m_statusText.Text = "見つかりました：" + System.IO.Path.GetFileName(m_folderFindFileList[m_folderFindCurrentFileIdx]) +
-                    "（" + (m_folderFindCurrentMatchIdx + 1) + " / " + m_folderFindCurrentFileMatches.Count + "件目）";
+                m_statusText.Text = FoundText(System.IO.Path.GetFileName(m_folderFindFileList[m_folderFindCurrentFileIdx]),
+                    m_folderFindCurrentMatchIdx + 1, m_folderFindCurrentFileMatches.Count);
                 return;
             }
 
@@ -355,13 +368,12 @@ namespace mde.findreplace
                     m_folderFindCurrentMatchIdx = 0;
                     m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[0]);
                     SelectFileNodeDeferred(path);
-                    m_statusText.Text = "見つかりました：" + System.IO.Path.GetFileName(path) +
-                        "（1 / " + m_folderFindCurrentFileMatches.Count + "件目）";
+                    m_statusText.Text = FoundText(System.IO.Path.GetFileName(path), 1, m_folderFindCurrentFileMatches.Count);
                     return;
                 }
             }
             // フォルダを一周しても一致箇所が1つも見つからなかった場合のみ、ここに到達する。
-            m_statusText.Text = "見つかりませんでした。";
+            m_statusText.Text = NotFoundText;
         }
 
         /// <summary>「すべて検索」（フォルダ全体）の結果一覧の選択項目を、今表示しているファイルに
@@ -395,7 +407,7 @@ namespace mde.findreplace
             if (true == m_scopeCurrentFile.IsChecked)
             {
                 bool foundFlg = m_owner.SearchReplace.FindPreviousInCurrentFile(Term, CaseSensitive, UseRegex);
-                m_statusText.Text = foundFlg ? "見つかりました（エディタ内で強調表示しています）。" : "見つかりませんでした。";
+                m_statusText.Text = foundFlg ? Loc.T("見つかりました（エディタ内で強調表示しています）。", "Found (highlighted in the editor).") : NotFoundText;
             }
             else
             {
@@ -412,15 +424,15 @@ namespace mde.findreplace
         private void FindPreviousInFolder()
         {
             EnsureFolderWalkInitialized();
-            if (0 == m_folderFindFileList.Count) { m_statusText.Text = "見つかりませんでした。"; return; }
+            if (0 == m_folderFindFileList.Count) { m_statusText.Text = NotFoundText; return; }
 
             if (null != m_folderFindCurrentFileMatches &&
                 m_folderFindCurrentMatchIdx - 1 >= 0)
             {
                 m_folderFindCurrentMatchIdx--;
                 m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[m_folderFindCurrentMatchIdx]);
-                m_statusText.Text = "見つかりました：" + System.IO.Path.GetFileName(m_folderFindFileList[m_folderFindCurrentFileIdx]) +
-                    "（" + (m_folderFindCurrentMatchIdx + 1) + " / " + m_folderFindCurrentFileMatches.Count + "件目）";
+                m_statusText.Text = FoundText(System.IO.Path.GetFileName(m_folderFindFileList[m_folderFindCurrentFileIdx]),
+                    m_folderFindCurrentMatchIdx + 1, m_folderFindCurrentFileMatches.Count);
                 return;
             }
 
@@ -447,12 +459,12 @@ namespace mde.findreplace
                     m_folderFindCurrentMatchIdx = m_folderFindCurrentFileMatches.Count - 1;
                     m_owner.SearchReplace.SelectAndScrollTo(m_folderFindCurrentFileMatches[m_folderFindCurrentMatchIdx]);
                     SelectFileNodeDeferred(path);
-                    m_statusText.Text = "見つかりました：" + System.IO.Path.GetFileName(path) +
-                        "（" + m_folderFindCurrentFileMatches.Count + " / " + m_folderFindCurrentFileMatches.Count + "件目）";
+                    m_statusText.Text = FoundText(System.IO.Path.GetFileName(path), m_folderFindCurrentFileMatches.Count,
+                        m_folderFindCurrentFileMatches.Count);
                     return;
                 }
             }
-            m_statusText.Text = "見つかりませんでした。";
+            m_statusText.Text = NotFoundText;
         }
 
         // ===== 開く位置 =====
@@ -716,8 +728,9 @@ namespace mde.findreplace
                 m_resultsList.ItemsSource = snippets;
                 m_resultsList.Visibility = snippets.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
                 m_statusText.Text = snippets.Count > 0
-                    ? snippets.Count + " 件見つかりました（すべてエディタ内・アウトラインで強調表示しています。ダブルクリックでその箇所へ移動します）。"
-                    : "見つかりませんでした。";
+                    ? Loc.T(snippets.Count + " 件見つかりました（すべてエディタ内・アウトラインで強調表示しています。ダブルクリックでその箇所へ移動します）。",
+                        snippets.Count + " found (all highlighted in the editor and the outline). Double-click to go to a match.")
+                    : NotFoundText;
             }
             else
             {
@@ -726,11 +739,12 @@ namespace mde.findreplace
                 var results = m_owner.SearchReplace.FindAllInFolder(Term, CaseSensitive, UseRegex);
                 m_resultsPaths = results.Select(r => r.Item1).ToList();
                 m_owner.FolderTreePane.MarkSearchMatches(m_resultsPaths);
-                m_resultsList.ItemsSource = results.Select(r => ToDisplayPath(r.Item1) + "　（" + r.Item2 + "件）").ToList();
+                m_resultsList.ItemsSource = results.Select(r => ToDisplayPath(r.Item1) + Loc.T("　（" + r.Item2 + "件）", "  (" + r.Item2 + ")")).ToList();
                 m_resultsList.Visibility = results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
                 m_statusText.Text = results.Count > 0
-                    ? results.Count + " 個のファイルで見つかりました（フォルダビューでも強調表示しています）。ダブルクリックで開きます。"
-                    : "見つかりませんでした。";
+                    ? Loc.T(results.Count + " 個のファイルで見つかりました（フォルダビューでも強調表示しています）。ダブルクリックで開きます。",
+                        "Found in " + results.Count + " file(s) (also highlighted in the folder view). Double-click to open.")
+                    : NotFoundText;
             }
         }
 
@@ -783,17 +797,21 @@ namespace mde.findreplace
             if (true == m_scopeCurrentFile.IsChecked)
             {
                 int count = m_owner.SearchReplace.ReplaceAllInCurrentFile(Term, Replacement, CaseSensitive, UseRegex);
-                m_statusText.Text = count + " 件を置換しました（保存するまでファイルには反映されません）。";
+                m_statusText.Text = Loc.T(count + " 件を置換しました（保存するまでファイルには反映されません）。",
+                    "Replaced " + count + " occurrence(s). The file is not changed until you save it.");
                 m_resultsList.Visibility = Visibility.Collapsed;
             }
             else
             {
                 var results = m_owner.SearchReplace.ReplaceAllInFolder(Term, Replacement, CaseSensitive, UseRegex);
                 int totalCount = results.Sum(r => r.Item2);
-                m_statusText.Text = results.Count + " 個のファイルで合計 " + totalCount +
-                    " 件を置換しました（保存するまでファイルには書き出されません。ツールバーの「すべて保存」で反映してください）。";
+                m_statusText.Text = Loc.T(results.Count + " 個のファイルで合計 " + totalCount +
+                    " 件を置換しました（保存するまでファイルには書き出されません。ツールバーの「すべて保存」で反映してください）。",
+                    "Replaced " + totalCount + " occurrence(s) in " + results.Count +
+                    " file(s). The files are not written until you save them (use Save All).");
                 m_resultsPaths = results.Select(r => r.Item1).ToList();
-                m_resultsList.ItemsSource = results.Select(r => ToDisplayPath(r.Item1) + "　（" + r.Item2 + "件置換）").ToList();
+                m_resultsList.ItemsSource = results.Select(r => ToDisplayPath(r.Item1) +
+                    Loc.T("　（" + r.Item2 + "件置換）", "  (" + r.Item2 + " replaced)")).ToList();
                 m_resultsList.Visibility = results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             }
         }
@@ -843,8 +861,8 @@ namespace mde.findreplace
         /// エディタ内で直接強調表示される。</summary>
         private void ShowLiveStepPanel()
         {
-            m_stepFileText.Text = "現在のファイル";
-            m_stepContextText.Text = "エディタ内で強調表示された箇所をご確認ください。";
+            m_stepFileText.Text = Loc.T("現在のファイル", "Current file");
+            m_stepContextText.Text = Loc.T("エディタ内で強調表示された箇所をご確認ください。", "Check the highlighted match in the editor.");
             m_stepPanel.Visibility = Visibility.Visible;
             m_statusText.Text = "";
         }
@@ -1048,10 +1066,14 @@ namespace mde.findreplace
             m_sessionPendingMatch = null;
             m_stepPanel.Visibility = Visibility.Collapsed;
 
-            m_statusText.Text = m_sessionTotalReplaced + " 件を置換しました" +
+            m_statusText.Text = Loc.T(m_sessionTotalReplaced + " 件を置換しました" +
                 (m_sessionFolderScopeFlg
                     ? "（" + m_sessionFilesChanged + " 個のファイル、保存するまでファイルには反映されません）。"
-                    : "（現在のファイルに直接反映されました。保存するまでファイルには書き出されません）。");
+                    : "（現在のファイルに直接反映されました。保存するまでファイルには書き出されません）。"),
+                "Replaced " + m_sessionTotalReplaced + " occurrence(s)" +
+                (m_sessionFolderScopeFlg
+                    ? " in " + m_sessionFilesChanged + " file(s). The files are not changed until you save them."
+                    : " in the current file. The file is not written until you save it."));
         }
 
         /// <summary>

@@ -85,6 +85,10 @@ namespace mde
         /// されていなければnull（その場合はデスクトップ等を初期フォルダとする）。</summary>
         public string LastSaveDialogDirectory { get; set; }
 
+        /// <summary>メニュー「表示」→「言語」で選んだ、画面の文字の言語（"ja"：日本語、"en"：英語）。まだ選んでいない
+        /// 時は null（Windows の表示言語が日本語なら日本語、それ以外は英語にする。Loc.IsEnglishByDefault）。</summary>
+        public string UiLanguage { get; set; }
+
         private static string SettingsPath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mde", "settings.json");
 

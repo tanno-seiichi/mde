@@ -331,6 +331,17 @@ namespace mde
             m_pdfMarginLeft = m_savedSettings.PdfMarginLeft > 0 ? m_savedSettings.PdfMarginLeft : 80;
             m_pdfMarginRight = m_savedSettings.PdfMarginRight > 0 ? m_savedSettings.PdfMarginRight : 80;
             m_pdfRepeatTableHeaderFlg = m_savedSettings.PdfRepeatTableHeaderFlg;
+            // 画面の文字の言語（メニュー「表示」→「言語」）。言語はすべてのウィンドウで共通のため、最初のウィンドウを
+            // 開く時だけ、設定（決まっていなければ Windows の表示言語）から決める
+            if (!s_languageInitializedFlg)
+            {
+                s_languageInitializedFlg = true;
+                bool englishFlg = "en".Equals(m_savedSettings.UiLanguage, StringComparison.OrdinalIgnoreCase) ||
+                    (string.IsNullOrEmpty(m_savedSettings.UiLanguage) && Loc.IsEnglishByDefault());
+                Loc.SetLanguage(englishFlg);
+            }
+            Loc.LanguageChanged += OnLanguageChanged;
+            UpdateToggleModeButton();
             m_recentFiles = null != m_savedSettings.RecentFiles ? new List<string>(m_savedSettings.RecentFiles) : new List<string>();
             m_recentFolders = null != m_savedSettings.RecentFolders ? new List<string>(m_savedSettings.RecentFolders) : new List<string>();
             m_lastSaveDialogDirectory = m_savedSettings.LastSaveDialogDirectory;
@@ -338,6 +349,7 @@ namespace mde
             // （このコンストラクタの後半）で行う（RebuildRecentFilesMenu呼び出し箇所を参照）。
             UpdateLinkModeMenuChecks();
             UpdatePdfTableMenuChecks();
+            UpdateLanguageMenuChecks();
             UpdateLineBreakModeMenuChecks();
             UpdateMarkerStyleMenuChecks();
             UpdateTextColorMenuChecks();
@@ -787,7 +799,7 @@ namespace mde
             var names = new List<string>();
             if (m_currentFileIsDirtyFlg)
             {
-                names.Add(string.IsNullOrEmpty(m_currentFilePath) ? "(無題)" : System.IO.Path.GetFileName(m_currentFilePath));
+                names.Add(string.IsNullOrEmpty(m_currentFilePath) ? Loc.T("(無題)", "(Untitled)") : System.IO.Path.GetFileName(m_currentFilePath));
             }
             foreach (string path in m_pendingFileEdits.Keys)
             {
@@ -801,12 +813,13 @@ namespace mde
             {
                 if (4 == i && 5 < names.Count)
                 {
-                    lines.Append($"ほか {names.Count - 4} 個のファイル\n");
+                    lines.Append(Loc.T($"ほか {names.Count - 4} 個のファイル\n", $"and {names.Count - 4} more files\n"));
                     break;
                 }
                 lines.Append(names[i]).Append('\n');
             }
-            MessageBoxResult result = MessageBox.Show(this, lines + "は変更されています。閉じる前に保存しますか？",
+            MessageBoxResult result = MessageBox.Show(this,
+                Loc.T(lines + "は変更されています。閉じる前に保存しますか？", lines + "has been modified. Save before closing?"),
                 "mde", MessageBoxButton.YesNoCancel, MessageBoxImage.Question, MessageBoxResult.Yes);
             if (MessageBoxResult.Yes == result)
             {
@@ -864,6 +877,7 @@ namespace mde
         protected override void OnClosed(EventArgs a_args)
         {
             base.OnClosed(a_args);
+            Loc.LanguageChanged -= OnLanguageChanged;
             try
             {
                 string dir = Path.Combine(Path.GetTempPath(), "mde", m_instanceTempId);
@@ -917,6 +931,7 @@ namespace mde
                 PdfMarginLeft = m_pdfMarginLeft,
                 PdfMarginRight = m_pdfMarginRight,
                 PdfRepeatTableHeaderFlg = m_pdfRepeatTableHeaderFlg,
+                UiLanguage = Loc.IsEnglish ? "en" : "ja",
                 RecentFiles = m_recentFiles,
                 RecentFolders = m_recentFolders,
                 LastSaveDialogDirectory = m_lastSaveDialogDirectory
@@ -3242,7 +3257,8 @@ namespace mde
             m_deleteImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_textStyleMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
             m_linkMenuItem.Visibility = null != m_inlineStyleEditor.ContextLinkRun ? Visibility.Visible : Visibility.Collapsed;
-            m_toggleModeMenuItem.Header = m_isSourceModeFlg ? "Markdownモードに切り替え" : "ソースモードに切り替え";
+            m_toggleModeMenuItem.Header = m_isSourceModeFlg
+                ? Loc.T("Markdownモードに切り替え", "Switch to Markdown Mode") : Loc.T("ソースモードに切り替え", "Switch to Source Mode");
             m_ctxFolderPaneMenuItem.IsChecked = m_folderPaneVisibleFlg;
             m_ctxOutlinePaneMenuItem.IsChecked = m_outlinePaneVisibleFlg;
             UpdateHeadingMenuState();
@@ -3258,7 +3274,7 @@ namespace mde
         private void UpdateHeadingMenuState()
         {
             int headingLevel = m_ctxParagraph?.Tag is int lvl ? lvl : 0;
-            m_headingMenuItem.Header = 0 == headingLevel ? "見出し" : "見出し" + headingLevel;
+            m_headingMenuItem.Header = 0 == headingLevel ? Loc.T("見出し", "Heading") : Loc.T("見出し", "Heading ") + headingLevel;
             foreach (var item in m_headingMenuItem.Items.OfType<MenuItem>())
             {
                 item.IsChecked = (string)item.Tag == headingLevel.ToString();
@@ -3495,7 +3511,7 @@ namespace mde
                 m_editor.Visibility = Visibility.Collapsed;
                 m_sourceEditor.Visibility = Visibility.Visible;
                 m_isSourceModeFlg = true;
-                m_toggleModeBtn.Content = "Markdownモードに切替";
+                UpdateToggleModeButton();
 
                 // Focus()はCaretIndex・スクロール位置の設定が終わった後に呼ぶ：先にFocus()すると、
                 // TextBoxがフォーカス受け取り時に「その時点の（更新前の）CaretIndex」を基準に
@@ -3565,7 +3581,7 @@ namespace mde
                 m_sourceEditor.Visibility = Visibility.Collapsed;
                 m_editor.Visibility = Visibility.Visible;
                 m_isSourceModeFlg = false;
-                m_toggleModeBtn.Content = "ソースモードに切替";
+                UpdateToggleModeButton();
                 m_outlineManager.Refresh();
 
                 int caretBlockIndex = caretLine >= 0
@@ -3704,7 +3720,8 @@ namespace mde
         {
             if (m_isSourceModeFlg)
             {
-                MessageBox.Show("PDFへの書き出しはMarkdownモードでのみ利用できます。", "PDFに書き出し",
+                MessageBox.Show(Loc.T("PDFへの書き出しはMarkdownモードでのみ利用できます。", "PDF export is available only in Markdown mode."),
+                    Loc.T("PDFに書き出し", "Export to PDF"),
                     MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
@@ -3717,7 +3734,7 @@ namespace mde
 
             // 書き出しの進み具合を表示する（PdfExportProgress。書き出しの間は画面が止まるため、専用のスレッドで表示する）
             // 保存先のファイル名を選ぶまでは、PDF用のデータ（改ページの位置等）を作っている（書き出しはまだ始めていない）
-            using var progress = PdfExportProgress.Show(this, "PDF用のデータを生成しています");
+            using var progress = PdfExportProgress.Show(this, Loc.T("PDF用のデータを生成しています", "Preparing data for the PDF"));
 
             // これ以降、書き出しのためだけにリンクの一時置換・画像サイズの一時縮小・
             // ColumnWidthの変更を行うが、これらはRichTextBoxのTextChangedを発生させるため、
@@ -3972,7 +3989,9 @@ namespace mde
                         int total = Math.Max(a_pageNumber + 1, Math.Max(knownPageCount, innerPaginator.PageCount));
                         double span = PDF_PROGRESS_PRINT_END - PDF_PROGRESS_SCAN_END;
                         bool lastPageFlg = (0 < knownPageCount || innerPaginator.IsPageCountValid) && a_pageNumber + 1 >= total;
-                        a_progress.Report(lastPageFlg ? $"PDFのファイルを仕上げています（全 {total} ページ）" : $"書き出しています（{a_pageNumber + 1} / {total} ページ）",
+                        a_progress.Report(lastPageFlg
+                                ? Loc.T($"PDFのファイルを仕上げています（全 {total} ページ）", $"Finishing the PDF file ({total} pages)")
+                                : Loc.T($"書き出しています（{a_pageNumber + 1} / {total} ページ）", $"Exporting (page {a_pageNumber + 1} of {total})"),
                             PDF_PROGRESS_SCAN_END + span * a_pageNumber / total,
                             lastPageFlg ? PDF_PROGRESS_FINISH_LIMIT : PDF_PROGRESS_SCAN_END + span * (a_pageNumber + 1) / total);
                     }
@@ -3985,11 +4004,11 @@ namespace mde
                 // innerPaginator に設定済み。印刷を始めた後は文書を変えられないため（TablePrintPageBreaks 参照）、印刷の前に行う
                 if (innerPaginator is DynamicDocumentPaginator dynamicPaginator)
                 {
-                    a_progress.Report("改ページの位置を調べています", PDF_PROGRESS_SCAN_START, PDF_PROGRESS_SCAN_START + 0.02);
+                    a_progress.Report(Loc.T("改ページの位置を調べています", "Checking page breaks"), PDF_PROGRESS_SCAN_START, PDF_PROGRESS_SCAN_START + 0.02);
                     double scanSpan = PDF_PROGRESS_SCAN_END - PDF_PROGRESS_SCAN_START;
                     restoreRowBreaks = TablePrintPageBreaks.Apply(m_editor.Document, dynamicPaginator, m_pdfRepeatTableHeaderFlg,
                         (a_scanPage, a_fraction) =>
-                            a_progress.Report($"改ページの位置を調べています（{a_scanPage + 1} ページ目）",
+                            a_progress.Report(Loc.T($"改ページの位置を調べています（{a_scanPage + 1} ページ目）", $"Checking page breaks (page {a_scanPage + 1})"),
                                 PDF_PROGRESS_SCAN_START + scanSpan * a_fraction,
                                 PDF_PROGRESS_SCAN_START + scanSpan * Math.Min(1, a_fraction + 0.02)));
                     if (innerPaginator.IsPageCountValid)
@@ -4001,7 +4020,7 @@ namespace mde
                 // 編集中のMarkdownファイル名から拡張子を除いたものを、書き出すPDFの既定の
                 // ファイル名にする（例：「README.md」→「README.pdf」）。
                 string docName = !string.IsNullOrEmpty(m_currentFilePath)
-                    ? Path.GetFileNameWithoutExtension(m_currentFilePath) : "無題";
+                    ? Path.GetFileNameWithoutExtension(m_currentFilePath) : Loc.T("無題", "Untitled");
 
                 // 「Microsoft Print to PDF」の保存先ダイアログは、印刷ジョブの説明文字列や
                 // XPSのTitleなどアプリ側の値を既定ファイル名に使わない仕様（Microsoft自身が
@@ -4019,8 +4038,8 @@ namespace mde
                 // 保存先を選ぶ画面（「Microsoft Print to PDF」の場合）の邪魔にならないよう、最初のページを書き出すまで
                 // 進み具合のウィンドウを隠す
                 // 見出しは、また表示する時（保存先を選び終えて、書き出しを始めた時）のために、ここで変えておく
-                a_progress.Report("書き出しています", PDF_PROGRESS_SCAN_END, PDF_PROGRESS_SCAN_END);
-                a_progress.SetTitle("PDFに書き出しています");
+                a_progress.Report(Loc.T("書き出しています", "Exporting"), PDF_PROGRESS_SCAN_END, PDF_PROGRESS_SCAN_END);
+                a_progress.SetTitle(Loc.T("PDFに書き出しています", "Exporting to PDF"));
                 a_progress.SetVisible(false);
                 a_dlg.PrintDocument(marginPaginator, docName);
                 a_progress.Report(null, 1, 1);
@@ -4028,7 +4047,7 @@ namespace mde
             catch (Exception ex)
             {
                 a_progress.SetVisible(false);
-                MessageBox.Show("書き出しに失敗しました: " + ex.Message, "PDFに書き出し",
+                MessageBox.Show(Loc.T("書き出しに失敗しました: ", "Export failed: ") + ex.Message, Loc.T("PDFに書き出し", "Export to PDF"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
@@ -4820,7 +4839,7 @@ namespace mde
             string readmePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "README.md");
             if (!File.Exists(readmePath))
             {
-                MessageBox.Show("README.mdが見つかりませんでした：" + readmePath, "Readmeを開く",
+                MessageBox.Show(Loc.T("README.mdが見つかりませんでした：", "README.md was not found: ") + readmePath, Loc.T("Readmeを開く", "Open Readme"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -4871,6 +4890,63 @@ namespace mde
         private void UpdatePdfTableMenuChecks()
         {
             m_pdfTableRepeatHeaderMenuItem.IsChecked = m_pdfRepeatTableHeaderFlg;
+        }
+
+        /// <summary>画面の文字の言語を、最初のウィンドウを開く時に決めたか（言語はすべてのウィンドウで共通）。</summary>
+        private static bool s_languageInitializedFlg;
+
+        /// <summary>メニュー「表示」→「言語」→「日本語」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void LanguageJaChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            Loc.SetLanguage(false);
+            UpdateLanguageMenuChecks();
+        }
+
+        /// <summary>メニュー「表示」→「言語」→「English」。</summary>
+        /// <param name="a_sender">メニュー項目。</param>
+        /// <param name="a_args">Click event.</param>
+        private void LanguageEnChecked(object a_sender, RoutedEventArgs a_args)
+        {
+            Loc.SetLanguage(true);
+            UpdateLanguageMenuChecks();
+        }
+
+        /// <summary>「言語」メニューの2項目を、今の言語に合わせてラジオボタンのように片方だけチェック状態にする。</summary>
+        private void UpdateLanguageMenuChecks()
+        {
+            m_languageJaMenuItem.IsChecked = !Loc.IsEnglish;
+            m_languageEnMenuItem.IsChecked = Loc.IsEnglish;
+        }
+
+        /// <summary>
+        /// 言語を切り替えた時（Loc.LanguageChanged。ほかのウィンドウで切り替えた時も呼ばれる）：コードで決めている画面の
+        /// 文字（ステータスバーのボタン・最近使ったファイルの一覧・アウトラインの「(無題)」等）を、今の言語で作り直す
+        /// （XAML に書いた文字は、Loc が入れ替える）。
+        /// </summary>
+        private void OnLanguageChanged()
+        {
+            UpdateLanguageMenuChecks();
+            UpdateToggleModeButton();
+            // ペインの幅は変えずに、ボタンの文字だけを作り直す（ApplyFolderPaneVisibility 等を呼ぶと、ドラッグで変えた
+            // ペインの幅が、前に隠した時の幅に戻ってしまう）
+            m_toggleFolderPaneBtn.Content = m_folderPaneVisibleFlg ? Loc.T("フォルダを隠す", "Hide Folder") : Loc.T("フォルダを表示", "Show Folder");
+            m_toggleOutlinePaneBtn.Content = m_outlinePaneVisibleFlg
+                ? Loc.T("アウトラインを隠す", "Hide Outline") : Loc.T("アウトラインを表示", "Show Outline");
+            m_fileOperationsManager.RebuildRecentFilesMenu();
+            RebuildRecentFoldersMenu();
+            if (!m_isSourceModeFlg)
+            {
+                m_outlineManager.Refresh();
+            }
+        }
+
+        /// <summary>ステータスバーの、モードを切り替えるボタンの文字を、今のモードと言語に合わせる。</summary>
+        private void UpdateToggleModeButton()
+        {
+            m_toggleModeBtn.Content = m_isSourceModeFlg
+                ? Loc.T("Markdownモードに切替", "Markdown Mode") : Loc.T("ソースモードに切替", "Source Mode");
         }
 
         /// <summary>メニュー「表示」→「リンクの開き方」→「Ctrl+クリックで開く」。</summary>
@@ -5208,7 +5284,7 @@ namespace mde
             m_viewStatusBarMenuItem.IsChecked = m_statusBarVisibleFlg;
             m_viewSourceModeMenuItem.IsChecked = m_isSourceModeFlg;
             double zoomLevel = m_zoomManager.ZoomLevel;
-            m_viewZoomHeadingMenuItem.Header = "表示倍率：" + Math.Round(zoomLevel * 100) + "%";
+            m_viewZoomHeadingMenuItem.Header = Loc.T("表示倍率：", "Zoom: ") + Math.Round(zoomLevel * 100) + "%";
             m_viewZoomInMenuItem.IsEnabled = zoomLevel < ZoomManager.MAX_ZOOM_LEVEL;
             m_viewZoomOutMenuItem.IsEnabled = zoomLevel > ZoomManager.MIN_ZOOM_LEVEL;
             m_viewZoomResetMenuItem.IsEnabled = 1.0 != zoomLevel;
@@ -5380,7 +5456,7 @@ namespace mde
                 m_folderSplitterColumnDef.Width = new GridLength(2);
                 m_folderPaneBorder.Visibility = Visibility.Visible;
                 m_folderSplitter.Visibility = Visibility.Visible;
-                m_toggleFolderPaneBtn.Content = "フォルダを隠す";
+                m_toggleFolderPaneBtn.Content = Loc.T("フォルダを隠す", "Hide Folder");
             }
             else
             {
@@ -5388,7 +5464,7 @@ namespace mde
                 m_folderSplitterColumnDef.Width = new GridLength(0);
                 m_folderPaneBorder.Visibility = Visibility.Collapsed;
                 m_folderSplitter.Visibility = Visibility.Collapsed;
-                m_toggleFolderPaneBtn.Content = "フォルダを表示";
+                m_toggleFolderPaneBtn.Content = Loc.T("フォルダを表示", "Show Folder");
             }
         }
 
@@ -5422,7 +5498,7 @@ namespace mde
                 m_outlineSplitterColumnDef.Width = new GridLength(2);
                 m_outlinePaneBorder.Visibility = Visibility.Visible;
                 m_outlineSplitter.Visibility = Visibility.Visible;
-                m_toggleOutlinePaneBtn.Content = "アウトラインを隠す";
+                m_toggleOutlinePaneBtn.Content = Loc.T("アウトラインを隠す", "Hide Outline");
             }
             else
             {
@@ -5430,7 +5506,7 @@ namespace mde
                 m_outlineSplitterColumnDef.Width = new GridLength(0);
                 m_outlinePaneBorder.Visibility = Visibility.Collapsed;
                 m_outlineSplitter.Visibility = Visibility.Collapsed;
-                m_toggleOutlinePaneBtn.Content = "アウトラインを表示";
+                m_toggleOutlinePaneBtn.Content = Loc.T("アウトラインを表示", "Show Outline");
             }
         }
 
@@ -5937,7 +6013,7 @@ namespace mde
             m_recentFoldersMenu.Items.Clear();
             if (0 == m_recentFolders.Count)
             {
-                m_recentFoldersMenu.Items.Add(new MenuItem { Header = "（履歴なし）", IsEnabled = false });
+                m_recentFoldersMenu.Items.Add(new MenuItem { Header = Loc.T("（履歴なし）", "(No History)"), IsEnabled = false });
                 return;
             }
             foreach (string path in m_recentFolders)
@@ -5954,7 +6030,7 @@ namespace mde
                 m_recentFoldersMenu.Items.Add(item);
             }
             m_recentFoldersMenu.Items.Add(new Separator());
-            var clearItem = new MenuItem { Header = "履歴をクリア(_C)" };
+            var clearItem = new MenuItem { Header = Loc.T("履歴をクリア(_C)", "_Clear History") };
             clearItem.Click += (a_s, a_e) =>
             {
                 m_recentFolders.Clear();
@@ -5972,7 +6048,7 @@ namespace mde
             string path = (string)((MenuItem)a_sender).Tag;
             if (!Directory.Exists(path))
             {
-                MessageBox.Show("フォルダが見つかりませんでした：" + path, "最近使ったフォルダ",
+                MessageBox.Show(Loc.T("フォルダが見つかりませんでした：", "Folder not found: ") + path, Loc.T("最近使ったフォルダ", "Recent Folders"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 m_recentFolders.Remove(path);
                 RebuildRecentFoldersMenu();

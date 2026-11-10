@@ -64,90 +64,97 @@
              MenuStyles.xaml） -->
         <Menu DockPanel.Dock="Top" Background="White" BorderThickness="0" Padding="2,0"
               FontFamily="{StaticResource MenuFont}" FontSize="12" TextOptions.TextFormattingMode="Display">
-            <MenuItem Header="ファイル(_F)">
-                <MenuItem Header="新規作成(_N)" Click="NewBtnClick" InputGestureText="Ctrl+N"/>
-                <MenuItem Header="開く…(_O)" Click="OpenBtnClick" InputGestureText="Ctrl+O"/>
-                <MenuItem Header="フォルダを開く…(_D)" Click="OpenFolderMenuClick"/>
+            <MenuItem Header="ファイル(_F)" common:Loc.En="_File">
+                <MenuItem Header="新規作成(_N)" common:Loc.En="_New" Click="NewBtnClick" InputGestureText="Ctrl+N"/>
+                <MenuItem Header="開く…(_O)" common:Loc.En="_Open…" Click="OpenBtnClick" InputGestureText="Ctrl+O"/>
+                <MenuItem Header="フォルダを開く…(_D)" common:Loc.En="Open Fol_der…" Click="OpenFolderMenuClick"/>
                 <Separator/>
                 <!-- 最近使ったファイル・フォルダのサブメニューは、クリックした時か、マウスを乗せて少し待った時に開く
                      （WPF の通常のメニューの動き。待つ時間は Windows の設定に従う。mdew と同じ）。下の項目へマウスを
                      動かす途中で通り過ぎるだけなら開かないので、長いサブメニューがほかの項目を隠すことはない。 -->
-                <MenuItem x:Name="m_recentFilesMenu" Header="最近使ったファイル(_R)"/>
-                <MenuItem x:Name="m_recentFoldersMenu" Header="最近使ったフォルダ(_F)"/>
+                <MenuItem x:Name="m_recentFilesMenu" Header="最近使ったファイル(_R)" common:Loc.En="_Recent Files"/>
+                <MenuItem x:Name="m_recentFoldersMenu" Header="最近使ったフォルダ(_F)" common:Loc.En="Recent _Folders"/>
                 <Separator/>
-                <MenuItem Header="保存(_S)" Click="SaveBtnClick" InputGestureText="Ctrl+S"/>
-                <MenuItem Header="名前を付けて保存…" Click="SaveAsBtnClick" InputGestureText="Shift+Ctrl+S"/>
-                <MenuItem Header="すべて保存(_A)" Click="SaveAllBtnClick"/>
+                <MenuItem Header="保存(_S)" common:Loc.En="_Save" Click="SaveBtnClick" InputGestureText="Ctrl+S"/>
+                <MenuItem Header="名前を付けて保存…" common:Loc.En="Save _As…" Click="SaveAsBtnClick" InputGestureText="Shift+Ctrl+S"/>
+                <MenuItem Header="すべて保存(_A)" common:Loc.En="Save A_ll" Click="SaveAllBtnClick"/>
                 <Separator/>
-                <MenuItem Header="PDFに書き出し…(_P)" Click="ExportPdfBtnClick" InputGestureText="Ctrl+P"/>
-                <MenuItem Header="PDFの余白を設定…(_M)" Click="PdfMarginBtnClick"/>
+                <MenuItem Header="PDFに書き出し…(_P)" common:Loc.En="Export to _PDF…" Click="ExportPdfBtnClick" InputGestureText="Ctrl+P"/>
+                <MenuItem Header="PDFの余白を設定…(_M)" common:Loc.En="PDF _Margins…" Click="PdfMarginBtnClick"/>
                 <!-- PDFで表が次のページへ続く時、ページの先頭に表の見出しの行を表示するか（✓ で切り替える。✓ を外すと、
                      ページの先頭の行の上に線を引く） -->
-                    <MenuItem x:Name="m_pdfTableRepeatHeaderMenuItem" Header="表のヘッダ行をページ毎に表示する(_H)"
+                    <MenuItem x:Name="m_pdfTableRepeatHeaderMenuItem" Header="表のヘッダ行をページ毎に表示する(_H)" common:Loc.En="Repeat Table _Header Row on Each Page"
                           IsCheckable="True" Click="PdfTableRepeatHeaderClick"/>
                 <Separator/>
-                <MenuItem Header="閉じる(_W)" Click="CloseBtnClick" InputGestureText="Ctrl+W"/>
+                <MenuItem Header="閉じる(_W)" common:Loc.En="_Close" Click="CloseBtnClick" InputGestureText="Ctrl+W"/>
             </MenuItem>
             <!-- 表示メニューは mdew と同じく、サブメニューを使わずに「見出し（選べない灰色の文字。MenuHeading）」と
                  区切り線で項目をまとめる。並びも mdew と同じ（mde にしかない項目は「段落中の改行」の後に入れ、
                  「表示スタイル」は最後、「デバッグログを有効にする」はさらにその後）。✓ と表示倍率は、メニューを
                  開くたびに今の状態に合わせる（ViewMenuSubmenuOpened）。 -->
-            <MenuItem Header="表示(_V)" SubmenuOpened="ViewMenuSubmenuOpened">
-                <MenuItem x:Name="m_viewFolderPaneMenuItem" Header="フォルダを表示" Click="ToggleFolderPaneBtnClick"/>
-                <MenuItem x:Name="m_viewOutlinePaneMenuItem" Header="アウトラインを表示" Click="ToggleOutlinePaneBtnClick"/>
-                <MenuItem x:Name="m_viewStatusBarMenuItem" Header="ステータスバーを表示" Click="ToggleStatusBarClick"/>
+            <MenuItem Header="表示(_V)" common:Loc.En="_View" SubmenuOpened="ViewMenuSubmenuOpened">
+                <MenuItem x:Name="m_viewFolderPaneMenuItem" Header="フォルダを表示" common:Loc.En="Show Folder" Click="ToggleFolderPaneBtnClick"/>
+                <MenuItem x:Name="m_viewOutlinePaneMenuItem" Header="アウトラインを表示" common:Loc.En="Show Outline" Click="ToggleOutlinePaneBtnClick"/>
+                <MenuItem x:Name="m_viewStatusBarMenuItem" Header="ステータスバーを表示" common:Loc.En="Show Status Bar" Click="ToggleStatusBarClick"/>
                 <Separator/>
-                <MenuItem x:Name="m_viewSourceModeMenuItem" Header="ソースモード" Click="ToggleModeBtnClick"/>
+                <MenuItem x:Name="m_viewSourceModeMenuItem" Header="ソースモード" common:Loc.En="Source Mode" Click="ToggleModeBtnClick"/>
                 <Separator/>
                 <MenuItem x:Name="m_viewZoomHeadingMenuItem" Header="表示倍率：100%" Style="{StaticResource MenuHeading}"/>
-                <MenuItem x:Name="m_viewZoomInMenuItem" Header="拡大" Click="ZoomInClick" InputGestureText="Ctrl++"/>
-                <MenuItem x:Name="m_viewZoomOutMenuItem" Header="縮小" Click="ZoomOutClick" InputGestureText="Ctrl+-"/>
-                <MenuItem x:Name="m_viewZoomResetMenuItem" Header="100%に戻す" Click="ZoomResetClick" InputGestureText="Ctrl+0"/>
+                <MenuItem x:Name="m_viewZoomInMenuItem" Header="拡大" common:Loc.En="Zoom In" Click="ZoomInClick" InputGestureText="Ctrl++"/>
+                <MenuItem x:Name="m_viewZoomOutMenuItem" Header="縮小" common:Loc.En="Zoom Out" Click="ZoomOutClick" InputGestureText="Ctrl+-"/>
+                <MenuItem x:Name="m_viewZoomResetMenuItem" Header="100%に戻す" common:Loc.En="Reset to 100%" Click="ZoomResetClick" InputGestureText="Ctrl+0"/>
                 <Separator/>
-                <MenuItem Header="段落中の改行" Style="{StaticResource MenuHeading}"/>
-                <MenuItem x:Name="m_lineBreakModeSourceMenuItem" Header="ソースの通りに改行する(_S)"
+                <MenuItem Header="段落中の改行" common:Loc.En="Line Breaks in Paragraphs" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_lineBreakModeSourceMenuItem" Header="ソースの通りに改行する(_S)" common:Loc.En="Break Lines as in the _Source"
                           IsCheckable="True" Click="LineBreakModeSourceChecked"/>
-                <MenuItem x:Name="m_lineBreakModeBlankOnlyMenuItem" Header="空行が入るまで改行しない(_B)"
+                <MenuItem x:Name="m_lineBreakModeBlankOnlyMenuItem" Header="空行が入るまで改行しない(_B)" common:Loc.En="Break Only at _Blank Lines"
                           IsCheckable="True" Click="LineBreakModeBlankOnlyChecked"/>
                 <Separator/>
-                <MenuItem Header="本文の幅" Style="{StaticResource MenuHeading}"/>
-                <MenuItem x:Name="m_docWidthLimitedMenuItem" Header="読みやすい幅にする（最大 884px）(_R)"
+                <MenuItem Header="本文の幅" common:Loc.En="Text Width" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_docWidthLimitedMenuItem" Header="読みやすい幅にする（最大 884px）(_R)" common:Loc.En="_Readable Width (Max 884px)"
                           IsCheckable="True" Click="DocWidthLimitedChecked"/>
-                <MenuItem x:Name="m_docWidthFullMenuItem" Header="編集ペインの幅に合わせる(_P)"
+                <MenuItem x:Name="m_docWidthFullMenuItem" Header="編集ペインの幅に合わせる(_P)" common:Loc.En="Fit to Editor _Pane"
                           IsCheckable="True" Click="DocWidthFullChecked"/>
                 <Separator/>
-                <MenuItem Header="リンクの開き方" Style="{StaticResource MenuHeading}"/>
-                <MenuItem x:Name="m_linkModeCtrlClickMenuItem" Header="Ctrl+クリックで開く(_C)"
+                <MenuItem Header="リンクの開き方" common:Loc.En="Opening Links" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_linkModeCtrlClickMenuItem" Header="Ctrl+クリックで開く(_C)" common:Loc.En="Open with _Ctrl+Click"
                           IsCheckable="True" Click="LinkModeCtrlClickChecked"/>
-                <MenuItem x:Name="m_linkModeClickOnlyMenuItem" Header="クリックのみで開く(_O)"
+                <MenuItem x:Name="m_linkModeClickOnlyMenuItem" Header="クリックのみで開く(_O)" common:Loc.En="Open with Click _Only"
                           IsCheckable="True" Click="LinkModeClickOnlyChecked"/>
                 <Separator/>
-                <MenuItem Header="箇条書きの記号" Style="{StaticResource MenuHeading}"/>
-                <MenuItem x:Name="m_markerStyleWpfStandardMenuItem" Header="WPF標準(_W)"
+                <MenuItem Header="箇条書きの記号" common:Loc.En="Bullet Symbols" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_markerStyleWpfStandardMenuItem" Header="WPF標準(_W)" common:Loc.En="_WPF Default"
                           IsCheckable="True" Click="MarkerStyleWpfStandardChecked"/>
-                <MenuItem x:Name="m_markerStyleUniformMenuItem" Header="すべての階層に同じ記号を使用する(_U)"
+                <MenuItem x:Name="m_markerStyleUniformMenuItem" Header="すべての階層に同じ記号を使用する(_U)" common:Loc.En="_Use the Same Symbol at All Levels"
                           IsCheckable="True" Click="MarkerStyleUniformChecked"/>
                 <Separator/>
-                <MenuItem Header="文字の色" Style="{StaticResource MenuHeading}"/>
-                <MenuItem x:Name="m_textColorSharpMenuItem" Header="くっきりした色(_K)"
+                <MenuItem Header="文字の色" common:Loc.En="Text Color" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_textColorSharpMenuItem" Header="くっきりした色(_K)" common:Loc.En="Hig_h Contrast"
                           IsCheckable="True" Click="TextColorSharpChecked"/>
-                <MenuItem x:Name="m_textColorSoftMenuItem" Header="目にやさしい色(_E)"
+                <MenuItem x:Name="m_textColorSoftMenuItem" Header="目にやさしい色(_E)" common:Loc.En="_Easy on the Eyes"
                           IsCheckable="True" Click="TextColorSoftChecked"/>
                 <Separator/>
-                <MenuItem Header="表示スタイル" Style="{StaticResource MenuHeading}"/>
-                <MenuItem x:Name="m_docStyleGithubMenuItem" Header="GitHubスタイル(_G)"
+                <MenuItem Header="表示スタイル" common:Loc.En="Display Style" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_docStyleGithubMenuItem" Header="GitHubスタイル(_G)" common:Loc.En="_GitHub Style"
                           IsCheckable="True" Click="DocStyleGithubChecked"/>
-                <MenuItem x:Name="m_docStyleVsCodeMenuItem" Header="VSCodeスタイル(_V)"
+                <MenuItem x:Name="m_docStyleVsCodeMenuItem" Header="VSCodeスタイル(_V)" common:Loc.En="_VS Code Style"
                           IsCheckable="True" Click="DocStyleVsCodeChecked"/>
                 <Separator/>
-                <MenuItem x:Name="m_debugLogMenuItem" Header="デバッグログを有効にする(_D)"
+                <!-- 画面の文字の言語（common\Loc.cs）。言語の名前は、どちらの言語で表示している時も、その言語の書き方のまま -->
+                <MenuItem Header="言語" common:Loc.En="Language" Style="{StaticResource MenuHeading}"/>
+                <MenuItem x:Name="m_languageJaMenuItem" Header="日本語(_J)"
+                          IsCheckable="True" Click="LanguageJaChecked"/>
+                <MenuItem x:Name="m_languageEnMenuItem" Header="English(_N)"
+                          IsCheckable="True" Click="LanguageEnChecked"/>
+                <Separator/>
+                <MenuItem x:Name="m_debugLogMenuItem" Header="デバッグログを有効にする(_D)" common:Loc.En="Enable _Debug Log"
                           IsCheckable="True" Click="DebugLogMenuItemChecked"/>
             </MenuItem>
-            <MenuItem Header="検索と置換" Click="FindReplaceBtnClick" InputGestureText="Ctrl+F"/>
-            <MenuItem Header="ヘルプ(_H)">
-                <MenuItem Header="Readmeを開く(_R)" Click="OpenReadmeBtnClick"/>
+            <MenuItem Header="検索と置換" common:Loc.En="Find and Replace" Click="FindReplaceBtnClick" InputGestureText="Ctrl+F"/>
+            <MenuItem Header="ヘルプ(_H)" common:Loc.En="_Help">
+                <MenuItem Header="Readmeを開く(_R)" common:Loc.En="Open _Readme" Click="OpenReadmeBtnClick"/>
                 <Separator/>
-                <MenuItem Header="バージョン情報(_A)" Click="VersionInfoBtnClick"/>
+                <MenuItem Header="バージョン情報(_A)" common:Loc.En="_About" Click="VersionInfoBtnClick"/>
             </MenuItem>
         </Menu>
 
@@ -188,7 +195,7 @@
                     BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,0" CornerRadius="0">
                 <DockPanel Margin="0,0,0,0">
                     <Grid DockPanel.Dock="Top" Margin="8,8,4,6">
-                        <TextBlock Text="フォルダ" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"
+                        <TextBlock Text="フォルダ" common:Loc.En="Folder" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"
                                    Foreground="{StaticResource InkBrush}"/>
                     </Grid>
                     <TreeView x:Name="m_folderTree" BorderThickness="0" Background="Transparent"
@@ -209,8 +216,11 @@
                         </TreeView.Resources>
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                <!-- マウスを乗せると、フォルダ・ファイルのフルパスをツールチップに表示する（mdew と同じ。幅が足りずに
+                                     見切れた時も、全体が分かるように。「読み込み中…」の仮の項目はパスが無いため表示しない） -->
                                 <Border x:Name="m_matchHighlightBorder" CornerRadius="3" Padding="3,1"
-                                        BorderThickness="1,1,1,1" BorderBrush="Transparent" Margin="-1,0,0,0">
+                                        BorderThickness="1,1,1,1" BorderBrush="Transparent" Margin="-1,0,0,0"
+                                        ToolTip="{Binding FullPath}">
                                     <TextBlock Text="{Binding DisplayName}" FontSize="12" Foreground="{StaticResource InkBrush}"/>
                                 </Border>
                                 <HierarchicalDataTemplate.Triggers>
@@ -248,7 +258,7 @@
             <Border x:Name="m_outlinePaneBorder" Grid.Column="2" Background="{StaticResource ListPaneBrush}"
                     BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,0" CornerRadius="0">
                 <DockPanel Margin="0,0,0,0">
-                    <TextBlock DockPanel.Dock="Top" Text="アウトライン" FontWeight="Bold" FontSize="12"
+                    <TextBlock DockPanel.Dock="Top" Text="アウトライン" common:Loc.En="Outline" FontWeight="Bold" FontSize="12"
                                Margin="8,8,8,6" Foreground="{StaticResource InkBrush}"/>
                     <!-- フォルダペイン（上のm_folderTree）と同じ構成のTreeView。横スクロールバーの
                          見た目・挙動（TextTrimmingを付けない、BringIntoView後に横スクロールだけ
@@ -273,8 +283,11 @@
                         </TreeView.Resources>
                         <TreeView.ItemTemplate>
                             <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                <!-- マウスを乗せると、見出しの文字をツールチップに表示する（mdew と同じ。幅が足りずに見切れた時も、
+                                     全体が分かるように） -->
                                 <Border x:Name="m_matchHighlightBorder" CornerRadius="3" Padding="3,1"
-                                        BorderThickness="1,1,1,1" BorderBrush="Transparent" Margin="-1,0,0,0">
+                                        BorderThickness="1,1,1,1" BorderBrush="Transparent" Margin="-1,0,0,0"
+                                        ToolTip="{Binding Text}">
                                     <TextBlock Text="{Binding Text}" FontSize="{Binding FontSizeValue}" Foreground="{StaticResource InkBrush}"/>
                                 </Border>
                                 <HierarchicalDataTemplate.Triggers>
@@ -377,72 +390,72 @@
                         </RichTextBox.Resources>
                         <RichTextBox.ContextMenu>
                             <ContextMenu x:Name="m_editorContextMenu">
-                                <MenuItem Header="ページトップに戻る" Style="{StaticResource CtxMenuItem}" Click="ScrollToPageTopClick"/>
+                                <MenuItem Header="ページトップに戻る" common:Loc.En="Back to Top" Style="{StaticResource CtxMenuItem}" Click="ScrollToPageTopClick"/>
                                 <Separator/>
 
-                                <MenuItem x:Name="m_textStyleMenuItem" Header="文字装飾" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_textStyleMenuItem" Header="文字装飾" common:Loc.En="Text Style" Style="{StaticResource CtxMenuItem}"
                                           Visibility="Collapsed">
-                                    <MenuItem Header="通常表記に戻す" Tag="normal" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="太字にする" Tag="bold" InputGestureText="Ctrl+B" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="斜体にする" Tag="italic" InputGestureText="Ctrl+I" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="下線を引く" Tag="underline" InputGestureText="Ctrl+U" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="取り消し線にする" Tag="strikethrough" InputGestureText="Alt+Shift+5" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="インラインコードにする" Tag="code" InputGestureText="Ctrl+Shift+@" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="ハイライトにする" Tag="highlight" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="リンクにする…" Tag="link" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="通常表記に戻す" common:Loc.En="Plain Text" Tag="normal" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="太字にする" common:Loc.En="Bold" Tag="bold" InputGestureText="Ctrl+B" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="斜体にする" common:Loc.En="Italic" Tag="italic" InputGestureText="Ctrl+I" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="下線を引く" common:Loc.En="Underline" Tag="underline" InputGestureText="Ctrl+U" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="取り消し線にする" common:Loc.En="Strikethrough" Tag="strikethrough" InputGestureText="Alt+Shift+5" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="インラインコードにする" common:Loc.En="Inline Code" Tag="code" InputGestureText="Ctrl+Shift+@" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="ハイライトにする" common:Loc.En="Highlight" Tag="highlight" Click="TextStyleItemClick"/>
+                                    <MenuItem Header="リンクにする…" common:Loc.En="Link…" Tag="link" Click="TextStyleItemClick"/>
                                 </MenuItem>
-                                <MenuItem x:Name="m_linkMenuItem" Header="リンク" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_linkMenuItem" Header="リンク" common:Loc.En="Link" Style="{StaticResource CtxMenuItem}"
                                           Visibility="Collapsed">
-                                    <MenuItem Header="リンクを開く" Click="LinkOpenClick"/>
-                                    <MenuItem Header="URLをコピー" Click="LinkCopyUrlClick"/>
-                                    <MenuItem Header="リンクを編集…" Click="LinkEditClick"/>
-                                    <MenuItem Header="リンクを解除" Click="LinkRemoveClick"/>
+                                    <MenuItem Header="リンクを開く" common:Loc.En="Open Link" Click="LinkOpenClick"/>
+                                    <MenuItem Header="URLをコピー" common:Loc.En="Copy URL" Click="LinkCopyUrlClick"/>
+                                    <MenuItem Header="リンクを編集…" common:Loc.En="Edit Link…" Click="LinkEditClick"/>
+                                    <MenuItem Header="リンクを解除" common:Loc.En="Remove Link" Click="LinkRemoveClick"/>
                                 </MenuItem>
                                 <MenuItem x:Name="m_headingMenuItem" Header="見出し" Style="{StaticResource CtxMenuItem}">
-                                    <MenuItem Header="本文（見出しなし）" Tag="0" IsCheckable="True" Click="HeadingItemClick"/>
-                                    <MenuItem Header="# 見出し1" Tag="1" IsCheckable="True" Click="HeadingItemClick"/>
-                                    <MenuItem Header="## 見出し2" Tag="2" IsCheckable="True" Click="HeadingItemClick"/>
-                                    <MenuItem Header="### 見出し3" Tag="3" IsCheckable="True" Click="HeadingItemClick"/>
-                                    <MenuItem Header="#### 見出し4" Tag="4" IsCheckable="True" Click="HeadingItemClick"/>
-                                    <MenuItem Header="##### 見出し5" Tag="5" IsCheckable="True" Click="HeadingItemClick"/>
-                                    <MenuItem Header="###### 見出し6" Tag="6" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="本文（見出しなし）" common:Loc.En="Body Text (No Heading)" Tag="0" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="# 見出し1" common:Loc.En="# Heading 1" Tag="1" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="## 見出し2" common:Loc.En="## Heading 2" Tag="2" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="### 見出し3" common:Loc.En="### Heading 3" Tag="3" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="#### 見出し4" common:Loc.En="#### Heading 4" Tag="4" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="##### 見出し5" common:Loc.En="##### Heading 5" Tag="5" IsCheckable="True" Click="HeadingItemClick"/>
+                                    <MenuItem Header="###### 見出し6" common:Loc.En="###### Heading 6" Tag="6" IsCheckable="True" Click="HeadingItemClick"/>
                                 </MenuItem>
-                                <MenuItem x:Name="m_insertTableMenuItem" Header="表を挿入" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_insertTableMenuItem" Header="表を挿入" common:Loc.En="Insert Table" Style="{StaticResource CtxMenuItem}"
                                           Click="InsertTableItemClick"/>
-                                <MenuItem x:Name="m_insertRowAboveMenuItem" Header="上に行を挿入" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_insertRowAboveMenuItem" Header="上に行を挿入" common:Loc.En="Insert Row Above" Style="{StaticResource CtxMenuItem}"
                                           Click="InsertRowAboveItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_insertRowBelowMenuItem" Header="下に行を挿入" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_insertRowBelowMenuItem" Header="下に行を挿入" common:Loc.En="Insert Row Below" Style="{StaticResource CtxMenuItem}"
                                           Click="InsertRowBelowItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_insertColumnLeftMenuItem" Header="左に列を挿入" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_insertColumnLeftMenuItem" Header="左に列を挿入" common:Loc.En="Insert Column Left" Style="{StaticResource CtxMenuItem}"
                                           Click="InsertColumnLeftItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_insertColumnRightMenuItem" Header="右に列を挿入" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_insertColumnRightMenuItem" Header="右に列を挿入" common:Loc.En="Insert Column Right" Style="{StaticResource CtxMenuItem}"
                                           Click="InsertColumnRightItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_adjustColumnWidthsMenuItem" Header="列幅を調整…" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_adjustColumnWidthsMenuItem" Header="列幅を調整…" common:Loc.En="Adjust Column Widths…" Style="{StaticResource CtxMenuItem}"
                                           Click="AdjustColumnWidthsItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_deleteRowMenuItem" Header="この行を削除" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_deleteRowMenuItem" Header="この行を削除" common:Loc.En="Delete This Row" Style="{StaticResource CtxMenuItem}"
                                           Click="DeleteRowItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_deleteColumnMenuItem" Header="この列を削除" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_deleteColumnMenuItem" Header="この列を削除" common:Loc.En="Delete This Column" Style="{StaticResource CtxMenuItem}"
                                           Click="DeleteColumnItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_deleteTableMenuItem" Header="表を削除" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_deleteTableMenuItem" Header="表を削除" common:Loc.En="Delete Table" Style="{StaticResource CtxMenuItem}"
                                           Click="DeleteTableItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_copyTableMenuItem" Header="表をコピー" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_copyTableMenuItem" Header="表をコピー" common:Loc.En="Copy Table" Style="{StaticResource CtxMenuItem}"
                                           Click="CopyTableItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_copyCodeBlockMenuItem" Header="コードブロック全体をコピー（```込み）" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_copyCodeBlockMenuItem" Header="コードブロック全体をコピー（```込み）" common:Loc.En="Copy Entire Code Block (with ```)" Style="{StaticResource CtxMenuItem}"
                                           Click="CopyCodeBlockItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_copyForExcelMenuItem" Header="Excel用にコピー" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_copyForExcelMenuItem" Header="Excel用にコピー" common:Loc.En="Copy for Excel" Style="{StaticResource CtxMenuItem}"
                                           Click="CopyForExcelItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_openImageMenuItem" Header="画像を開く" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_openImageMenuItem" Header="画像を開く" common:Loc.En="Open Image" Style="{StaticResource CtxMenuItem}"
                                           Click="OpenImageItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_saveImageMenuItem" Header="画像を保存…" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_saveImageMenuItem" Header="画像を保存…" common:Loc.En="Save Image…" Style="{StaticResource CtxMenuItem}"
                                           Click="SaveImageItemClick" Visibility="Collapsed"/>
-                                <MenuItem x:Name="m_deleteImageMenuItem" Header="画像を削除" Style="{StaticResource CtxMenuItem}"
+                                <MenuItem x:Name="m_deleteImageMenuItem" Header="画像を削除" common:Loc.En="Delete Image" Style="{StaticResource CtxMenuItem}"
                                           Click="DeleteImageItemClick" Visibility="Collapsed"/>
                                 <!-- フォルダビュー・アウトラインビューの表示・非表示（メニュー「表示」と同じ。✓ は開く時に
                                      EditorContextMenuOpening で今の状態に合わせる） -->
                                 <Separator/>
-                                <MenuItem x:Name="m_ctxFolderPaneMenuItem" Header="フォルダを表示"
+                                <MenuItem x:Name="m_ctxFolderPaneMenuItem" Header="フォルダを表示" common:Loc.En="Show Folder"
                                           Style="{StaticResource CtxMenuItem}" Click="ToggleFolderPaneBtnClick"/>
-                                <MenuItem x:Name="m_ctxOutlinePaneMenuItem" Header="アウトラインを表示"
+                                <MenuItem x:Name="m_ctxOutlinePaneMenuItem" Header="アウトラインを表示" common:Loc.En="Show Outline"
                                           Style="{StaticResource CtxMenuItem}" Click="ToggleOutlinePaneBtnClick"/>
                                 <Separator/>
                                 <MenuItem x:Name="m_toggleModeMenuItem" Header="ソースモードに切り替え"
@@ -470,12 +483,12 @@
                              PreviewMouseWheel="SourceEditorPreviewMouseWheel">
                         <TextBox.ContextMenu>
                             <ContextMenu x:Name="m_sourceEditorContextMenu">
-                                <MenuItem Header="ページトップに戻る" Click="ScrollToPageTopClick"/>
+                                <MenuItem Header="ページトップに戻る" common:Loc.En="Back to Top" Click="ScrollToPageTopClick"/>
                                 <Separator/>
-                                <MenuItem x:Name="m_sourceCtxFolderPaneMenuItem" Header="フォルダを表示" Click="ToggleFolderPaneBtnClick"/>
-                                <MenuItem x:Name="m_sourceCtxOutlinePaneMenuItem" Header="アウトラインを表示" Click="ToggleOutlinePaneBtnClick"/>
+                                <MenuItem x:Name="m_sourceCtxFolderPaneMenuItem" Header="フォルダを表示" common:Loc.En="Show Folder" Click="ToggleFolderPaneBtnClick"/>
+                                <MenuItem x:Name="m_sourceCtxOutlinePaneMenuItem" Header="アウトラインを表示" common:Loc.En="Show Outline" Click="ToggleOutlinePaneBtnClick"/>
                                 <Separator/>
-                                <MenuItem Header="Markdownモードに切り替え" Click="ToggleModeBtnClick"/>
+                                <MenuItem Header="Markdownモードに切り替え" common:Loc.En="Switch to Markdown Mode" Click="ToggleModeBtnClick"/>
                             </ContextMenu>
                         </TextBox.ContextMenu>
                     </TextBox>

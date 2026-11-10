@@ -5,6 +5,7 @@
 // message box instead of silently crashing the app. Also registers a Window-wide class handler so
 // F1 opens README.md from anywhere in the application (see GlobalPreviewKeyDown below).
 
+using mde.common;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -59,8 +60,8 @@ namespace mde
         private void AppDispatcherUnhandledException(object a_sender, DispatcherUnhandledExceptionEventArgs a_args)
         {
             MessageBox.Show(
-                "予期しないエラーが発生しました:\n\n" + a_args.Exception,
-                "Markdown インラインエディタ - エラー",
+                Loc.T("予期しないエラーが発生しました:\n\n", "An unexpected error occurred:\n\n") + a_args.Exception,
+                Loc.T("Markdown インラインエディタ - エラー", "Markdown Inline Editor - Error"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             a_args.Handled = true;

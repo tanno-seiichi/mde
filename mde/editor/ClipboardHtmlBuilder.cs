@@ -622,7 +622,7 @@ namespace mde.editor
             if (string.IsNullOrEmpty(fileUri))
             {
                 string alt = (a_img.Tag as ImageInfo)?.Alt;
-                string placeholder = "[画像" + (string.IsNullOrEmpty(alt) ? "" : ": " + alt) + "]";
+                string placeholder = Loc.T("[画像", "[Image") + (string.IsNullOrEmpty(alt) ? "" : ": " + alt) + "]";
                 a_row.m_text.Append(placeholder);
                 a_row.m_html.Append(WebUtility.HtmlEncode(placeholder));
                 return;
@@ -650,7 +650,7 @@ namespace mde.editor
             {
                 a_row.m_html.Append("<br>");
             }
-            a_row.m_text.Append("[画像]");
+            a_row.m_text.Append(Loc.T("[画像]", "[Image]"));
 
             // 画像の実際の高さを覚えておき、後ろに何行分の空白行を挿入するかの計算に使う
             // （次の行と重ならないようにするため。Row.ImageHeightPx参照）。1つの行に

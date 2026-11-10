@@ -13,7 +13,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -459,27 +458,17 @@ namespace mde.manager
             if (a_isDirectoryFlg)
             {
                 // 遅延読み込みする前から展開矢印が表示されるよう、仮の子ノードを1つ入れておく
-                item.Children.Add(new FileSystemItem { Name = "読み込み中…", IsDirectory = false, FullPath = null });
+                item.Children.Add(new FileSystemItem { Name = Loc.T("読み込み中…", "Loading…"), IsDirectory = false, FullPath = null });
             }
             return item;
         }
-
-        /// <summary>
-        /// Windowsエクスプローラーの「自然順ソート」（"2" が "10" より前に来る、数字部分を
-        /// 数値として比較する並び順）と完全に一致させるため、エクスプローラーが内部で使う
-        /// shlwapi.dll の StrCmpLogicalW をそのまま利用する。
-        /// </summary>
-        [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)]
-        private static extern int StrCmpLogicalW(string a_x, string a_y);
-
-        /// <summary>ファイル名・フォルダ名を、エクスプローラーと同じ自然順で比較するコンパレータ。</summary>
-        private static readonly Comparison<string> m_naturalCompare = (a_x, a_y) => StrCmpLogicalW(a_x, a_y);
 
         private void PopulateChildren(FileSystemItem a_node)
         {
             try
             {
-                foreach (var dir in Directory.GetDirectories(a_node.FullPath).OrderBy(d => d, Comparer<string>.Create(m_naturalCompare)))
+                // Windowsエクスプローラーと同じ自然順（"2" が "10" より前）に並べる（NaturalSort）
+                foreach (var dir in Directory.GetDirectories(a_node.FullPath).OrderBy(d => d, NaturalSort.Comparer))
                 {
                     var name = Path.GetFileName(dir);
                     if (name.StartsWith("."))
@@ -491,7 +480,7 @@ namespace mde.manager
                 foreach (var file in Directory.GetFiles(a_node.FullPath)
                              .Where(f => f.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
                                          f.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase))
-                             .OrderBy(f => f, Comparer<string>.Create(m_naturalCompare)))
+                             .OrderBy(f => f, NaturalSort.Comparer))
                 {
                     a_node.Children.Add(BuildFileSystemNode(file, false));
                 }
@@ -592,8 +581,9 @@ namespace mde.manager
             if (m_getCurrentFileIsDirty() || m_getPendingEditPaths().Any())
             {
                 var confirmResult = MessageBox.Show(
-                    "保存されていない変更があります。破棄して別のフォルダを開きますか？",
-                    "フォルダを開く", MessageBoxButton.OKCancel, MessageBoxImage.Warning);
+                    Loc.T("保存されていない変更があります。破棄して別のフォルダを開きますか？",
+                        "There are unsaved changes. Discard them and open another folder?"),
+                    Loc.T("フォルダを開く", "Open Folder"), MessageBoxButton.OKCancel, MessageBoxImage.Warning);
                 return confirmResult == MessageBoxResult.OK;
             }
             return true;

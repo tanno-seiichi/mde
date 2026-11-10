@@ -82,7 +82,7 @@ namespace mde.manager
                     string text = new TextRange(p.ContentStart, p.ContentEnd).Text.Trim();
                     if (0 == text.Length)
                     {
-                        text = "(無題)";
+                        text = Loc.T("(無題)", "(Untitled)");
                     }
                     var entry = new OutlineEntry { Level = level, Text = text, Target = p };
                     if (expandedStateByTarget.TryGetValue(p, out bool prevExpandedFlg))

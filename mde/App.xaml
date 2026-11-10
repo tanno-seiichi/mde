@@ -1,6 +1,7 @@
 ﻿<Application x:Class="mde.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:common="clr-namespace:mde.common"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
         <ResourceDictionary>
@@ -84,8 +85,11 @@
 
         <!-- タスクリストのチェックボックス用スタイル。既定のCheckBoxはOSテーマに応じて
              未チェック時の内側がグレーで塗りつぶされるため、枠と白い背景だけの単純な
-             見た目に差し替える。チェック時も背景は白のまま変えず、チェックマークだけ
-             青色（#0075FF）で表示する。
+             見た目に差し替える。チェック時は、mdew（Chromium のチェックボックス）と同じく、
+             角の丸い青色（#0075FF）の四角に白いチェックマークを表示する。チェック時の絵は、
+             なめらかに描いたビットマップ（common\TaskCheckboxImages.cs）を高画質で縮小し、画面のピクセルの
+             境目に合わせて表示する（PixelSnappedImage。編集ペインの文書は、なめらかに描く処理を止めているため、
+             線（Path）で描くとギザギザになる）。
              BlockStyles.CreateTaskCheckboxからTag="task-checkbox"のチェックボックスにのみ
              適用され、ダイアログ内の通常のCheckBox（例：ColumnWidthDialogの「自動計算」）
              には影響しない。 -->
@@ -93,26 +97,23 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="CheckBox">
-                        <Border x:Name="Box"
-                                Background="White"
-                                BorderBrush="#B0B0B0"
-                                BorderThickness="1.3"
-                                CornerRadius="3"
-                                SnapsToDevicePixels="True">
-                            <Path x:Name="CheckMark"
-                                  Margin="0.5, 0.5, 1.5, 0.5"
-                                  Stretch="Uniform"
-                                  Data="M 1,6 L 5,11 L 13,1"
-                                  Stroke="#0075FF"
-                                  StrokeThickness="2.8"
-                                  StrokeStartLineCap="Flat"
-                                  StrokeEndLineCap="Square"
-                                  StrokeLineJoin="Round"
-                                  Visibility="Collapsed"/>
-                        </Border>
+                        <Grid>
+                            <Border x:Name="Box"
+                                    Background="White"
+                                    BorderBrush="#B0B0B0"
+                                    BorderThickness="1.3"
+                                    CornerRadius="3"
+                                    SnapsToDevicePixels="True"/>
+                            <common:PixelSnappedImage x:Name="CheckedImage"
+                                   Source="{x:Static common:TaskCheckboxImages.CheckedImage}"
+                                   Stretch="Fill"
+                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                   Visibility="Collapsed"/>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="Box" Property="Visibility" Value="Hidden"/>
+                                <Setter TargetName="CheckedImage" Property="Visibility" Value="Visible"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
