@@ -805,16 +805,8 @@ namespace mde.editor
                     List<Inline> innerMoved = SplitInlinesAtCaret(span.Inlines, a_caret);
                     if (innerMoved.Count > 0)
                     {
-                        var newSpan = new Span
-                        {
-                            FontWeight = span.FontWeight,
-                            FontStyle = span.FontStyle,
-                            TextDecorations = span.TextDecorations,
-                            Foreground = span.Foreground,
-                            Background = span.Background,
-                            FontFamily = span.FontFamily,
-                            FontSize = span.FontSize
-                        };
+                        var newSpan = new Span();
+                        CopyLocalFormatting(span, newSpan);
                         foreach (Inline m in innerMoved)
                         {
                             newSpan.Inlines.Add(m);
@@ -842,7 +834,10 @@ namespace mde.editor
         /// メタデータ）の場合、前後半が同じインスタンスを共有すると「リンクを編集」が片方だけ
         /// 書き換えたつもりで両方に反映されてしまう（EditContextLinkはLinkInfoを直接書き換える
         /// ため）ので、別インスタンスとして複製する。それ以外のTagはイミュータブルか分割対象に
-        /// なり得ないため、そのまま共有してよい。</summary>
+        /// なり得ないため、そのまま共有してよい。
+        /// 書式は、元のRun自身に設定された値（ローカル値）だけを引き継ぐ（CopyLocalFormatting）。以前は、段落から
+        /// 引き継いでいるだけの値（見出しの文字の大きさ・太さ等）まで新しいRunに設定していたため、見出しの途中で
+        /// Enterを押して分けた後半を、BackSpaceで本文に戻しても、文字が見出しの大きさ・太さのまま残っていた。</summary>
         /// <param name="a_original">分割元のRun（前半として残る）。</param>
         /// <param name="a_text">後半として新しいRunに持たせるテキスト。</param>
         /// <returns>書式を引き継いだ、後半用の新しいRun。</returns>
@@ -861,18 +856,43 @@ namespace mde.editor
                     IsBareEmailFlg = li.IsBareEmailFlg
                 };
             }
-            return new Run(a_text)
+            var run = new Run(a_text)
             {
-                FontWeight = a_original.FontWeight,
-                FontStyle = a_original.FontStyle,
-                TextDecorations = a_original.TextDecorations,
-                Foreground = a_original.Foreground,
-                Background = a_original.Background,
-                FontFamily = a_original.FontFamily,
-                FontSize = a_original.FontSize,
                 Tag = tag,
                 ToolTip = a_original.ToolTip
             };
+            CopyLocalFormatting(a_original, run);
+            return run;
+        }
+
+        /// <summary>分割で引き継ぐ書式のプロパティ（太字・斜体・下線等・文字の色・背景・フォント・文字の大きさ）。</summary>
+        private static readonly DependencyProperty[] s_splitFormattingProperties =
+        {
+            TextElement.FontWeightProperty,
+            TextElement.FontStyleProperty,
+            Inline.TextDecorationsProperty,
+            TextElement.ForegroundProperty,
+            TextElement.BackgroundProperty,
+            TextElement.FontFamilyProperty,
+            TextElement.FontSizeProperty,
+        };
+
+        /// <summary>
+        /// 書式（s_splitFormattingProperties）のうち、元の要素自身に設定された値（ローカル値）だけを、新しい要素へ写す
+        /// （段落等から引き継いでいるだけの値は写さない。新しい要素も、置いた先の段落から引き継ぐため）。
+        /// </summary>
+        /// <param name="a_source">元の要素。</param>
+        /// <param name="a_target">新しい要素。</param>
+        private static void CopyLocalFormatting(Inline a_source, Inline a_target)
+        {
+            foreach (DependencyProperty property in s_splitFormattingProperties)
+            {
+                object value = a_source.ReadLocalValue(property);
+                if (DependencyProperty.UnsetValue != value && !(value is Expression))
+                {
+                    a_target.SetValue(property, value);
+                }
+            }
         }
 
         /// <summary>指定した項目自身の段落が、タスクリストのチェックボックスで始まっているかを

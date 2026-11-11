@@ -342,12 +342,15 @@ namespace mde.editor
                 new TextRange(a_p.ContentStart, a_p.ContentEnd).Text.Replace(" ", "[SP]").Replace(" ", "[NBSP]").Replace("\r", "[CR]").Replace("\n", "[LF]") + "]");
         }
 
-        /// <summary>見出し内でのEnterキー処理。見出しの文字列の先頭（1文字目より左）に
-        /// キャレットがある場合は、見出し自体には触れず、見出し行の「上」に新しい空行を
-        /// 挿入する（一般的なエディタで行頭でEnterを押した時の挙動と同じ）。それ以外の位置
-        /// （見出しの途中・末尾）でEnterを押した場合は、これまで通り見出しの続きにはならず、
-        /// その後ろに新しい通常の段落を作ってそちらへキャレットを移す（見出し自体を分割する
-        /// ことはしない）。</summary>
+        /// <summary>見出し内でのEnterキー処理（mdew・mdee（ブラウザの編集）と同じ動き）。
+        /// ・見出しの文字列の先頭（1文字目より左）：見出し自体には触れず、見出し行の「上」に新しい空行を挿入する
+        /// 　（一般的なエディタで行頭でEnterを押した時の挙動と同じ）。
+        /// ・見出しの末尾：見出しの続きにはせず、その後ろに新しい通常の段落を作ってそちらへキャレットを移す。
+        /// ・見出しの途中：キャレットの位置で見出しを2つに分け、後ろの文字を同じレベルの新しい見出しへ移して、その先頭へ
+        /// 　キャレットを移す。以前は見出しを分けず、後ろに空の段落を作るだけだったため、見出しの途中でEnterを押しても
+        /// 　文字が分かれず、見出しの下に空の行だけが増えていた（BackSpace で2つの見出しをつなげた後、Enter で元に戻せ
+        /// 　なかった）。
+        /// 文字を選んでいる時は、選んだ文字を消してから、上の通りにする。</summary>
         /// <param name="a_headingPara">現在の見出し段落。</param>
         public void HandleHeadingEnter(Paragraph a_headingPara)
         {
@@ -358,14 +361,18 @@ namespace mde.editor
             // 不具合の対象にならない。既存のBackSpace末尾判定（isCaretAtEndFlg。上の
             // MainWindow.EditorPreviewKeyDown参照）と同じ、a_headingPara.ContentStart起点の
             // TextRangeによる判定で問題ない。
-            bool isCaretAtStartFlg = m_editor.Selection.IsEmpty &&
-                0 == new TextRange(a_headingPara.ContentStart, m_editor.CaretPosition).Text.Length;
-            DebugLogger.Log($"HandleHeadingEnter: isCaretAtStartFlg={isCaretAtStartFlg}");
-
             // ConvertParagraphToHeadingと同じ理由で、ImeCaretMoveHelper経由の
             // Dispatcher.BeginInvoke遅延は使わず、1段目の箇条書きと同じ同期処理にする。
+            m_originalTextTracker.InvalidateForBlock(a_headingPara);
             m_runAsProgrammaticChange(() =>
             {
+                if (!m_editor.Selection.IsEmpty)
+                {
+                    m_editor.Selection.Text = "";
+                }
+                bool isCaretAtStartFlg = 0 == new TextRange(a_headingPara.ContentStart, m_editor.CaretPosition).Text.Length;
+                bool isCaretAtEndFlg = 0 == new TextRange(m_editor.CaretPosition, a_headingPara.ContentEnd).Text.Length;
+                DebugLogger.Log($"HandleHeadingEnter: isCaretAtStartFlg={isCaretAtStartFlg} isCaretAtEndFlg={isCaretAtEndFlg}");
                 if (isCaretAtStartFlg)
                 {
                     // 見出し自身のInlines・書式には一切触れず、新しい空段落を見出しの「前」に
@@ -379,11 +386,26 @@ namespace mde.editor
                     m_editor.Document.Blocks.InsertBefore(a_headingPara, newPara);
                     m_editor.CaretPosition = a_headingPara.ContentStart;
                 }
-                else
+                else if (isCaretAtEndFlg)
                 {
                     var newPara = new Paragraph();
                     m_editor.Document.Blocks.InsertAfter(a_headingPara, newPara);
                     m_editor.CaretPosition = newPara.ContentStart;
+                }
+                else
+                {
+                    // 見出しの途中：キャレットより後ろの内容（書式を含む）を、同じレベルの新しい見出しへ移す
+                    // （箇条書きの項目の分割と同じ ListEditor.SplitInlinesAtCaret を使う）
+                    int level = a_headingPara.Tag is int headingLevel ? headingLevel : 1;
+                    var newPara = new Paragraph();
+                    foreach (Inline movedInline in ListEditor.SplitInlinesAtCaret(a_headingPara.Inlines, m_editor.CaretPosition))
+                    {
+                        newPara.Inlines.Add(movedInline);
+                    }
+                    m_editor.Document.Blocks.InsertAfter(a_headingPara, newPara);
+                    BlockStyles.ApplyHeadingStyle(newPara, level);
+                    m_editor.CaretPosition = newPara.ContentStart;
+                    DebugLogger.Log($"HandleHeadingEnter: 見出しを分割した level={level}");
                 }
             });
             m_editor.UpdateLayout();
