@@ -555,41 +555,62 @@ namespace mde.editor
             }
             if (a_run.Tag is LinkInfo linkInfo)
             {
+                // リンクに重ねた書式（太字等）は、リンクの外側を囲む
+                InlineStyleFlags linkFlags = InlineStyles.Parse(linkInfo.Styles);
+                AppendOpenStyleTags(a_row, linkFlags);
                 AppendLinkRun(a_row, runText, linkInfo.Url);
+                AppendCloseStyleTags(a_row, linkFlags);
                 return;
             }
 
             a_row.m_text.Append(runText);
             string encoded = WebUtility.HtmlEncode(runText);
-            string styleTag = a_run.Tag as string;
-            if ("bold" == styleTag)
-            {
-                a_row.m_html.Append("<b>").Append(encoded).Append("</b>");
-            }
-            else if ("italic" == styleTag || "italic_" == styleTag)
-            {
-                a_row.m_html.Append("<i>").Append(encoded).Append("</i>");
-            }
-            else if ("strikethrough" == styleTag)
-            {
-                a_row.m_html.Append("<s>").Append(encoded).Append("</s>");
-            }
-            else if ("underline" == styleTag)
-            {
-                a_row.m_html.Append("<u>").Append(encoded).Append("</u>");
-            }
-            else if ("inline-code" == styleTag)
+            // 書式は重ねて持てる（InlineStyles）ので、書式ごとのタグを入れ子にする
+            InlineStyleFlags flags = InlineStyles.Parse(a_run.Tag);
+            AppendOpenStyleTags(a_row, flags);
+            if (0 != (flags & InlineStyleFlags.Code))
             {
                 a_row.m_html.Append("<code style=\"font-family:Consolas,Meiryo,monospace;background:#f3f4f4;border:1px solid #e7eaed;padding:0 3pt;\">")
                     .Append(encoded).Append("</code>");
             }
-            else if ("highlight" == styleTag)
-            {
-                a_row.m_html.Append("<mark>").Append(encoded).Append("</mark>");
-            }
             else
             {
                 a_row.m_html.Append(encoded);
+            }
+            AppendCloseStyleTags(a_row, flags);
+        }
+
+        /// <summary>HTML の書式のタグ（外側から：太字・斜体・取り消し線・下線・ハイライト）。</summary>
+        private static readonly (InlineStyleFlags Flag, string Open, string Close)[] s_styleTags =
+        {
+            (InlineStyleFlags.Bold, "<b>", "</b>"),
+            (InlineStyles.ANY_ITALIC, "<i>", "</i>"),
+            (InlineStyleFlags.Strikethrough, "<s>", "</s>"),
+            (InlineStyleFlags.Underline, "<u>", "</u>"),
+            (InlineStyleFlags.Highlight, "<mark>", "</mark>"),
+        };
+
+        /// <summary>書式の開きのタグを書く。</summary>
+        private static void AppendOpenStyleTags(Row a_row, InlineStyleFlags a_flags)
+        {
+            foreach (var (flag, open, _) in s_styleTags)
+            {
+                if (0 != (a_flags & flag))
+                {
+                    a_row.m_html.Append(open);
+                }
+            }
+        }
+
+        /// <summary>書式の閉じのタグを書く（開きと逆の順）。</summary>
+        private static void AppendCloseStyleTags(Row a_row, InlineStyleFlags a_flags)
+        {
+            for (int i = s_styleTags.Length - 1; 0 <= i; i--)
+            {
+                if (0 != (a_flags & s_styleTags[i].Flag))
+                {
+                    a_row.m_html.Append(s_styleTags[i].Close);
+                }
             }
         }
 

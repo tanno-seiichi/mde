@@ -393,17 +393,26 @@
                                 <MenuItem Header="ページトップに戻る" common:Loc.En="Back to Top" Style="{StaticResource CtxMenuItem}" Click="ScrollToPageTopClick"/>
                                 <Separator/>
 
-                                <MenuItem x:Name="m_textStyleMenuItem" Header="文字装飾" common:Loc.En="Text Style" Style="{StaticResource CtxMenuItem}"
-                                          Visibility="Collapsed">
-                                    <MenuItem Header="通常表記に戻す" common:Loc.En="Plain Text" Tag="normal" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="太字にする" common:Loc.En="Bold" Tag="bold" InputGestureText="Ctrl+B" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="斜体にする" common:Loc.En="Italic" Tag="italic" InputGestureText="Ctrl+I" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="下線を引く" common:Loc.En="Underline" Tag="underline" InputGestureText="Ctrl+U" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="取り消し線にする" common:Loc.En="Strikethrough" Tag="strikethrough" InputGestureText="Alt+Shift+5" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="インラインコードにする" common:Loc.En="Inline Code" Tag="code" InputGestureText="Ctrl+Shift+@" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="ハイライトにする" common:Loc.En="Highlight" Tag="highlight" Click="TextStyleItemClick"/>
-                                    <MenuItem Header="リンクにする…" common:Loc.En="Link…" Tag="link" Click="TextStyleItemClick"/>
-                                </MenuItem>
+                                <!-- 文字の書式（mdew と同じく、メニューに直接並べる。今の書式に ✓ を付け、選ぶと付ける・外すが切り替わる。
+                                     書式は重ねて付けられる。✓ と、使えるかどうか（文字を選んでいる時だけ・コードブロックの中は不可）は、
+                                     EditorContextMenuOpening で今の状態に合わせる） -->
+                                <MenuItem x:Name="m_boldMenuItem" Header="太字" common:Loc.En="Bold" Tag="bold" InputGestureText="Ctrl+B"
+                                          Style="{StaticResource CtxMenuItem}" Click="TextStyleItemClick"/>
+                                <MenuItem x:Name="m_italicMenuItem" Header="斜体" common:Loc.En="Italic" Tag="italic" InputGestureText="Ctrl+I"
+                                          Style="{StaticResource CtxMenuItem}" Click="TextStyleItemClick"/>
+                                <MenuItem x:Name="m_underlineMenuItem" Header="下線" common:Loc.En="Underline" Tag="underline" InputGestureText="Ctrl+U"
+                                          Style="{StaticResource CtxMenuItem}" Click="TextStyleItemClick"/>
+                                <MenuItem x:Name="m_strikethroughMenuItem" Header="取り消し線" common:Loc.En="Strikethrough" Tag="strikethrough" InputGestureText="Alt+Shift+5"
+                                          Style="{StaticResource CtxMenuItem}" Click="TextStyleItemClick"/>
+                                <MenuItem x:Name="m_inlineCodeMenuItem" Header="インラインコード" common:Loc.En="Inline Code" Tag="code" InputGestureText="Ctrl+Shift+@"
+                                          Style="{StaticResource CtxMenuItem}" Click="TextStyleItemClick"/>
+                                <MenuItem x:Name="m_highlightMenuItem" Header="ハイライト" common:Loc.En="Highlight" Tag="highlight"
+                                          Style="{StaticResource CtxMenuItem}" Click="TextStyleItemClick"/>
+                                <MenuItem x:Name="m_plainTextMenuItem" Header="通常表記に戻す" common:Loc.En="Plain Text" Tag="normal"
+                                          Style="{StaticResource CtxMenuItem}" Click="TextStyleItemClick"/>
+                                <MenuItem x:Name="m_makeLinkMenuItem" Header="リンクにする…" common:Loc.En="Make Link…" Tag="link"
+                                          Style="{StaticResource CtxMenuItem}" Click="TextStyleItemClick"/>
+                                <Separator/>
                                 <MenuItem x:Name="m_linkMenuItem" Header="リンク" common:Loc.En="Link" Style="{StaticResource CtxMenuItem}"
                                           Visibility="Collapsed">
                                     <MenuItem Header="リンクを開く" common:Loc.En="Open Link" Click="LinkOpenClick"/>

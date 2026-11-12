@@ -853,7 +853,8 @@ namespace mde.editor
                     IsAutoLinkFlg = li.IsAutoLinkFlg,
                     Title = li.Title,
                     IsEmailAutoLinkFlg = li.IsEmailAutoLinkFlg,
-                    IsBareEmailFlg = li.IsBareEmailFlg
+                    IsBareEmailFlg = li.IsBareEmailFlg,
+                    Styles = li.Styles
                 };
             }
             var run = new Run(a_text)

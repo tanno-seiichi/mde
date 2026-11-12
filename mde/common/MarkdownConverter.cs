@@ -5,6 +5,7 @@
 // 画像の生成・解決にはImageManagerを、「編集していないブロックは元テキストのまま保存」の
 // 仕組みにはOriginalTextTrackerを、それぞれ協力オブジェクトとして利用する。
 
+using mde.logger;
 using mde.manager;
 using System;
 using System.Collections.Generic;
@@ -59,21 +60,37 @@ namespace mde.common
         /// 18,19:&lt;http(s)://url&gt;／20,21:&lt;email&gt;／22,23:&lt;a id="..."&gt;&lt;/a&gt;／
         /// 24,25:文中にそのまま書かれたメールアドレス（BARE_EMAIL_PATTERN）
         /// </summary>
-        /// <summary>m_inlineContentRegex のどの書き方にも、必ず1つは含まれる文字（画像・リンク [ !、HTML の &lt;、コード `、
+        /// <summary>m_inlineTokenRegex のどの書き方にも、必ず1つは含まれる文字（画像・リンク [ !、HTML の &lt;、コード `、
         /// 太字・斜体 * _、取り消し線 ~、強調 =、メールアドレス @）。これを1つも含まない文字は、どの書き方にも当てはまらない
-        /// （AppendInlineMarkdownToParagraph で、正規表現で探すのを省くために使う）。m_inlineContentRegex に書き方を
+        /// （AppendInlineMarkdownToParagraph で、正規表現で探すのを省くために使う）。m_inlineTokenRegex に書き方を
         /// 足す時は、ここも見直すこと。</summary>
         private static readonly char[] m_inlineMarkupChars = { '[', '!', '<', '`', '*', '_', '~', '=', '@' };
 
-        private static readonly Regex m_inlineContentRegex = new Regex(
+        /// <summary>画像・HTML の画像タグ・Markdown の画像・インラインコード（m_inlineTokenRegex の 1〜6 番のグループ）。</summary>
+        private const string INLINE_TOKEN_HEAD_PATTERN =
             "(?<linkedImage>\\[(?<linkedImageImage>!\\[(?<linkedImageAlt>[^\\]]*)\\]\\((?<linkedImageSrc>(?:[^()]|\\([^()]*\\))+)\\))\\]\\((?<linkedImageHref>(?:[^()]|\\([^()]*\\))+)\\))|" +
-            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|((?<!`)(?<bt>`+)(?!`)([\\s\\S]+?)(?<!`)\\k<bt>(?!`))|(\\*\\*([^*]+)\\*\\*)|(~~([^~]+)~~)|(<u>([^<]+)</u>)|(==([^=]+)==)|((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)|(" +
-            BARE_EMAIL_PREV_PATTERN + "(" + BARE_EMAIL_PATTERN + ")" + BARE_EMAIL_NEXT_PATTERN + ")" +
-            "|" + ITALIC_PATTERN,
+            "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|((?<!`)(?<bt>`+)(?!`)([\\s\\S]+?)(?<!`)\\k<bt>(?!`))";
+
+        /// <summary>リンク・山括弧の URL とメールアドレス・アンカー・文中のメールアドレス（15〜25 番のグループ）。</summary>
+        private const string INLINE_TOKEN_TAIL_PATTERN =
+            "((?<!!)\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|(<(https?://[^\\s<>]+)>)|(<([^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+)>)|(<a\\s+id=\"([^\"]+)\"\\s*>\\s*</a>)|(" +
+            BARE_EMAIL_PREV_PATTERN + "(" + BARE_EMAIL_PATTERN + ")" + BARE_EMAIL_NEXT_PATTERN + ")";
+
+        /// <summary>
+        /// 文中の書式の読み込み（ParseInlineSpecs）で使う、太字・斜体・取り消し線・下線・ハイライト以外の書き方
+        /// （画像・コード・リンク等）だけを探す正規表現。グループの番号は m_inlineTokenRegex と同じにするため、
+        /// 書式の書き方の所（7〜14 番のグループと it・itc・itu）は、何にも一致しない形にしてある。書式は、
+        /// 入れ子（「~~**太字の取り消し線**~~」等）を読むため、TryParseEmphasis で別に読む。
+        /// </summary>
+        private static readonly Regex m_inlineTokenRegex = new Regex(
+            INLINE_TOKEN_HEAD_PATTERN +
+            "|((?!)())|((?!)())|((?!)())|((?!)())|" +
+            INLINE_TOKEN_TAIL_PATTERN +
+            "|(?<it>(?!)(?<itc>)(?<itu>))",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         /// <summary>
-        /// 斜体（*斜体* / _斜体_）。m_inlineContentRegex の最後の選択肢（名前付きグループ it。中身は
+        /// 斜体（*斜体* / _斜体_）。m_inlineTokenRegex の最後の選択肢（名前付きグループ it。中身は
         /// itc（* で囲んだもの）か itu（_ で囲んだもの））。名前付きグループの番号は名前なしのグループの後に
         /// なるため、1〜25 の番号は変わらない。太字（**…**）の選択肢より後ろにあるので、** は太字として先に
         /// 解釈される。mdew・mdee（markdown.js）と同じ考え方：
@@ -365,6 +382,21 @@ namespace mde.common
         /// <param name="a_doc">対象の文書。</param>
         /// <returns>改行はすべて "\n" のMarkdownテキスト（実ファイルへの改行コード変換は保存時に行う）。</returns>
         public string DocumentToMarkdown(FlowDocument a_doc)
+        {
+            if (!DebugLogger.IsEnabled)
+            {
+                return DocumentToMarkdownCore(a_doc);
+            }
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            string md = DocumentToMarkdownCore(a_doc);
+            DebugLogger.Log($"DocumentToMarkdown: {stopwatch.Elapsed.TotalMilliseconds:F1}ms blocks={a_doc.Blocks.Count} chars={md.Length}");
+            return md;
+        }
+
+        /// <summary>DocumentToMarkdown の本体（DocumentToMarkdown は、ログが有効な時に、かかった時間を記録する）。</summary>
+        /// <param name="a_doc">対象の文書。</param>
+        /// <returns>Markdownテキスト。</returns>
+        private string DocumentToMarkdownCore(FlowDocument a_doc)
         {
             var sb = new StringBuilder();
             bool firstFlg = true;
@@ -979,152 +1011,304 @@ namespace mde.common
             return sb.ToString().Trim();
         }
 
+        /// <summary>書き出す文中の要素1つ分（文字・リンク・画像・改行等の Markdown と、重ねた書式）。</summary>
+        private struct MarkdownInlineItem
+        {
+            /// <summary>Markdown の文字。</summary>
+            public string Text;
+            /// <summary>重ねた書式（記号で囲む書式だけ）。</summary>
+            public InlineStyleFlags Flags;
+            /// <summary>書式に関わらない要素（改行・画像・アンカー）。前後の要素に共通の書式の中に置く。</summary>
+            public bool TransparentFlg;
+            /// <summary>普通の文字（前後の空白を、書式の記号の外に出してよい）。</summary>
+            public bool PlainTextFlg;
+        }
+
         /// <summary>
-        /// インライン要素の中心となる書き出し処理。太字/取り消し線/インラインコードが
-        /// 改行をまたいで連続している場合は、行ごとに分割せず1つの**/~~/`にまとめる。
-        /// リンクのRunは [a_text](a_url) または &lt;a_url&gt; に戻す。
+        /// インライン要素の中心となる書き出し処理。書式（太字・斜体・取り消し線・下線・ハイライト）は重ねて持てるため、
+        /// 要素ごとの書式から、記号を入れ子にして書き出す（「~~**太字の取り消し線**~~」・「**a~~b~~c**」等）。
+        /// 改行・画像は前後に共通の書式の中に置くので、改行をまたいで続く書式は、以前と同じく1つの記号にまとめる。
+        /// 書式の記号の内側の端に空白が来る時は、空白を記号の外に出す（「**a **b」のような、読み直すと書式に
+        /// ならない Markdown を書かないため）。リンクのRunは [a_text](a_url) または &lt;a_url&gt; に戻す。
         /// </summary>
         /// <param name="a_inlines">対象のInlineコレクション。</param>
         /// <param name="a_sb">追記先のStringBuilder。</param>
         private void AppendInlinesMarkdown(InlineCollection a_inlines, StringBuilder a_sb)
         {
+            var items = new List<MarkdownInlineItem>();
+            CollectMarkdownInlineItems(a_inlines, items);
+            WriteMarkdownInlineItems(items, a_sb);
+        }
+
+        /// <summary>Inline の並びを、書き出す要素の並びにする（Span の中も順にたどる）。</summary>
+        /// <param name="a_inlines">Inline の並び。</param>
+        /// <param name="a_items">追加先。</param>
+        private void CollectMarkdownInlineItems(InlineCollection a_inlines, List<MarkdownInlineItem> a_items)
+        {
             var inlineList = a_inlines.Cast<Inline>().ToList();
-            int i = 0;
-            while (i < inlineList.Count)
+            for (int i = 0; i < inlineList.Count; i++)
             {
                 Inline inline = inlineList[i];
-
-                if (inline is Run run && run.Tag is string tag &&
-                    ("bold" == tag ||
-                     "strikethrough" == tag ||
-                     "underline" == tag ||
-                     "highlight" == tag ||
-                     "italic" == tag ||
-                     "italic_" == tag ||
-                     "inline-code" == tag))
-                {
-                    var spanText = new StringBuilder();
-                    spanText.Append(BlockStyles.StripUrlBreakJoiners(run.Text.Replace("​", "")));
-                    int j = i + 1;
-                    while (j + 1 < inlineList.Count &&
-                           inlineList[j] is LineBreak &&
-                           inlineList[j + 1] is Run nextRun &&
-                           (nextRun.Tag as string) == tag)
-                    {
-                        spanText.Append('\n').Append(BlockStyles.StripUrlBreakJoiners(nextRun.Text.Replace("​", "")));
-                        j += 2;
-                    }
-
-                    string content = spanText.ToString();
-                    if ("inline-code" == tag)
-                    {
-                        a_sb.Append(BuildCodeSpanMarkdown(content));
-                    }
-                    else if ("bold" == tag)
-                    {
-                        a_sb.Append("**").Append(content).Append("**");
-                    }
-                    else if ("strikethrough" == tag)
-                    {
-                        a_sb.Append("~~").Append(content).Append("~~");
-                    }
-                    else if ("highlight" == tag)
-                    {
-                        a_sb.Append("==").Append(content).Append("==");
-                    }
-                    else if ("italic" == tag)
-                    {
-                        a_sb.Append('*').Append(content).Append('*');
-                    }
-                    else if ("italic_" == tag)
-                    {
-                        a_sb.Append('_').Append(content).Append('_');
-                    }
-                    else
-                    {
-                        a_sb.Append("<u>").Append(content).Append("</u>");
-                    }
-
-                    i = j;
-                    continue;
-                }
-
                 if (inline is LineBreak)
                 {
-                    a_sb.Append('\n');
+                    a_items.Add(new MarkdownInlineItem { Text = "\n", TransparentFlg = true });
+                    continue;
                 }
-                else if (inline is Run linkRun && linkRun.Tag is LinkInfo linkInfo)
+                if (inline is Span span)
                 {
-                    string content = BlockStyles.StripUrlBreakJoiners(linkRun.Text.Replace("​", ""));
-                    if (linkInfo.IsBareEmailFlg)
+                    CollectMarkdownInlineItems(span.Inlines, a_items);
+                    continue;
+                }
+                if (inline is InlineUIContainer iuc)
+                {
+                    if (iuc.Child is Image img)
                     {
-                        // 文中にそのまま書かれていたメールアドレス：書かれたままの文字を書き出す
-                        a_sb.Append(content);
+                        a_items.Add(new MarkdownInlineItem { Text = ImageInlineToMarkdown(img), TransparentFlg = true });
                     }
-                    else if (linkInfo.IsEmailAutoLinkFlg)
+                    else if (iuc.Child is CheckBox taskCheckBox)
                     {
-                        // メールアドレス自動リンク。保存されているURLは"mailto:"付きなので、
-                        // 書き戻す際は取り除く。
-                        string email = linkInfo.Url != null && linkInfo.Url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)
-                            ? linkInfo.Url.Substring("mailto:".Length)
-                            : linkInfo.Url;
-                        a_sb.Append('<').Append(email).Append('>');
+                        // タスクリスト・表のセルのチェックボックス。
+                        a_items.Add(new MarkdownInlineItem { Text = true == taskCheckBox.IsChecked ? "[x] " : "[ ] " });
                     }
-                    else if (linkInfo.IsAutoLinkFlg && content == linkInfo.Url)
+                    continue;
+                }
+                if (!(inline is Run run))
+                {
+                    continue;
+                }
+                if (run.Tag is LinkInfo linkInfo)
+                {
+                    a_items.Add(new MarkdownInlineItem
                     {
-                        a_sb.Append('<').Append(linkInfo.Url).Append('>');
-                    }
-                    else
+                        Text = LinkRunToMarkdown(run, linkInfo),
+                        Flags = InlineStyles.Parse(linkInfo.Styles) & InlineStyles.STACKABLE_MASK
+                    });
+                    continue;
+                }
+                if (run.Tag is AnchorInfo anchorInfo)
+                {
+                    a_items.Add(new MarkdownInlineItem { Text = "<a id=\"" + anchorInfo.Id + "\"></a>", TransparentFlg = true });
+                    continue;
+                }
+                InlineStyleFlags flags = InlineStyles.Parse(run.Tag);
+                InlineStyleFlags stackable = flags & InlineStyles.STACKABLE_MASK;
+                if (0 != (flags & InlineStyleFlags.Code))
+                {
+                    // インラインコード：改行をまたいで続く、同じ書式のコードは1つのコードにまとめる
+                    var code = new StringBuilder(BlockStyles.StripUrlBreakJoiners(run.Text.Replace("​", "")));
+                    while (i + 2 < inlineList.Count &&
+                           inlineList[i + 1] is LineBreak &&
+                           inlineList[i + 2] is Run nextRun &&
+                           InlineStyles.Parse(nextRun.Tag) == flags)
                     {
-                        a_sb.Append('[').Append(content).Append("](").Append(linkInfo.Url);
-                        if (!string.IsNullOrEmpty(linkInfo.Title))
-                        {
-                            // タイトル属性。
-                            a_sb.Append(" \"").Append(linkInfo.Title).Append('"');
-                        }
-                        a_sb.Append(')');
+                        code.Append('\n').Append(BlockStyles.StripUrlBreakJoiners(nextRun.Text.Replace("​", "")));
+                        i += 2;
                     }
-                }
-                else if (inline is Run anchorRun && anchorRun.Tag is AnchorInfo anchorInfo)
-                {
-                    a_sb.Append("<a id=\"").Append(anchorInfo.Id).Append("\"></a>");
-                }
-                else if (inline is Run escapedRun && (escapedRun.Tag as string) == "escaped")
-                {
-                    a_sb.Append('\\').Append(escapedRun.Text);
-                }
-                else if (inline is Run plainRun)
-                {
-                    a_sb.Append(BlockStyles.StripUrlBreakJoiners(plainRun.Text.Replace("​", "")));
-                }
-                else if (inline is InlineUIContainer iuc && iuc.Child is Image img)
-                {
-                    string imageMarkdown = ImageToMarkdownString(img);
-                    if (img.Tag is ImageInfo imageInfo && !string.IsNullOrEmpty(imageInfo.LinkUrl))
+                    if (0 < code.Length)
                     {
-                        a_sb.Append('[').Append(imageMarkdown).Append("](").Append(imageInfo.LinkUrl);
-                        if (!string.IsNullOrEmpty(imageInfo.LinkTitle))
-                        {
-                            a_sb.Append(" \"").Append(imageInfo.LinkTitle).Append('"');
-                        }
-                        a_sb.Append(')');
+                        a_items.Add(new MarkdownInlineItem { Text = BuildCodeSpanMarkdown(code.ToString()), Flags = stackable });
                     }
-                    else
-                    {
-                        a_sb.Append(imageMarkdown);
-                    }
+                    continue;
                 }
-                else if (inline is InlineUIContainer cbIuc && cbIuc.Child is CheckBox taskCheckBox)
+                if (0 != (flags & InlineStyleFlags.Escaped))
                 {
-                    // タスクリスト・表のセルのチェックボックス。
-                    a_sb.Append(true == taskCheckBox.IsChecked ? "[x] " : "[ ] ");
+                    a_items.Add(new MarkdownInlineItem { Text = "\\" + run.Text, Flags = stackable });
+                    continue;
                 }
-                else if (inline is Span span)
+                string text = BlockStyles.StripUrlBreakJoiners(run.Text.Replace("​", ""));
+                if (0 < text.Length)
                 {
-                    AppendInlinesMarkdown(span.Inlines, a_sb);
+                    a_items.Add(new MarkdownInlineItem { Text = text, Flags = stackable, PlainTextFlg = true });
                 }
-                i++;
             }
+        }
+
+        /// <summary>
+        /// 要素の並びを Markdown にする。開いている書式を積んでおき、次の要素に無い書式が出てきたら、それより内側の
+        /// 書式もいったん閉じる（記号が正しく入れ子になるように）。新しく開く書式は、後ろへ長く続くものから外側に開く。
+        /// </summary>
+        /// <param name="a_items">要素の並び。</param>
+        /// <param name="a_sb">追記先。</param>
+        private static void WriteMarkdownInlineItems(List<MarkdownInlineItem> a_items, StringBuilder a_sb)
+        {
+            // 改行・画像等の書式：前後の要素に共通の書式（片方が無ければ書式なし）
+            for (int i = 0; i < a_items.Count; i++)
+            {
+                if (!a_items[i].TransparentFlg)
+                {
+                    continue;
+                }
+                InlineStyleFlags prev = InlineStyleFlags.None;
+                InlineStyleFlags next = InlineStyleFlags.None;
+                bool prevFoundFlg = false;
+                bool nextFoundFlg = false;
+                for (int k = i - 1; 0 <= k; k--)
+                {
+                    if (!a_items[k].TransparentFlg)
+                    {
+                        prev = a_items[k].Flags;
+                        prevFoundFlg = true;
+                        break;
+                    }
+                }
+                for (int k = i + 1; k < a_items.Count; k++)
+                {
+                    if (!a_items[k].TransparentFlg)
+                    {
+                        next = a_items[k].Flags;
+                        nextFoundFlg = true;
+                        break;
+                    }
+                }
+                MarkdownInlineItem item = a_items[i];
+                item.Flags = prevFoundFlg && nextFoundFlg ? prev & next : InlineStyleFlags.None;
+                a_items[i] = item;
+            }
+
+            var open = new List<InlineStyleFlags>();
+            var pendingSpace = new StringBuilder();
+            for (int i = 0; i < a_items.Count; i++)
+            {
+                MarkdownInlineItem item = a_items[i];
+                InlineStyleFlags flags = item.Flags;
+                // この要素に無い書式を閉じる（それより内側に開いている書式も、いったん閉じる）
+                int lowest = open.FindIndex(f => 0 == (flags & f));
+                if (0 <= lowest)
+                {
+                    for (int k = open.Count - 1; lowest <= k; k--)
+                    {
+                        a_sb.Append(InlineStyles.CloseMarker(open[k]));
+                    }
+                    open.RemoveRange(lowest, open.Count - lowest);
+                }
+                a_sb.Append(pendingSpace);
+                pendingSpace.Clear();
+
+                string text = item.Text;
+                InlineStyleFlags openedFlags = InlineStyleFlags.None;
+                foreach (InlineStyleFlags f in open)
+                {
+                    openedFlags |= f;
+                }
+                InlineStyleFlags toOpen = flags & ~openedFlags;
+                if (InlineStyleFlags.None != toOpen && item.PlainTextFlg)
+                {
+                    // 先頭の空白は、書式の開きの記号の前に出す（空白だけなら、書式を開かない）
+                    int lead = 0;
+                    while (lead < text.Length && char.IsWhiteSpace(text[lead]))
+                    {
+                        lead++;
+                    }
+                    if (lead == text.Length)
+                    {
+                        pendingSpace.Append(text);
+                        continue;
+                    }
+                    a_sb.Append(text, 0, lead);
+                    text = text.Substring(lead);
+                }
+                if (InlineStyleFlags.None != toOpen)
+                {
+                    var toOpenList = new List<InlineStyleFlags>();
+                    foreach (InlineStyleFlags f in InlineStyles.STACKABLE_ORDER)
+                    {
+                        if (0 != (toOpen & f))
+                        {
+                            toOpenList.Add(f);
+                        }
+                    }
+                    // 後ろへ長く続く書式ほど外側（先）に開く（同じ長さなら STACKABLE_ORDER の順）
+                    var lengths = toOpenList.ToDictionary(f => f, f =>
+                    {
+                        int count = 0;
+                        for (int k = i; k < a_items.Count && 0 != (a_items[k].Flags & f); k++)
+                        {
+                            count++;
+                        }
+                        return count;
+                    });
+                    foreach (InlineStyleFlags f in toOpenList.OrderByDescending(f => lengths[f]))
+                    {
+                        a_sb.Append(InlineStyles.OpenMarker(f));
+                        open.Add(f);
+                    }
+                }
+                if (item.PlainTextFlg && 0 < open.Count)
+                {
+                    // 末尾の空白は、次の要素を書く時まで持っておく（書式を閉じるなら、閉じの記号の後ろに出す）
+                    int trail = 0;
+                    while (trail < text.Length && char.IsWhiteSpace(text[text.Length - 1 - trail]))
+                    {
+                        trail++;
+                    }
+                    a_sb.Append(text, 0, text.Length - trail);
+                    pendingSpace.Append(text, text.Length - trail, trail);
+                }
+                else
+                {
+                    a_sb.Append(text);
+                }
+            }
+            for (int k = open.Count - 1; 0 <= k; k--)
+            {
+                a_sb.Append(InlineStyles.CloseMarker(open[k]));
+            }
+            a_sb.Append(pendingSpace);
+        }
+
+        /// <summary>リンクの Run を Markdown にする（[文字](URL)・&lt;URL&gt;・&lt;メールアドレス&gt;・書いたままのメールアドレス）。</summary>
+        /// <param name="a_run">リンクの Run。</param>
+        /// <param name="a_linkInfo">リンクの情報。</param>
+        /// <returns>Markdown の文字。</returns>
+        private static string LinkRunToMarkdown(Run a_run, LinkInfo a_linkInfo)
+        {
+            string content = BlockStyles.StripUrlBreakJoiners(a_run.Text.Replace("\u200B", ""));
+            if (a_linkInfo.IsBareEmailFlg)
+            {
+                // 文中にそのまま書かれていたメールアドレス：書かれたままの文字を書き出す
+                return content;
+            }
+            if (a_linkInfo.IsEmailAutoLinkFlg)
+            {
+                // メールアドレス自動リンク。保存されているURLは"mailto:"付きなので、書き戻す際は取り除く。
+                string email = null != a_linkInfo.Url && a_linkInfo.Url.StartsWith("mailto:", StringComparison.OrdinalIgnoreCase)
+                    ? a_linkInfo.Url.Substring("mailto:".Length)
+                    : a_linkInfo.Url;
+                return "<" + email + ">";
+            }
+            if (a_linkInfo.IsAutoLinkFlg && content == a_linkInfo.Url)
+            {
+                return "<" + a_linkInfo.Url + ">";
+            }
+            var sb = new StringBuilder();
+            sb.Append('[').Append(content).Append("](").Append(a_linkInfo.Url);
+            if (!string.IsNullOrEmpty(a_linkInfo.Title))
+            {
+                // タイトル属性。
+                sb.Append(" \"").Append(a_linkInfo.Title).Append('"');
+            }
+            sb.Append(')');
+            return sb.ToString();
+        }
+
+        /// <summary>画像（InlineUIContainer の中の Image）を Markdown にする（画像を囲むリンクも含める）。</summary>
+        /// <param name="a_img">画像。</param>
+        /// <returns>Markdown の文字。</returns>
+        private string ImageInlineToMarkdown(Image a_img)
+        {
+            string imageMarkdown = ImageToMarkdownString(a_img);
+            if (!(a_img.Tag is ImageInfo imageInfo) || string.IsNullOrEmpty(imageInfo.LinkUrl))
+            {
+                return imageMarkdown;
+            }
+            var sb = new StringBuilder();
+            sb.Append('[').Append(imageMarkdown).Append("](").Append(imageInfo.LinkUrl);
+            if (!string.IsNullOrEmpty(imageInfo.LinkTitle))
+            {
+                sb.Append(" \"").Append(imageInfo.LinkTitle).Append('"');
+            }
+            sb.Append(')');
+            return sb.ToString();
         }
 
         /// <summary>埋め込み画像を、元の記法（Markdownの![]()、またはHTMLの&lt;a_img&gt;）に戻す。</summary>
@@ -1169,6 +1353,21 @@ namespace mde.common
         /// <param name="a_md">解析するMarkdownソース。</param>
         /// <param name="a_doc">反映先の文書（最初にクリアされる）。</param>
         public void MarkdownToDocument(string a_md, FlowDocument a_doc)
+        {
+            if (!DebugLogger.IsEnabled)
+            {
+                MarkdownToDocumentCore(a_md, a_doc);
+                return;
+            }
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            MarkdownToDocumentCore(a_md, a_doc);
+            DebugLogger.Log($"MarkdownToDocument: {stopwatch.Elapsed.TotalMilliseconds:F1}ms chars={a_md?.Length} blocks={a_doc.Blocks.Count}");
+        }
+
+        /// <summary>MarkdownToDocument の本体（MarkdownToDocument は、ログが有効な時に、かかった時間を記録する）。</summary>
+        /// <param name="a_md">解析するMarkdownソース。</param>
+        /// <param name="a_doc">反映先の文書（最初にクリアされる）。</param>
+        private void MarkdownToDocumentCore(string a_md, FlowDocument a_doc)
         {
             a_doc.Blocks.Clear();
             m_originalTextTracker.Clear();
@@ -2356,7 +2555,7 @@ namespace mde.common
                 exemptRanges.Add((g.Index, g.Index + g.Length));
             }
             // インラインコードの中（囲みのバッククォートを含む）も対象外にする。コード区間の見つけ方は ParseTableRow・
-            // m_inlineContentRegex と同じ（開きと同じ個数のバッククォートの並びで閉じる）。コードの外の \` は
+            // m_inlineTokenRegex と同じ（開きと同じ個数のバッククォートの並びで閉じる）。コードの外の \` は
             // コードの始まりではない（エスケープされたバッククォート）。
             for (int ci = 0; ci < a_text.Length;)
             {
@@ -2497,6 +2696,13 @@ namespace mde.common
             return image;
         }
 
+        /// <summary>
+        /// 1行分（段落・見出し・セル等の中身）の Markdown を読んで、段落の末尾へ追加する。書式は入れ子でも読む
+        /// （「~~**太字の取り消し線**~~」・「***太字の斜体***」等。ParseInlineSpecs）。
+        /// </summary>
+        /// <param name="a_p">追加先の段落。</param>
+        /// <param name="a_text">Markdown の文字。</param>
+        /// <param name="a_appendFlg">false の時は、段落の中身を消してから追加する。</param>
         public void AppendInlineMarkdownToParagraph(Paragraph a_p, string a_text, bool a_appendFlg)
         {
             if (!a_appendFlg)
@@ -2504,7 +2710,7 @@ namespace mde.common
                 a_p.Inlines.Clear();
             }
             a_text = PreprocessEscapes(a_text);
-            // 書式の記号（m_inlineContentRegex のどの書き方にも必ず含まれる文字）を1つも含まない文字（普通の文章だけの
+            // 書式の記号（m_inlineTokenRegex のどの書き方にも必ず含まれる文字）を1つも含まない文字（普通の文章だけの
             // 表のセル等）は、正規表現で探さずに、そのまま文字として追加する（探しても何も見つからないので、結果は同じ）
             if (a_text.IndexOfAny(m_inlineMarkupChars) < 0)
             {
@@ -2515,89 +2721,554 @@ namespace mde.common
                 BlockStyles.ApplyImageParagraphLineHeight(a_p);
                 return;
             }
-            int lastIndex = 0;
-            foreach (Match m in m_inlineContentRegex.Matches(a_text))
+            var specs = new List<InlineSpec>();
+            ParseInlineSpecs(a_text, InlineStyleFlags.None, specs, 0);
+            foreach (InlineSpec spec in specs)
             {
-                if (m.Index > lastIndex)
-                {
-                    AppendPlainTextWithLineBreaks(a_p, a_text.Substring(lastIndex, m.Index - lastIndex));
-                }
-
-                if (m.Groups["linkedImage"].Success)
-                {
-                    a_p.Inlines.Add(new InlineUIContainer(BuildLinkedImageFromMarkdown(m)));
-                }
-                else if (m.Groups[1].Success)
-                {
-                    a_p.Inlines.Add(new InlineUIContainer(m_imageManager.BuildImageFromHtmlTag(m.Groups[1].Value)));
-                }
-                else if (m.Groups[2].Success)
-                {
-                    SplitUrlAndTitle(m.Groups[4].Value, out string imgSrc, out string imgTitle);
-                    a_p.Inlines.Add(new InlineUIContainer(m_imageManager.BuildImageFromMarkdown(m.Groups[3].Value, imgSrc, imgTitle)));
-                }
-                else if (m.Groups[5].Success)
-                {
-                    AppendStyledRunsWithLineBreaks(a_p, StripCodeSpanPadding(m.Groups[6].Value), "code");
-                }
-                else if (m.Groups[7].Success)
-                {
-                    AppendStyledRunsWithLineBreaks(a_p, m.Groups[8].Value, "bold");
-                }
-                else if (m.Groups[9].Success)
-                {
-                    AppendStyledRunsWithLineBreaks(a_p, m.Groups[10].Value, "strikethrough");
-                }
-                else if (m.Groups[11].Success)
-                {
-                    AppendStyledRunsWithLineBreaks(a_p, m.Groups[12].Value, "underline");
-                }
-                else if (m.Groups[13].Success)
-                {
-                    AppendStyledRunsWithLineBreaks(a_p, m.Groups[14].Value, "highlight");
-                }
-                else if (m.Groups[15].Success)
-                {
-                    SplitUrlAndTitle(m.Groups[17].Value, out string linkUrlRaw, out string linkTitleRaw);
-                    string linkTitle = null == linkTitleRaw ? null : RestorePlaceholders(linkTitleRaw);
-                    a_p.Inlines.Add(BuildLinkRun(RestorePlaceholders(m.Groups[16].Value), RestorePlaceholders(linkUrlRaw), false, linkTitle));
-                }
-                else if (m.Groups[18].Success)
-                {
-                    a_p.Inlines.Add(BuildLinkRun(RestorePlaceholders(m.Groups[19].Value), RestorePlaceholders(m.Groups[19].Value), true));
-                }
-                else if (m.Groups[20].Success)
-                {
-                    string email = RestorePlaceholders(m.Groups[21].Value);
-                    a_p.Inlines.Add(BuildLinkRun(email, "mailto:" + email, false, null, true));
-                }
-                else if (m.Groups[22].Success)
-                {
-                    a_p.Inlines.Add(new Run("") { Tag = new AnchorInfo { Id = m.Groups[23].Value } });
-                }
-                else if (m.Groups[24].Success)
-                {
-                    // 文中にそのまま書かれたメールアドレス（表示だけ mailto のリンクにする）
-                    string email = RestorePlaceholders(m.Groups[25].Value);
-                    a_p.Inlines.Add(BuildLinkRun(email, "mailto:" + email, false, null, false, true));
-                }
-                else if (m.Groups["it"].Success)
-                {
-                    // 斜体（* で囲んだものは "italic"、_ で囲んだものは "italic_"。保存時に同じ記号で書き戻す）
-                    bool underscoreFlg = m.Groups["itu"].Success;
-                    AppendStyledRunsWithLineBreaks(a_p, underscoreFlg ? m.Groups["itu"].Value : m.Groups["itc"].Value,
-                        underscoreFlg ? "italic_" : "italic");
-                }
-
-                lastIndex = m.Index + m.Length;
-            }
-            if (lastIndex < a_text.Length)
-            {
-                AppendPlainTextWithLineBreaks(a_p, a_text.Substring(lastIndex));
+                a_p.Inlines.Add(CreateInlineFromSpec(spec));
             }
             // 画像を含む段落は行の高さの固定を外す（画像が上の文章に重なって描画されるのを防ぐ。
             // BlockStyles.ApplyImageParagraphLineHeight参照）。
             BlockStyles.ApplyImageParagraphLineHeight(a_p);
+        }
+
+        /// <summary>読み込んだ文中の要素1つ分（Run・改行・画像等を作るための情報）。</summary>
+        private sealed class InlineSpec
+        {
+            /// <summary>要素の種類。</summary>
+            public InlineSpecKind Kind;
+            /// <summary>文字（Text・Link の時）。</summary>
+            public string Text;
+            /// <summary>書式（Text の時は Run の書式。Link の時は重ねた書式）。</summary>
+            public InlineStyleFlags Flags;
+            /// <summary>画像（Image の時）。</summary>
+            public Image Image;
+            /// <summary>リンクの情報（Link の時）。</summary>
+            public LinkInfo Link;
+            /// <summary>リンクのツールチップ（Link の時）。</summary>
+            public string ToolTip;
+            /// <summary>アンカーの id（Anchor の時）。</summary>
+            public string AnchorId;
+        }
+
+        /// <summary>InlineSpec の種類。</summary>
+        private enum InlineSpecKind
+        {
+            Text,
+            LineBreak,
+            Image,
+            Link,
+            Anchor,
+        }
+
+        /// <summary>入れ子の書式を読む深さの上限（これより深い所は、書式として読まずに文字のまま置く）。</summary>
+        private const int MAX_EMPHASIS_DEPTH = 16;
+
+        /// <summary>
+        /// 1行分の Markdown（PreprocessEscapes 済み）を読んで、要素の並び（InlineSpec）にする。画像・コード・リンク等は
+        /// m_inlineTokenRegex で探し、太字・斜体・取り消し線・下線・ハイライトは TryParseEmphasis で読む。書式の中身は
+        /// 同じ方法で読み直す（入れ子の書式は、外側の書式に重ねる。a_flags）。どちらも、文字の前の方にあるものを先に
+        /// 読む（以前の、1つの正規表現で前から探していた時と同じ順番）。
+        /// </summary>
+        /// <param name="a_text">Markdown の文字（エスケープはプレースホルダの文字になっている）。</param>
+        /// <param name="a_flags">外側の書式（中身の文字すべてに重ねる）。</param>
+        /// <param name="a_out">結果の追加先。</param>
+        /// <param name="a_depth">入れ子の深さ。</param>
+        private void ParseInlineSpecs(string a_text, InlineStyleFlags a_flags, List<InlineSpec> a_out, int a_depth)
+        {
+            int i = 0;
+            int plainStart = 0;
+            Match token = null;
+            while (i < a_text.Length)
+            {
+                // 次の画像・コード・リンク等（前に探した結果がまだ先にあれば、それを使う：その間には無いことが分かっている）
+                if (null == token || (token.Success && token.Index < i))
+                {
+                    token = m_inlineTokenRegex.Match(a_text, i);
+                }
+                int tokenIndex = token.Success ? token.Index : a_text.Length;
+                bool emphasisFoundFlg = false;
+                if (a_depth < MAX_EMPHASIS_DEPTH)
+                {
+                    for (int p = i; p < tokenIndex; p++)
+                    {
+                        char c = a_text[p];
+                        if ('*' != c && '_' != c && '~' != c && '=' != c && '<' != c)
+                        {
+                            continue;
+                        }
+                        if (TryParseEmphasis(a_text, p, i, out InlineStyleFlags flag, out int innerStart, out int innerEnd, out int end))
+                        {
+                            AppendPlainSpecs(a_text.Substring(plainStart, p - plainStart), a_flags, a_out);
+                            ParseInlineSpecs(a_text.Substring(innerStart, innerEnd - innerStart), a_flags | flag, a_out, a_depth + 1);
+                            i = end;
+                            plainStart = end;
+                            emphasisFoundFlg = true;
+                            break;
+                        }
+                    }
+                }
+                if (emphasisFoundFlg)
+                {
+                    continue;
+                }
+                if (!token.Success)
+                {
+                    break;
+                }
+                AppendPlainSpecs(a_text.Substring(plainStart, token.Index - plainStart), a_flags, a_out);
+                AppendTokenSpecs(token, a_flags, a_out);
+                i = token.Index + token.Length;
+                plainStart = i;
+                token = null;
+            }
+            if (plainStart < a_text.Length)
+            {
+                AppendPlainSpecs(a_text.Substring(plainStart), a_flags, a_out);
+            }
+        }
+
+        /// <summary>
+        /// a_pos から始まる書式（**太字**・*斜体*・_斜体_・~~取り消し線~~・==ハイライト==・&lt;u&gt;下線&lt;/u&gt;）を読む。
+        /// 以前の読み方（1つの正規表現）と同じく、太字・取り消し線・ハイライト・下線は、記号の内側の空白を問わない。
+        /// 中身には別の書式を含められる（入れ子）。閉じの記号は、インラインコードの中のものは使わない。
+        /// </summary>
+        /// <param name="a_text">文字。</param>
+        /// <param name="a_pos">開きの記号の位置。</param>
+        /// <param name="a_regionStart">まだ読んでいない部分の先頭（これより前の文字は、記号の直前の文字として見ない）。</param>
+        /// <param name="a_flag">読んだ書式。</param>
+        /// <param name="a_innerStart">中身の先頭の位置。</param>
+        /// <param name="a_innerEnd">中身の終わりの位置（閉じの記号の位置）。</param>
+        /// <param name="a_end">閉じの記号の次の位置。</param>
+        /// <returns>書式として読めたら true。</returns>
+        private static bool TryParseEmphasis(string a_text, int a_pos, int a_regionStart, out InlineStyleFlags a_flag,
+            out int a_innerStart, out int a_innerEnd, out int a_end)
+        {
+            a_flag = InlineStyleFlags.None;
+            a_innerStart = 0;
+            a_innerEnd = 0;
+            a_end = 0;
+            char c = a_text[a_pos];
+            char prev = a_pos > a_regionStart ? a_text[a_pos - 1] : '\0';
+            switch (c)
+            {
+                case '<':
+                    if (a_pos + 3 <= a_text.Length && 0 == string.Compare(a_text, a_pos, "<u>", 0, 3, StringComparison.OrdinalIgnoreCase))
+                    {
+                        int close = IndexOfOutsideCode(a_text, "</u>", a_pos + 3, StringComparison.OrdinalIgnoreCase);
+                        if (close > a_pos + 3)
+                        {
+                            a_flag = InlineStyleFlags.Underline;
+                            a_innerStart = a_pos + 3;
+                            a_innerEnd = close;
+                            a_end = close + 4;
+                            return true;
+                        }
+                    }
+                    return false;
+                case '~':
+                case '=':
+                    {
+                        // ~~…~~・==…==（記号の並びの先頭からだけ読む）
+                        if (a_pos + 1 >= a_text.Length || c != a_text[a_pos + 1] || c == prev)
+                        {
+                            return false;
+                        }
+                        string marker = new string(c, 2);
+                        int k = IndexOfOutsideCode(a_text, marker, a_pos + 3, StringComparison.Ordinal);
+                        if (k < 0)
+                        {
+                            return false;
+                        }
+                        a_flag = '~' == c ? InlineStyleFlags.Strikethrough : InlineStyleFlags.Highlight;
+                        a_innerStart = a_pos + 2;
+                        a_innerEnd = k;
+                        a_end = k + 2;
+                        return true;
+                    }
+                case '*':
+                    {
+                        if ('*' == prev)
+                        {
+                            return false;
+                        }
+                        int runLength = CountRun(a_text, a_pos, '*');
+                        if (runLength >= 3)
+                        {
+                            // ***…***：斜体を外側として読む（中の **…** は中身として読み直される）。読めなければ太字を外側にする
+                            return TryParseStarItalic(a_text, a_pos, true, out a_flag, out a_innerStart, out a_innerEnd, out a_end) ||
+                                TryParseBold(a_text, a_pos, out a_flag, out a_innerStart, out a_innerEnd, out a_end);
+                        }
+                        if (2 == runLength)
+                        {
+                            return TryParseBold(a_text, a_pos, out a_flag, out a_innerStart, out a_innerEnd, out a_end);
+                        }
+                        return TryParseStarItalic(a_text, a_pos, false, out a_flag, out a_innerStart, out a_innerEnd, out a_end);
+                    }
+                case '_':
+                    return TryParseUnderscoreItalic(a_text, a_pos, prev, out a_flag, out a_innerStart, out a_innerEnd, out a_end);
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// **太字** を読む。閉じの「**」が3つ以上の * の並び（「**a *b***」の最後等）の一部の時は、中身に閉じていない
+        /// * が残る（中身の中の1つだけの * の並びが奇数個）なら、並びの最後の2つを太字の閉じとする（「*b*」を中身に入れる）。
+        /// </summary>
+        private static bool TryParseBold(string a_text, int a_pos, out InlineStyleFlags a_flag, out int a_innerStart, out int a_innerEnd, out int a_end)
+        {
+            a_flag = InlineStyleFlags.None;
+            a_innerStart = a_pos + 2;
+            a_innerEnd = 0;
+            a_end = 0;
+            int from = a_pos + 3; // 中身は1文字以上
+            while (from <= a_text.Length)
+            {
+                int k = IndexOfOutsideCode(a_text, "**", from, StringComparison.Ordinal);
+                if (k < 0)
+                {
+                    return false;
+                }
+                int runLength = CountRun(a_text, k, '*');
+                if (runLength >= 3 && 1 == CountSingleStars(a_text, a_innerStart, k) % 2)
+                {
+                    k += runLength - 2;
+                }
+                a_flag = InlineStyleFlags.Bold;
+                a_innerEnd = k;
+                a_end = k + 2;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// *斜体* を読む（以前の読み方と同じく、開きの * の後ろと閉じの * の前は空白でないこと・中身に改行を含まないこと）。
+        /// 中身の中の **太字** は飛ばして閉じの * を探す。閉じの * が3つ以上の並びの先頭の時は、その1つ目を閉じとする
+        /// （残りの ** は外側の太字の閉じ）。
+        /// </summary>
+        /// <param name="a_tripleFlg">開きが *** の時（開きの直後の * を許す）。</param>
+        private static bool TryParseStarItalic(string a_text, int a_pos, bool a_tripleFlg, out InlineStyleFlags a_flag,
+            out int a_innerStart, out int a_innerEnd, out int a_end)
+        {
+            a_flag = InlineStyleFlags.None;
+            a_innerStart = a_pos + 1;
+            a_innerEnd = 0;
+            a_end = 0;
+            if (a_pos + 1 >= a_text.Length || char.IsWhiteSpace(a_text[a_pos + 1]) || (!a_tripleFlg && '*' == a_text[a_pos + 1]))
+            {
+                return false;
+            }
+            int from = a_pos + 1;
+            while (from < a_text.Length)
+            {
+                int k = IndexOfOutsideCode(a_text, "*", from, StringComparison.Ordinal);
+                if (k < 0 || 0 <= a_text.IndexOf('\n', a_pos, k - a_pos))
+                {
+                    return false;
+                }
+                int runLength = CountRun(a_text, k, '*');
+                if (2 == runLength || (k == a_pos + 1 && a_tripleFlg))
+                {
+                    // 中身の中の太字：その閉じの後ろから探し直す
+                    if (!TryParseBold(a_text, k, out _, out _, out _, out int boldEnd))
+                    {
+                        return false;
+                    }
+                    from = boldEnd;
+                    continue;
+                }
+                if (k == a_pos + 1 || char.IsWhiteSpace(a_text[k - 1]))
+                {
+                    return false;
+                }
+                a_flag = InlineStyleFlags.Italic;
+                a_innerEnd = k;
+                a_end = k + 1;
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// _斜体_ を読む（以前の読み方と同じく、英数字の単語の途中の _ は使わない・中身に _ と改行を含まない・開きの _ の
+        /// 後ろと閉じの _ の前は空白でないこと）。
+        /// </summary>
+        private static bool TryParseUnderscoreItalic(string a_text, int a_pos, char a_prev, out InlineStyleFlags a_flag,
+            out int a_innerStart, out int a_innerEnd, out int a_end)
+        {
+            a_flag = InlineStyleFlags.None;
+            a_innerStart = a_pos + 1;
+            a_innerEnd = 0;
+            a_end = 0;
+            if (IsWordChar(a_prev) || a_pos + 1 >= a_text.Length || char.IsWhiteSpace(a_text[a_pos + 1]) || '_' == a_text[a_pos + 1])
+            {
+                return false;
+            }
+            int k = IndexOfOutsideCode(a_text, "_", a_pos + 1, StringComparison.Ordinal);
+            if (k < 0 || 0 <= a_text.IndexOf('\n', a_pos, k - a_pos) || char.IsWhiteSpace(a_text[k - 1]) ||
+                (k + 1 < a_text.Length && IsWordChar(a_text[k + 1])))
+            {
+                return false;
+            }
+            a_flag = InlineStyleFlags.ItalicUnderscore;
+            a_innerEnd = k;
+            a_end = k + 1;
+            return true;
+        }
+
+        /// <summary>正規表現の \w と同じく、単語の文字（文字・数字・_）か。</summary>
+        private static bool IsWordChar(char a_c)
+        {
+            return '\0' != a_c && (char.IsLetterOrDigit(a_c) || '_' == a_c);
+        }
+
+        /// <summary>a_pos から続く a_c の並びの長さ。</summary>
+        private static int CountRun(string a_text, int a_pos, char a_c)
+        {
+            int k = a_pos;
+            while (k < a_text.Length && a_c == a_text[k])
+            {
+                k++;
+            }
+            return k - a_pos;
+        }
+
+        /// <summary>a_from〜a_to の間の、1つだけの * の並びの数（インラインコードの中は数えない）。</summary>
+        private static int CountSingleStars(string a_text, int a_from, int a_to)
+        {
+            int count = 0;
+            int k = a_from;
+            while (k < a_to)
+            {
+                int star = IndexOfOutsideCode(a_text, "*", k, StringComparison.Ordinal);
+                if (star < 0 || star >= a_to)
+                {
+                    break;
+                }
+                int runLength = Math.Min(CountRun(a_text, star, '*'), a_to - star);
+                if (1 == runLength)
+                {
+                    count++;
+                }
+                k = star + runLength;
+            }
+            return count;
+        }
+
+        /// <summary>a_from から a_value を探す。インラインコード（`…`）の中にあるものは飛ばす。</summary>
+        /// <returns>見つかった位置。無ければ -1。</returns>
+        private static int IndexOfOutsideCode(string a_text, string a_value, int a_from, StringComparison a_comparison)
+        {
+            int from = a_from;
+            while (from <= a_text.Length)
+            {
+                int k = a_text.IndexOf(a_value, from, a_comparison);
+                int backtick = a_text.IndexOf('`', from);
+                if (backtick < 0 || (0 <= k && k < backtick))
+                {
+                    return k;
+                }
+                // k はコードの開きより後ろ：コードを飛ばす（閉じの無い ` は文字として飛ばす）
+                int runLength = CountRun(a_text, backtick, '`');
+                int close = FindBacktickRun(a_text, backtick + runLength, runLength);
+                from = close < 0 ? backtick + runLength : close + runLength;
+            }
+            return -1;
+        }
+
+        /// <summary>a_from から、ちょうど a_length 個のバッククォートの並びを探す。</summary>
+        /// <returns>見つかった位置。無ければ -1。</returns>
+        private static int FindBacktickRun(string a_text, int a_from, int a_length)
+        {
+            int k = a_from;
+            while (k < a_text.Length)
+            {
+                int backtick = a_text.IndexOf('`', k);
+                if (backtick < 0)
+                {
+                    return -1;
+                }
+                int runLength = CountRun(a_text, backtick, '`');
+                if (runLength == a_length)
+                {
+                    return backtick;
+                }
+                k = backtick + runLength;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// 書式の記号を含まない文字を、要素の並びに追加する。改行（\n）は LineBreak にし、エスケープした文字
+        /// （プレースホルダ）は1文字ずつの Run（書式に Escaped を重ねる。保存時に \ を付けて書き戻す）にする。
+        /// </summary>
+        /// <param name="a_text">文字。</param>
+        /// <param name="a_flags">書式。</param>
+        /// <param name="a_out">追加先。</param>
+        private void AppendPlainSpecs(string a_text, InlineStyleFlags a_flags, List<InlineSpec> a_out)
+        {
+            if (0 == a_text.Length)
+            {
+                return;
+            }
+            var plain = new StringBuilder();
+            void flush()
+            {
+                if (0 < plain.Length)
+                {
+                    a_out.Add(new InlineSpec { Kind = InlineSpecKind.Text, Text = plain.ToString(), Flags = a_flags });
+                    plain.Clear();
+                }
+            }
+            foreach (char c in a_text)
+            {
+                if ('\n' == c)
+                {
+                    flush();
+                    a_out.Add(new InlineSpec { Kind = InlineSpecKind.LineBreak });
+                }
+                else if (m_placeholderToChar.TryGetValue(c, out char real))
+                {
+                    flush();
+                    a_out.Add(new InlineSpec { Kind = InlineSpecKind.Text, Text = real.ToString(), Flags = a_flags | InlineStyleFlags.Escaped });
+                }
+                else
+                {
+                    plain.Append(c);
+                }
+            }
+            flush();
+        }
+
+        /// <summary>画像・コード・リンク等（m_inlineTokenRegex に一致したもの）を、要素の並びに追加する。</summary>
+        /// <param name="a_match">一致した結果。</param>
+        /// <param name="a_flags">外側の書式（コード・リンクに重ねる。画像・アンカーには付けない）。</param>
+        /// <param name="a_out">追加先。</param>
+        private void AppendTokenSpecs(Match a_match, InlineStyleFlags a_flags, List<InlineSpec> a_out)
+        {
+            InlineStyleFlags stackable = a_flags & InlineStyles.STACKABLE_MASK;
+            Match m = a_match;
+            if (m.Groups["linkedImage"].Success)
+            {
+                a_out.Add(new InlineSpec { Kind = InlineSpecKind.Image, Image = BuildLinkedImageFromMarkdown(m) });
+            }
+            else if (m.Groups[1].Success)
+            {
+                a_out.Add(new InlineSpec { Kind = InlineSpecKind.Image, Image = m_imageManager.BuildImageFromHtmlTag(m.Groups[1].Value) });
+            }
+            else if (m.Groups[2].Success)
+            {
+                SplitUrlAndTitle(m.Groups[4].Value, out string imgSrc, out string imgTitle);
+                a_out.Add(new InlineSpec { Kind = InlineSpecKind.Image, Image = m_imageManager.BuildImageFromMarkdown(m.Groups[3].Value, imgSrc, imgTitle) });
+            }
+            else if (m.Groups[5].Success)
+            {
+                string[] lines = StripCodeSpanPadding(m.Groups[6].Value).Split('\n');
+                for (int k = 0; k < lines.Length; k++)
+                {
+                    if (0 < k)
+                    {
+                        a_out.Add(new InlineSpec { Kind = InlineSpecKind.LineBreak });
+                    }
+                    a_out.Add(new InlineSpec { Kind = InlineSpecKind.Text, Text = RestorePlaceholders(lines[k]), Flags = stackable | InlineStyleFlags.Code });
+                }
+            }
+            else if (m.Groups[15].Success)
+            {
+                SplitUrlAndTitle(m.Groups[17].Value, out string linkUrlRaw, out string linkTitleRaw);
+                string linkTitle = null == linkTitleRaw ? null : RestorePlaceholders(linkTitleRaw);
+                string url = RestorePlaceholders(linkUrlRaw);
+                a_out.Add(new InlineSpec
+                {
+                    Kind = InlineSpecKind.Link,
+                    Text = RestorePlaceholders(m.Groups[16].Value),
+                    Flags = stackable,
+                    Link = new LinkInfo { Url = url, IsAutoLinkFlg = false, Title = linkTitle, Styles = InlineStyles.ToTag(stackable) },
+                    ToolTip = string.IsNullOrEmpty(linkTitle) ? url : linkTitle
+                });
+            }
+            else if (m.Groups[18].Success)
+            {
+                string url = RestorePlaceholders(m.Groups[19].Value);
+                a_out.Add(new InlineSpec
+                {
+                    Kind = InlineSpecKind.Link,
+                    Text = url,
+                    Flags = stackable,
+                    Link = new LinkInfo { Url = url, IsAutoLinkFlg = true, Styles = InlineStyles.ToTag(stackable) },
+                    ToolTip = url
+                });
+            }
+            else if (m.Groups[20].Success)
+            {
+                string email = RestorePlaceholders(m.Groups[21].Value);
+                a_out.Add(new InlineSpec
+                {
+                    Kind = InlineSpecKind.Link,
+                    Text = email,
+                    Flags = stackable,
+                    Link = new LinkInfo { Url = "mailto:" + email, IsAutoLinkFlg = false, IsEmailAutoLinkFlg = true, Styles = InlineStyles.ToTag(stackable) },
+                    ToolTip = "mailto:" + email
+                });
+            }
+            else if (m.Groups[22].Success)
+            {
+                a_out.Add(new InlineSpec { Kind = InlineSpecKind.Anchor, AnchorId = m.Groups[23].Value });
+            }
+            else if (m.Groups[24].Success)
+            {
+                // 文中にそのまま書かれたメールアドレス（表示だけ mailto のリンクにする）
+                string email = RestorePlaceholders(m.Groups[25].Value);
+                a_out.Add(new InlineSpec
+                {
+                    Kind = InlineSpecKind.Link,
+                    Text = email,
+                    Flags = stackable,
+                    Link = new LinkInfo { Url = "mailto:" + email, IsBareEmailFlg = true, Styles = InlineStyles.ToTag(stackable) },
+                    ToolTip = "mailto:" + email
+                });
+            }
+        }
+
+        /// <summary>要素の情報（InlineSpec）から、段落に入れる Inline を作る。</summary>
+        /// <param name="a_spec">要素の情報。</param>
+        /// <returns>作った Inline。</returns>
+        private Inline CreateInlineFromSpec(InlineSpec a_spec)
+        {
+            switch (a_spec.Kind)
+            {
+                case InlineSpecKind.LineBreak:
+                    return new LineBreak();
+                case InlineSpecKind.Image:
+                    return new InlineUIContainer(a_spec.Image);
+                case InlineSpecKind.Anchor:
+                    return new Run("") { Tag = new AnchorInfo { Id = a_spec.AnchorId } };
+                case InlineSpecKind.Link:
+                    {
+                        var run = new Run(BlockStyles.AddUrlBreakJoiners(a_spec.Text));
+                        SetLinkProperties(run, a_spec);
+                        return run;
+                    }
+                default:
+                    return InlineStyles.CreateRun(a_spec.Text, a_spec.Flags);
+            }
+        }
+
+        /// <summary>リンクの Run に、リンクの見た目・情報と、重ねた書式の見た目を設定する。</summary>
+        /// <param name="a_run">リンクの Run。</param>
+        /// <param name="a_spec">リンクの要素の情報。</param>
+        private void SetLinkProperties(Run a_run, InlineSpec a_spec)
+        {
+            a_run.Foreground = m_linkBrush;
+            a_run.TextDecorations = BlockStyles.LinkTextDecorations;
+            a_run.Tag = a_spec.Link;
+            a_run.ToolTip = a_spec.ToolTip;
+            if (InlineStyleFlags.None != a_spec.Flags)
+            {
+                InlineStyles.ApplyLinkVisual(a_run, a_spec.Flags);
+            }
         }
 
         /// <summary>スタイル付きのクリック可能なリンクRunを組み立てる。</summary>
@@ -2676,50 +3347,6 @@ namespace mde.common
             }
         }
 
-        /// <summary>
-        /// AppendPlainTextWithLineBreaksと同様だが、`コード`/**太字**/~~取り消し線~~の内容自体が
-        /// 複数行にまたがる場合向け。各行が同じスタイルのRunになり、本物のLineBreakでつながる。
-        /// </summary>
-        /// <param name="a_p">対象の段落。</param>
-        /// <param name="a_content">対象の内容。</param>
-        /// <param name="a_style">適用するスタイル。</param>
-        public void AppendStyledRunsWithLineBreaks(Paragraph a_p, string a_content, string a_style)
-        {
-            var segments = a_content.Split('\n');
-            for (int i = 0; i < segments.Length; i++)
-            {
-                if (i > 0)
-                {
-                    a_p.Inlines.Add(new LineBreak());
-                }
-                string segText = RestorePlaceholders(segments[i]);
-                Run run;
-                if ("bold" == a_style)
-                {
-                    run = new Run(segText) { FontWeight = BlockStyles.BoldFontWeight, Tag = "bold" };
-                }
-                else if ("strikethrough" == a_style)
-                {
-                    run = new Run(segText) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
-                }
-                else if ("underline" == a_style)
-                {
-                    run = new Run(segText) { TextDecorations = TextDecorations.Underline, Tag = "underline" };
-                }
-                else if ("highlight" == a_style)
-                {
-                    run = new Run(segText) { Background = BlockStyles.HighlightBrush, Tag = "highlight" };
-                }
-                else if ("italic" == a_style || "italic_" == a_style)
-                {
-                    run = new Run(segText) { FontStyle = FontStyles.Italic, Tag = a_style };
-                }
-                else
-                    run = BlockStyles.ApplyInlineCodeStyle(new Run(segText) { Tag = "inline-code" });
-                a_p.Inlines.Add(run);
-            }
-        }
-
         // ======================================================================
         //  生のMarkdownテキストを、任意の位置へその場で挿入する（貼り付け用）
         // ======================================================================
@@ -2773,122 +3400,46 @@ namespace mde.common
         {
             TextPointer cursor = a_position;
             a_text = PreprocessEscapes(a_text);
-            int lastIndex = 0;
-            foreach (Match m in m_inlineContentRegex.Matches(a_text))
+            var specs = new List<InlineSpec>();
+            ParseInlineSpecs(a_text, InlineStyleFlags.None, specs, 0);
+            foreach (InlineSpec spec in specs)
             {
-                if (m.Index > lastIndex)
+                switch (spec.Kind)
                 {
-                    cursor = InsertPlainTextWithLineBreaksAt(cursor, a_text.Substring(lastIndex, m.Index - lastIndex));
+                    case InlineSpecKind.LineBreak:
+                        {
+                            var lb = new LineBreak(cursor);
+                            cursor = lb.ElementEnd;
+                            break;
+                        }
+                    case InlineSpecKind.Image:
+                        {
+                            var img = new InlineUIContainer(spec.Image, cursor);
+                            BlockStyles.ApplyImageParagraphLineHeightFor(img);
+                            cursor = img.ElementEnd;
+                            break;
+                        }
+                    case InlineSpecKind.Anchor:
+                        {
+                            var run = new Run("", cursor) { Tag = new AnchorInfo { Id = spec.AnchorId } };
+                            cursor = run.ContentEnd;
+                            break;
+                        }
+                    case InlineSpecKind.Link:
+                        {
+                            var run = new Run(BlockStyles.AddUrlBreakJoiners(spec.Text), cursor);
+                            SetLinkProperties(run, spec);
+                            cursor = run.ContentEnd;
+                            break;
+                        }
+                    default:
+                        {
+                            var run = new Run(spec.Text, cursor) { Tag = InlineStyles.ToTag(spec.Flags) };
+                            InlineStyles.ApplyVisual(run, spec.Flags);
+                            cursor = run.ContentEnd;
+                            break;
+                        }
                 }
-
-                if (m.Groups["linkedImage"].Success)
-                {
-                    var linkedImage = new InlineUIContainer(BuildLinkedImageFromMarkdown(m), cursor);
-                    BlockStyles.ApplyImageParagraphLineHeightFor(linkedImage);
-                    cursor = linkedImage.ElementEnd;
-                }
-                else if (m.Groups[1].Success)
-                {
-                    var img = new InlineUIContainer(m_imageManager.BuildImageFromHtmlTag(m.Groups[1].Value), cursor);
-                    BlockStyles.ApplyImageParagraphLineHeightFor(img);
-                    cursor = img.ElementEnd;
-                }
-                else if (m.Groups[2].Success)
-                {
-                    SplitUrlAndTitle(m.Groups[4].Value, out string imgSrc, out string imgTitle);
-                    var img = new InlineUIContainer(m_imageManager.BuildImageFromMarkdown(m.Groups[3].Value, imgSrc, imgTitle), cursor);
-                    BlockStyles.ApplyImageParagraphLineHeightFor(img);
-                    cursor = img.ElementEnd;
-                }
-                else if (m.Groups[5].Success)
-                {
-                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, StripCodeSpanPadding(m.Groups[6].Value), "code");
-                }
-                else if (m.Groups[7].Success)
-                {
-                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, m.Groups[8].Value, "bold");
-                }
-                else if (m.Groups[9].Success)
-                {
-                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, m.Groups[10].Value, "strikethrough");
-                }
-                else if (m.Groups[11].Success)
-                {
-                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, m.Groups[12].Value, "underline");
-                }
-                else if (m.Groups[13].Success)
-                {
-                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, m.Groups[14].Value, "highlight");
-                }
-                else if (m.Groups[15].Success)
-                {
-                    string linkText = RestorePlaceholders(m.Groups[16].Value);
-                    SplitUrlAndTitle(m.Groups[17].Value, out string urlRaw, out string titleRaw);
-                    string url = RestorePlaceholders(urlRaw);
-                    string title = null == titleRaw ? null : RestorePlaceholders(titleRaw);
-                    var run = new Run(BlockStyles.AddUrlBreakJoiners(linkText), cursor)
-                    {
-                        Foreground = m_linkBrush,
-                        TextDecorations = BlockStyles.LinkTextDecorations,
-                        Tag = new LinkInfo { Url = url, IsAutoLinkFlg = false, Title = title },
-                        ToolTip = string.IsNullOrEmpty(title) ? url : title
-                    };
-                    cursor = run.ContentEnd;
-                }
-                else if (m.Groups[18].Success)
-                {
-                    string url = RestorePlaceholders(m.Groups[19].Value);
-                    var run = new Run(BlockStyles.AddUrlBreakJoiners(url), cursor)
-                    {
-                        Foreground = m_linkBrush,
-                        TextDecorations = BlockStyles.LinkTextDecorations,
-                        Tag = new LinkInfo { Url = url, IsAutoLinkFlg = true },
-                        ToolTip = url
-                    };
-                    cursor = run.ContentEnd;
-                }
-                else if (m.Groups[20].Success)
-                {
-                    string email = RestorePlaceholders(m.Groups[21].Value);
-                    var run = new Run(email, cursor)
-                    {
-                        Foreground = m_linkBrush,
-                        TextDecorations = BlockStyles.LinkTextDecorations,
-                        Tag = new LinkInfo { Url = "mailto:" + email, IsAutoLinkFlg = false, IsEmailAutoLinkFlg = true },
-                        ToolTip = email
-                    };
-                    cursor = run.ContentEnd;
-                }
-                else if (m.Groups[22].Success)
-                {
-                    var run = new Run("", cursor) { Tag = new AnchorInfo { Id = m.Groups[23].Value } };
-                    cursor = run.ContentEnd;
-                }
-                else if (m.Groups[24].Success)
-                {
-                    // 文中にそのまま書かれたメールアドレス（表示だけ mailto のリンクにする）
-                    string email = RestorePlaceholders(m.Groups[25].Value);
-                    var run = new Run(email, cursor)
-                    {
-                        Foreground = m_linkBrush,
-                        TextDecorations = BlockStyles.LinkTextDecorations,
-                        Tag = new LinkInfo { Url = "mailto:" + email, IsBareEmailFlg = true },
-                        ToolTip = email
-                    };
-                    cursor = run.ContentEnd;
-                }
-                else if (m.Groups["it"].Success)
-                {
-                    bool underscoreFlg = m.Groups["itu"].Success;
-                    cursor = InsertStyledRunsWithLineBreaksAt(cursor, underscoreFlg ? m.Groups["itu"].Value : m.Groups["itc"].Value,
-                        underscoreFlg ? "italic_" : "italic");
-                }
-
-                lastIndex = m.Index + m.Length;
-            }
-            if (lastIndex < a_text.Length)
-            {
-                cursor = InsertPlainTextWithLineBreaksAt(cursor, a_text.Substring(lastIndex));
             }
             return cursor;
         }
@@ -2947,53 +3498,6 @@ namespace mde.common
             {
                 var plainRun = new Run(plain.ToString(), cursor);
                 cursor = plainRun.ContentEnd;
-            }
-            return cursor;
-        }
-
-        /// <summary>AppendStyledRunsWithLineBreaksの位置指定版。</summary>
-        /// <param name="a_position">挿入位置。</param>
-        /// <param name="a_content">対象の内容。</param>
-        /// <param name="a_style">適用するスタイル。</param>
-        /// <returns>挿入後の末尾位置。</returns>
-        private TextPointer InsertStyledRunsWithLineBreaksAt(TextPointer a_position, string a_content, string a_style)
-        {
-            TextPointer cursor = a_position;
-            var segments = a_content.Split('\n');
-            for (int i = 0; i < segments.Length; i++)
-            {
-                if (i > 0)
-                {
-                    var lb = new LineBreak(cursor);
-                    cursor = lb.ElementEnd;
-                }
-                string segText = RestorePlaceholders(segments[i]);
-                Run run;
-                if ("bold" == a_style)
-                {
-                    run = new Run(segText, cursor) { FontWeight = BlockStyles.BoldFontWeight, Tag = "bold" };
-                }
-                else if ("strikethrough" == a_style)
-                {
-                    run = new Run(segText, cursor) { TextDecorations = TextDecorations.Strikethrough, Tag = "strikethrough" };
-                }
-                else if ("underline" == a_style)
-                {
-                    run = new Run(segText, cursor) { TextDecorations = TextDecorations.Underline, Tag = "underline" };
-                }
-                else if ("highlight" == a_style)
-                {
-                    run = new Run(segText, cursor) { Background = BlockStyles.HighlightBrush, Tag = "highlight" };
-                }
-                else if ("italic" == a_style || "italic_" == a_style)
-                {
-                    run = new Run(segText, cursor) { FontStyle = FontStyles.Italic, Tag = a_style };
-                }
-                else
-                {
-                    run = BlockStyles.ApplyInlineCodeStyle(new Run(segText, cursor) { Tag = "inline-code" });
-                }
-                cursor = run.ContentEnd;
             }
             return cursor;
         }

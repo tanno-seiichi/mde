@@ -145,6 +145,10 @@ namespace mde.common
         /// リンクであることを示す（表示だけ mailto のリンクにする。GitHub と同じ）。保存時は
         /// リンクの文字をそのまま書き戻す（MarkdownConverter.AppendInlinesMarkdown参照）。</summary>
         public bool IsBareEmailFlg { get; set; }
+
+        /// <summary>リンクに重ねた書式（太字等。InlineStyles.ToTag の形の文字列。無い時は null）。
+        /// 「**[文字](URL)**」のように、書式の中にあるリンクを読み込んだ時や、リンクに書式を付けた時に設定する。</summary>
+        public string Styles { get; set; }
     }
 
     /// <summary>アウトラインペインの1項目（見出し1つ分）。FileSystemItemと同様、折りたたみ可能な

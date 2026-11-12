@@ -936,6 +936,44 @@ namespace mde.common
         /// 「表示フォント」で切り替えられる。</summary>
         public static readonly FontFamily LegacyEditorFontFamily = new FontFamily("Yu Gothic UI, Segoe UI");
 
+        /// <summary>
+        /// 斜体の Run のフォント（ApplyItalicStyle）。本文のフォントが Meiryo の時、斜体の Run の直後の英数字の Run まで
+        /// 斜体で表示されてしまう（「*foo* bar」の bar も斜体に見える。WPF の描画の問題で、文書の中身は正しい。
+        /// 日本語を含む Run や、Segoe UI が先頭のフォント（VSCodeスタイル）では起こらない）。斜体の Run だけ Segoe UI を
+        /// 先頭にしたフォントで描くと起こらなくなるため、本文のフォントの前に Segoe UI を付けたものを使う（英数字は
+        /// Segoe UI の斜体、日本語は本文のフォントで描かれる）。表示スタイルの切り替え時に SetItalicFontFamily で更新する
+        /// （切り替え時は文書が作り直されるので、既にある Run を直す必要はない）。
+        /// </summary>
+        public static FontFamily ItalicFontFamily { get; private set; } = CreateItalicFontFamily(DefaultEditorFontFamily);
+
+        /// <summary>本文のフォントに合わせて、斜体の Run のフォント（ItalicFontFamily）を更新する。</summary>
+        /// <param name="a_editorFontFamily">本文のフォント。</param>
+        public static void SetItalicFontFamily(FontFamily a_editorFontFamily)
+        {
+            ItalicFontFamily = CreateItalicFontFamily(a_editorFontFamily);
+        }
+
+        /// <summary>本文のフォントの前に Segoe UI を付けたフォントを作る（既に Segoe UI が先頭なら、そのまま返す）。</summary>
+        /// <param name="a_editorFontFamily">本文のフォント。</param>
+        /// <returns>斜体の Run のフォント。</returns>
+        private static FontFamily CreateItalicFontFamily(FontFamily a_editorFontFamily)
+        {
+            string source = a_editorFontFamily?.Source ?? "";
+            return source.StartsWith("Segoe UI", StringComparison.OrdinalIgnoreCase)
+                ? a_editorFontFamily
+                : new FontFamily(0 < source.Length ? "Segoe UI, " + source : "Segoe UI");
+        }
+
+        /// <summary>Run を斜体の見た目にする（Tag は呼び出し側で付ける）。ItalicFontFamily の説明を参照。</summary>
+        /// <param name="a_run">対象の Run。</param>
+        /// <returns>a_run（そのまま返す）。</returns>
+        public static Run ApplyItalicStyle(Run a_run)
+        {
+            a_run.FontStyle = FontStyles.Italic;
+            a_run.FontFamily = ItalicFontFamily;
+            return a_run;
+        }
+
         /// <summary>表のセルの計測に使うフォント（MainWindow.xamlのFlowDocumentの設定と
         /// 合わせてある）。メニュー「表示」→「表示フォント」の切り替えに応じて
         /// SetTableMeasureFontFamilyで更新される。</summary>

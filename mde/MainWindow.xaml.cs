@@ -2844,6 +2844,14 @@ namespace mde
                 m_inlineStyleEditor.ToggleInlineStyleFromShortcut(shortcutStyle);
                 return;
             }
+            // 書式の自動変換が書式の後ろに置いた、目に見えないゼロ幅スペースは、BackSpace・Delete で先に取り除く
+            // （そのままでは、ゼロ幅スペースを消すだけで見た目が何も変わらず、キーが1回効かなかったように見える）。
+            // 取り除いた後は、WPF 標準の処理で、その向こうの文字を消す。
+            if (ModifierKeys.None == Keyboard.Modifiers && (Key.Back == a_args.Key || Key.Delete == a_args.Key) &&
+                m_editor.Selection.IsEmpty)
+            {
+                m_inlineStyleEditor.RemoveZeroWidthSpacesAtCaret(Key.Back == a_args.Key);
+            }
             // 書式なしで貼り付け（mdew・mdee と同じ Ctrl+Shift+V）
             if ((ModifierKeys.Control | ModifierKeys.Shift) == Keyboard.Modifiers && Key.V == a_args.Key)
             {
@@ -3255,13 +3263,46 @@ namespace mde
             m_openImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_saveImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_deleteImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
-            m_textStyleMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
+            UpdateTextStyleMenuState();
             m_linkMenuItem.Visibility = null != m_inlineStyleEditor.ContextLinkRun ? Visibility.Visible : Visibility.Collapsed;
             m_toggleModeMenuItem.Header = m_isSourceModeFlg
                 ? Loc.T("Markdownモードに切り替え", "Switch to Markdown Mode") : Loc.T("ソースモードに切り替え", "Switch to Source Mode");
             m_ctxFolderPaneMenuItem.IsChecked = m_folderPaneVisibleFlg;
             m_ctxOutlinePaneMenuItem.IsChecked = m_outlinePaneVisibleFlg;
             UpdateHeadingMenuState();
+        }
+
+        /// <summary>
+        /// 右クリックメニューの文字の書式の項目（太字〜ハイライト・通常表記に戻す・リンクにする…）の状態を、今の選択範囲に
+        /// 合わせる（mdew と同じ）。選んだ文字がすべてその書式なら ✓ を付ける（文字を選んでいない時は、キャレットの所の
+        /// 書式）。文字を選んでいない時と、選択範囲がコードブロックの中にかかる時、その書式を今の選択範囲に付けられない時
+        /// （InlineStyleEditor.CanApplyStyle）は、使えない（灰色）。
+        /// </summary>
+        private void UpdateTextStyleMenuState()
+        {
+            const int MAX_TEXT_STYLE_CHECK_SYMBOLS = 20000;
+            TextSelection selection = m_editor.Selection;
+            bool inCodeBlockFlg = IsCodeBlockParagraph(selection.Start.Paragraph) || IsCodeBlockParagraph(selection.End.Paragraph);
+            bool enabledFlg = !selection.IsEmpty && !inCodeBlockFlg;
+            // ✓ を調べるのは、選択範囲がとても大きくない時だけ（文書全体を選んだ時等に、メニューを開くのが遅くならないように）
+            bool checkFlg = !inCodeBlockFlg && selection.Start.GetOffsetToPosition(selection.End) <= MAX_TEXT_STYLE_CHECK_SYMBOLS;
+            foreach (MenuItem item in new[] { m_boldMenuItem, m_italicMenuItem, m_underlineMenuItem, m_strikethroughMenuItem,
+                m_inlineCodeMenuItem, m_highlightMenuItem })
+            {
+                // 今の選択範囲に付けられない書式（コードを含む範囲の太字等・書式の付いた文字を含む範囲のコード）も灰色にする
+                item.IsEnabled = enabledFlg && (!checkFlg || m_inlineStyleEditor.CanApplyStyle((string)item.Tag));
+                item.IsChecked = checkFlg && m_inlineStyleEditor.IsStyleActive((string)item.Tag);
+            }
+            m_plainTextMenuItem.IsEnabled = enabledFlg;
+            m_makeLinkMenuItem.IsEnabled = enabledFlg;
+        }
+
+        /// <summary>段落がコードブロック（の続きの行）か。</summary>
+        /// <param name="a_paragraph">段落（null 可）。</param>
+        /// <returns>コードブロックなら true。</returns>
+        private static bool IsCodeBlockParagraph(Paragraph a_paragraph)
+        {
+            return a_paragraph?.Tag is CodeBlockInfo || a_paragraph?.Tag is CodeBlockContinuationInfo;
         }
 
         /// <summary>右クリックメニューの「見出し」項目に、現在カーソルがある段落の見出し
@@ -5117,6 +5158,7 @@ namespace mde
                 : BlockStyles.DefaultEditorFontFamily;
             Resources["EditorFontFamily"] = fontFamily;
             BlockStyles.SetTableMeasureFontFamily(fontFamily);
+            BlockStyles.SetItalicFontFamily(fontFamily);
         }
 
         /// <summary>メニュー「表示」→「文字の色」→「くっきりした色」。</summary>
