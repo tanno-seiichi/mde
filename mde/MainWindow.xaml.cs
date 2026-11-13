@@ -3250,16 +3250,24 @@ namespace mde
             bool inTableFlg = null != m_tableEditor.ContextCell;
             bool inCodeBlockFlg = m_ctxParagraph?.Tag is CodeBlockInfo || m_ctxParagraph?.Tag is CodeBlockContinuationInfo;
             m_headingMenuItem.Visibility = inTableFlg ? Visibility.Collapsed : Visibility.Visible;
-            m_insertTableMenuItem.Visibility = inTableFlg ? Visibility.Collapsed : Visibility.Visible;
+
             m_insertRowAboveMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_insertRowBelowMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_deleteRowMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_tableRowSeparator.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+
             m_insertColumnLeftMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_insertColumnRightMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
-            m_adjustColumnWidthsMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
-            m_deleteRowMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
             m_deleteColumnMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
-            m_deleteTableMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_tableColumnSeparator.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+
+            m_adjustColumnWidthsMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_tableColumnWidthSeparator.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+
+            m_insertTableMenuItem.Visibility = inTableFlg ? Visibility.Collapsed : Visibility.Visible;
             m_copyTableMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+            m_deleteTableMenuItem.Visibility = inTableFlg ? Visibility.Visible : Visibility.Collapsed;
+
             m_copyCodeBlockMenuItem.Visibility = inCodeBlockFlg ? Visibility.Visible : Visibility.Collapsed;
             m_copyForExcelMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
             m_openImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
