@@ -110,10 +110,115 @@ namespace mde.editor
             return m_editor.CaretPosition.CompareTo(lastPara.ContentEnd) >= 0;
         }
 
-        /// <summary>上下キーでの行間移動。キャレットを真上/真下の行の同じ列のセルへ移す。
+        /// <summary>
+        /// キャレットが、セルの中の一番上の行（a_dir が -1 の時）・一番下の行（+1 の時）にあるか。セルの中で改行
+        /// （Shift+Enter・&lt;br&gt;）している時や、長い文字が折り返している時に、上下キーでセルの中の行の間を移る
+        /// か、上下のセルへ移るかを決めるために使う（mdew と同じく、一番上・一番下の行の時だけ上下のセルへ移る）。
+        /// 行は見た目の行で判定する（キャレットの位置の文字の矩形が、セルの最初・最後の行の矩形と重なるか）。
+        /// </summary>
+        /// <param name="a_cell">キャレットのあるセル。</param>
+        /// <param name="a_dir">-1で上、+1で下。</param>
+        /// <returns>一番上（下）の行にあれば true。判定できない時も true（以前と同じく、上下のセルへ移る）。</returns>
+        public bool IsCaretOnEdgeLine(TableCell a_cell, int a_dir)
+        {
+            Rect caretRect = GetCaretLineRect(m_editor.CaretPosition);
+            Block edgeBlock = a_dir < 0 ? a_cell.Blocks.FirstBlock : a_cell.Blocks.LastBlock;
+            if (caretRect.IsEmpty || null == edgeBlock)
+            {
+                return true;
+            }
+            Rect edgeRect = a_dir < 0
+                ? edgeBlock.ContentStart.GetCharacterRect(LogicalDirection.Forward)
+                : edgeBlock.ContentEnd.GetCharacterRect(LogicalDirection.Backward);
+            if (edgeRect.IsEmpty)
+            {
+                return true;
+            }
+            // 行どうしは上下に重ならないので、上の端なら「キャレットの上端が最初の行の下端より上」、下の端なら
+            // 「キャレットの下端が最後の行の上端より下」で、同じ行にあると分かる
+            return a_dir < 0 ? caretRect.Top < edgeRect.Bottom - 1 : caretRect.Bottom > edgeRect.Top + 1;
+        }
+
+        /// <summary>
+        /// キャレットの見た目の位置（行）の矩形。改行（LineBreak）の直後にあるキャレットは、次の行の先頭に表示されるため、
+        /// キャレットの向き（LogicalDirection）が前向きでなくても、後ろの文字の矩形を使う。
+        /// </summary>
+        /// <param name="a_caret">キャレットの位置。</param>
+        /// <returns>矩形（求められない時は Rect.Empty）。</returns>
+        private static Rect GetCaretLineRect(TextPointer a_caret)
+        {
+            LogicalDirection direction = a_caret.LogicalDirection;
+            if (LogicalDirection.Backward == direction && IsAfterLineBreak(a_caret))
+            {
+                direction = LogicalDirection.Forward;
+            }
+            return a_caret.GetCharacterRect(direction);
+        }
+
+        /// <summary>位置が改行（LineBreak）の直後（間に Run の始まりだけを挟むものも含む）か。</summary>
+        /// <param name="a_position">位置。</param>
+        /// <returns>改行の直後なら true。</returns>
+        private static bool IsAfterLineBreak(TextPointer a_position)
+        {
+            TextPointer navigator = a_position;
+            for (int i = 0; i < 4 && null != navigator; i++)
+            {
+                TextPointerContext context = navigator.GetPointerContext(LogicalDirection.Backward);
+                DependencyObject element = navigator.GetAdjacentElement(LogicalDirection.Backward);
+                if (TextPointerContext.ElementEnd == context && element is LineBreak)
+                {
+                    return true;
+                }
+                if (TextPointerContext.ElementStart != context || !(element is Run || element is Span))
+                {
+                    return false;
+                }
+                navigator = navigator.GetNextContextPosition(LogicalDirection.Backward);
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 上下のセルへ移る時の行き先：上へ移る時はセルの一番下の行、下へ移る時は一番上の行の、今のキャレットと同じ
+        /// 横の位置（文字が無い所なら、その行の端）。求められない時（表示されていない所等）は、上へ移る時はセルの
+        /// 末尾、下へ移る時はセルの先頭。
+        /// </summary>
+        /// <param name="a_targetCell">移り先のセル。</param>
+        /// <param name="a_dir">-1で上、+1で下。</param>
+        /// <param name="a_caretX">今のキャレットの横の位置（求められない時は NaN）。</param>
+        /// <returns>行き先の位置。セルに段落等が無い時は null。</returns>
+        private TextPointer GetVerticalMoveTarget(TableCell a_targetCell, int a_dir, double a_caretX)
+        {
+            Block edgeBlock = a_dir < 0 ? a_targetCell.Blocks.LastBlock : a_targetCell.Blocks.FirstBlock;
+            if (null == edgeBlock)
+            {
+                return null;
+            }
+            TextPointer edge = a_dir < 0 ? edgeBlock.ContentEnd : edgeBlock.ContentStart;
+            if (double.IsNaN(a_caretX))
+            {
+                return edge;
+            }
+            Rect lineRect = edge.GetCharacterRect(a_dir < 0 ? LogicalDirection.Backward : LogicalDirection.Forward);
+            if (lineRect.IsEmpty || lineRect.Bottom < 0 || lineRect.Top > m_editor.ActualHeight)
+            {
+                return edge;
+            }
+            TextPointer position = m_editor.GetPositionFromPoint(new Point(a_caretX, (lineRect.Top + lineRect.Bottom) / 2), true);
+            if (null == position ||
+                position.CompareTo(a_targetCell.ContentStart) < 0 || position.CompareTo(a_targetCell.ContentEnd) > 0)
+            {
+                return edge;
+            }
+            return position;
+        }
+
+        /// <summary>上下キーでの行間移動。キャレットを真上/真下の行の同じ列のセルへ移す（上へ移る時はそのセルの
+        /// 一番下の行、下へ移る時は一番上の行の、今と同じ横の位置。GetVerticalMoveTarget）。
         /// 先頭行で上キー・末尾行で下キーが押された場合は、表の外（前後のブロック）へ
         /// キャレットを移す。前後にブロックが存在しない場合は、新しい空の段落を作って
-        /// そこへ移す。</summary>
+        /// そこへ移す。セルの中に行が複数ある時は、呼び出し側（MainWindow.EditorPreviewKeyDown）が、
+        /// 一番上・一番下の行にいる時（IsCaretOnEdgeLine）だけここを呼ぶ。</summary>
         /// <param name="a_cell">現在のセル。</param>
         /// <param name="a_dir">-1で上、+1で下。</param>
         public void MoveVertical(TableCell a_cell, int a_dir)
@@ -138,9 +243,14 @@ namespace mde.editor
                 return;
             }
             var targetRow = rows[targetIdx];
-            if (cIdx < targetRow.Cells.Count && targetRow.Cells[cIdx].Blocks.LastBlock is Paragraph tp)
+            if (cIdx < targetRow.Cells.Count)
             {
-                m_editor.CaretPosition = tp.ContentEnd;
+                Rect caretRect = GetCaretLineRect(m_editor.CaretPosition);
+                TextPointer target = GetVerticalMoveTarget(targetRow.Cells[cIdx], a_dir, caretRect.IsEmpty ? double.NaN : caretRect.X);
+                if (null != target)
+                {
+                    m_editor.CaretPosition = target;
+                }
             }
         }
 

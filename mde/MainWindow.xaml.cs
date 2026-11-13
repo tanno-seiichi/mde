@@ -3197,9 +3197,11 @@ namespace mde
             }
             if (para.Parent is TableCell cell)
             {
-                if (a_args.Key == Key.Up ||
-                    a_args.Key == Key.Down)
+                if ((a_args.Key == Key.Up || a_args.Key == Key.Down) &&
+                    m_tableEditor.IsCaretOnEdgeLine(cell, a_args.Key == Key.Up ? -1 : 1))
                 {
+                    // セルの一番上（下）の行にいる時だけ、上（下）のセルへ移る。セルの中に改行や折り返しで行が複数
+                    // ある時の、それ以外の行での上下キーは、WPF 標準の処理でセルの中の行の間を移る（mdew と同じ）
                     a_args.Handled = true;
                     m_tableEditor.MoveVertical(cell, a_args.Key == Key.Up ? -1 : 1);
                 }
