@@ -2120,7 +2120,8 @@ namespace mde.common
         }
 
         /// <summary>1つのセル内の画像（複数あれば全て）を、指定した幅（px）に収まるよう
-        /// （画像の自然なピクセルサイズを上限に）縮小する。縦横比は維持する。</summary>
+        /// （大きさの指定のとおりの大きさ（ImageSizeSpec.GetSpecifiedSize。指定が無ければ画像の自然なピクセルサイズ）を
+        /// 上限に）縮小する。縦横比は維持する。</summary>
         /// <param name="a_cell">対象のセル。</param>
         /// <param name="a_maxWidthPx">収めたい幅（px）。</param>
         private static void ConstrainImagesInCellToWidth(TableCell a_cell, double a_maxWidthPx)
@@ -2144,10 +2145,10 @@ namespace mde.common
                     {
                         continue;
                     }
-                    double targetWidth = Math.Min(naturalWidth, a_maxWidthPx);
-                    double scale = targetWidth / naturalWidth;
-                    img.Width = targetWidth;
-                    img.Height = naturalHeight * scale;
+                    Size size = ImageSizeSpec.GetSpecifiedSize(img.Tag as ImageInfo, naturalWidth, naturalHeight, a_maxWidthPx);
+                    double scale = size.Width > a_maxWidthPx ? a_maxWidthPx / size.Width : 1;
+                    img.Width = size.Width * scale;
+                    img.Height = size.Height * scale;
                 }
             }
         }

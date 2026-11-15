@@ -68,7 +68,7 @@ namespace mde.common
 
         /// <summary>画像・HTML の画像タグ・Markdown の画像・インラインコード（m_inlineTokenRegex の 1〜6 番のグループ）。</summary>
         private const string INLINE_TOKEN_HEAD_PATTERN =
-            "(?<linkedImage>\\[(?<linkedImageImage>!\\[(?<linkedImageAlt>[^\\]]*)\\]\\((?<linkedImageSrc>(?:[^()]|\\([^()]*\\))+)\\))\\]\\((?<linkedImageHref>(?:[^()]|\\([^()]*\\))+)\\))|" +
+            "(?<linkedImage>\\[(?<linkedImageImage>!\\[(?<linkedImageAlt>[^\\]]*)\\]\\((?<linkedImageSrc>(?:[^()]|\\([^()]*\\))+)\\)|(?<linkedImageTag><img\\s+[^>]*?/?>))\\]\\((?<linkedImageHref>(?:[^()]|\\([^()]*\\))+)\\))|" +
             "(<img\\s+[^>]*?/?>)|(!\\[([^\\]]*)\\]\\(((?:[^()]|\\([^()]*\\))+)\\))|((?<!`)(?<bt>`+)(?!`)([\\s\\S]+?)(?<!`)\\k<bt>(?!`))";
 
         /// <summary>リンク・山括弧の URL とメールアドレス・アンカー・文中のメールアドレス（15〜25 番のグループ）。</summary>
@@ -1331,13 +1331,12 @@ namespace mde.common
                 return result;
             }
 
-            string tag = "<img src=\"" + src + "\" alt=\"" + alt + "\"";
-            if (!string.IsNullOrEmpty(info?.Style))
+            if (null != info)
             {
-                tag += " style=\"" + info.Style + "\"";
+                // 書かれたままのタグ（参照先だけを今のものにする）。width・height 等の属性も残す（ImageSizeSpec.CurrentHtmlTag）
+                return ImageSizeSpec.CurrentHtmlTag(info);
             }
-            tag += " />";
-            return tag;
+            return "<img src=\"" + src + "\" alt=\"" + alt + "\" />";
         }
 
         // ======================================================================
@@ -2679,15 +2678,25 @@ namespace mde.common
             return sb.ToString();
         }
 
-        /// <summary>画像を内包するMarkdownリンクを、表示用画像とリンク情報を持つImageへ変換する。</summary>
+        /// <summary>画像を内包するMarkdownリンクを、表示用画像とリンク情報を持つImageへ変換する。画像は「![文字](参照先)」の形の
+        /// ほか、HTML のタグ（[&lt;img src="a.png" width="320" /&gt;](URL)。右クリックの「画像のサイズ」で大きさを変えた、リンクの
+        /// 付いた画像）でもよい。</summary>
         private Image BuildLinkedImageFromMarkdown(Match a_match)
         {
-            SplitUrlAndTitle(a_match.Groups["linkedImageSrc"].Value, out string imageSrcRaw, out string imageTitleRaw);
             SplitUrlAndTitle(a_match.Groups["linkedImageHref"].Value, out string linkUrlRaw, out string linkTitleRaw);
-            var image = m_imageManager.BuildImageFromMarkdown(
-                RestorePlaceholders(a_match.Groups["linkedImageAlt"].Value),
-                RestorePlaceholders(imageSrcRaw),
-                null == imageTitleRaw ? null : RestorePlaceholders(imageTitleRaw));
+            Image image;
+            if (a_match.Groups["linkedImageTag"].Success)
+            {
+                image = m_imageManager.BuildImageFromHtmlTag(a_match.Groups["linkedImageTag"].Value);
+            }
+            else
+            {
+                SplitUrlAndTitle(a_match.Groups["linkedImageSrc"].Value, out string imageSrcRaw, out string imageTitleRaw);
+                image = m_imageManager.BuildImageFromMarkdown(
+                    RestorePlaceholders(a_match.Groups["linkedImageAlt"].Value),
+                    RestorePlaceholders(imageSrcRaw),
+                    null == imageTitleRaw ? null : RestorePlaceholders(imageTitleRaw));
+            }
             if (image.Tag is ImageInfo info)
             {
                 info.LinkUrl = RestorePlaceholders(linkUrlRaw);
@@ -3242,7 +3251,7 @@ namespace mde.common
                 case InlineSpecKind.LineBreak:
                     return new LineBreak();
                 case InlineSpecKind.Image:
-                    return new InlineUIContainer(a_spec.Image);
+                    return ImageManager.SetContainerImageInfo(new InlineUIContainer(a_spec.Image));
                 case InlineSpecKind.Anchor:
                     return new Run("") { Tag = new AnchorInfo { Id = a_spec.AnchorId } };
                 case InlineSpecKind.Link:
@@ -3414,7 +3423,7 @@ namespace mde.common
                         }
                     case InlineSpecKind.Image:
                         {
-                            var img = new InlineUIContainer(spec.Image, cursor);
+                            var img = ImageManager.SetContainerImageInfo(new InlineUIContainer(spec.Image, cursor));
                             BlockStyles.ApplyImageParagraphLineHeightFor(img);
                             cursor = img.ElementEnd;
                             break;

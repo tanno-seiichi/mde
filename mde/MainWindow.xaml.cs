@@ -381,6 +381,7 @@ namespace mde
                 () => m_currentFilePath,
                 RunAsProgrammaticChange, m_outlineManager.Refresh, m_instanceTempId);
             m_imageManager.AfterClipboardImageInserted = InsertLineBreakAfterPastedImage;
+            m_imageManager.PauseUndoRecording = PauseUndoRecording;
             // 表の表示幅（() => m_tableEditor.GetAvailableTableWidth()）もクロージャで渡す：
             // m_tableEditorはこの後で構築されるが、呼ばれるのは構築完了後なので問題ない。
             m_markdownConverter = new MarkdownConverter(
@@ -1294,6 +1295,13 @@ namespace mde
             if (null == m_outlineManager ||
                 null == m_folderTreeManager ||
                 null == m_originalTextTracker) return;
+
+            // 元に戻す（Undo）・やり直し（Redo）で戻ってきた画像は、読み込み直す（WPF が作り直した複製で戻すため、そのままでは
+            // 表示されない。ImageManager.RestoreImagesAfterUndo）
+            if ((UndoAction.Undo == a_args.UndoAction || UndoAction.Redo == a_args.UndoAction) && null != m_imageManager)
+            {
+                m_imageManager.RestoreImagesAfterUndo(m_editor.Document);
+            }
 
             if (m_isSourceModeFlg)
             {
@@ -3271,6 +3279,7 @@ namespace mde
             m_copyCodeBlockMenuItem.Visibility = inCodeBlockFlg ? Visibility.Visible : Visibility.Collapsed;
             m_copyForExcelMenuItem.Visibility = (!m_editor.Selection.IsEmpty) ? Visibility.Visible : Visibility.Collapsed;
             m_openImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
+            UpdateImageSizeMenuState();
             m_saveImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             m_deleteImageMenuItem.Visibility = null != m_imageManager.ContextImage ? Visibility.Visible : Visibility.Collapsed;
             UpdateTextStyleMenuState();
@@ -3430,6 +3439,41 @@ namespace mde
         }
 
         private void SaveImageItemClick(object a_sender, RoutedEventArgs a_args) => m_imageManager.SaveImageAs(this);
+
+        /// <summary>右クリックメニューを開く時：「画像のサイズ」を、右クリックした画像（ContextImage）の上でだけ出し、今の大きさに
+        /// 当たる倍率に ✓ を付ける。画像を読み込めていない（元の大きさが分からない）時は使えなくする。</summary>
+        private void UpdateImageSizeMenuState()
+        {
+            Image img = m_imageManager.ContextImage;
+            m_imageSizeMenuItem.Visibility = null != img ? Visibility.Visible : Visibility.Collapsed;
+            if (null == img)
+            {
+                return;
+            }
+            int percent = m_imageManager.GetImageSizePercent(img);
+            m_imageSizeMenuItem.IsEnabled = 0 <= percent;
+            foreach (var item in m_imageSizeMenuItem.Items.OfType<MenuItem>())
+            {
+                item.IsChecked = (string)item.Tag == percent.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        /// <summary>右クリックメニュー「画像のサイズ」の倍率：右クリックした画像（ContextImage）の大きさを、元の画像の大きさに対する
+        /// 割合で変える（ImageManager.ResizeImage）。</summary>
+        /// <param name="a_sender">選んだ項目（Tag が倍率）。</param>
+        /// <param name="a_args">イベントの引数。</param>
+        private void ImageSizeItemClick(object a_sender, RoutedEventArgs a_args)
+        {
+            if (null == m_imageManager.ContextImage || !(a_sender is MenuItem item) ||
+                !int.TryParse((string)item.Tag, out int percent))
+            {
+                return;
+            }
+            if (m_imageManager.ResizeImage(m_imageManager.ContextImage, percent))
+            {
+                MarkDirty();
+            }
+        }
 
         /// <summary>右クリックメニュー「画像を削除」。右クリック位置の画像（ContextImage）を
         /// ImageManager.DeleteImageで削除する。</summary>

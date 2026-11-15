@@ -459,6 +459,19 @@
                                           Click="CopyForExcelItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_openImageMenuItem" Header="画像を開く" common:Loc.En="Open Image" Style="{StaticResource CtxMenuItem}"
                                           Click="OpenImageItemClick" Visibility="Collapsed"/>
+                                <!-- 画像のサイズ（Typora と同じ倍率。元の画像の大きさに対する割合。✓ は開く時に EditorContextMenuOpening で
+                                     今の大きさに合わせる。項目の Tag は倍率（%）。ImageSizeSpec.PERCENTS と同じ） -->
+                                <MenuItem x:Name="m_imageSizeMenuItem" Header="画像のサイズ" common:Loc.En="Image Size" Style="{StaticResource CtxMenuItem}"
+                                          Visibility="Collapsed">
+                                    <MenuItem Header="25%" Tag="25" IsCheckable="True" Click="ImageSizeItemClick"/>
+                                    <MenuItem Header="33%" Tag="33" IsCheckable="True" Click="ImageSizeItemClick"/>
+                                    <MenuItem Header="50%" Tag="50" IsCheckable="True" Click="ImageSizeItemClick"/>
+                                    <MenuItem Header="67%" Tag="67" IsCheckable="True" Click="ImageSizeItemClick"/>
+                                    <MenuItem Header="80%" Tag="80" IsCheckable="True" Click="ImageSizeItemClick"/>
+                                    <MenuItem Header="100%（元のサイズ）" common:Loc.En="100% (Original Size)" Tag="100" IsCheckable="True" Click="ImageSizeItemClick"/>
+                                    <MenuItem Header="150%" Tag="150" IsCheckable="True" Click="ImageSizeItemClick"/>
+                                    <MenuItem Header="200%" Tag="200" IsCheckable="True" Click="ImageSizeItemClick"/>
+                                </MenuItem>
                                 <MenuItem x:Name="m_saveImageMenuItem" Header="画像を保存…" common:Loc.En="Save Image…" Style="{StaticResource CtxMenuItem}"
                                           Click="SaveImageItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_deleteImageMenuItem" Header="画像を削除" common:Loc.En="Delete Image" Style="{StaticResource CtxMenuItem}"

@@ -28,6 +28,10 @@ namespace mde.common
         /// <summary>HTML形式の場合のstyle属性。Markdown形式では未使用。</summary>
         public string Style { get; set; }
 
+        /// <summary>HTML形式の場合の、書かれたままの&lt;img&gt;タグ（保存時は、参照先だけを今の OriginalSrc にして、そのまま
+        /// 書き出す。width・height 等の属性を残すため。ImageSizeSpec.CurrentHtmlTag）。Markdown形式では未使用。</summary>
+        public string HtmlTag { get; set; }
+
         /// <summary>元の記法。"html"（&lt;img&gt;タグ）または"md"（![alt](src)）。</summary>
         public string Format { get; set; }
 

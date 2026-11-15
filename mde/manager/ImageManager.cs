@@ -102,7 +102,7 @@ namespace mde.manager
 
             var img = new Image
             {
-                Tag = new ImageInfo { OriginalSrc = src, Alt = alt, Style = style, Format = "html" },
+                Tag = new ImageInfo { OriginalSrc = src, Alt = alt, Style = style, Format = "html", HtmlTag = a_tagStr },
                 Stretch = Stretch.Uniform,
                 // 上下の余白は付けない（mdew・mdee の画像と同じ。付けると、表のセル等で画像のある行だけ高くなる）
                 Margin = new Thickness(0)
@@ -139,10 +139,23 @@ namespace mde.manager
         //  画像をエクスプローラー等の外部へドラッグして書き出す
         // ======================================================================
 
-        /// <summary>画像にドラッグ書き出し・右クリック保存機能を紐付ける。</summary>
+        /// <summary>元に戻す（Undo）の履歴への記録を一時的に止める処理（MainWindow.PauseUndoRecording。戻り値は再開する処理）。
+        /// RestoreImagesAfterUndo で使う。</summary>
+        public Func<Action> PauseUndoRecording { get; set; }
+
+        /// <summary>ドラッグ書き出しの処理を紐付けた画像（同じ画像に二重に紐付けないため。RestoreImagesAfterUndo）。</summary>
+        private readonly System.Runtime.CompilerServices.ConditionalWeakTable<Image, object> m_imagesWithDragHandlers =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<Image, object>();
+
+        /// <summary>画像にドラッグ書き出し・右クリック保存機能を紐付ける（紐付け済みの画像には何もしない）。</summary>
         /// <param name="a_img">対象の画像。</param>
         private void AttachImageDragHandlers(Image a_img)
         {
+            if (m_imagesWithDragHandlers.TryGetValue(a_img, out _))
+            {
+                return;
+            }
+            m_imagesWithDragHandlers.Add(a_img, null);
             a_img.Cursor = Cursors.Hand;
             // RichTextBox内部のカーソル制御（IBeam表示）にCursor指定が上書きされることがあるため、
             // ForceCursorでこの画像自身の指定を優先させる。
@@ -579,9 +592,10 @@ namespace mde.manager
         }
 
         /// <summary>
-        /// 画像を元のピクセルサイズを上限に、エディタの表示幅に収まるよう縮小する（幅が
-        /// はみ出す場合のみ）。ズームはエディタ全体へのLayoutTransformで一律適用されるため、
-        /// 100%幅を上限にしておけばどの倍率でも欠けない。
+        /// 画像を、大きさの指定（HTML のタグの width・height・style。ImageSizeSpec.GetSpecifiedSize。指定が無ければ元の
+        /// ピクセルサイズ）のとおりの大きさにし、エディタの表示幅に収まるよう縮小する（幅がはみ出す場合のみ。縦横比は保つ）。
+        /// 以前は大きさの指定を読まず、常に元のピクセルサイズで表示していた（Typora で小さくした画像等が大きく表示されていた）。
+        /// ズームはエディタ全体へのLayoutTransformで一律適用されるため、100%幅を上限にしておけばどの倍率でも欠けない。
         /// </summary>
         /// <param name="a_img">対象の画像。</param>
         public void ApplyImageSizing(Image a_img)
@@ -596,16 +610,95 @@ namespace mde.manager
                 naturalHeight <= 0) return;
 
             double availableWidth = GetAvailableImageWidth();
-            double targetWidth = naturalWidth;
-            if (availableWidth > 0 &&
-                naturalWidth > availableWidth)
-            {
-                targetWidth = availableWidth;
-            }
+            Size size = ImageSizeSpec.GetSpecifiedSize(a_img.Tag as ImageInfo, naturalWidth, naturalHeight, availableWidth);
+            double scale = availableWidth > 0 && size.Width > availableWidth ? availableWidth / size.Width : 1;
+            a_img.Width = size.Width * scale;
+            a_img.Height = size.Height * scale;
+        }
 
-            double scale = targetWidth / naturalWidth;
-            a_img.Width = targetWidth;
-            a_img.Height = naturalHeight * scale;
+        /// <summary>
+        /// 右クリックした画像の、今の大きさに当たる「画像のサイズ」の倍率（ImageSizeSpec.PERCENTS のどれか。合うものが無ければ 0）。
+        /// 画像を読み込めていない（元の大きさが分からない）時は -1（「画像のサイズ」を使えない）。
+        /// </summary>
+        /// <param name="a_img">画像。</param>
+        /// <returns>倍率（%）。</returns>
+        public int GetImageSizePercent(Image a_img)
+        {
+            if (!(a_img?.Source is BitmapSource bmp) || bmp.PixelWidth <= 0 || bmp.PixelHeight <= 0)
+            {
+                return -1;
+            }
+            return ImageSizeSpec.GetCurrentPercent(a_img.Tag as ImageInfo, bmp.PixelWidth, bmp.PixelHeight, GetAvailableImageWidth());
+        }
+
+        /// <summary>
+        /// 画像の大きさを、元の画像の大きさに対する割合で変える（右クリックの「画像のサイズ」。Typora と同じ倍率。mdevc・mdevs
+        /// と同じ）。保存すると、大きさは width 属性で書かれる（ImageSizeSpec.WithWidth。GitHub・VS Code のプレビュー・Typora の
+        /// どれでも同じ大きさで表示されるため）。100% は大きさの指定を外し、他に指定が無ければ「![文字](参照先)」の形に戻す。
+        /// 画像を、新しい情報を持つ画像に置き換える（文書の変更として、元に戻す（Undo）で戻せるようにするため）。画像を囲む
+        /// リンクはそのまま残す。
+        /// </summary>
+        /// <param name="a_img">画像（ContextImage）。</param>
+        /// <param name="a_percent">割合（%）。</param>
+        /// <returns>変えた時は true。</returns>
+        public bool ResizeImage(Image a_img, int a_percent)
+        {
+            if (!(a_img?.Tag is ImageInfo info) || !(a_img.Source is BitmapSource bmp) || bmp.PixelWidth <= 0 ||
+                !(a_img.Parent is InlineUIContainer iuc))
+            {
+                return false;
+            }
+            InlineCollection inlines = iuc.Parent is Paragraph parentPara ? parentPara.Inlines : (iuc.Parent as Span)?.Inlines;
+            Paragraph para = iuc.Parent as Paragraph ?? FindParagraph(iuc);
+            if (null == inlines || null == para)
+            {
+                return false;
+            }
+            int width = 100 == a_percent ? 0 : Math.Max(1, (int)Math.Round(bmp.PixelWidth * a_percent / 100.0));
+            string tag = ImageSizeSpec.WithWidth(info, width);
+            Image newImg;
+            if (null == tag)
+            {
+                string title = "html" == info.Format ? ImageSizeSpec.GetAttribute(ImageSizeSpec.CurrentHtmlTag(info), "title") : info.Title;
+                newImg = BuildImageFromMarkdown(info.Alt ?? "", info.OriginalSrc, string.IsNullOrEmpty(title) ? null : title);
+            }
+            else
+            {
+                newImg = BuildImageFromHtmlTag(tag);
+            }
+            if (newImg.Tag is ImageInfo newInfo)
+            {
+                newInfo.LinkUrl = info.LinkUrl;
+                newInfo.LinkTitle = info.LinkTitle;
+            }
+            m_originalTextTracker.Invalidate(para.ContentStart);
+            InlineUIContainer newIuc = null;
+            m_runAsProgrammaticChange(() =>
+            {
+                newIuc = SetContainerImageInfo(new InlineUIContainer(newImg) { BaselineAlignment = iuc.BaselineAlignment });
+                inlines.InsertAfter(iuc, newIuc);
+                inlines.Remove(iuc);
+            });
+            // 文書に入れた後で、大きさを決め直す（表のセルの中の画像は、列の幅に収める）
+            ApplyImageSizingConsideringTable(newImg);
+            if (ReferenceEquals(ContextImage, a_img))
+            {
+                ContextImage = newImg;
+            }
+            return true;
+        }
+
+        /// <summary>要素を含む段落（Span の中の画像等のため、論理ツリーの親をたどる）。</summary>
+        /// <param name="a_element">要素。</param>
+        /// <returns>段落。無ければ null。</returns>
+        private static Paragraph FindParagraph(TextElement a_element)
+        {
+            DependencyObject current = a_element;
+            while (null != current && !(current is Paragraph))
+            {
+                current = LogicalTreeHelper.GetParent(current);
+            }
+            return current as Paragraph;
         }
 
         /// <summary>
@@ -767,7 +860,7 @@ namespace mde.manager
                     }
 
                     var img = BuildImageFromMarkdown(Path.GetFileNameWithoutExtension(file), tempPath);
-                    var container = new InlineUIContainer(img, insertAt);
+                    var container = SetContainerImageInfo(new InlineUIContainer(img, insertAt));
                     BlockStyles.ApplyImageParagraphLineHeightFor(container);
                     insertAt = container.ElementEnd;
                 }
@@ -844,7 +937,7 @@ namespace mde.manager
                     m_editor.Selection.Text = "";
                 }
                 var img = BuildImageFromMarkdown(Path.GetFileNameWithoutExtension(fileName), destPath);
-                var container = new InlineUIContainer(img, m_editor.CaretPosition);
+                var container = SetContainerImageInfo(new InlineUIContainer(img, m_editor.CaretPosition));
                 BlockStyles.ApplyImageParagraphLineHeightFor(container);
                 m_editor.CaretPosition = container.ElementEnd;
                 // 画像の後ろで改行して、次の行の先頭へキャレットを移す（続けて文字を書きやすいように）
@@ -1210,6 +1303,82 @@ namespace mde.manager
             }
         }
 
+        /// <summary>
+        /// 元に戻す（Undo）・やり直し（Redo）の後に、戻ってきた画像を表示し直す（MainWindow.EditorTextChanged）。
+        /// WPF の Undo／Redo は、消した画像を元の画像そのものではなく、XAML に書き出して作り直した複製で戻す。複製には
+        /// 読み込んだ画像（Source）とイベントの処理が引き継がれないため、画像を削除・大きさを変えた後に Ctrl+Z を押すと、
+        /// 画像のあった場所が空白になっていた。画像の情報（Tag の ImageInfo）は引き継がれるため、その参照先から読み込み直す。
+        /// </summary>
+        /// <param name="a_doc">対象の文書。</param>
+        public void RestoreImagesAfterUndo(FlowDocument a_doc)
+        {
+            List<InlineUIContainer> broken = null;
+            foreach (var iuc in FindAllContainers(a_doc))
+            {
+                if (iuc.Child is Image img)
+                {
+                    AttachImageDragHandlers(img);
+                    if (img.Source is BitmapSource bmp && (bmp.IsDownloading || 0 < bmp.PixelWidth))
+                    {
+                        continue;
+                    }
+                    if (img.Tag is ImageInfo imgInfo && !string.IsNullOrEmpty(imgInfo.OriginalSrc))
+                    {
+                        // 画像の情報が引き継がれている：読み込み直すだけ
+                        SetImageSource(img, imgInfo.OriginalSrc);
+                        continue;
+                    }
+                }
+                if (iuc.Tag is ImageInfo && !(iuc.Child is CheckBox))
+                {
+                    (broken ??= new List<InlineUIContainer>()).Add(iuc);
+                }
+            }
+            if (null == broken)
+            {
+                return;
+            }
+            // 画像が作り直せず、別のもの（空の Grid 等）で戻ってきた：InlineUIContainer に覚えておいた画像の情報
+            // （SetContainerImageInfo）から、画像を作り直して入れ替える。入れ替えは、元に戻す（Undo）の履歴に残さない
+            // （残すと、やり直し（Redo）の履歴が消えるため。入れ替えても文書の位置は変わらないため、それまでの履歴はそのまま使える）
+            Action resume = PauseUndoRecording?.Invoke() ?? (() => { });
+            try
+            {
+                foreach (var iuc in broken)
+                {
+                    var info = (ImageInfo)iuc.Tag;
+                    Image newImg = "html" == info.Format
+                        ? BuildImageFromHtmlTag(ImageSizeSpec.CurrentHtmlTag(info))
+                        : BuildImageFromMarkdown(info.Alt ?? "", info.OriginalSrc, info.Title);
+                    // 画像の情報は、覚えておいたものをそのまま使う（リンク等も含めて）
+                    newImg.Tag = info;
+                    AutomationProperties.SetName(newImg, info.Alt ?? "");
+                    iuc.Child = newImg;
+                    ApplyImageSizingConsideringTable(newImg);
+                }
+            }
+            finally
+            {
+                resume();
+            }
+        }
+
+        /// <summary>
+        /// 画像を入れた InlineUIContainer に、画像の情報（ImageInfo）を覚えさせる。WPF の元に戻す（Undo）・やり直し（Redo）
+        /// で画像が作り直せなかった時に、この情報から作り直すため（RestoreImagesAfterUndo）。InlineUIContainer は、Undo／Redo
+        /// でも Tag を引き継ぐ。画像を文書に入れる所で呼ぶ。
+        /// </summary>
+        /// <param name="a_iuc">画像を入れた InlineUIContainer（画像以外の時は何もしない）。</param>
+        /// <returns>a_iuc。</returns>
+        public static InlineUIContainer SetContainerImageInfo(InlineUIContainer a_iuc)
+        {
+            if (a_iuc?.Child is Image img && img.Tag is ImageInfo info)
+            {
+                a_iuc.Tag = info;
+            }
+            return a_iuc;
+        }
+
         /// <summary>文書内のすべての埋め込み画像を見つける。</summary>
         /// <param name="a_doc">対象の文書。</param>
         /// <returns>見つかったすべてのImage要素。</returns>
@@ -1217,21 +1386,38 @@ namespace mde.manager
         {
             foreach (Block block in a_doc.Blocks)
             {
-                foreach (var img in FindImagesInBlock(block))
+                foreach (var iuc in FindContainersInBlock(block))
                 {
-                    yield return img;
+                    if (iuc.Child is Image img)
+                    {
+                        yield return img;
+                    }
                 }
             }
         }
 
-        /// <summary>1つのブロック（段落・リスト・表）の中の画像を再帰的に見つける。</summary>
+        /// <summary>文書内のすべての InlineUIContainer（画像・チェックボックス等を入れる要素）を見つける。</summary>
+        /// <param name="a_doc">対象の文書。</param>
+        /// <returns>見つかったすべての InlineUIContainer。</returns>
+        private IEnumerable<InlineUIContainer> FindAllContainers(FlowDocument a_doc)
+        {
+            foreach (Block block in a_doc.Blocks)
+            {
+                foreach (var iuc in FindContainersInBlock(block))
+                {
+                    yield return iuc;
+                }
+            }
+        }
+
+        /// <summary>1つのブロック（段落・リスト・表）の中の InlineUIContainer を再帰的に見つける。</summary>
         /// <param name="a_block">対象のブロック。</param>
-        /// <returns>見つかった画像の列挙。</returns>
-        private IEnumerable<Image> FindImagesInBlock(Block a_block)
+        /// <returns>見つかった InlineUIContainer の列挙。</returns>
+        private IEnumerable<InlineUIContainer> FindContainersInBlock(Block a_block)
         {
             if (a_block is Paragraph p)
             {
-                foreach (var img in FindImagesInInlines(p.Inlines))
+                foreach (var img in FindContainersInInlines(p.Inlines))
                 {
                     yield return img;
                 }
@@ -1242,7 +1428,7 @@ namespace mde.manager
                 {
                     foreach (Block b in li.Blocks)
                     {
-                        foreach (var img in FindImagesInBlock(b))
+                        foreach (var img in FindContainersInBlock(b))
                         {
                             yield return img;
                         }
@@ -1259,7 +1445,7 @@ namespace mde.manager
                         {
                             foreach (Block b in cell.Blocks)
                             {
-                                foreach (var img in FindImagesInBlock(b))
+                                foreach (var img in FindContainersInBlock(b))
                                 {
                                     yield return img;
                                 }
@@ -1270,20 +1456,20 @@ namespace mde.manager
             }
         }
 
-        /// <summary>Inlinesコレクションの中の画像を再帰的に見つける（ネストしたSpanも含む）。</summary>
+        /// <summary>Inlinesコレクションの中の InlineUIContainer を再帰的に見つける（ネストしたSpanも含む）。</summary>
         /// <param name="a_inlines">対象のInlineコレクション。</param>
-        /// <returns>見つかった画像の列挙。</returns>
-        private IEnumerable<Image> FindImagesInInlines(InlineCollection a_inlines)
+        /// <returns>見つかった InlineUIContainer の列挙。</returns>
+        private IEnumerable<InlineUIContainer> FindContainersInInlines(InlineCollection a_inlines)
         {
             foreach (Inline inline in a_inlines)
             {
-                if (inline is InlineUIContainer iuc && iuc.Child is Image im)
+                if (inline is InlineUIContainer iuc)
                 {
-                    yield return im;
+                    yield return iuc;
                 }
                 else if (inline is Span span)
                 {
-                    foreach (var img in FindImagesInInlines(span.Inlines))
+                    foreach (var img in FindContainersInInlines(span.Inlines))
                     {
                         yield return img;
                     }
