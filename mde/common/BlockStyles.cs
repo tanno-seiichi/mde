@@ -76,10 +76,6 @@ namespace mde.common
         // インラインコードの背景色。mdew は枠線で囲んで区別するが、WPF の Run には枠線を付けられないため、
         // 本文と見分けやすいよう、mde の元の色（暖色系のベージュ）のままにする。
         private static readonly Brush m_inlineCodeBackground = new SolidColorBrush(Color.FromRgb(0xEC, 0xE8, 0xDC));
-        // ヘッダー行のセル間縦罫線（右辺）だけこの太さにする。本文行の1pxのままだと、印刷
-        // （PDF出力）時にヘッダー行の縦罫線だけラスタライズされず消えることがあるため
-        // （色を変える対策は効果なし、太さを変える対策のみ有効と確認済み）。
-        private const double HEADER_VERTICAL_BORDER_THICKNESS = 1.75;
         // ハイライト（==text==）の背景色。
         private static readonly Brush m_highlightBackground = new SolidColorBrush(Color.FromRgb(0xFF, 0xF3, 0x8A));
         // GitHubスタイルの引用（&gt; ）は背景を付けず、左の縦線と文字色で本文と区別する。
@@ -711,14 +707,11 @@ namespace mde.common
         /// Thickness（右辺・下辺のみ）を持ち、表の外周の上辺・左辺は<see cref="Table"/>
         /// 自身（<see cref="TableCell"/>とは独立したBorderBrush/BorderThicknessを持てる）
         /// が1回だけ描く。
-        /// ヘッダー行（最上段）のセル間の縦の区切り線（行内で最後ではないセルの右辺）だけは
-        /// 本文行より少し太く（<see cref="HEADER_VERTICAL_BORDER_THICKNESS"/>）描く。これは
-        /// WPFの印刷パイプラインが極端に細い罫線（1px相当）を特定条件下でラスタライズし
-        /// 損ね、ヘッダー行の縦罫線だけ印刷時に消えることがあるための対策（太さを変える
-        /// 対策のみ有効、色を変える対策は無効と確認済み）。WYSIWYGモードの見た目には
-        /// ほぼ影響しない。この消失は隣接セル間の内部の区切り線でのみ発生し、表の外周
-        /// （各行最後のセルの右辺）では発生しないため、最後のセルの右辺は太さを変えず
-        /// 本文行と同じにする。
+        /// ヘッダー行の線も、本文行と同じ太さ（1）にする。以前は、PDF出力でヘッダー行のセル間の縦線が
+        /// 消えることへの対策として、画面でもその線だけ 1.75 に太くしていたため、画面で太く見えていた。
+        /// 消える原因（ヘッダー行のセルの背景が隣のセルの右辺の線に重なって描かれる）は、PDF出力の間だけ
+        /// 背景を行へ移して線の太さをそろえる <see cref="ApplyPrintTableBorders"/> で直したので、
+        /// 画面で太くする必要はなくなった。
         /// 呼び出し側は、行・列の挿入や削除など表の構造を変えた直後に、表全体に対して
         /// 毎回呼び直すこと（個々の操作ごとに追いかけるより、常に表全体を作り直す方が
         /// 境界線の消失・重複を防ぎやすい）。
@@ -758,8 +751,6 @@ namespace mde.common
                 {
                     TableRow row = chunkRows[r];
                     bool boundaryRowFlg = !lastChunkFlg && r == chunkRows.Count - 1;
-                    int cellCount = row.Cells.Count;
-                    int cellIndex = 0;
                     foreach (TableCell cell in row.Cells)
                     {
                         Brush brush;
@@ -775,13 +766,9 @@ namespace mde.common
                         }
                         else
                         {
-                            // 全セルの右辺・下辺に罫線を描く。ヘッダー行の内部区切り線だけ太くする
-                            // （HEADER_VERTICAL_BORDER_THICKNESS）。行内最後のセルの右辺（表の外周）は
-                            // 本文行と同じ太さ（1）のまま。
-                            bool isLastCellInRow = (cellIndex == cellCount - 1);
-                            double right = (0 == rowIndex && !isLastCellInRow) ? HEADER_VERTICAL_BORDER_THICKNESS : 1;
+                            // 全セルの右辺・下辺に、同じ太さ（1）の罫線を描く（ヘッダー行も同じ）
                             brush = a_borderBrush;
-                            thickness = new Thickness(0, 0, right, 1);
+                            thickness = new Thickness(0, 0, 1, 1);
                         }
                         if (boundaryRowFlg)
                         {
@@ -798,7 +785,6 @@ namespace mde.common
                         }
                         cell.BorderBrush = brush;
                         cell.BorderThickness = thickness;
-                        cellIndex++;
                     }
                 }
                 chunk.BorderBrush = frameBrush;
@@ -807,8 +793,7 @@ namespace mde.common
             TableChunks.ApplyChunkFrame(a_chunks);
         }
 
-        /// <summary>PDF出力時の表の罫線の太さ（px。1px = 0.75pt）。画面と同じ 1px にそろえる
-        /// （画面ではヘッダー行のセル間の縦線だけ太いため、そのまま書き出すとその線だけ太く見えていた）。</summary>
+        /// <summary>PDF出力時の表の罫線の太さ（px。1px = 0.75pt）。画面と同じ 1px にそろえる。</summary>
         public const double PRINT_TABLE_BORDER_THICKNESS = 1;
 
         /// <summary>PDF出力時の表の罫線の色。画面の色（#DDDFE2）のままだと、PDFビューアで線が
@@ -830,9 +815,7 @@ namespace mde.common
 
         /// <summary>
         /// PDF出力の間だけ、表の罫線を <see cref="m_printTableBorder"/>・<see cref="PRINT_TABLE_BORDER_THICKNESS"/> にそろえる。
-        /// ・画面で線を引いている辺（太さが0より大きい辺）だけを対象にし、すべて同じ太さにする
-        /// 　（画面ではヘッダー行のセル間の縦線だけ HEADER_VERTICAL_BORDER_THICKNESS で太いため、
-        /// 　そのまま書き出すとその線だけ太く見えていた）。
+        /// ・画面で線を引いている辺（太さが0より大きい辺）だけを対象にし、すべて同じ太さにする。
         /// ・ヘッダー行の背景色は、書き出す間だけセルから行（TableRow）へ移す。セルの背景は
         /// 　隣のセルの右辺の罫線に重なって描かれることがあり、ヘッダー行の縦線だけが消える
         /// 　原因になっていた。行の背景はセルとその罫線より先（下）に描かれるため、罫線を隠さない。
@@ -1007,8 +990,7 @@ namespace mde.common
         /// 自動計算した「内容にちょうど収まる幅」に、追加で確保しておく余裕（px）。
         /// MeasureNaturalColumnWidthsPxの測定（FormattedTextによる文字列幅の計測＋
         /// TABLE_CELL_HORIZONTAL_PADDING）には、セルの罫線の太さ（ApplyTableCellBordersで
-        /// 各セルの右辺に加える罫線。本文行1px・ヘッダー行はHEADER_VERTICAL_BORDER_THICKNESS
-        /// ＝1.75px）が含まれておらず、また環境のDPI等により実際の描画幅と測定値にごく
+        /// 各セルの右辺に加える罫線。1px）が含まれておらず、また環境のDPI等により実際の描画幅と測定値にごく
         /// わずかな差が生じることがある。固定幅（Pixel）表示でこの差が足りないと、いちばん
         /// 長い文字列の最後の1〜2文字だけ次の行へ折り返される不具合が実機で確認されたため、
         /// この余裕を上乗せして防いでいる。
