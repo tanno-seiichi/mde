@@ -3783,8 +3783,21 @@ namespace mde
                 return;
             }
 
+            // 「Microsoft Print to PDF」を選んだ時は、保存先を mde の画面で先に聞き、プリンターには聞かせない（PdfPrintToFile）。
+            // プリンターが出す保存先の画面は、初期フォルダを指定できず、開いているファイルの場所ではなく前回の作業フォルダが
+            // 開くことがあったため。文書を書き出し用に一時的に変える前に聞く
+            string pdfPath = null;
+            if (PdfPrintToFile.IsMicrosoftPrintToPdf(dlg.PrintQueue))
+            {
+                pdfPath = AskPdfOutputPath();
+                if (null == pdfPath)
+                {
+                    return;
+                }
+            }
+
             // 書き出しの進み具合を表示する（PdfExportProgress。書き出しの間は画面が止まるため、専用のスレッドで表示する）
-            // 保存先のファイル名を選ぶまでは、PDF用のデータ（改ページの位置等）を作っている（書き出しはまだ始めていない）
+            // 書き出しを始めるまでは、PDF用のデータ（改ページの位置等）を作っている
             using var progress = PdfExportProgress.Show(this, Loc.T("PDF用のデータを生成しています", "Preparing data for the PDF"));
 
             // これ以降、書き出しのためだけにリンクの一時置換・画像サイズの一時縮小・
@@ -3814,7 +3827,7 @@ namespace mde
                     Action resumeUndoRecording = PauseUndoRecording();
                     try
                     {
-                        ExportPdfWithTemporaryChanges(dlg, progress);
+                        ExportPdfWithTemporaryChanges(dlg, progress, pdfPath);
                     }
                     finally
                     {
@@ -3914,7 +3927,9 @@ namespace mde
         /// </summary>
         /// <param name="a_dlg">用紙・プリンターを選んだ印刷ダイアログ。</param>
         /// <param name="a_progress">進み具合を表示するウィンドウ。</param>
-        private void ExportPdfWithTemporaryChanges(System.Windows.Controls.PrintDialog a_dlg, PdfExportProgress a_progress)
+        /// <param name="a_pdfPath">書き出す PDF ファイル（「Microsoft Print to PDF」の時。mde の画面で聞いたもの）。
+        /// null の時は、これまでどおり印刷ダイアログで印刷する（他のプリンターの時）。</param>
+        private void ExportPdfWithTemporaryChanges(System.Windows.Controls.PrintDialog a_dlg, PdfExportProgress a_progress, string a_pdfPath)
         {
             // mdeのリンクは独自のLinkInfoタグ付きRunで表現され、WPF標準のHyperlinkでは
             // ないため、そのままではPDF上でクリックできない。書き出し中だけ本物のHyperlink
@@ -4068,11 +4083,20 @@ namespace mde
                     }
                 }
 
-                // 編集中のMarkdownファイル名から拡張子を除いたものを、書き出すPDFの既定の
-                // ファイル名にする（例：「README.md」→「README.pdf」）。
-                string docName = !string.IsNullOrEmpty(m_currentFilePath)
-                    ? Path.GetFileNameWithoutExtension(m_currentFilePath) : Loc.T("無題", "Untitled");
+                // 編集中のMarkdownファイル名から拡張子を除いたものを、印刷ジョブの名前にする
+                string docName = GetPdfDocumentName();
 
+                if (null != a_pdfPath)
+                {
+                    // 「Microsoft Print to PDF」：保存先は聞いてあるため、プリンターに聞かせずに、そのファイルへ書き出す（PdfPrintToFile）
+                    a_progress.Report(Loc.T("書き出しています", "Exporting"), PDF_PROGRESS_SCAN_END, PDF_PROGRESS_SCAN_END);
+                    a_progress.SetTitle(Loc.T("PDFに書き出しています", "Exporting to PDF"));
+                    PdfPrintToFile.Print(a_dlg.PrintQueue, a_dlg.PrintTicket, marginPaginator, docName, a_pdfPath);
+                    a_progress.Report(null, 1, 1);
+                    return;
+                }
+
+                // 以下は、「Microsoft Print to PDF」以外のプリンター（他の PDF プリンター等）の時。
                 // 「Microsoft Print to PDF」の保存先ダイアログは、印刷ジョブの説明文字列や
                 // XPSのTitleなどアプリ側の値を既定ファイル名に使わない仕様（Microsoft自身が
                 // 非対応と回答している既知の制限）。次善の策として、ファイル名を先に
@@ -4129,6 +4153,97 @@ namespace mde
                     swap.Parent.InsertBefore(swap.Wrapper, swap.OriginalRun);
                     swap.Parent.Remove(swap.Wrapper);
                 }
+            }
+        }
+
+        /// <summary>書き出す PDF の名前（拡張子なし）。編集中の Markdown ファイル名から拡張子を除いたもの
+        /// （例：「README.md」→「README」）。まだ保存していない文書は「無題」。</summary>
+        /// <returns>名前。</returns>
+        private string GetPdfDocumentName()
+        {
+            return !string.IsNullOrEmpty(m_currentFilePath)
+                ? Path.GetFileNameWithoutExtension(m_currentFilePath) : Loc.T("無題", "Untitled");
+        }
+
+        /// <summary>
+        /// PDF の保存先を、ファイルを保存する画面で聞く（ExportPdfBtnClick）。
+        /// 初期フォルダは、「名前を付けて保存」と同じ順（編集中のファイルのフォルダ → フォルダビューに表示中のフォルダ →
+        /// 前回「名前を付けて保存」で選んだフォルダ → デスクトップ等）で決め、ファイル名は編集中のファイル名の拡張子を .pdf に
+        /// したものにする。選んだファイルが他のアプリで開かれていて書き込めない時は、知らせて、もう一度聞く。
+        /// </summary>
+        /// <returns>選んだファイルの絶対パス。キャンセルした時は null。</returns>
+        private string AskPdfOutputPath()
+        {
+            string currentFileDirectory = m_currentFileDirectory;
+            if (FileOperationsManager.IsApplicationBaseDirectory(currentFileDirectory))
+            {
+                currentFileDirectory = null;
+            }
+            string loadedFolderRootPath = m_folderTreeManager.LoadedFolderRootPath;
+            if (FileOperationsManager.IsApplicationBaseDirectory(loadedFolderRootPath))
+            {
+                loadedFolderRootPath = null;
+            }
+            string initialDirectory = currentFileDirectory ?? loadedFolderRootPath
+                ?? m_lastSaveDialogDirectory ?? FileOperationsManager.GetDefaultSaveDirectory();
+            string fileName = GetPdfDocumentName() + ".pdf";
+            while (true)
+            {
+                var saveDlg = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = Loc.T("PDFに書き出し", "Export to PDF"),
+                    Filter = Loc.T("PDFファイル (*.pdf)|*.pdf", "PDF files (*.pdf)|*.pdf"),
+                    DefaultExt = ".pdf",
+                    AddExtension = true,
+                    OverwritePrompt = true,
+                    FileName = fileName
+                };
+                if (!string.IsNullOrEmpty(initialDirectory) && Directory.Exists(initialDirectory))
+                {
+                    saveDlg.InitialDirectory = initialDirectory;
+                }
+                if (true != saveDlg.ShowDialog(this))
+                {
+                    return null;
+                }
+                string path = saveDlg.FileName;
+                if (!IsFileLocked(path))
+                {
+                    return path;
+                }
+                // 書き出しは Windows の印刷の処理が行うため、書き込めないと、何も知らせずに PDF が作られない。先に確かめて知らせる
+                MessageBox.Show(this,
+                    Loc.T("このファイルは他のアプリで開かれているため、書き出せません。閉じてから、もう一度お試しください。\n",
+                        "This file is open in another app and cannot be written. Close it and try again.\n") + path,
+                    Loc.T("PDFに書き出し", "Export to PDF"), MessageBoxButton.OK, MessageBoxImage.Warning);
+                initialDirectory = Path.GetDirectoryName(path);
+                fileName = Path.GetFileName(path);
+            }
+        }
+
+        /// <summary>既にあるファイルが、他のアプリで開かれていて書き込めないかを調べる（無いファイルは false）。</summary>
+        /// <param name="a_path">ファイル。</param>
+        /// <returns>書き込めない時は true。</returns>
+        private static bool IsFileLocked(string a_path)
+        {
+            if (!File.Exists(a_path))
+            {
+                return false;
+            }
+            try
+            {
+                using (new FileStream(a_path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                {
+                }
+                return false;
+            }
+            catch (IOException)
+            {
+                return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return true;
             }
         }
 
