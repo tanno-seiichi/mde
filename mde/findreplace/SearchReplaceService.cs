@@ -1026,6 +1026,23 @@ namespace mde.findreplace
             }
         }
 
+        /// <summary>
+        /// ファイルに一致箇所があるかを、ファイルを開かずに（Markdown の文字のまま）調べる（フォルダ全体の「次を検索」・
+        /// 「前を検索」で、一致箇所の無いファイルを開かずに飛ばすため。FindReplaceWindow.FindNextInFolder）。調べ方は
+        /// 「すべて検索」（FindAllInFolder）と同じ（編集中・保留中の内容があればそちらを調べる）。最初の一致箇所が見つかった
+        /// 所で調べ終える。
+        /// </summary>
+        /// <param name="a_path">対象のファイルパス。</param>
+        /// <param name="a_term">検索する文字列。</param>
+        /// <param name="a_caseSensitiveFlg">大文字・小文字を区別するかどうか。</param>
+        /// <param name="a_useRegexFlg">正規表現として扱うかどうか。</param>
+        /// <returns>一致箇所があれば true。</returns>
+        public bool FileHasMatch(string a_path, string a_term, bool a_caseSensitiveFlg, bool a_useRegexFlg)
+        {
+            string content = m_getCurrentContentForFile(a_path) ?? SafeReadFile(a_path);
+            return null != content && null != FindNextMatchInText(content, a_term, a_caseSensitiveFlg, a_useRegexFlg, 0);
+        }
+
         /// <summary>フォルダ内検索結果からファイルを開く（保留中の編集があればそちらを優先する）。</summary>
         /// <param name="a_path">対象のファイルパス。</param>
         public void OpenFileForFindReplace(string a_path)

@@ -358,6 +358,14 @@ namespace mde.findreplace
                 string path = m_folderFindFileList[m_folderFindCurrentFileIdx];
                 if (!PathsEqual(path, m_owner.CurrentFilePath))
                 {
+                    // 一致箇所の無いファイルは、開かずに飛ばす（FileHasMatch。ファイルの文字を調べるだけ）。以前は一致箇所の
+                    // 有無に関わらず、次のファイルを1つずつエディタで開いて（Markdown を読んで画面の文書を組み立てて）調べて
+                    // いたため、大きなファイルの多いフォルダでは、最後の一致箇所から次へ進む時（先頭へ戻る時も含む）、間の
+                    // 一致箇所の無いファイルをすべて開くのに長くかかっていた
+                    if (!m_owner.SearchReplace.FileHasMatch(path, Term, CaseSensitive, UseRegex))
+                    {
+                        continue;
+                    }
                     m_owner.SearchReplace.OpenFileForFindReplace(path);
                 }
                 SyncResultsListSelection(path);
@@ -449,6 +457,14 @@ namespace mde.findreplace
                 string path = m_folderFindFileList[m_folderFindCurrentFileIdx];
                 if (!PathsEqual(path, m_owner.CurrentFilePath))
                 {
+                    // 一致箇所の無いファイルは、開かずに飛ばす（FileHasMatch。ファイルの文字を調べるだけ）。以前は一致箇所の
+                    // 有無に関わらず、次のファイルを1つずつエディタで開いて（Markdown を読んで画面の文書を組み立てて）調べて
+                    // いたため、大きなファイルの多いフォルダでは、最後の一致箇所から次へ進む時（先頭へ戻る時も含む）、間の
+                    // 一致箇所の無いファイルをすべて開くのに長くかかっていた
+                    if (!m_owner.SearchReplace.FileHasMatch(path, Term, CaseSensitive, UseRegex))
+                    {
+                        continue;
+                    }
                     m_owner.SearchReplace.OpenFileForFindReplace(path);
                 }
                 SyncResultsListSelection(path);
