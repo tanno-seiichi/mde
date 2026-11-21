@@ -295,6 +295,39 @@ namespace mde.common
         /// 記録が無いBlockの前後は、これまで通りの区切り方（常に空行1個）になる。</summary>
         private const int DEFAULT_BLANK_LINES_BEFORE_BLOCK = 1;
 
+        /// <summary>ブロックの間に続いた空行の数から、その間に置く空の行（空の段落）の数を求める。
+        /// Typora と同じく、空行2つまでは空の行を置かず（段落の区切り1つ）、空行3つ・4つで1つ、
+        /// 5つ・6つで2つ…と、空行2つごとに空の行を1つ置く。mdevc・mdevs（markdown.js の
+        /// gapLineCount）と同じ規則。読み込み時（MarkdownToDocument・BuildNestedList）に使い、
+        /// 書き出し時は、空の行が読み込んだ時と同じ数なら元の空行の数をそのまま、そうでなければ
+        /// 空の行1つにつき空行2つを足して書き出す（BlankLinesBeforeWrittenBlock・ListToMarkdown）。</summary>
+        /// <param name="a_blankLines">続いた空行の数。</param>
+        /// <returns>置く空の行の数。</returns>
+        public static int GapLineCount(int a_blankLines)
+        {
+            return Math.Max(0, (a_blankLines - 1) / 2);
+        }
+
+        /// <summary>書き出すブロックの前に入れる空行の数を求める。直前に空の段落（空の行）が
+        /// 読み込んだ時と同じ数だけ並んでいれば、元のソースの空行の数をそのまま使い（空行3つと
+        /// 4つは、どちらも空の行1つになるため）、数が変わっていれば（空の行を消した・Enterで
+        /// 増やした等）、空行1つに、空の行1つにつき空行2つを足した数にする。直前にHTMLコメントが
+        /// ある場合は、コメントの後ろの空行の数（記録した値）をそのまま使う。
+        /// DocumentToMarkdownCore・GetMarkdownOffsetForBlockの両方から、同じ規則で使う。</summary>
+        /// <param name="a_block">書き出すブロック。</param>
+        /// <param name="a_emptyCount">直前に並んでいた空の段落の数。</param>
+        /// <param name="a_hasLeadingCommentsFlg">直前にHTMLコメントがあるか。</param>
+        /// <returns>ブロックの前に入れる空行の数。</returns>
+        private int BlankLinesBeforeWrittenBlock(Block a_block, int a_emptyCount, bool a_hasLeadingCommentsFlg)
+        {
+            int recorded = m_blankLinesBeforeBlock.TryGetValue(a_block, out var box) ? box.Value : DEFAULT_BLANK_LINES_BEFORE_BLOCK;
+            if (a_hasLeadingCommentsFlg || a_emptyCount == GapLineCount(recorded))
+            {
+                return recorded;
+            }
+            return 1 + 2 * a_emptyCount;
+        }
+
         /// <summary>読み込み元のMarkdownソースが、ファイル末尾に改行を持っていたか
         /// どうか（多くのテキストエディタ・Gitなどの慣習で、最後の行の末尾にも改行を
         /// 1つ付けるのが一般的）。MarkdownToDocumentで記録し、DocumentToMarkdownで
@@ -400,6 +433,8 @@ namespace mde.common
         {
             var sb = new StringBuilder();
             bool firstFlg = true;
+            // 直前に並んでいる空の段落（空の行。GapLineCount参照）の数
+            int emptyCount = 0;
 
             // HTMLコメントのグループ（連続する1つ以上のコメント）を、各コメント自身が覚えている
             // 「直前の空行の数」をそのまま再現しながら書き出す。
@@ -498,10 +533,17 @@ namespace mde.common
                 string s = m_originalTextTracker.TryGetOriginal(block, out var original) ? original : BlockToMarkdown(block);
                 if (!string.IsNullOrWhiteSpace(s))
                 {
-                    int blankLinesBeforeBlock = m_blankLinesBeforeBlock.TryGetValue(block, out var box) ? box.Value : DEFAULT_BLANK_LINES_BEFORE_BLOCK;
+                    int blankLinesBeforeBlock = BlankLinesBeforeWrittenBlock(block, emptyCount, null != leadingGroup);
                     sb.Append(BuildElementSeparator(blankLinesBeforeBlock, firstFlg));
                     sb.Append(s);
                     firstFlg = false;
+                    emptyCount = 0;
+                }
+                else if (!firstFlg && block is Paragraph)
+                {
+                    // 空の段落（空の行）。Typora と同じく、次のブロックの前の空行を増やして残す
+                    // （BlankLinesBeforeWrittenBlock）。文書の先頭・末尾の空の段落は書き出さない。
+                    emptyCount++;
                 }
                 // ファイル末尾がコメントだけで終わる場合の、このBlockに付随する「後に付く
                 // コメント」（m_trailingComments参照）。
@@ -537,6 +579,8 @@ namespace mde.common
         {
             int offset = 0;
             bool firstFlg = true;
+            // DocumentToMarkdownCoreと同じく、直前に並んでいる空の段落の数
+            int emptyCount = 0;
 
             void AddCommentGroupOffset(CommentGroupInfo a_group)
             {
@@ -671,9 +715,14 @@ namespace mde.common
                     {
                         return -1;
                     }
+                    if (!firstFlg && block is Paragraph)
+                    {
+                        emptyCount++;
+                    }
                     continue;
                 }
-                int blankLinesBeforeBlock = m_blankLinesBeforeBlock.TryGetValue(block, out var box) ? box.Value : DEFAULT_BLANK_LINES_BEFORE_BLOCK;
+                int blankLinesBeforeBlock = BlankLinesBeforeWrittenBlock(block, emptyCount, null != leadingGroup);
+                emptyCount = 0;
                 offset += BuildElementSeparator(blankLinesBeforeBlock, firstFlg).Length;
                 if (ReferenceEquals(block, a_targetBlock))
                 {
@@ -702,6 +751,7 @@ namespace mde.common
         {
             var sb = new StringBuilder();
             bool firstFlg = true;
+            int emptyCount = 0;
             foreach (Block block in a_blocks)
             {
                 // 大きな表を分けた続きのかたまり（TableChunks）は、先頭のかたまりが表全体を書き出す
@@ -723,11 +773,17 @@ namespace mde.common
                 }
                 if (string.IsNullOrWhiteSpace(s))
                 {
+                    // 空の段落（空の行）は、DocumentToMarkdownと同じく、次のブロックの前の空行を増やして残す
+                    if (!firstFlg && block is Paragraph)
+                    {
+                        emptyCount++;
+                    }
                     continue;
                 }
-                sb.Append(BuildElementSeparator(DEFAULT_BLANK_LINES_BEFORE_BLOCK, firstFlg));
+                sb.Append(BuildElementSeparator(DEFAULT_BLANK_LINES_BEFORE_BLOCK + 2 * emptyCount, firstFlg));
                 sb.Append(s);
                 firstFlg = false;
+                emptyCount = 0;
             }
             return sb.ToString();
         }
@@ -854,6 +910,16 @@ namespace mde.common
                     parts.Add("");
                 }
                 string prefix = orderedFlg ? ((constantNumberingFlg ? 1 : number) + ". ") : (bulletMarker + " ");
+                // 項目の前の空の行（BlockStyles.ApplyListItemGap）は、空の行1つにつき空行2つを足して書き出す
+                // （GapLineCount。空の行1つなら空行3つ）。入れ子のリストの最初の項目は、親の項目の後ろに続く。
+                int gapLines = BlockStyles.GetListItemGap(li);
+                if (gapLines > 0 && (lines.Count > 0 || a_level > 0))
+                {
+                    for (int g = 0; g < gapLines * 2 + 1; g++)
+                    {
+                        lines.Add("");
+                    }
+                }
                 lines.Add(indent + prefix + parts[0]);
                 string contIndent = indent + new string(' ', prefix.Length);
                 for (int k = 1; k < parts.Count; k++)
@@ -1398,6 +1464,16 @@ namespace mde.common
             // 記録し、pendingBlankLinesを0へリセットする。
             void RecordBlankLinesBeforeBlock(Block a_newBlock)
             {
+                // Typora と同じく、ブロックの間に空行が3つ以上続いている所には、空の段落（空の行）を
+                // 置いて間を空ける（GapLineCount参照）。空の行には文字を入力でき、BackSpaceで消せる。
+                // 文書の先頭と、間にHTMLコメントがある所には置かない。
+                if (a_doc.Blocks.Count > 0 && 0 == pendingComments.Count)
+                {
+                    for (int g = GapLineCount(pendingBlankLines); g > 0; g--)
+                    {
+                        a_doc.Blocks.Add(new Paragraph());
+                    }
+                }
                 m_blankLinesBeforeBlock.Add(a_newBlock, new StrongBox<int>(pendingBlankLines));
                 pendingBlankLines = 0;
             }
@@ -2326,6 +2402,8 @@ namespace mde.common
             var pendingTextLines = new List<string>();
             // 直前に確定した箇条書き項目がタスク項目だったかどうか（未確定ならnull）。
             bool? pendingTaskChecked = null;
+            // 直前の行から続いている空行の数（項目の間の空の行。GapLineCount参照）
+            int blankRun = 0;
 
             // 保留中の項目のテキストを解析して段落へ反映し、タスク項目ならチェックボックスを
             // 段落の先頭に挿入する。新しい項目の開始時／ループ終了後の両方から呼ばれる。
@@ -2376,8 +2454,11 @@ namespace mde.common
             {
                 if (string.IsNullOrWhiteSpace(line))
                 {
+                    blankRun++;
                     continue; // 「緩い」リストの項目間の空行
                 }
+                int blankLinesBeforeLine = blankRun;
+                blankRun = 0;
 
                 var m = Regex.Match(line, "^(\\s*)(?:([*+-])|(\\d+)\\.)\\s+(.*)$");
                 if (m.Success)
@@ -2455,6 +2536,8 @@ namespace mde.common
 
                     var para = new Paragraph { Margin = new Thickness(0) };
                     var newLi = new ListItem(para);
+                    // Typora と同じく、項目の間に空行が3つ以上続いている所は、空の行の分だけ間を空ける
+                    BlockStyles.ApplyListItemGap(newLi, GapLineCount(blankLinesBeforeLine));
                     top.list.ListItems.Add(newLi);
 
                     pendingPara = para;

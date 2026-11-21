@@ -131,6 +131,37 @@ namespace mde.common
         /// <summary>段落の下の余白（GitHubスタイル 0.7625em、VSCodeスタイル 0.9em）。EditorBlockSpacing に設定する。</summary>
         public static double ParagraphBottomSpacing => VsCodeStyleFlg ? 12.6 : 12.2;
 
+        /// <summary>箇条書きの項目の間に置く空の行1つ分の高さ（行の高さ＋段落の下の余白。mdevc の
+        /// li[data-gap] と同じ考え方）。</summary>
+        public static double ListItemGapUnit => ListLineHeight + ParagraphBottomSpacing;
+
+        /// <summary>箇条書きの項目の前に、空の行 a_gapLines 個分の間を空ける（MarkdownConverter.GapLineCount）。
+        /// 間は項目の上の余白（ローカル値）で表す。元に戻す（Ctrl+Z）で項目が作り直されても余白は残るため、
+        /// 保存時はこの余白から空の行の数を求める（GetListItemGap）。</summary>
+        /// <param name="a_li">項目。</param>
+        /// <param name="a_gapLines">空の行の数。0以下なら何もしない。</param>
+        public static void ApplyListItemGap(ListItem a_li, int a_gapLines)
+        {
+            if (a_gapLines <= 0)
+            {
+                return;
+            }
+            a_li.Margin = new Thickness(0, ListItemSpacing + a_gapLines * ListItemGapUnit, 0, 0);
+        }
+
+        /// <summary>箇条書きの項目の前の空の行の数（ApplyListItemGap）を、項目の上の余白から求める。
+        /// 余白を設定していない（スタイルの既定の余白の）項目は0。</summary>
+        /// <param name="a_li">項目。</param>
+        /// <returns>空の行の数。</returns>
+        public static int GetListItemGap(ListItem a_li)
+        {
+            if (DependencyProperty.UnsetValue == a_li.ReadLocalValue(ListItem.MarginProperty))
+            {
+                return 0;
+            }
+            return Math.Max(0, (int)Math.Round((a_li.Margin.Top - ListItemSpacing) / ListItemGapUnit));
+        }
+
         /// <summary>箇条書き・表の下の余白（GitHubスタイル 0.8em、VSCodeスタイル 0.9em）。EditorListSpacing に設定する。</summary>
         public static double ListBottomSpacing => VsCodeStyleFlg ? 12.6 : 12.8;
 
