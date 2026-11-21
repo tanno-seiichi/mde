@@ -341,9 +341,11 @@ namespace mde.manager
         }
 
         /// <summary>
-        /// 指定したファイルに対応するノードを、フォルダツリーペインで選択状態にする
-        /// （見つからなければ何もしない）。そのノードまでの経路にあるフォルダは、
-        /// 隠れて見えなくならないよう展開状態にする。
+        /// 指定したファイルに対応するノードを、フォルダツリーペインで選択状態にする。そのノードまでの経路にあるフォルダは、
+        /// 隠れて見えなくならないよう展開状態にする（まだ一度も展開していない、子ノードを読み込んでいないフォルダも、
+        /// 経路上にあれば子ノードを読み込んで展開する。リンクをクリックして、フォルダペインのフォルダの中のファイルを
+        /// 開いた時等）。ツリーに無いファイル（.md 以外のファイル等）なら、今の選択を外す（開いていないファイルが
+        /// 選択されたままにならないように）。
         /// </summary>
         /// <param name="a_filePath">選択したいファイルの絶対パス。</param>
         public void SelectFileNode(string a_filePath)
@@ -357,6 +359,39 @@ namespace mde.manager
                     return;
                 }
             }
+            foreach (var root in Roots)
+            {
+                ClearSelectionRecursive(root);
+            }
+        }
+
+        /// <summary>ノードとその子孫の選択を外す（SelectFileNode）。</summary>
+        /// <param name="a_node">ノード。</param>
+        private static void ClearSelectionRecursive(FileSystemItem a_node)
+        {
+            a_node.IsSelected = false;
+            foreach (var child in a_node.Children)
+            {
+                ClearSelectionRecursive(child);
+            }
+        }
+
+        /// <summary>a_dir が、a_filePath のあるフォルダ自身か、その上のフォルダかどうか（SelectFileNodeRecursive で、
+        /// 子ノードを読み込んで探すフォルダを、目的のファイルまでの経路上のフォルダだけにするため）。</summary>
+        /// <param name="a_dir">フォルダ。</param>
+        /// <param name="a_filePath">ファイル。</param>
+        /// <returns>経路上のフォルダなら true。</returns>
+        private static bool IsAncestorFolderOf(string a_dir, string a_filePath)
+        {
+            try
+            {
+                string dir = Path.GetFullPath(a_dir).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                return Path.GetFullPath(a_filePath).StartsWith(dir, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private FileSystemItem SelectFileNodeRecursive(FileSystemItem a_node, string a_filePath)
@@ -369,8 +404,15 @@ namespace mde.manager
                     a_node.IsExpanded = true;
                     return child;
                 }
-                if (child.IsDirectory)
+                if (child.IsDirectory && null != child.FullPath && IsAncestorFolderOf(child.FullPath, a_filePath))
                 {
+                    // まだ子ノードを読み込んでいないフォルダは、ここで読み込む（HandleTreeViewItemExpanded と同じ）
+                    if (IsUnloadedPlaceholder(child))
+                    {
+                        child.Children.Clear();
+                        PopulateChildren(child);
+                        RefreshDirtyMarkers();
+                    }
                     var found = SelectFileNodeRecursive(child, a_filePath);
                     if (null != found)
                     {

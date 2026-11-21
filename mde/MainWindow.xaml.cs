@@ -414,8 +414,11 @@ namespace mde
                 DiscardCurrentDocumentSilently);
             m_inlineStyleEditor = new InlineStyleEditor(
                 m_editor, m_originalTextTracker, RunAsProgrammaticChange, MarkDirty, m_outlineManager.Refresh,
-                m_markdownConverter.BlockToMarkdown, () => m_currentFileDirectory, LoadFile,
-                m_folderTreeManager.IsWithinLoadedFolder, OpenFileInNewWindow, () => m_requireCtrlForLinkClickFlg);
+                m_markdownConverter.BlockToMarkdown, () => m_currentFileDirectory,
+                a_path => !string.IsNullOrEmpty(m_currentFilePath) && PathsReferToSameFile(a_path, m_currentFilePath),
+                a_path => m_folderPaneVisibleFlg && m_folderTreeManager.IsWithinLoadedFolder(Path.GetDirectoryName(a_path)),
+                a_path => { LoadFile(a_path); m_folderTreeManager.SelectFileNode(a_path); },
+                OpenFileInNewWindow, () => m_requireCtrlForLinkClickFlg);
             m_searchReplaceService = new SearchReplaceService(
                 m_editor, m_sourceEditor, m_markdownConverter, m_originalTextTracker, m_lineEndingTracker,
                 () => m_isSourceModeFlg, RunAsProgrammaticChange, m_outlineManager.Refresh, p => OutlineManager.ScrollParagraphToTop(p, m_editor),
@@ -1215,16 +1218,27 @@ namespace mde
         }
 
         /// <summary>
-        /// フォルダペインに表示されていない範囲のファイルへのリンクをクリックした際、現在の
-        /// ウィンドウの文書を置き換えるのではなく、新しいウィンドウでそのファイルを開く。
+        /// 現在のウィンドウの文書を置き換えるのではなく、新しいウィンドウでファイルを開く（ファイルへのリンクをクリックした時・
+        /// ファイルを開いているウィンドウで「開く…」等を使った時）。開くファイルが、このウィンドウのフォルダペインに表示している
+        /// フォルダの中にあれば、新しいウィンドウのフォルダペインにも同じフォルダを表示する。
         /// </summary>
         /// <param name="a_path">開くファイルの絶対パス。</param>
         /// <param name="a_anchor">開いたあとにジャンプする見出し/アンカーのテキスト（無ければnull）。</param>
         private void OpenFileInNewWindow(string a_path, string a_anchor)
         {
+            string folderRoot = m_folderTreeManager.LoadedFolderRootPath;
+            bool inLoadedFolderFlg = m_folderTreeManager.IsWithinLoadedFolder(Path.GetDirectoryName(a_path));
             var newWindow = new MainWindow(this);
             newWindow.Show();
+            if (inLoadedFolderFlg)
+            {
+                newWindow.m_folderTreeManager.LoadFolderTree(folderRoot);
+            }
             newWindow.LoadFile(a_path);
+            if (inLoadedFolderFlg)
+            {
+                newWindow.m_folderTreeManager.SelectFileNode(a_path);
+            }
             if (!string.IsNullOrEmpty(a_anchor))
             {
                 newWindow.m_inlineStyleEditor.JumpToAnchor(a_anchor);

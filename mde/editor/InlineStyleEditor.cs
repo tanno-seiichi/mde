@@ -45,8 +45,9 @@ namespace mde.editor
         public Paragraph ContextParagraph { get; set; }
 
         private readonly Func<string> m_getCurrentFileDirectory;
+        private readonly Func<string, bool> m_isCurrentFile;
+        private readonly Func<string, bool> m_opensLinkInThisWindow;
         private readonly Action<string> m_loadFile;
-        private readonly Func<string, bool> m_isWithinLoadedFolder;
         private readonly Action<string, string> m_openInNewWindow;
         private readonly Func<bool> m_requireCtrlForLinkClick;
 
@@ -60,9 +61,11 @@ namespace mde.editor
         /// <param name="a_refreshOutline">アウトラインペインの再構築を依頼するdelegate。</param>
         /// <param name="a_blockToMarkdown">ブロックをMarkdownテキストへ変換するdelegate（コードブロックのコピーに使う）。</param>
         /// <param name="a_getCurrentFileDirectory">現在のファイルの保存先フォルダを返すdelegate（ファイルリンクの相対パス解決に使う）。</param>
-        /// <param name="a_loadFile">同じウィンドウでファイルを開くdelegate。</param>
-        /// <param name="a_isWithinLoadedFolder">指定フォルダが、現在フォルダペインに表示されているフォルダの範囲内かどうかを判定するdelegate。</param>
-        /// <param name="a_openInNewWindow">フォルダペインの範囲外にあるファイルを、新しいウィンドウで開くdelegate（パスとジャンプ先アンカーを受け取る）。</param>
+        /// <param name="a_isCurrentFile">指定したファイルが、このウィンドウで今開いているファイルかどうかを判定するdelegate。</param>
+        /// <param name="a_opensLinkInThisWindow">リンク先のファイルを、新しいウィンドウでなくこのウィンドウで開くかどうかを判定するdelegate
+        /// （フォルダペインを表示していて、リンク先がフォルダペインに表示しているフォルダの中にある時）。</param>
+        /// <param name="a_loadFile">このウィンドウでファイルを開くdelegate。</param>
+        /// <param name="a_openInNewWindow">リンク先のファイルを、新しいウィンドウで開くdelegate（パスとジャンプ先アンカーを受け取る）。</param>
         public InlineStyleEditor(
             RichTextBox a_editor,
             OriginalTextTracker a_originalTextTracker,
@@ -71,8 +74,9 @@ namespace mde.editor
             Action a_refreshOutline,
             Func<Block, string> a_blockToMarkdown,
             Func<string> a_getCurrentFileDirectory,
+            Func<string, bool> a_isCurrentFile,
+            Func<string, bool> a_opensLinkInThisWindow,
             Action<string> a_loadFile,
-            Func<string, bool> a_isWithinLoadedFolder,
             Action<string, string> a_openInNewWindow,
             Func<bool> a_requireCtrlForLinkClick)
         {
@@ -83,8 +87,9 @@ namespace mde.editor
             this.m_refreshOutline = a_refreshOutline;
             this.m_blockToMarkdown = a_blockToMarkdown;
             this.m_getCurrentFileDirectory = a_getCurrentFileDirectory;
+            this.m_isCurrentFile = a_isCurrentFile;
+            this.m_opensLinkInThisWindow = a_opensLinkInThisWindow;
             this.m_loadFile = a_loadFile;
-            this.m_isWithinLoadedFolder = a_isWithinLoadedFolder;
             this.m_openInNewWindow = a_openInNewWindow;
             this.m_requireCtrlForLinkClick = a_requireCtrlForLinkClick;
         }
@@ -1150,23 +1155,72 @@ namespace mde.editor
                     return;
                 }
 
-                string resolvedDir = System.IO.Path.GetDirectoryName(resolved);
-                if (m_isWithinLoadedFolder(resolvedDir))
+                // Markdown 以外のファイル（.txt・.pdf・画像等。フォルダペインにも出てこない）は、mde では開かず、Windows で
+                // そのファイルに関連付けられたアプリで開く（OpenWithAssociatedApp）
+                if (!IsMarkdownFile(resolved))
                 {
-                    m_loadFile(resolved);
-                }
-                else
-                {
-                    // フォルダペインに表示されていない範囲のファイルは、現在の文書を置き換えず
-                    // 新しいウィンドウで開く。
-                    m_openInNewWindow(resolved, anchor);
+                    OpenWithAssociatedApp(resolved);
                     return;
+                }
+
+                // 今開いているファイル自身へのリンク（"今のファイル.md#見出し" 等）は、このウィンドウの中で見出しへ移動する。
+                // フォルダペインを表示していて、リンク先がフォルダペインに表示しているフォルダの中にある時は、このウィンドウで
+                // 開く（フォルダペインでファイルをクリックした時と同じ）。それ以外は、今の文書を置き換えず、新しいウィンドウで
+                // 開く（mdevc・mdevs は新しいタブで開く）。
+                if (!m_isCurrentFile(resolved))
+                {
+                    if (!m_opensLinkInThisWindow(resolved))
+                    {
+                        m_openInNewWindow(resolved, anchor);
+                        return;
+                    }
+                    m_loadFile(resolved);
                 }
             }
 
             if (!string.IsNullOrEmpty(anchor))
             {
                 JumpToAnchor(anchor);
+            }
+        }
+
+        /// <summary>mde で開くファイル（Markdown。フォルダペインに表示するのと同じ .md・.markdown）かどうか。</summary>
+        /// <param name="a_path">ファイルのパス。</param>
+        /// <returns>Markdown のファイルなら true。</returns>
+        private static bool IsMarkdownFile(string a_path)
+        {
+            return a_path.EndsWith(".md", StringComparison.OrdinalIgnoreCase) ||
+                a_path.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>実行すると、プログラムとして動くファイルの拡張子（リンクをクリックしただけで動かないよう、開く前に確かめる）。</summary>
+        private static readonly HashSet<string> s_executableExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".exe", ".com", ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".msi",
+            ".msp", ".scr", ".pif", ".cpl", ".msc", ".jar", ".lnk", ".reg", ".url", ".appref-ms", ".application", ".appx",
+            ".msix", ".dll", ".sys", ".inf",
+        };
+
+        /// <summary>Markdown 以外のファイルへのリンクを、Windows でそのファイルに関連付けられたアプリで開く（エクスプローラーで
+        /// ダブルクリックした時と同じ）。プログラム（.exe・.bat 等）は、リンクをクリックしただけで動かないよう、開く前に確かめる。</summary>
+        /// <param name="a_path">ファイルのフルパス。</param>
+        private static void OpenWithAssociatedApp(string a_path)
+        {
+            if (s_executableExtensions.Contains(System.IO.Path.GetExtension(a_path)) &&
+                MessageBoxResult.Yes != MessageBox.Show(
+                    Loc.T("リンク先はプログラム（実行するファイル）です。実行しますか？\n", "The link points to a program (a file that runs). Do you want to run it?\n") + a_path,
+                    Loc.T("ファイルリンク", "File Link"), MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No))
+            {
+                return;
+            }
+            try
+            {
+                Process.Start(new ProcessStartInfo(a_path) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(Loc.T("ファイルを開けませんでした（関連付けられたアプリが無い等）：\n", "Could not open the file (for example, no app is associated with it):\n") +
+                    a_path + "\n" + ex.Message, Loc.T("ファイルリンク", "File Link"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 

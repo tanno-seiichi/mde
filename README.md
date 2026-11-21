@@ -313,6 +313,13 @@ see its URL in a tooltip.
 You can switch to "Open with Ctrl+Click" with "View" → "Opening Links" (then a click without Ctrl just moves the
 cursor, as usual).
 
+A link to another file (with a relative path, such as `[description](other.md)`) opens that file in a new window (the
+current window stays as it is). However, when the folder view is shown and the file is in the folder shown there, the
+file opens in the current window, the same as clicking it in the folder view. A link with `#heading` to the file that is
+open now moves to that heading.
+A link to a file that is not Markdown (such as `LICENSE.txt`, a PDF, or an image) does not open in mde; it opens in the
+app associated with that file in Windows (for a link to a program, such as `.exe` or `.bat`, mde asks whether to run it).
+
 Right-click a link to choose "Open Link", "Copy URL", "Edit Link…", or "Remove Link". You can also select text and
 right-click → "Make Link…" to make a link.
 
