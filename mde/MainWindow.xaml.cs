@@ -98,13 +98,13 @@ namespace mde
         /// <summary>編集ペインの文書の下の余白（px。FlowDocument.PagePadding の下）。末尾までスクロールした時に、最後の行の
         /// 下に余白を表示する（mdew と同じ 120px）。</summary>
         private const double EDITOR_BOTTOM_PADDING = 120;
-        private bool m_requireCtrlForLinkClickFlg = true;
+        private bool m_requireCtrlForLinkClickFlg = false;
 
         /// <summary>段落中の途中改行（空行を伴わない、ソース上の単純な改行）を、そのまま
-        /// 見た目の改行として表示するか（true。既定値。mde の従来動作）、それとも
+        /// 見た目の改行として表示するか（true）、それとも
         /// 空行が入るまでは改行しない、CommonMark/VSCodeのMarkdownプレビュー標準の表示に
-        /// するか（false）。メニュー「表示」→「段落中の改行」で切り替えられる。</summary>
-        private bool m_preserveSourceLineBreaksFlg = true;
+        /// するか（false。既定値）。メニュー「表示」→「段落中の改行」で切り替えられる。</summary>
+        private bool m_preserveSourceLineBreaksFlg = false;
 
         /// <summary>以前のメニュー「表示」→「列幅を補正する」の状態（メニューは無くしたため、常に true）。オンなら、列幅調整ダイアログで
         /// 明示的に調整済みの表はその比率で、未調整（|---|）の表は内容量に応じて自動計算した
@@ -113,18 +113,18 @@ namespace mde
         private bool m_correctColumnWidthsFlg = true;
 
         /// <summary>メニュー「表示」→「箇条書きの記号」の状態。falseなら段数に応じて1段目Disc・
-        /// 2段目Circle・3段目以降BoxとするWPF標準の割り当て（既定）、trueなら段数によらず
+        /// 2段目Circle・3段目以降BoxとするWPF標準の割り当て、trueなら段数によらず
         /// すべての階層で同じ記号（Disc）を使う。詳細はBlockStyles.UnorderedMarkerStyleForDepth
-        /// 参照。既定値はfalse。</summary>
-        private bool m_uniformMarkerStyleFlg = false;
+        /// 参照。既定値はtrue。</summary>
+        private bool m_uniformMarkerStyleFlg = true;
 
         /// <summary>以前のメニュー「表示」→「表示フォント」の状態（trueなら以前の表示フォント Yu Gothic UI）。メニューは
         /// 無くしたため、常に false（Meiryo, Segoe UI。mdew・mdee と同じ）。</summary>
         private bool m_useLegacyFontFlg = false;
 
-        /// <summary>メニュー「表示」→「文字の色」の設定。falseなら「くっきりした色」（既定）、trueなら
-        /// 「目にやさしい色」。詳細はApplyTextColor参照。</summary>
-        private bool m_softTextColorFlg = false;
+        /// <summary>メニュー「表示」→「文字の色」の設定。falseなら「くっきりした色」、trueなら
+        /// 「目にやさしい色」（既定）。詳細はApplyTextColor参照。</summary>
+        private bool m_softTextColorFlg = true;
 
         /// <summary>メニュー「表示」→「表示スタイル」の設定。falseなら「GitHubスタイル」（既定）、trueなら
         /// 「VSCodeスタイル」。詳細はSetVsCodeStyleFlg・ApplyDocStyle参照。</summary>
@@ -192,7 +192,7 @@ namespace mde
         private bool m_outlinePaneVisibleFlg = false;
 
         /// <summary>ステータスバーを表示しているか（メニュー「表示」→「ステータスバーを表示」）。</summary>
-        private bool m_statusBarVisibleFlg = true;
+        private bool m_statusBarVisibleFlg = false;
 
         // 右クリック時の対象（表・コードブロックまわりはTableEditor/InlineStyleEditorに
         // それぞれ専用のプロパティがあるので、ここではまだどのクラスにも属さないものだけを保持する）
@@ -336,8 +336,13 @@ namespace mde
             if (!s_languageInitializedFlg)
             {
                 s_languageInitializedFlg = true;
-                bool englishFlg = "en".Equals(m_savedSettings.UiLanguage, StringComparison.OrdinalIgnoreCase) ||
-                    (string.IsNullOrEmpty(m_savedSettings.UiLanguage) && Loc.IsEnglishByDefault());
+                // ユーザーが「言語」メニューで選んだことがあれば、その言語にする。まだ選んでいなければ、Windows の表示言語にする
+                s_uiLanguageSelectedFlg = m_savedSettings.UiLanguageSelectedFlg &&
+                    ("en".Equals(m_savedSettings.UiLanguage, StringComparison.OrdinalIgnoreCase) ||
+                     "ja".Equals(m_savedSettings.UiLanguage, StringComparison.OrdinalIgnoreCase));
+                bool englishFlg = s_uiLanguageSelectedFlg
+                    ? "en".Equals(m_savedSettings.UiLanguage, StringComparison.OrdinalIgnoreCase)
+                    : Loc.IsEnglishByDefault();
                 Loc.SetLanguage(englishFlg);
             }
             Loc.LanguageChanged += OnLanguageChanged;
@@ -357,6 +362,13 @@ namespace mde
             UpdateDocWidthMenuChecks();
             m_folderPaneVisibleFlg = m_savedSettings.FolderPaneVisible;
             m_outlinePaneVisibleFlg = m_savedSettings.OutlinePaneVisible;
+            if (null != a_openedFromWindow)
+            {
+                // 別のウィンドウから開いた時は、フォルダペイン・アウトラインペインの表示・非表示を、開いた元の
+                // ウィンドウの今の状態に合わせる（設定に保存されているのは、最後に閉じたウィンドウの状態のため）
+                m_folderPaneVisibleFlg = a_openedFromWindow.m_folderPaneVisibleFlg;
+                m_outlinePaneVisibleFlg = a_openedFromWindow.m_outlinePaneVisibleFlg;
+            }
             m_statusBarVisibleFlg = m_savedSettings.StatusBarVisible;
             m_statusBar.Visibility = m_statusBarVisibleFlg ? Visibility.Visible : Visibility.Collapsed;
             if (m_savedSettings.FolderPaneWidth > 0)
@@ -905,6 +917,21 @@ namespace mde
             double outlineWidthToSave = (m_outlinePaneVisibleFlg && m_outlineColumnDef.Width.Value > 0)
                 ? m_outlineColumnDef.Width.Value : m_lastOutlineColumnWidth;
 
+            // 言語は、ユーザーが「言語」メニューで選んだ時だけ保存する（選んでいない間は、次回も Windows の表示言語で起動する）。
+            // このアプリ（プロセス）で選んでいなくても、別に起動した mde で選んだ言語が設定ファイルにあれば、それを残す
+            // （.md ファイルをダブルクリックすると、別のプロセスとして起動するため）
+            bool uiLanguageSelectedFlg = s_uiLanguageSelectedFlg;
+            string uiLanguage = s_uiLanguageSelectedFlg ? (Loc.IsEnglish ? "en" : "ja") : null;
+            if (!uiLanguageSelectedFlg)
+            {
+                AppSettings onDisk = AppSettings.Load();
+                if (onDisk.UiLanguageSelectedFlg)
+                {
+                    uiLanguageSelectedFlg = true;
+                    uiLanguage = onDisk.UiLanguage;
+                }
+            }
+
             var settings = new AppSettings
             {
                 IsMaximized = maximizedFlg,
@@ -932,7 +959,8 @@ namespace mde
                 PdfMarginLeft = m_pdfMarginLeft,
                 PdfMarginRight = m_pdfMarginRight,
                 PdfRepeatTableHeaderFlg = m_pdfRepeatTableHeaderFlg,
-                UiLanguage = Loc.IsEnglish ? "en" : "ja",
+                UiLanguage = uiLanguage,
+                UiLanguageSelectedFlg = uiLanguageSelectedFlg,
                 RecentFiles = m_recentFiles,
                 RecentFolders = m_recentFolders,
                 LastSaveDialogDirectory = m_lastSaveDialogDirectory
@@ -5105,11 +5133,15 @@ namespace mde
         /// <summary>画面の文字の言語を、最初のウィンドウを開く時に決めたか（言語はすべてのウィンドウで共通）。</summary>
         private static bool s_languageInitializedFlg;
 
+        /// <summary>ユーザーがメニュー「表示」→「言語」で言語を選んだか（AppSettings.UiLanguageSelectedFlg。すべてのウィンドウで共通）。</summary>
+        private static bool s_uiLanguageSelectedFlg;
+
         /// <summary>メニュー「表示」→「言語」→「日本語」。</summary>
         /// <param name="a_sender">メニュー項目。</param>
         /// <param name="a_args">Click event.</param>
         private void LanguageJaChecked(object a_sender, RoutedEventArgs a_args)
         {
+            s_uiLanguageSelectedFlg = true;
             Loc.SetLanguage(false);
             UpdateLanguageMenuChecks();
         }
@@ -5119,6 +5151,7 @@ namespace mde
         /// <param name="a_args">Click event.</param>
         private void LanguageEnChecked(object a_sender, RoutedEventArgs a_args)
         {
+            s_uiLanguageSelectedFlg = true;
             Loc.SetLanguage(true);
             UpdateLanguageMenuChecks();
         }
@@ -5194,7 +5227,7 @@ namespace mde
         }
 
         /// <summary>メニュー「表示」→「段落中の改行」→「ソースの通りに改行する」（mde の
-        /// 従来の表示。既定値）。</summary>
+        /// 従来の表示）。</summary>
         /// <param name="a_sender">メニュー項目。</param>
         /// <param name="a_args">Click event.</param>
         private void LineBreakModeSourceChecked(object a_sender, RoutedEventArgs a_args)
@@ -5203,7 +5236,7 @@ namespace mde
         }
 
         /// <summary>メニュー「表示」→「段落中の改行」→「空行が入るまで改行しない」
-        /// （CommonMark/VSCodeのMarkdownプレビュー標準の表示）。</summary>
+        /// （CommonMark/VSCodeのMarkdownプレビュー標準の表示。既定値）。</summary>
         /// <param name="a_sender">メニュー項目。</param>
         /// <param name="a_args">Click event.</param>
         private void LineBreakModeBlankOnlyChecked(object a_sender, RoutedEventArgs a_args)
@@ -5252,7 +5285,7 @@ namespace mde
         }
 
         /// <summary>メニュー「表示」→「箇条書きの記号」→「WPF標準」（1段目Disc・2段目Circle・
-        /// 3段目以降Box。既定値）。</summary>
+        /// 3段目以降Box）。</summary>
         /// <param name="a_sender">メニュー項目。</param>
         /// <param name="a_args">Click event.</param>
         private void MarkerStyleWpfStandardChecked(object a_sender, RoutedEventArgs a_args)
@@ -5261,7 +5294,7 @@ namespace mde
         }
 
         /// <summary>メニュー「表示」→「箇条書きの記号」→「すべての階層に同じ記号を使用する」
-        /// （段数によらず常にDiscにする）。</summary>
+        /// （段数によらず常にDiscにする。既定値）。</summary>
         /// <param name="a_sender">メニュー項目。</param>
         /// <param name="a_args">Click event.</param>
         private void MarkerStyleUniformChecked(object a_sender, RoutedEventArgs a_args)
@@ -5274,8 +5307,8 @@ namespace mde
         /// フラグを切り替えた上で再度解析し直す）で、開いている文書全体に即座に反映する
         /// （既存の箇条書きは、作成時に決まったMarkerStyleをそのまま持ち続けており、設定を
         /// 変えただけでは自動的には追従しないため）。</summary>
-        /// <param name="a_value">true＝段数によらずすべての階層で同じ記号（Disc）を使う、
-        /// false（既定）＝WPF標準の割り当て（1段目Disc・2段目Circle・3段目以降Box）。</param>
+        /// <param name="a_value">true（既定）＝段数によらずすべての階層で同じ記号（Disc）を使う、
+        /// false＝WPF標準の割り当て（1段目Disc・2段目Circle・3段目以降Box）。</param>
         private void SetUniformMarkerStyleFlg(bool a_value)
         {
             if (m_uniformMarkerStyleFlg != a_value)

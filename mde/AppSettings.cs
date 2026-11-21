@@ -24,26 +24,31 @@ namespace mde
         public double FolderPaneWidth { get; set; } = 200;
         public bool OutlinePaneVisible { get; set; } = false;
 
-        /// <summary>メニュー「表示」→「ステータスバーを表示」の状態。既定は true（表示する）。</summary>
-        public bool StatusBarVisible { get; set; } = true;
+        /// <summary>メニュー「表示」→「ステータスバーを表示」の状態。既定は false（表示しない）。</summary>
+        public bool StatusBarVisible { get; set; } = false;
         public double OutlinePaneWidth { get; set; } = 200;
         public double ZoomLevel { get; set; } = 1.0;
-        public bool RequireCtrlForLinkClickFlg { get; set; } = true;
-        public bool PreserveSourceLineBreaksFlg { get; set; } = true;
+        /// <summary>メニュー「表示」→「リンクの開き方」の選択状態。trueなら「Ctrl+クリックで開く」、falseなら
+        /// 「クリックのみで開く」（既定）。</summary>
+        public bool RequireCtrlForLinkClickFlg { get; set; } = false;
+
+        /// <summary>メニュー「表示」→「段落中の改行」の選択状態。trueなら「ソースの通りに改行する」、falseなら
+        /// 「空行が入るまで改行しない」（既定）。</summary>
+        public bool PreserveSourceLineBreaksFlg { get; set; } = false;
 
         /// <summary>メニュー「表示」→「箇条書きの記号」の選択状態。falseなら段数に応じて
-        /// 1段目Disc・2段目Circle・3段目以降BoxとするWPF標準の割り当て（既定）、trueなら
-        /// 段数によらずすべての階層で同じ記号（Disc）を使う。既定はfalse。</summary>
-        public bool UniformMarkerStyleFlg { get; set; } = false;
+        /// 1段目Disc・2段目Circle・3段目以降BoxとするWPF標準の割り当て、trueなら
+        /// 段数によらずすべての階層で同じ記号（Disc）を使う。既定はtrue。</summary>
+        public bool UniformMarkerStyleFlg { get; set; } = true;
 
         /// <summary>メニュー「表示」→「表示フォント」の選択状態。falseなら既定の表示フォント
         /// （Meiryo, Segoe UI。既定）、trueならフォント変更前の以前の表示フォント（Yu Gothic UI, Segoe UI）を
         /// 使う。既定はfalse。</summary>
         public bool UseLegacyFontFlg { get; set; } = false;
 
-        /// <summary>メニュー「表示」→「文字の色」の選択状態。falseなら「くっきりした色」（本文は黒。既定）、
-        /// trueなら「目にやさしい色」（本文は少し薄い灰色、リンクも少し薄い青）。既定はfalse。</summary>
-        public bool SoftTextColorFlg { get; set; } = false;
+        /// <summary>メニュー「表示」→「文字の色」の選択状態。falseなら「くっきりした色」（本文は黒）、
+        /// trueなら「目にやさしい色」（本文は少し薄い灰色、リンクも少し薄い青）。既定はtrue。</summary>
+        public bool SoftTextColorFlg { get; set; } = true;
 
         /// <summary>メニュー「表示」→「表示スタイル」の選択状態。falseなら「GitHubスタイル」（今までの見た目。既定）、
         /// trueなら「VSCodeスタイル」（Visual Studio Code のプレビューに似せた見た目）。既定はfalse。</summary>
@@ -87,6 +92,11 @@ namespace mde
         /// <summary>メニュー「表示」→「言語」で選んだ、画面の文字の言語（"ja"：日本語、"en"：英語）。まだ選んでいない
         /// 時は null（Windows の表示言語が日本語なら日本語、それ以外は英語にする。Loc.IsEnglishByDefault）。</summary>
         public string UiLanguage { get; set; }
+
+        /// <summary>ユーザーがメニュー「表示」→「言語」で言語を選んだか。選んでいない間は、UiLanguage に関わらず
+        /// Windows の表示言語で起動する（以前の版は、選んでいなくても今の言語を UiLanguage に保存していたため、
+        /// この値の無い設定ファイルの UiLanguage は使わない）。</summary>
+        public bool UiLanguageSelectedFlg { get; set; } = false;
 
         private static string SettingsPath =>
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mde", "settings.json");
