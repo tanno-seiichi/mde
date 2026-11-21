@@ -7,6 +7,7 @@
   </Configurations>
   <Folder Name="/ソリューション項目/">
     <File Path="LICENSE.txt" />
+    <File Path="README.ja.md" />
     <File Path="README.md" />
   </Folder>
   <Folder Name="/ソリューション項目/doc/">
@@ -26,6 +27,7 @@
   </Folder>
   <Folder Name="/ソリューション項目/images/">
     <File Path="images/screen_layout.png" />
+    <File Path="images/screen_layout_en.png" />
   </Folder>
   <Project Path="mde\mde.csproj" />
   <Project Path="msi/msi.wixproj" Type="b7dd6f7e-def8-4e67-b5b7-07ef123db6f0">

@@ -26,10 +26,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- ヘルプ→「Readmeを開く」用に、ソリューション直下のREADME.mdと、そこから参照している
+    <!-- ヘルプ→「Readmeを開く」用に、ソリューション直下のREADME.md（英語）・README.ja.md（日本語）と、そこから参照している
          imagesフォルダ（screen_layout.png等、中身ごと）を、ビルド時に実行フォルダへコピーする。
-         MainWindow.xaml.csのOpenReadmeBtnClickは、この実行フォルダ側のREADME.mdを開く。 -->
+         MainWindow.xaml.csのOpenReadmeは、この実行フォルダ側の、画面の言語に合ったREADMEを開く。 -->
     <Content Include="..\README.md" Link="README.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\README.ja.md" Link="README.ja.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\images\**" Link="images\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

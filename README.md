@@ -1,420 +1,411 @@
-# mde（インライン編集に対応したシンプルなMarkdownエディタ）
+# mde (a simple Markdown editor with inline editing)
 
-mde は、Markdown ファイルをプレビューと同じ見た目のまま直接編集できる、Windows デスクトップ用の
-Markdown エディタです。編集用とプレビュー用の画面が分かれていないので、書式が実際にどう見えるかを
-確認しながらそのまま書き進められます。
+English | [Japanese](README.ja.md)
 
-このドキュメントは、mde を初めて使う方向けのガイドです。
+mde is a Markdown editor for the Windows desktop that lets you edit Markdown files directly, in the same look as
+the preview. There is no separate editing screen and preview screen, so you can keep writing while you see how
+the formatting actually looks.
 
-## 目次
+This document is a guide for people who are new to mde.
 
-- [インストールと起動](#インストールと起動)
-- [画面の見方](#画面の見方)
-- [基本操作](#基本操作)
-- [書式の書き方](#書式の書き方)
-- [表（テーブル）](#表テーブル)
-- [画像](#画像)
-- [リンク](#リンク)
-- [フォルダビュー](#フォルダビュー)
-- [アウトラインビュー](#アウトラインビュー)
-- [検索と置換](#検索と置換)
-- [ソースモード](#ソースモード)
-- [PDFへの書き出し](#pdfへの書き出し)
-- [ショートカット一覧](#ショートカット一覧)
-- [困ったときは](#困ったときは)
-- [ライセンス](#ライセンス)
+## Contents
 
-## インストールと起動
+- [Installing and starting mde](#installing-and-starting-mde)
+- [The screen](#the-screen)
+- [Basic operations](#basic-operations)
+- [Formatting](#formatting)
+- [Tables](#tables)
+- [Images](#images)
+- [Links](#links)
+- [Folder view](#folder-view)
+- [Outline view](#outline-view)
+- [Find and replace](#find-and-replace)
+- [Source mode](#source-mode)
+- [Exporting to PDF](#exporting-to-pdf)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
 
-配布された `mde.msi` をダブルクリックすると、インストーラーが起動します。画面の案内に従って
-進めると、インストールが完了します（すべてのユーザー向けにインストールされるため、Windowsから
-確認のダイアログが表示された場合は許可してください）。
+## Installing and starting mde
 
-インストールが終わると、スタートメニューに「mde」が追加されます。ここから起動してください。
+Double-click the `mde.msi` file you received to start the installer. Follow the steps on the screen to finish
+the installation (mde is installed for all users, so if Windows asks for permission, allow it).
 
-mde の実行には .NET 10 Desktop Runtime が必要です（同梱していません）。Windows 11環境の
-多くは、会社のIT部門による配布や過去のWindows Updateなどで既に入っていることが多いですが、
-万一入っていない場合は、mde を起動しようとした際に「.NETをインストールしてください」という
-案内が自動的に表示され、そこから公式のダウンロードページへ進めます（mde 側で用意した画面
-ではなく、.NET自体の標準機能です）。案内に従ってインストールした後、もう一度 mde を
-起動してください。
+When the installation is finished, "mde" is added to the Start menu. Start mde from there.
 
-初回起動時は空の新規ファイルが開いた状態になります。2回目以降は、ウィンドウのサイズ・位置や
-表示倍率など、前回終了時の状態を記憶して復元します。
+mde needs the .NET 10 Desktop Runtime (it is not included). Many Windows 11 PCs already have it, installed by
+the company's IT department or by an earlier Windows Update. If it is missing, a message asking you to install
+.NET appears automatically when you start mde, and it takes you to the official download page (this is a
+standard feature of .NET itself, not a screen made by mde). Install it as instructed, then start mde again.
 
-mde はコマンドライン引数でMarkdownファイルのパスを渡して起動すると、そのファイルを開いた
-状態で立ち上がります。デスクトップのショートカットのリンク先（プロパティの「リンク先」欄）に
-ファイルパスを追記しておけば、そのショートカットからワンクリックで特定のファイルを開けます。
-なお、mde は現時点では `.md` ファイルの既定のアプリとしては登録されないため、エクスプローラーで
-`.md` ファイルをダブルクリックしたり、タスクバーのアイコンへドラッグ&ドロップしたりしても
-開けません（タスクバーアイコンへのドラッグはWindows側の仕様上そもそも動作しません）。
+The first time you start mde, an empty new file is open. From then on, mde remembers the state when you last
+closed it, such as the window size and position and the zoom level, and restores it.
 
-新しいバージョンの `mde.msi` を実行すると、既存のインストールが自動的に新しいバージョンへ
-更新されます（アンインストールを先に行う必要はありません）。
+If you start mde with the path of a Markdown file as a command-line argument, mde opens that file. If you add
+a file path to the target of a desktop shortcut (the "Target" box in its properties), you can open that file
+from the shortcut with one click.
+mde is not registered as the default app for `.md` files at this time, so double-clicking a `.md` file in File
+Explorer, or dragging it onto the taskbar icon, does not open it in mde (dragging onto a taskbar icon does not
+work at all, because of how Windows works).
 
-アンインストールする場合は、Windowsの「設定」→「アプリ」（または「アプリと機能」）から
-「mde」を選び、アンインストールしてください。
+Running a newer `mde.msi` updates the existing installation to the new version automatically (you do not need
+to uninstall it first).
 
-## 画面の見方
+To uninstall mde, choose "mde" in Windows "Settings" → "Apps" (or "Apps & features") and uninstall it.
 
-![mdeの画面構成](images/screen_layout.png)
+## The screen
 
-- **メニューバー**：ファイル操作、検索と置換、バージョン情報。
-- **フォルダビュー**（左端）：開いているフォルダの中の Markdown ファイル一覧。
-- **アウトラインビュー**（中央）：今開いているファイルの見出し一覧。クリックでその場所へジャンプします。
-- **編集領域**（右側の大部分）：実際に文章を書く場所。ここに表示されている内容がそのまま保存されます。
-- **ステータスバー**（下端）：ペインの表示切り替え、ソース⇄Markdown切り替え、表示倍率の調整。
+![The layout of the mde screen](images/screen_layout_en.png)
 
-フォルダビュー・アウトラインビュー・ステータスバーは、最初は表示されていません。メニュー「表示」→
-「フォルダを表示」「アウトラインを表示」「ステータスバーを表示」で、それぞれ独立に表示・非表示を切り替えられます
-（ステータスバー左側のボタンでも切り替えられます。ペインの幅は境界をドラッグして調整します）。
-新しいウィンドウ（新規作成・別のファイルを開く等）は、開いた元のウィンドウと同じ表示・非表示の状態で開きます。
-「フォルダを開く…」でフォルダを開いた時は、フォルダビューを必ず表示します。
+- **Menu bar**: file operations, view settings, find and replace, and help.
+- **Folder view** (left): the list of Markdown files in the open folder.
+- **Outline view** (middle): the list of headings in the open file. Click a heading to jump to it.
+- **Editing area** (most of the right side): where you write. What you see here is what is saved.
+- **Status bar** (bottom): buttons to show or hide the panes, switch between source mode and Markdown mode,
+  and change the zoom level.
 
-## 基本操作
+The folder view, the outline view, and the status bar are hidden at first. You can show or hide each of them
+with "View" → "Show Folder", "Show Outline", and "Show Status Bar" (you can also use the buttons on the left of
+the status bar; drag the border of a pane to change its width).
+A new window (from New, opening another file, etc.) opens with the panes shown or hidden in the same way as
+the window it was opened from. When you open a folder with "Open Folder…", the folder view is always shown.
 
-| 操作 | 方法 |
+## Basic operations
+
+| Operation | How |
 |---|---|
-| 新規作成 | メニュー「ファイル」→「新規作成」、または `Ctrl+N`（新しいウィンドウを開きます。今のウィンドウの内容はそのまま残ります） |
-| ファイルを開く | メニュー「ファイル」→「開く…」、または `Ctrl+O` |
-| 最近使ったファイルを開く | メニュー「ファイル」→「最近使ったファイル」から選択 |
-| 最近使ったフォルダを開く | メニュー「ファイル」→「最近使ったフォルダ」から選択 |
-| フォルダを開く | メニュー「ファイル」→「フォルダを開く…」、またはフォルダビューの「…」ボタン |
-| 上書き保存 | メニュー「ファイル」→「保存」、または `Ctrl+S` |
-| 名前を付けて保存 | メニュー「ファイル」→「名前を付けて保存…」、または `Shift+Ctrl+S` |
-| すべて保存 | メニュー「ファイル」→「すべて保存」（フォルダ全体の変更をまとめて書き出す） |
-| ウィンドウを閉じる | メニュー「ファイル」→「閉じる」、または `Ctrl+W` |
-| 拡大・縮小 | メニュー「表示」→「拡大」「縮小」「100%に戻す」、ステータスバーの「－」「＋」ボタン、`Ctrl++`・`Ctrl+-`・`Ctrl+0`、または `Ctrl+マウスホイール`（倍率は 48%・57%・69%・83%・100%・120%・144%・172%・207%・248% から選びます） |
-| ステータスバーの表示 | メニュー「表示」→「ステータスバーを表示」 |
-| 文字の色 | メニュー「表示」→「文字の色」（「くっきりした色」・「目にやさしい色」） |
-| 表示スタイル | メニュー「表示」→「表示スタイル」（「GitHubスタイル」・「VSCodeスタイル」）。切り替えても、表示している場所はそのままです |
-| 画面の言語 | メニュー「表示」→「言語」（「日本語」・「English」）。最初は Windows の表示言語に合わせます（日本語以外は英語）。一度切り替えると、次回からはその言語で起動します |
-| 本文の幅 | メニュー「表示」→「本文の幅」（「読みやすい幅にする（最大 884px）」：本文を最大 884px の幅で中央に置く（mdew・mdee と同じ）・「編集ペインの幅に合わせる」：編集ペインの幅いっぱいに表示する（既定）） |
+| New | "File" → "New", or `Ctrl+N` (a new window opens; the current window stays as it is) |
+| Open a file | "File" → "Open…", or `Ctrl+O` |
+| Open a recent file | Choose it from "File" → "Recent Files" |
+| Open a recent folder | Choose it from "File" → "Recent Folders" |
+| Open a folder | "File" → "Open Folder…", or the "…" button in the folder view |
+| Save | "File" → "Save", or `Ctrl+S` |
+| Save as | "File" → "Save As…", or `Shift+Ctrl+S` |
+| Save all | "File" → "Save All" (writes all the changes in the folder at once) |
+| Close the window | "File" → "Close", or `Ctrl+W` |
+| Zoom in / out | "View" → "Zoom In", "Zoom Out", "Reset to 100%", the "－" and "＋" buttons on the status bar, `Ctrl++`, `Ctrl+-`, `Ctrl+0`, or `Ctrl+mouse wheel` (the zoom level is one of 48%, 57%, 69%, 83%, 100%, 120%, 144%, 172%, 207%, and 248%) |
+| Show the status bar | "View" → "Show Status Bar" |
+| Text color | "View" → "Text Color" ("High Contrast" or "Easy on the Eyes") |
+| Display style | "View" → "Display Style" ("GitHub Style" or "VS Code Style"). The part of the document you are looking at stays in view when you switch |
+| Language | "View" → "Language" ("日本語" or "English"). At first, mde follows the Windows display language (English unless it is Japanese). Once you switch, mde starts in that language from then on. "Help" → "Open Readme" (`F1`) opens the README in the language of the screen (this document or the Japanese version) |
+| Text width | "View" → "Text Width" ("Readable Width (Max 884px)": the text is placed in the center at most 884px wide (the same as mdew and mdee); "Fit to Editor Pane": the text fills the width of the editor pane (default)) |
 
-未保存の変更がある状態でファイルを閉じよう・切り替えようとすると、保存するかどうかの確認が
-表示されます。ウィンドウを閉じる時は「…は変更されています。閉じる前に保存しますか？」と表示され、
-「はい」で保存してから閉じ、「いいえ」で保存せずに閉じ、「キャンセル」で閉じるのをやめます。
+If you try to close or switch a file that has unsaved changes, mde asks whether to save it. When you close a
+window, "… has been modified. Save before closing?" appears: "Yes" saves and closes, "No" closes without
+saving, and "Cancel" keeps the window open.
 
-文字の色は、メニュー「表示」→「文字の色」で切り替えられます。「くっきりした色」（黒）と、
-少し薄い灰色で線が細く見える「目にやさしい色」（既定。リンクも少し薄い青になります）があります。
-切り替えは次回起動時も同じになります。
+You can change the text color with "View" → "Text Color": "High Contrast" (black) or "Easy on the Eyes"
+(default; a slightly lighter gray that looks thinner, and links are a slightly lighter blue). The choice is kept
+the next time you start mde.
 
-文書の見た目は、メニュー「表示」→「表示スタイル」で切り替えられます。「GitHubスタイル」（既定。今までの見た目）と、
-Visual Studio Code のプレビューに似せた「VSCodeスタイル」（文字は Segoe UI・Yu Gothic UI の少し小さめの字、
-見出しは少し細い太字、箇条書きは項目の間を空けない、リンクは下線なし、インラインコードは赤い字、
-表は縦の線なし）があります。切り替えは次回起動時も同じになります。
+You can change the look of the document with "View" → "Display Style": "GitHub Style" (default; the original
+look) or "VS Code Style", which looks like the Visual Studio Code preview (slightly smaller Segoe UI and Yu
+Gothic UI text, slightly lighter bold headings, no space between list items, links without underlines, inline
+code in red, and tables without vertical lines). The choice is kept the next time you start mde.
 
-メニュー「ファイル」→「最近使ったファイル」には、最近開いたファイルが新しい順にフルパスで一覧表示され、
-クリックするとそのファイルを開けます。ファイルが移動・削除されている場合はその旨が表示され、
-一覧からも自動的に取り除かれます。「履歴をクリア」で一覧を空にできます。
+"File" → "Recent Files" lists the files you opened recently, newest first, with their full paths. Click one to
+open it. If a file has been moved or deleted, mde tells you so and removes it from the list. "Clear History"
+empties the list.
 
-メニュー「ファイル」→「最近使ったフォルダ」には、「フォルダを開く…」（またはフォルダビューの「…」ボタン）で
-開いたフォルダが、新しい順にフルパスで一覧表示されます。クリックすると、そのフォルダをフォルダビューに開きます。
+"File" → "Recent Folders" lists the folders you opened with "Open Folder…" (or the "…" button in the folder
+view), newest first, with their full paths. Click one to open it in the folder view.
 
-「最近使ったファイル」「最近使ったフォルダ」の一覧は、クリックするか、マウスを乗せて少し待つと開きます
-（マウスを通り過ぎるだけなら開かないので、長い一覧がほかのメニューの項目を隠してしまうことはありません）。
+The "Recent Files" and "Recent Folders" lists open when you click them or rest the mouse pointer on them for a
+moment (they do not open when the pointer just passes over them, so a long list does not cover the other menu
+items).
 
-メニューの「開く…」（`Ctrl+O`）「最近使ったファイル」「フォルダを開く…」「最近使ったフォルダ」は、今のウィンドウで
-ファイルやフォルダを開いている時や、何か書いてある時は、新しいウィンドウで開きます（今のウィンドウの内容は
-そのまま残ります）。何も書いていない新しいウィンドウでは、そのウィンドウで開きます。今のウィンドウで開いている
-ファイル・フォルダそのものを選んだ時は、新しいウィンドウは開きません。フォルダビューの「…」ボタンは、今までどおり
-このウィンドウのフォルダを切り替えます。
+"Open…" (`Ctrl+O`), "Recent Files", "Open Folder…", and "Recent Folders" open the file or folder in a new window
+when the current window has a file or folder open or contains some text (the current window stays as it is).
+In a new window with nothing written in it, they open in that window. If you choose the file or folder that is
+already open in the current window, no new window opens. The "…" button in the folder view switches the folder
+of this window, as before.
 
-### 編集していない部分はそのまま保存される
+### Parts you did not edit are saved as they are
 
-mde は、見出し・段落・箇条書き・表・コードブロックといったまとまり（ブロック）ごとに、
-実際に編集したブロックだけを保存時に書き直します。触っていない部分は、読み込んだ時の
-書き方（余白や改行の位置など）がそのまま保たれます。そのため、開いて保存しただけで
-差分だらけになる、といったことが起きにくくなっています。
+mde rewrites only the blocks (headings, paragraphs, lists, tables, code blocks, and so on) that you actually
+edited. The parts you did not touch keep the way they were written when the file was loaded (spacing, line
+break positions, and so on). This means that opening and saving a file does not fill it with changes.
 
-## 書式の書き方
+## Formatting
 
-編集領域に直接、見た目そのままで書式が反映されます。
+Formatting is shown as it looks, right in the editing area.
 
-| 書きたいもの | 入力方法 |
+| What you want | How to type it |
 |---|---|
-| 見出し | 行頭で `#` に続けてスペース（`#`〜`######` で見出し1〜6） |
-| 引用 | 行頭で `> ` に続けてスペース |
-| 太字 | `**太字にしたい文字**` |
-| 斜体 | `*斜体にしたい文字*` または `_斜体にしたい文字_` |
-| 取り消し線 | `~~取り消し線にしたい文字~~` |
-| 下線 | `<u>下線を引きたい文字</u>` |
-| ハイライト | `==ハイライトしたい文字==` |
-| インラインコード | `` `コードにしたい文字` `` |
-| 箇条書き | 行頭で `* ` または `- ` に続けて入力 |
-| 番号付きリスト | 行頭で `1. ` のように数字＋ピリオド＋スペース |
-| タスクリスト（チェックボックス） | 箇条書き項目の先頭、または表のセル（見出しの行以外）の先頭で `[ ] `（未チェック）または `[x] `（チェック済み）に続けて入力（表のセルでは、後ろのスペースは無くてもよい） |
-| 水平線 | `---`・`***`・`___` のいずれかを3個以上、間にスペースを挟まず並べてEnter |
-| コードブロック | 行頭で `` ``` `` （言語名を続けてもよい：`` ```csharp ``）と入力してEnter |
-| リンク | `[表示文字](URL)` または `<https://...>` |
-| メールアドレスの自動リンク | `<name@example.com>` |
+| Heading | `#` followed by a space at the start of a line (`#` to `######` for heading 1 to 6) |
+| Quote | `>` followed by a space at the start of a line |
+| Bold | `**text to make bold**` |
+| Italic | `*text to make italic*` or `_text to make italic_` |
+| Strikethrough | `~~text to strike through~~` |
+| Underline | `<u>text to underline</u>` |
+| Highlight | `==text to highlight==` |
+| Inline code | `` `text to show as code` `` |
+| Bulleted list | `* ` or `- ` at the start of a line, then type |
+| Numbered list | A number, a period, and a space at the start of a line, such as `1. ` |
+| Task list (check boxes) | `[ ] ` (unchecked) or `[x] ` (checked) at the start of a list item, or at the start of a table cell (except in the header row), then type (in a table cell, the space after it is optional) |
+| Horizontal line | Three or more of `---`, `***`, or `___` with no spaces between them, then Enter |
+| Code block | `` ``` `` at the start of a line (you can add a language name: `` ```csharp ``), then Enter |
+| Link | `[text to show](URL)` or `<https://...>` |
+| Automatic link for an email address | `<name@example.com>` |
 
-これらの記号は、閉じ側の記号を打ち終えた瞬間に自動的に見た目の書式へ変換されます
-（後から記号を挿入した場合も同様です）。保存時には元のMarkdown記法に戻ります。
+These marks turn into formatting as soon as you finish typing the closing mark (the same happens when you add
+the marks later). When the file is saved, they are written back as Markdown.
 
-文字を選択した状態で右クリックすると、メニューの「太字」「斜体」「下線」「取り消し線」「インラインコード」
-「ハイライト」で書式を設定・解除できます（mdew と同じ）。今付いている書式には ✓ が付き、選ぶと付ける・外すが
-切り替わります。書式は重ねて付けられます（太字の取り消し線など。Markdown では `~~**文字**~~` のように書かれます）。
-インラインコードには、ほかの書式を重ねられません（Markdown ではコードの中に書式を書けないため。今の選択範囲に
-付けられない項目は灰色になります）。「通常表記に戻す」で、すべての書式を外せます。文字を選択して **Ctrl+B**（太字）・**Ctrl+I**（斜体）・
-**Ctrl+U**（下線）・**Alt+Shift+5**（取り消し線）・**Ctrl+Shift+@**（インラインコード）を押しても同じように
-切り替えられます（mdew と同じキー）。段落やブロック単位の
-書式変更（見出しレベルの変更など）も右クリックメニューから行えます。
+Select text and right-click to turn formatting on or off with "Bold", "Italic", "Underline", "Strikethrough",
+"Inline Code", and "Highlight" (the same as mdew). The formatting the text already has is marked with ✓, and
+choosing an item turns it on or off. You can combine formatting (for example, bold and strikethrough, which is
+written as `~~**text**~~` in Markdown). Inline code cannot be combined with other formatting (Markdown cannot
+have formatting inside code; items that cannot be applied to the current selection are grayed out). "Plain Text"
+removes all formatting. You can also select text and press **Ctrl+B** (bold), **Ctrl+I** (italic), **Ctrl+U**
+(underline), **Alt+Shift+5** (strikethrough), or **Ctrl+Shift+@** (inline code) to turn it on or off (the same
+keys as mdew). You can also change the formatting of a whole paragraph or block (such as the heading level) from
+the right-click menu.
 
-右クリック→「ページトップに戻る」で、文書の先頭を表示します（カーソルも先頭に移ります）。ソースモードでも使えます。
+Right-click → "Back to Top" shows the top of the document (the cursor also moves to the top). It also works in
+source mode.
 
-### 箇条書き・リストの操作
+### Lists
 
-- 項目の途中で **Enter**：次の項目を追加
-- 項目の途中で **Shift+Enter**：項目の中で改行（新しい項目にはならない）
-- **Tab**：字下げ（入れ子のリストにする）
-- **Shift+Tab**：字下げを解除
-- 空の項目で **Enter を2回**：リストから抜ける
+- **Enter** in an item: add the next item
+- **Shift+Enter** in an item: start a new line inside the item (does not make a new item)
+- **Tab**: indent (make a nested list)
+- **Shift+Tab**: remove the indent
+- **Enter twice** in an empty item: leave the list
 
-リストが何段にも入れ子になっている場合も、行頭の記号は既定ではすべての段で「・」で表示されます。
-メニュー「表示」→「箇条書きの記号」→「WPF標準」に切り替えると、1段目が「・」、2段目が「○」、
-3段目以降は「■」で表示されます。
+Even when a list is nested several levels deep, the bullet is "•" at every level by default. If you switch to
+"View" → "Bullet Symbols" → "WPF Default", the first level uses "•", the second level "○", and the third level
+and below "■".
 
-### タスクリスト（チェックボックス）
+### Task lists (check boxes)
 
-箇条書き項目の先頭で `[ ] ` または `[x] ` と入力すると、チェックボックス付きの項目に
-変換されます。表示されたチェックボックスはクリックでチェック⇔未チェックを切り替えられます。
+Type `[ ] ` or `[x] ` at the start of a list item to turn it into an item with a check box. Click the check box to
+check or uncheck it.
 
-チェックボックス項目の途中で **Enter** を押すと、次の行にも続けてチェックボックス付きの
-項目が作られます。文字を何も入力していないチェックボックス項目で Enter を押すと、通常の
-空の箇条書き項目と同様にリストから抜けます。
+Pressing **Enter** in a check box item makes the next item a check box item too. Pressing Enter in a check box
+item with no text leaves the list, the same as with an empty list item.
 
-表のセル（見出しの行以外）の先頭で `[ ]` または `[x]` と入力しても（後ろのスペースは無くてもかまいません）、
-チェックボックスに変換されます（ファイルには、セルの先頭の `[ ]`・`[x]` として保存されます。GitHub 等の他のアプリでは、`[ ]` の文字のまま
-表示されます）。
+Typing `[ ]` or `[x]` at the start of a table cell (except in the header row; the space after it is optional) also
+turns it into a check box (it is saved as `[ ]` or `[x]` at the start of the cell; other apps such as GitHub show
+the `[ ]` characters as they are).
 
-### コードブロックの操作
+### Code blocks
 
-コードブロックの中では Enter キーは改行として働きます（新しい項目やコードブロックの終了には
-なりません）。**Tab** でタブ文字を挿入、**Shift+Tab** で行頭のインデントを1段階戻せます。
-コードブロックから抜けるには、上下の行をクリックしてください。
+Inside a code block, the Enter key starts a new line (it does not make a new item or end the code block).
+**Tab** inserts a tab character, and **Shift+Tab** removes one level of indentation at the start of the line.
+To leave a code block, click the line above or below it.
 
-コードブロックの上で右クリック→「コードブロック全体をコピー（```込み）」を選ぶと、開始・終了の
-`` ``` `` と言語名を含めた完全なMarkdown形式でコピーできます（他のMarkdown文書やチャットへの
-貼り付け用）。
+Right-click a code block → "Copy Entire Code Block (with ```)" copies it as complete Markdown, including the
+opening and closing `` ``` `` and the language name (for pasting into other Markdown documents or chats).
 
-### 引用の操作
+### Quotes
 
-引用の中では Enter キーは、コードブロックと同じく常に同じ引用の中での改行として働きます
-（新しい項目や引用の終了にはなりません）。引用から抜けるには、上下の行をクリックして
-ください。
+Inside a quote, the Enter key always starts a new line in the same quote, as in a code block (it does not make
+a new item or end the quote). To leave a quote, click the line above or below it.
 
-引用の先頭行が空の状態で BackSpace を押すと、引用を解除して通常の段落に戻ります
-（見出しと同様の挙動です）。
+Pressing BackSpace when the first line of a quote is empty removes the quote and makes it a normal paragraph
+(the same as with headings).
 
-### 段落中の改行
+### Line breaks in paragraphs
 
-ソースの1行の終わり（空行を伴わない、単純な改行）をどう表示するかは、メニュー「表示」→
-「段落中の改行」で選べます。既定は「空行が入るまで改行しない」で、空行を挟まない改行は
-単なる空白として扱われ、段落は画面幅で折り返して表示されるまで改行されません（VSCodeの
-Markdownプレビューと同じ動作です）。「ソースの通りに改行する」に切り替えると、ソースの改行が
-そのまま見た目の改行になります。
+You can choose how the end of a source line (a simple line break without a blank line) is shown with "View" →
+"Line Breaks in Paragraphs". The default is "Break Only at Blank Lines": a line break without a blank line is
+treated as a space, and a paragraph wraps only at the width of the screen (the same as the VS Code Markdown
+preview). If you switch to "Break Lines as in the Source", each line break in the source is shown as a line break.
 
-段落の途中で **Shift+Enter** を押すと、上記の設定に関わらず、必ずその場で改行された見た目に
-なります（Markdown上は `<br>` として保存されます）。
+Pressing **Shift+Enter** in a paragraph always breaks the line there, whatever this setting is (it is saved as
+`<br>` in Markdown).
 
-### 空の行（続いた空行）
+### Empty lines (several blank lines in a row)
 
-ブロックの間の空行が3つ以上続いている所は空の行を置いて間を空けて表示します。
-箇条書きの項目の間も同じです。
-GitHub などほかのアプリでは、空行がいくつ続いても、段落の区切り1つとして表示されます。
+Where three or more blank lines separate blocks, mde shows empty lines there. The same applies between list
+items.
+Other apps such as GitHub show any number of blank lines as a single paragraph break.
 
-## 表（テーブル）
+## Tables
 
-右クリックメニューの「表を挿入」から、行数・列数を指定して表を作成できます。作成後は、
-表の中にカーソルがある状態で右クリックすると、行・列の挿入や削除、表全体の削除ができます。
-セル間の移動には矢印キーが使えます。**Tab** で次のセル、**Shift+Tab** で前のセルへ移動します
-（移動先のセルの文字が選択されます）。最後のセルで **Tab** を押すと、下に行が追加されます。
-**Ctrl+Enter** で、今の行の下に行を追加します。
+Right-click → "Insert Table" creates a table with the number of rows and columns you specify. After that,
+right-click with the cursor in the table to insert or delete rows and columns, or delete the whole table. Use
+the arrow keys to move between cells. **Tab** moves to the next cell and **Shift+Tab** to the previous cell (the
+text of the cell you move to is selected). Pressing **Tab** in the last cell adds a row below.
+**Ctrl+Enter** adds a row below the current row.
 
-### 列幅の自動調整・手動調整
+### Column widths (automatic and manual)
 
-表の列幅は、既定では内容量に応じて自動的に調整されます。ウインドウの表示幅に余裕がある
-場合は各列の内容がちょうど収まる幅で、余裕がない場合は、各列の内容量に応じて幅を分けて表示されます
-（mdew・mdee の「編集ペインの幅に合わせる」と同じく、ブラウザの表と同じ計算です。長い語・URLは途中で折り返します）。表の中を編集して
-カーソルが表の外へ出た時にも、内容に合わせて列幅を調整し直します。
+By default, column widths are adjusted automatically to the contents. If the window is wide enough, each column
+is just wide enough for its contents; if not, the width is shared out according to how much each column contains
+(the same calculation as tables in a browser, as with "Fit to Editor Pane" in mdew and mdee; long words and URLs
+wrap). The column widths are adjusted again when you edit the table and the cursor leaves it.
 
-列幅を自分で指定したい場合は、表の中で右クリック→「列幅を調整…」を選びます。開いた
-ダイアログで、各列の幅を他の列との比率を表す数値（3以上）で指定できます。表全体は、
-編集領域の横幅に収まるようにこの比率で分け合われます。「自動計算」のチェックを外すと
-指定した比率がそのまま使われ、数値を直接編集すると自動的にオフになります。
+To set the column widths yourself, right-click in the table → "Adjust Column Widths…". In the dialog, enter the
+width of each column as a number (3 or more) relative to the other columns. The whole table fits the width of the
+editing area, shared out in these ratios. Clear "Calculate automatically" to use the ratios as they are; editing
+a number clears it automatically.
 
-### 他のアプリからの貼り付け
+### Pasting from other apps
 
-- Claude 等のチャット・Webページ・Word・Googleドキュメントでコピーした書式付きの内容を貼り付けると、
-  見出し・箇条書き・番号付きリスト・表・コードブロック・引用・太字・斜体・リンク等が、mde の書式に
-  なります（文字の色・大きさ等の飾りは取り除かれます。mdew と同じ）。
-- Markdown の文字（メモ帳・VS Code 等でコピーしたもの）を貼り付けると、見出し・リスト・表・
-  コードブロック等も書式になります。1つの段落だけの場合は、これまで通り今の段落の中に挿入されます。
-  表のセル・引用の中など、見出しやリストを置けない場所では、文字として挿入されます。
-- **Ctrl+Shift+V** で、Markdown の記号を書式にせず、文字のまま貼り付けます（書式なしで貼り付け）。
+- Pasting formatted content copied from a chat such as Claude, a web page, Word, or Google Docs turns headings,
+  bulleted lists, numbered lists, tables, code blocks, quotes, bold, italic, links, and so on into mde formatting
+  (colors, sizes, and other decoration are removed, the same as mdew).
+- Pasting Markdown text (copied from Notepad, VS Code, etc.) also turns headings, lists, tables, code blocks, and
+  so on into formatting. If it is a single paragraph, it is inserted into the current paragraph, as before. In
+  places that cannot hold headings or lists, such as a table cell or a quote, it is inserted as text.
+- **Ctrl+Shift+V** pastes the text as it is, without turning Markdown marks into formatting (paste as plain text).
 
-### Excelとの連携
+### Working with Excel
 
-- Excelで選択した範囲をコピーして mde に貼り付けると、そのまま罫線付きの表になります。
-- mde の表を選択してコピーし、Excelに貼り付けると、Excelのセルに展開されます。
-- 表の一部だけを選択してコピーした場合は、その範囲だけが正確にコピーされます。表全体を
-  コピーしたい場合は、表全体をドラッグして選択するか、右クリックメニューの「表を削除」の
-  下にある「表をコピー」を使うと、選択操作なしで確実に表全体をコピーできます。
-- 別のmdeウィンドウなど、他のMarkdown対応アプリとの間でも、罫線を保ったまま表としてコピー＆
-  ペーストできます。タブ区切りテキストの貼り付けにも対応しています。
-- 表以外の部分（見出し・段落・箇条書き・タスクリスト・コードブロック・画像等）を選択して
-  コピーし、Excelに貼り付けると、太字・取り消し線・下線・ハイライト・リンク等の書式を保った
-  まま、見出しや段落、箇条書きの項目ごとに1行として展開されます。箇条書きの記号やタスク
-  リストのチェック状態は「・」「1.」「☑」「☐」等の文字として先頭に付きます（Excelのセルには
-  本物の箇条書き記号やチェックボックスを置けないため）。1つの段落・見出しの一部分だけを
-  選択した場合（単語の一部を選んだ場合など）は対象外です。段落全体、または複数の段落に
-  またがる範囲を選択してください。
-- 選択範囲に画像が含まれる場合は、Excelのセルへ画像として埋め込まれます（Excelのバージョン・
-  設定によっては正しく貼り付けられない場合があります）。埋め込めなかった場合は「[画像]」の
-  文字列になります。画像は一時的なファイルとして書き出す方式のため、コピーしたらなるべく
-  早めに貼り付けてください（しばらく経つと一時ファイルが自動的に整理され、貼り付けられなく
-  なることがあります）。
-- 見出しや段落と表が混在する範囲（表を含めてまとめて選択した場合など）をコピーした場合も、
-  表の部分はその表自身の行として、それ以外の部分は1項目1行として、まとめてExcelへ展開
-  されます。
+- Copy a range in Excel and paste it into mde to get a table with borders, as it is.
+- Select and copy a table in mde, and paste it into Excel to spread it over Excel cells.
+- If you select and copy only part of a table, exactly that range is copied. To copy the whole table, select the
+  whole table by dragging, or use "Copy Table" (below "Delete Table" in the right-click menu) to copy the whole
+  table reliably without selecting it.
+- You can also copy and paste tables, with their borders, to and from other mde windows and other apps that
+  support Markdown. Pasting tab-separated text is also supported.
+- If you select and copy parts other than tables (headings, paragraphs, lists, task lists, code blocks, images,
+  etc.) and paste them into Excel, each heading, paragraph, and list item becomes one row, keeping bold,
+  strikethrough, underline, highlight, links, and other formatting. List bullets and the check state of task list
+  items are added at the start as characters such as "・", "1.", "☑", and "☐" (Excel cells cannot hold real
+  bullets or check boxes). This does not apply when you select only part of a single paragraph or heading (such
+  as part of a word). Select a whole paragraph, or a range across several paragraphs.
+- Images in the selection are embedded in the Excel cells as images (depending on the version and settings of
+  Excel, they may not be pasted correctly). Images that cannot be embedded become the text "[Image]". Images are
+  written out as temporary files, so paste soon after copying (after a while the temporary files are cleaned up
+  automatically and can no longer be pasted).
+- If you copy a range that mixes headings or paragraphs with tables (for example, when you select several blocks
+  including a table), the table part is spread over rows of its own and the other parts become one row per item,
+  all pasted into Excel together.
 
-## 画像
+## Images
 
-「開く…」でファイルを選んだとき、またはフォルダビューでファイルをクリックしたときは、
-同じフォルダにある画像が自動的に解決されて表示されます。
+When you choose a file with "Open…" or click a file in the folder view, images in the same folder are found and
+shown automatically.
 
-エディタに画像ファイルをドラッグ&ドロップすると、ドロップした位置に画像として挿入されます。
-挿入した画像は、**保存するまでの間は一時フォルダに置かれ、実際のファイルには反映されません**。
-保存すると、画像は編集中のファイルと同じフォルダの `images` フォルダへ自動的に移動されます
-（同名ファイルがある場合は連番を付けて重複を回避します）。保存せずに変更を破棄すれば、
-画像を追加する前の状態に戻ります。
+Drag an image file onto the editor to insert it as an image where you drop it. **Until you save, an inserted image
+is kept in a temporary folder and the actual file is not changed.** When you save, the image is moved
+automatically to the `images` folder next to the file you are editing (if a file with the same name exists, a
+number is added to avoid a conflict). If you discard the changes without saving, the file is back to how it was
+before you added the image.
 
-画像はエディタの表示幅を超える場合のみ自動的に縮小されます。画像をダブルクリックするか、
-右クリック→「画像を開く」を選ぶと、Windowsで関連付けられた既定のアプリ（フォトなど）で
-その画像を開けます。右クリック→「画像を保存…」で、任意の場所に画像ファイルとして保存
-できます（デスクトップなどへ直接ドラッグ&ドロップして書き出すこともできます）。右クリック→
-「画像を削除」で、その画像を文書から削除できます。
+Images are made smaller automatically only when they are wider than the editor. Double-click an image, or
+right-click → "Open Image", to open it in the app associated with it in Windows (such as Photos). Right-click →
+"Save Image…" saves the image as a file anywhere you like (you can also drag it straight onto the desktop, etc.).
+Right-click → "Delete Image" deletes the image from the document.
 
-画像の表示の大きさは、右クリック→「画像のサイズ」で、元の画像の大きさに対する割合（25%〜200%）で
-変えられます。大きさは `<img src="images/a.png" alt="説明" width="320" />` のように `width` で保存
-されるので、GitHub・VS Code のプレビューでも同じ大きさで表示されます。「100%（元のサイズ）」を
-選ぶと大きさの指定を外し、元の `![説明](images/a.png)` の形に戻します。HTML のタグで書いた画像の
-`width`・`height` で大きさを変えた画像（`style="zoom:50%;"`）も、その大きさで表示します。
+Right-click → "Image Size" changes the display size of an image as a percentage of its original size (25% to
+200%). The size is saved as `width`, as in `<img src="images/a.png" alt="description" width="320" />`, so the
+image has the same size on GitHub and in the VS Code preview. "100% (Original Size)" removes the size and returns
+the image to the `![description](images/a.png)` form. Images whose size is set with `width` and `height` in an
+HTML tag, or with `style="zoom:50%;"`, are also shown at that size.
 
-画像は、元の画像の 1 ピクセルを画面の 1 ピクセル分（Windows の拡大率が 150% なら 1.5 ピクセル分）の
-大きさで表示します（GitHub・ブラウザーと同じ）。拡大率を上げた画面で撮ったスクリーンショットは、
-元の見た目より大きく表示されるので、「画像のサイズ」で小さくしてください。
+One pixel of an image is shown as one pixel on the screen (1.5 pixels if the Windows scale is 150%), the same as
+GitHub and browsers. Screenshots taken on a screen with a higher scale look larger than the original, so make them
+smaller with "Image Size".
 
-## リンク
+## Links
 
-`[表示文字](URL)` の形式、または `<https://...>` の山括弧形式の両方に対応しています。
-メールアドレスは `<name@example.com>` の形式で自動的にリンクになります（`mailto:` 付き）。
-文中にそのまま書いたメールアドレス（`name@example.com`）も、mailto のリンクとして表示されます（GitHub と同じ。
-ファイルには書いたまま、`< >` を付けずに保存されます）。入力した時は、後ろに空白・句読点等を打つか、Enter を
-押した時にリンクになります。
-リンクは青字＋下線で表示され、既定ではクリックで開きます。マウスを乗せるとURLが
-ツールチップで表示されます。
+Both the `[text to show](URL)` form and the angle-bracket form `<https://...>` are supported.
+An email address in the form `<name@example.com>` becomes a link automatically (with `mailto:`).
+An email address written as it is in the text (`name@example.com`) is also shown as a mailto link (the same as
+GitHub; it is saved as written, without `< >`). When you type one, it becomes a link when you type a space or a
+punctuation mark after it, or press Enter.
+Links are shown in blue with an underline, and by default a click opens them. Rest the mouse pointer on a link to
+see its URL in a tooltip.
 
-メニュー「表示」→「リンクの開き方」で、「Ctrl+クリックで開く」に切り替えることもできます
-（Ctrlを押さずにクリックした場合は、通常どおりカーソルが移動するだけになります）。
+You can switch to "Open with Ctrl+Click" with "View" → "Opening Links" (then a click without Ctrl just moves the
+cursor, as usual).
 
-リンクの上で右クリックすると、「リンクを開く」「URLをコピー」「リンクを編集…」
-「リンクを解除」を選べます。文字を選択して右クリック→「リンクにする…」でも
-リンクを設定できます。
+Right-click a link to choose "Open Link", "Copy URL", "Edit Link…", or "Remove Link". You can also select text and
+right-click → "Make Link…" to make a link.
 
-## フォルダビュー
+## Folder view
 
-左端のフォルダビューでは、開いているフォルダの中のMarkdownファイルが一覧表示されます。
-ファイルをクリックすると、そのファイルが編集領域に開きます。フォルダアイコンをクリックすると
-展開・折りたたみができます。
+The folder view on the left lists the Markdown files in the open folder. Click a file to open it in the editing
+area. Click a folder icon to expand or collapse it.
 
-保存されていない変更があるファイルは、ファイル名の先頭に `*` が表示されます。フォルダを
-切り替える際、`*` の付いたファイルが残っていると、破棄してよいか確認されます。
+Files with unsaved changes have `*` at the start of their names. When you switch folders while some files still
+have `*`, mde asks whether it is OK to discard the changes.
 
-フォルダビューの一番上にある「…」ボタン、またはメニュー「ファイル」→「フォルダを開く…」から、
-別のフォルダを開き直せます。以前開いたフォルダは、メニュー「ファイル」→「最近使ったフォルダ」から
-選んで開き直すこともできます。フォルダビューを隠していた場合は、フォルダを開くと表示されます。
+Use the "…" button at the top of the folder view, or "File" → "Open Folder…", to open another folder. You can
+also open a folder you opened before from "File" → "Recent Folders". If the folder view was hidden, it is shown
+when you open a folder.
 
-## アウトラインビュー
+## Outline view
 
-中央のアウトラインビューには、今開いているファイルの見出しが階層付きで一覧表示されます。
-見出しをクリックすると、編集領域内のその位置までジャンプします。長い文書で目的の場所を
-すぐに見つけたいときに便利です。
+The outline view in the middle lists the headings of the open file, with their levels. Click a heading to jump to
+it in the editing area. This is useful for quickly finding a place in a long document.
 
-## 検索と置換
+## Find and replace
 
-メニュー「検索と置換」（または `Ctrl+F`）で検索と置換ウィンドウを開きます。文字列を範囲選択してから開くと、
-その文字列が検索する文字列に入ります（複数行にまたがる選択の時は入りません）。
+"Find and Replace" in the menu (or `Ctrl+F`) opens the find and replace window. If you select some text before
+opening it, that text is put in the find box (not when the selection spans several lines).
 
-- **対象範囲**：「現在のファイル」か「フォルダ全体（サブフォルダ含む）」を選べます。
-- **大文字・小文字を区別する** / **正規表現を使用する**：それぞれチェックボックスで切り替え
-  （正規表現の置換後文字列では `$1` などの後方参照が使えます）。
-- **前を検索 / 次を検索**：一致箇所を1つずつ移動しながら確認します。
-- **すべて検索**：一致箇所をまとめて一覧表示し、強調表示します。フォルダ全体を対象にした場合は
-  ファイルの一覧が表示され、ダブルクリックでそのファイルを開いてジャンプできます。
-- **1件ずつ置換…**：一致箇所を1つずつ確認しながら「置換」「スキップ」「残りをすべて置換」を
-  選べます。
+- **Scope**: choose "Current file" or "Entire folder (including subfolders)".
+- **Match case** / **Use regular expressions**: turn each on or off with its check box (in the replacement text of
+  a regular expression, you can use back references such as `$1`).
+- **Find Previous / Find Next**: move through the matches one at a time.
+- **Find All**: lists and highlights all the matches. When the scope is the entire folder, a list of files appears;
+  double-click a file to open it and jump to the match.
+- **Replace One by One…**: go through the matches one at a time and choose "Replace", "Skip", or "Replace All
+  Remaining".
 
-フォルダ全体を対象にした置換は、**保存するまで実際のファイルには反映されません**
-（アプリ内で保持されるだけです）。ファイル名の一覧やフォルダビューには `*` が付くので、
-メニュー「ファイル」→「すべて保存」でまとめて書き出してください。
+Replacements across the entire folder **are not written to the actual files until you save** (they are only kept in
+the app). The file list and the folder view show `*`, so write them all out with "File" → "Save All".
 
-検索条件（検索語・対象範囲・オプション）は、ウィンドウを閉じても次回開いたときに引き継がれます。
+The search settings (the text to find, the scope, and the options) are kept when you close the window and are used
+the next time you open it.
 
-## ソースモード
+## Source mode
 
-ステータスバーの「ソース⇄Markdown」ボタン、または右クリックメニューから、Markdownのソース
-テキストをそのまま編集するモードに切り替えられます。書式を気にせずテキストとして一括編集したい
-ときに使えます。
+Use the "Source Mode" / "Markdown Mode" button on the status bar, or the right-click menu, to switch to a mode
+where you edit the Markdown source text as it is. This is useful when you want to edit the text all at once without
+the formatting getting in the way.
 
-## PDFへの書き出し
+## Exporting to PDF
 
-メニュー「ファイル」→「PDFに書き出し…」（`Ctrl+P`）で、現在編集中の内容をPDFとして書き出せます。
-Windows標準の「Microsoft Print to PDF」仮想プリンタを使って書き出す方式のため、追加の
-ソフトウェアのインストールやインターネット接続は不要です。
+"File" → "Export to PDF…" (`Ctrl+P`) exports what you are editing as a PDF. It uses the "Microsoft Print to PDF"
+virtual printer that comes with Windows, so you do not need to install other software or connect to the internet.
 
-- PDFへの書き出しは **Markdownモードでのみ**利用できます。ソースモードのときは、先に
-  ステータスバーの「ソース⇄Markdown」ボタンでMarkdownモードへ切り替えてください。
-- 印刷ダイアログでプリンタとして「Microsoft Print to PDF」を選ぶと、PDFの保存先を
-  聞かれます。最初は編集中のファイルと同じフォルダが開き、ファイル名には編集中の
-  ファイル名（拡張子を `.pdf` に変えたもの）が入っています。
-- ページの余白は、メニュー「ファイル」→「PDFの余白を設定…」で上下左右をそれぞれ
-  指定できます（既定は上下64px、左右80px）。
+- Exporting to PDF works **only in Markdown mode**. In source mode, first switch to Markdown mode with the button
+  on the status bar.
+- When you choose "Microsoft Print to PDF" as the printer in the print dialog, you are asked where to save the PDF.
+  The dialog first shows the folder of the file you are editing, and the file name is the name of that file (with
+  the extension changed to `.pdf`).
+- You can set the top, bottom, left, and right page margins with "File" → "PDF Margins…" (the default is 64px at
+  the top and bottom and 80px on the left and right).
 
-## ショートカット一覧
+## Keyboard shortcuts
 
-| キー | 動作 |
+| Key | Action |
 |---|---|
-| `Ctrl+N` | 新規作成（新しいウィンドウ） |
-| `Ctrl+O` | 開く… |
-| `Ctrl+S` | 保存 |
-| `Shift+Ctrl+S` | 名前を付けて保存… |
-| `Ctrl+P` | PDFに書き出し… |
-| `Ctrl+W` | ウィンドウを閉じる |
-| `Ctrl+F` | 検索と置換 |
-| `Ctrl+B` / `Ctrl+I` / `Ctrl+U` | 選択した文字を太字 / 斜体 / 下線にする（もう一度押すと解除） |
-| `Alt+Shift+5` / `Ctrl+Shift+@` | 選択した文字を取り消し線 / インラインコードにする（もう一度押すと解除） |
-| `Ctrl+Shift+V` | 書式なしで貼り付け |
-| `Ctrl+Z` | 元に戻す |
-| `Ctrl+Y` | やり直し |
-| `Ctrl+←` | 1つ前に開いていたファイルを開く |
-| `Ctrl+→` | 1つ後に開いていたファイルを開く |
-| `Ctrl++` / `Ctrl+-` / `Ctrl+0` | 拡大 / 縮小 / 表示倍率を100%に戻す（日本語キーボードの `Ctrl+;` も拡大） |
-| `Ctrl+マウスホイール` | 拡大・縮小 |
-| `Ctrl+クリック`（リンク上） | リンクを開く |
-| `Tab` / `Shift+Tab`（リスト・コードブロック内） | 字下げ／字下げ解除 |
-| `Tab` / `Shift+Tab`（表の中） | 次のセル／前のセルへ移動（最後のセルの `Tab` は行を追加） |
-| `Ctrl+Enter`（表の中） | 下に行を追加 |
+| `Ctrl+N` | New (new window) |
+| `Ctrl+O` | Open… |
+| `Ctrl+S` | Save |
+| `Shift+Ctrl+S` | Save As… |
+| `Ctrl+P` | Export to PDF… |
+| `Ctrl+W` | Close the window |
+| `F1` | Open the Readme (this document) |
+| `Ctrl+F` | Find and replace |
+| `Ctrl+B` / `Ctrl+I` / `Ctrl+U` | Make the selected text bold / italic / underlined (press again to turn it off) |
+| `Alt+Shift+5` / `Ctrl+Shift+@` | Make the selected text strikethrough / inline code (press again to turn it off) |
+| `Ctrl+Shift+V` | Paste as plain text |
+| `Ctrl+Z` | Undo |
+| `Ctrl+Y` | Redo |
+| `Ctrl+←` | Open the file you had open before |
+| `Ctrl+→` | Open the file you had open after |
+| `Ctrl++` / `Ctrl+-` / `Ctrl+0` | Zoom in / zoom out / reset the zoom to 100% (`Ctrl+;` on a Japanese keyboard also zooms in) |
+| `Ctrl+mouse wheel` | Zoom in and out |
+| `Ctrl+click` (on a link) | Open the link |
+| `Tab` / `Shift+Tab` (in a list or code block) | Indent / remove the indent |
+| `Tab` / `Shift+Tab` (in a table) | Move to the next / previous cell (`Tab` in the last cell adds a row) |
+| `Ctrl+Enter` (in a table) | Add a row below |
 
-## 困ったときは
+## Troubleshooting
 
-- 動作がおかしいと感じたときは、一度ファイルを保存してからウィンドウを閉じて開き直してみてください。
-- 起動時の状態やペインの幅などがおかしくなった場合は、`%AppData%\mde\settings.json` を削除すると
-  初期状態に戻ります。
+- If something does not seem to work right, save the file, close the window, and open it again.
+- If the state at startup or the pane widths become strange, delete `%AppData%\mde\settings.json` to go back to the
+  initial state.
 
-## ライセンス
+## License
 
-mde は MIT License です（`LICENSE.txt`）。ただし、インストーラーのソースの `msi\UpgradeConfirmDlg.wxs` は、
-WiX Toolset の `WixUI_Minimal.wxs` を元に作ったものなので、Microsoft Reciprocal License（MS-RL）です
-（`msi\LICENSE-MS-RL.txt`）。
+mde is released under the MIT License (`LICENSE.txt`). However, `msi\UpgradeConfirmDlg.wxs` in the installer source is
+based on `WixUI_Minimal.wxs` from the WiX Toolset, so it is under the Microsoft Reciprocal License (MS-RL)
+(`msi\LICENSE-MS-RL.txt`).

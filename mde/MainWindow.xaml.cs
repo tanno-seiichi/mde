@@ -5066,15 +5066,20 @@ namespace mde
             OpenReadme();
         }
 
-        /// <summary>ビルド時に実行フォルダへコピーされるREADME.mdを、新しいウインドウで開く
-        /// （現在表示中のファイルの内容には触れない）。README.mdの読み込み自体は、新しく開いた
+        /// <summary>ビルド時に実行フォルダへコピーされるREADMEを、新しいウインドウで開く
+        /// （現在表示中のファイルの内容には触れない）。画面の言語が日本語なら README.ja.md（日本語）、英語なら
+        /// README.md（英語）を開く（無ければもう一方を開く。mdevc・mdevs のヘルプと同じ考え方）。READMEの読み込み自体は、新しく開いた
         /// ウインドウへ、通常の「ファイルを開く」と同じ経路（LoadFile）で行う。メニュー
         /// 「ヘルプ」→「Readmeを開く」のほか、F1キーのグローバルショートカット
         /// （App.xaml.csのGlobalPreviewKeyDown参照）からも、このウインドウに対して
         /// 呼び出される。</summary>
         public void OpenReadme()
         {
-            string readmePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "README.md");
+            string readmePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Loc.IsEnglish ? "README.md" : "README.ja.md");
+            if (!File.Exists(readmePath))
+            {
+                readmePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Loc.IsEnglish ? "README.ja.md" : "README.md");
+            }
             if (!File.Exists(readmePath))
             {
                 MessageBox.Show(Loc.T("README.mdが見つかりませんでした：", "README.md was not found: ") + readmePath, Loc.T("Readmeを開く", "Open Readme"),
