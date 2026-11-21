@@ -365,7 +365,7 @@
                                 <Setter Property="LineHeight" Value="{DynamicResource EditorListLineHeight}"/>
                                 <Setter Property="Padding" Value="{DynamicResource EditorListPadding}"/>
                                 <!-- 以前はここでMarkerStyle=Circle/Squareの時だけList.FontSizeを
-                                     小さくして、2段目以降の記号（○）をTyporaのように小さく
+                                     小さくして、2段目以降の記号（○）を小さく
                                      見せていた。しかし、あるListItemが「自分の段落」と「さらに
                                      ネストした子List」の両方をBlocksに持つ状態になると（＝箇条書き
                                      の項目をTabでさらに字下げできる状態にすると）、その子Listに
@@ -459,7 +459,7 @@
                                           Click="CopyForExcelItemClick" Visibility="Collapsed"/>
                                 <MenuItem x:Name="m_openImageMenuItem" Header="画像を開く" common:Loc.En="Open Image" Style="{StaticResource CtxMenuItem}"
                                           Click="OpenImageItemClick" Visibility="Collapsed"/>
-                                <!-- 画像のサイズ（Typora と同じ倍率。元の画像の大きさに対する割合。✓ は開く時に EditorContextMenuOpening で
+                                <!-- 画像のサイズ（元の画像の大きさに対する割合。✓ は開く時に EditorContextMenuOpening で
                                      今の大きさに合わせる。項目の Tag は倍率（%）。ImageSizeSpec.PERCENTS と同じ） -->
                                 <MenuItem x:Name="m_imageSizeMenuItem" Header="画像のサイズ" common:Loc.En="Image Size" Style="{StaticResource CtxMenuItem}"
                                           Visibility="Collapsed">

@@ -589,7 +589,7 @@ namespace mde.editor
         /// <summary>
         /// 区間の先頭と末尾の空白を、書式を付ける範囲から外す（空白は元の書式のまま残る）。マウスで段落をまたいで
         /// 選ぶと、WPF は単語の後ろの空白まで選ぶため、そのまま書式を付けると「*gamma *delta」のように、記号の内側に
-        /// 空白がある Markdown になり、正しく書式として読まれなくなるため（Typora も空白を外して書式を付ける）。
+        /// 空白がある Markdown になり、正しく書式として読まれなくなるため。
         /// </summary>
         /// <param name="a_pieces">CollectRunPieces で求めた一覧（この中身を書き換える。null の時は何もしない）。</param>
         private static void TrimWhiteSpacePieces(List<(Run Run, int From, int To)> a_pieces)

@@ -519,7 +519,7 @@ namespace mde.common
         /// （「・」）に対するチェックボックスの縦位置を微調整するための値（エディタの既定
         /// フォント実測に合わせて調整済み。フォントを変更した場合は再調整が必要）で、段落の
         /// 文字位置・TextPointer・IME関連の処理には関わらない。見た目はApp.xamlの
-        /// TaskCheckboxStyle（白地＋枠線、Typoraの表示に合わせたもの）を適用する。
+        /// TaskCheckboxStyle（白地＋枠線）を適用する。
         /// </summary>
         /// <param name="a_checked">チェック済み状態（[x]）かどうか。</param>
         public static CheckBox CreateTaskCheckbox(bool a_checked)
@@ -942,8 +942,7 @@ namespace mde.common
         //  表の列幅（内容に合わせたコンパクトな列幅）
         // ======================================================================
 
-        /// <summary>エディタの表示フォント（既定）。Typoraの実際の描画フォント（Yu Gothic、
-        /// UI版ではない通常版）に合わせた設定。メニュー「表示」→「表示フォント」参照。</summary>
+        /// <summary>エディタの表示フォント（既定）。メニュー「表示」→「表示フォント」参照。</summary>
         public static readonly FontFamily DefaultEditorFontFamily = new FontFamily("Meiryo, Segoe UI");
 
         /// <summary>エディタの表示フォント（フォント変更前の以前の設定）。メニュー「表示」→
@@ -1981,8 +1980,8 @@ namespace mde.common
                         maxWidths[c] = Math.Max(maxWidths[c], checkBoxMinWidths[c]);
                     }
                 }
-                // 数値だけのセル（「1543」「1,234.5」「12%」等）は、なるべく途中で折り返さない（1文字ずつ縦に並ぶと読みにくい。
-                // Typora と同じ）。その列の最小の幅を、数値が1行に収まる幅にする。それでは表示できる幅に収まらない時は、
+                // 数値だけのセル（「1543」「1,234.5」「12%」等）は、なるべく途中で折り返さない（1文字ずつ縦に並ぶと読みにくい）。
+                // その列の最小の幅を、数値が1行に収まる幅にする。それでは表示できる幅に収まらない時は、
                 // これまで通り1文字分にする
                 var numericAwareMin = (double[])minWidths.Clone();
                 var numericAwareMax = (double[])maxWidths.Clone();

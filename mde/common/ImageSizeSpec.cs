@@ -13,14 +13,14 @@ namespace mde.common
 {
     /// <summary>
     /// 画像の大きさの指定（HTML の画像のタグの width・height 属性と、style の width・height・zoom）を読み書きする。
-    /// ・表示：指定のとおりの大きさにする（GetSpecifiedSize。Typora で大きさを変えた画像の style="zoom:50%;" も読む）。
+    /// ・表示：指定のとおりの大きさにする（GetSpecifiedSize。style="zoom:50%;" も読む）。
     /// ・右クリックの「画像のサイズ」：元の画像の大きさに対する割合で、大きさを変える（WithWidth。大きさは width 属性で
-    /// 　書く。GitHub・VS Code のプレビュー・Typora のどれでも同じ大きさで表示されるため）。mdevc・mdevs と同じ。
+    /// 　書く。GitHub・VS Code のプレビュー等、ほかのアプリでも同じ大きさで表示されるため）。mdevc・mdevs と同じ。
     /// 属性の値は、タグに書かれたまま（文字参照を戻さない）で扱う（ImageManager.BuildImageFromHtmlTag の src・alt と同じ）。
     /// </summary>
     public static class ImageSizeSpec
     {
-        /// <summary>右クリックの「画像のサイズ」の倍率（%。Typora と同じく、元の画像の大きさに対する割合）。</summary>
+        /// <summary>右クリックの「画像のサイズ」の倍率（%。元の画像の大きさに対する割合）。</summary>
         public static readonly int[] PERCENTS = { 25, 33, 50, 67, 80, 100, 150, 200 };
 
         /// <summary>

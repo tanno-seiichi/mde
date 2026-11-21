@@ -101,7 +101,7 @@ namespace mde
         private bool m_requireCtrlForLinkClickFlg = true;
 
         /// <summary>段落中の途中改行（空行を伴わない、ソース上の単純な改行）を、そのまま
-        /// 見た目の改行として表示するか（true。既定値。mde/Typoraの従来動作）、それとも
+        /// 見た目の改行として表示するか（true。既定値。mde の従来動作）、それとも
         /// 空行が入るまでは改行しない、CommonMark/VSCodeのMarkdownプレビュー標準の表示に
         /// するか（false）。メニュー「表示」→「段落中の改行」で切り替えられる。</summary>
         private bool m_preserveSourceLineBreaksFlg = true;
@@ -2959,7 +2959,7 @@ namespace mde
                     }
 
                     a_args.Handled = true;
-                    // Enterキー単独では、Typora等の他のMarkdownエディタと同様、キャレットを
+                    // Enterキー単独では、他の多くのMarkdownエディタと同様、キャレットを
                     // 下（同じ列）のセルへ移動する（ご要望により、以前あった「Enter単独での
                     // セル内改行」はShift+Enterへ変更し、Enter単独はセル間移動用に空けた）。
                     // 表の最終行だった場合は、MoveVertical内のMoveOutOfTableが表の外
@@ -5193,7 +5193,7 @@ namespace mde
             DebugLogger.SetEnabled(m_debugLogMenuItem.IsChecked);
         }
 
-        /// <summary>メニュー「表示」→「段落中の改行」→「ソースの通りに改行する」（mde/Typora
+        /// <summary>メニュー「表示」→「段落中の改行」→「ソースの通りに改行する」（mde の
         /// 従来の表示。既定値）。</summary>
         /// <param name="a_sender">メニュー項目。</param>
         /// <param name="a_args">Click event.</param>

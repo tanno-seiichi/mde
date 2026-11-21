@@ -527,7 +527,7 @@ namespace mde.editor
         /// <summary>
         /// 箇条書き項目の2つ目以降の段落（Shift+Enterや、空の項目でのBackSpaceでできる、項目の
         /// 続きの行）の先頭でBackSpaceが押された時、その段落を同じ項目の前の段落の末尾へつなげる
-        /// （mdew・mdee・Typoraと同じ）。WPF標準の動作に任せると、続きの行が1段浅い新しい項目
+        /// （mdew・mdee と同じ）。WPF標準の動作に任せると、続きの行が1段浅い新しい項目
         /// （1段目なら箇条書きの外の段落）に変わり、入れ子のリストが途中で分断されていた。
         /// 項目の最初の段落の先頭でのBackSpace（項目を前の項目の続きの行にする）は、これまで
         /// 通りWPF標準の動作に任せる。
@@ -621,7 +621,7 @@ namespace mde.editor
             // リスト項目の本文先頭でEnterを押した場合は、空の項目を現在の項目の前に作る。
             // 特に現在の項目が末尾にサブリストを持つ場合、通常の後方分割処理はサブリストを
             // 理由に本文分割をスキップするため、空項目がサブリスト全体の後ろにできてしまう。
-            // Typoraと同じく本文とサブリストをそのまま保ち、空項目だけを前に挿入する。
+            // 本文とサブリストをそのまま保ち、空項目だけを前に挿入する。
             Paragraph caretPara = m_editor.CaretPosition?.Paragraph;
             // 項目の2つ目以降の段落（続きの行）の先頭では、これまで通りその位置で分ける。
             if (null != caretPara && caretPara.Parent == a_li && ReferenceEquals(caretPara, a_li.Blocks.FirstBlock) &&

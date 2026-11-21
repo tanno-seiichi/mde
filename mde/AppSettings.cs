@@ -37,8 +37,7 @@ namespace mde
         public bool UniformMarkerStyleFlg { get; set; } = false;
 
         /// <summary>メニュー「表示」→「表示フォント」の選択状態。falseなら既定の表示フォント
-        /// （Meiryo, Segoe UI。Typoraの実際の描画フォントに合わせた
-        /// 設定。既定）、trueならフォント変更前の以前の表示フォント（Yu Gothic UI, Segoe UI）を
+        /// （Meiryo, Segoe UI。既定）、trueならフォント変更前の以前の表示フォント（Yu Gothic UI, Segoe UI）を
         /// 使う。既定はfalse。</summary>
         public bool UseLegacyFontFlg { get; set; } = false;
 

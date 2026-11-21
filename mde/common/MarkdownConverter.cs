@@ -296,7 +296,7 @@ namespace mde.common
         private const int DEFAULT_BLANK_LINES_BEFORE_BLOCK = 1;
 
         /// <summary>ブロックの間に続いた空行の数から、その間に置く空の行（空の段落）の数を求める。
-        /// Typora と同じく、空行2つまでは空の行を置かず（段落の区切り1つ）、空行3つ・4つで1つ、
+        /// 空行2つまでは空の行を置かず（段落の区切り1つ）、空行3つ・4つで1つ、
         /// 5つ・6つで2つ…と、空行2つごとに空の行を1つ置く。mdevc・mdevs（markdown.js の
         /// gapLineCount）と同じ規則。読み込み時（MarkdownToDocument・BuildNestedList）に使い、
         /// 書き出し時は、空の行が読み込んだ時と同じ数なら元の空行の数をそのまま、そうでなければ
@@ -353,7 +353,7 @@ namespace mde.common
         /// <param name="a_originalTextTracker">「元テキスト保持」の追跡役。</param>
         /// <param name="a_imageManager">画像の生成・解決を担当するクラス。</param>
         /// <param name="a_preserveSourceLineBreaksFlg">段落中の途中改行（空行を伴わない、ソース上の
-        /// 単純な改行）を、そのまま見た目の改行として表示するか（true。mde/Typora従来の表示）、
+        /// 単純な改行）を、そのまま見た目の改行として表示するか（true。mde の従来の表示）、
         /// それとも空行が入るまでは改行しない、CommonMark/VSCodeのMarkdownプレビュー標準の表示に
         /// するか（false）を返すデリゲート。省略時（null）はtrue（従来動作）として扱う。</param>
         /// <param name="a_correctColumnWidthsFlg">メニュー「表示」→「列幅を補正する」の現在の
@@ -541,7 +541,7 @@ namespace mde.common
                 }
                 else if (!firstFlg && block is Paragraph)
                 {
-                    // 空の段落（空の行）。Typora と同じく、次のブロックの前の空行を増やして残す
+                    // 空の段落（空の行）。次のブロックの前の空行を増やして残す
                     // （BlankLinesBeforeWrittenBlock）。文書の先頭・末尾の空の段落は書き出さない。
                     emptyCount++;
                 }
@@ -1464,7 +1464,7 @@ namespace mde.common
             // 記録し、pendingBlankLinesを0へリセットする。
             void RecordBlankLinesBeforeBlock(Block a_newBlock)
             {
-                // Typora と同じく、ブロックの間に空行が3つ以上続いている所には、空の段落（空の行）を
+                // ブロックの間に空行が3つ以上続いている所には、空の段落（空の行）を
                 // 置いて間を空ける（GapLineCount参照）。空の行には文字を入力でき、BackSpaceで消せる。
                 // 文書の先頭と、間にHTMLコメントがある所には置かない。
                 if (a_doc.Blocks.Count > 0 && 0 == pendingComments.Count)
@@ -1939,7 +1939,7 @@ namespace mde.common
 
             // ファイル末尾に本当の空行があった場合、Markdownモード（WYSIWYG表示）でも
             // その位置へカーソルを移動できるよう、目印として空の段落を1つ追加しておく
-            // （Typora等、他のエディタでは末尾の空行にカーソルを置けるため、それに合わせた）。
+            // （他の多くのエディタでは末尾の空行にカーソルを置けるため、それに合わせた）。
             // 保存時に書き出す文字列自体は、この段落の有無に関わらずm_hasTrailingNewlineAtEof・
             // m_trailingBlankLinesAtEofの記録からそのまま再現される（DocumentToMarkdown参照。
             // この段落自身は空白のみのため、書き出し対象からは除外される）ため、この段落は
@@ -2050,7 +2050,7 @@ namespace mde.common
         /// 段落を組み立てている、空行を挟まない連続したソース行を、1つの文字列へ結合する。
         /// 「表示」→「段落中の改行」の設定に応じて、結合のしかたを切り替える。設定が
         /// 「ソースの通りに改行する」（既定）なら、行を"\n"でつなぐ（AppendInlineMarkdown
-        /// ToParagraphが後段でこれを実際のLineBreakへ変換し、mde/Typora従来通り、ソース上の
+        /// ToParagraphが後段でこれを実際のLineBreakへ変換し、mde の従来通り、ソース上の
         /// 改行がそのまま見た目の改行になる）。「空行が入るまで改行しない」なら、各行の前後の
         /// 空白を落としたうえで単純な半角スペース1つでつなぐ（結果に"\n"が含まれなくなるため、
         /// 後段でLineBreakは一切生成されず、CommonMark/VSCodeのMarkdownプレビューと同じく、
@@ -2536,7 +2536,7 @@ namespace mde.common
 
                     var para = new Paragraph { Margin = new Thickness(0) };
                     var newLi = new ListItem(para);
-                    // Typora と同じく、項目の間に空行が3つ以上続いている所は、空の行の分だけ間を空ける
+                    // 項目の間に空行が3つ以上続いている所は、空の行の分だけ間を空ける
                     BlockStyles.ApplyListItemGap(newLi, GapLineCount(blankLinesBeforeLine));
                     top.list.ListItems.Add(newLi);
 
