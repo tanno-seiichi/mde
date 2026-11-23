@@ -45,6 +45,16 @@
 			<RegistryValue Root="HKCR" Key="Applications\mde.exe\shell\open\command" Type="string" Value="&quot;[INSTALLFOLDER]mde.exe&quot; &quot;%1&quot;" />
 		</Component>
 
+		<!-- 「プログラムから開く」等で mde を選んだ時に Windows がユーザーごとに作る登録（HKCU の Applications\mde.exe）を、
+		     アンインストールの時に消す。インストーラーが作ったものではないため、消さないと、アンインストールした後も
+		     「プログラムから開く」に mde が残り、選んでも起動しない。アップグレードの時も一度消えるが、上の登録（HKLM）が
+		     あるため、mde を既定のアプリにしている場合もそのまま mde で開ける。ユーザーごとの登録を扱うため、上の
+		     コンポーネントとは分け、KeyPath もユーザーごとの値にする（同じコンポーネントにすると ICE57 のエラーになる）。 -->
+		<Component Id="UserApplicationsCleanup.Component" Directory="INSTALLFOLDER" Guid="*">
+			<RegistryValue Root="HKCU" Key="Software\mde-tools\mde" Name="UserApplicationsCleanup" Type="integer" Value="1" KeyPath="yes" />
+			<RemoveRegistryKey Root="HKCU" Key="Software\Classes\Applications\mde.exe" Action="removeOnUninstall" />
+		</Component>
+
 		<!-- License -->
 		<Component Id="License"><File Source="LICENSE.txt" /></Component>
 
