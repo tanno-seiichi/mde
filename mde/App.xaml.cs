@@ -22,7 +22,11 @@ namespace mde
         /// <param name="a_args">Startup event args.</param>
         protected override void OnStartup(StartupEventArgs a_args)
         {
+            // タスクバーのアイコンをまとめるためのアプリの ID を、ウィンドウを作る前に設定する（TaskbarJumpList 参照）
+            TaskbarJumpList.SetAppUserModelId();
             base.OnStartup(a_args);
+            // タスクバーのアイコンの右クリックの一覧に、Windows の「最近使ったもの」の欄を表示する（TaskbarJumpList 参照）
+            TaskbarJumpList.Initialize();
             DispatcherUnhandledException += AppDispatcherUnhandledException;
 
             // F1でReadmeを開く操作を全ウインドウ（メインウインドウ・各種ダイアログ）で有効にする。

@@ -529,7 +529,7 @@ namespace mde.manager
         /// <summary>
         /// メニュー「ファイル」→「最近使ったファイル」に表示する一覧へ、指定したファイルを
         /// 先頭に追加する（既に一覧にあれば、いったん外してから先頭へ入れ直す）。件数が
-        /// MAX_RECENT_FILESを超えたら、古いものから切り捨てる。次回起動時にも復元される。
+        /// MAX_RECENT_FILESを超えたら、古いものから切り捨てる。次回起動時にも復元される。Windows の「最近使ったもの」にも登録する。
         /// </summary>
         /// <param name="a_path">開いた・保存したファイルの絶対パス。</param>
         private void AddToRecentFiles(string a_path)
@@ -545,6 +545,9 @@ namespace mde.manager
                 m_recentFiles.RemoveRange(MAX_RECENT_FILES, m_recentFiles.Count - MAX_RECENT_FILES);
             }
             RebuildRecentFilesMenu();
+            // Windows の「最近使ったもの」にも登録する（タスクバーのアイコンの右クリックの一覧に表示される。サクラエディタと同じ。
+            // TaskbarJumpList.AddToWindowsRecent）
+            TaskbarJumpList.AddToWindowsRecent(a_path);
         }
 
         /// <summary>「最近使ったファイル」サブメニューの中身を、現在のm_recentFilesの内容から

@@ -106,6 +106,8 @@ code in red, and tables without vertical lines). The choice is kept the next tim
 "File" → "Recent Files" lists the files you opened recently, newest first, with their full paths. Click one to
 open it. If a file has been moved or deleted, mde tells you so and removes it from the list. "Clear History"
 empties the list.
+Files you open in mde are also added to Windows' recent items, so they appear when you right-click the mde icon on the
+taskbar (under "Recent") and in File Explorer's recent files.
 
 "File" → "Recent Folders" lists the folders you opened with "Open Folder…" (or the "…" button in the folder
 view), newest first, with their full paths. Click one to open it in the folder view.

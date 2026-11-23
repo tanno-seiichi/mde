@@ -33,6 +33,18 @@
 			<RegistryValue Root="HKCR" Key="Directory\Background\shell\OpenWithMde\command" Type="string" Value="&quot;[INSTALLFOLDER]mde.exe&quot; &quot;%V&quot;" />
 		</Component>
 
+		<!-- mde を、.md・.markdown を開けるアプリとして Windows に登録する（既定のアプリにはしない。「プログラムから開く」の
+		     候補に出る）。mde がファイルを開くたびに Windows の「最近使ったもの」へ登録したファイル（common\TaskbarJumpList.cs の
+		     AddToWindowsRecent。SHAddToRecentDocs）が、タスクバーの mde のアイコンの右クリックの一覧に表示されるには、
+		     この登録が必要（サクラエディタと同じ）。 -->
+		<Component Id="ApplicationsRegistration.Component" Directory="INSTALLFOLDER" Guid="*">
+			<RegistryValue Root="HKCR" Key="Applications\mde.exe" Name="FriendlyAppName" Type="string" Value="mde" KeyPath="yes" />
+			<!-- SupportedTypes は値の名前（拡張子）だけが使われる。WiX は空の Value を受け付けないため、値には拡張子を入れておく -->
+			<RegistryValue Root="HKCR" Key="Applications\mde.exe\SupportedTypes" Name=".md" Type="string" Value=".md" />
+			<RegistryValue Root="HKCR" Key="Applications\mde.exe\SupportedTypes" Name=".markdown" Type="string" Value=".markdown" />
+			<RegistryValue Root="HKCR" Key="Applications\mde.exe\shell\open\command" Type="string" Value="&quot;[INSTALLFOLDER]mde.exe&quot; &quot;%1&quot;" />
+		</Component>
+
 		<!-- License -->
 		<Component Id="License"><File Source="LICENSE.txt" /></Component>
 
@@ -51,6 +63,8 @@
 		<!-- スタートメニューショートカット -->
 		<Component Id="StartMenuShortcutComponent" Directory="ProgramMenuDir" Guid="*">
 			<Shortcut Id="StartMenuShortcut" Name="mde" Target="[INSTALLFOLDER]mde.exe" WorkingDirectory="INSTALLFOLDER" >
+				<!-- アプリの ID。mde 自身も起動した直後に同じ ID を設定する（common\TaskbarJumpList.cs の APP_USER_MODEL_ID）。
+				     変える時は両方を同じにすること（違うと、タスクバーのアイコンが分かれる） -->
 				<ShortcutProperty Key="System.AppUserModel.ID" Value="tanno-seiichi.mde"/>
 			</Shortcut>
 
