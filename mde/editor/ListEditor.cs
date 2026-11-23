@@ -948,6 +948,12 @@ namespace mde.editor
             // 行う（そうでないとa_parentList自身のMarkerStyleを誤って書き換えてしまう）。
             bool parentOrderedFlg = a_parentList.MarkerStyle == TextMarkerStyle.Decimal;
             int beforeCount = a_parentList.ListItems.Count;
+            // 字下げする項目が持っていた入れ子のリスト（子の項目）。WPF 標準の字下げは、子の項目を、字下げした項目と同じ段に
+            // 並べてしまうため、字下げの後で、元の通り項目の下の入れ子のリストに戻す（RestoreChildListAfterIndent）
+            List childList = 1 < a_li.Blocks.Count ? a_li.Blocks.LastBlock as List : null;
+            List<string> childTexts = childList?.ListItems.Cast<ListItem>().Select(GetOwnListItemText).ToList();
+            bool childOrderedFlg = TextMarkerStyle.Decimal == childList?.MarkerStyle;
+            object childTag = childList?.Tag;
 
             m_runAsProgrammaticChange(() =>
             {
@@ -969,6 +975,10 @@ namespace mde.editor
                     // 自身にも残すと、字下げを戻した際にこのListの下余白と、最後の項目自身の
                     // 段落が持つ下余白が二重に加算されてしまうため。
                     nestedList.Margin = new Thickness(0);
+                    if (null != childTexts && 0 < childTexts.Count && !(li.Blocks.LastBlock is List))
+                    {
+                        RestoreChildListAfterIndent(li, nestedList, childTexts, childOrderedFlg, childTag);
+                    }
                     DebugLogger.Log($"IndentListItem: 字下げ成功（別のListオブジェクトへ移動） " +
                         $"beforeCount={beforeCount} afterParentCount={a_parentList.ListItems.Count}");
                 }
@@ -979,6 +989,73 @@ namespace mde.editor
                         $"beforeCount={beforeCount} afterParentCount={a_parentList.ListItems.Count}");
                 }
             });
+        }
+
+        /// <summary>
+        /// 字下げ（IndentListItem）の後で、字下げした項目の子の項目（WPF 標準の字下げで、項目のすぐ後ろに同じ段の項目として
+        /// 並んだもの）を、元の通り項目の下の入れ子のリストに戻す（mdew・mdevc・mdevs と同じく、子の項目は項目と一緒に1段深く
+        /// なる）。項目のすぐ後ろの項目が、字下げする前の子の項目と同じ文字でなければ何もしない。
+        /// </summary>
+        /// <param name="a_li">字下げした項目。</param>
+        /// <param name="a_list">字下げした項目のある（字下げした先の）リスト。</param>
+        /// <param name="a_childTexts">字下げする前の子の項目の文字（順に）。</param>
+        /// <param name="a_childOrderedFlg">子の項目が番号付きのリストだったか。</param>
+        /// <param name="a_childTag">子の項目のリストの Tag（箇条書きの記号・番号の振り方）。</param>
+        private void RestoreChildListAfterIndent(ListItem a_li, List a_list, List<string> a_childTexts, bool a_childOrderedFlg, object a_childTag)
+        {
+            List<ListItem> items = a_list.ListItems.Cast<ListItem>().ToList();
+            int index = items.IndexOf(a_li);
+            if (index < 0 || items.Count < index + 1 + a_childTexts.Count)
+            {
+                return;
+            }
+            List<ListItem> children = items.GetRange(index + 1, a_childTexts.Count);
+            for (int k = 0; k < children.Count; k++)
+            {
+                if (GetOwnListItemText(children[k]) != a_childTexts[k])
+                {
+                    return;
+                }
+            }
+            var childList = new List
+            {
+                MarkerStyle = a_childOrderedFlg ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc,
+                Tag = a_childTag,
+                Margin = new Thickness(0)
+            };
+            foreach (ListItem child in children)
+            {
+                a_list.ListItems.Remove(child);
+                childList.ListItems.Add(child);
+            }
+            a_li.Blocks.Add(childList);
+            RefreshUnorderedMarkerStyles(childList);
+        }
+
+        /// <summary>
+        /// 箇条書き（番号付きでないリスト）の記号を、段の深さに合わせ直す（1段目Disc・2段目Circle・3段目以降Box等。
+        /// BlockStyles.UnorderedMarkerStyleForDepth）。入れ子のリストも同じようにする。字下げ・字下げの解除で、子の項目の
+        /// リストの段が変わった時に使う。
+        /// </summary>
+        /// <param name="a_list">合わせ直すリスト。</param>
+        private void RefreshUnorderedMarkerStyles(List a_list)
+        {
+            if (TextMarkerStyle.Decimal != a_list.MarkerStyle)
+            {
+                TextMarkerStyle style = BlockStyles.UnorderedMarkerStyleForDepth(
+                    GetListNestingDepth(a_list), m_uniformMarkerStyleFlg?.Invoke() ?? false);
+                if (style != a_list.MarkerStyle)
+                {
+                    a_list.MarkerStyle = style;
+                }
+            }
+            foreach (ListItem item in a_list.ListItems)
+            {
+                foreach (List nested in item.Blocks.OfType<List>())
+                {
+                    RefreshUnorderedMarkerStyles(nested);
+                }
+            }
         }
 
         /// <summary>Shift+Tabキーでのリスト項目の字下げ解除。自分より後ろの兄弟項目も一緒に
@@ -1000,6 +1077,10 @@ namespace mde.editor
             // IndentListItemと同じ理由で、構造変更自体はWPF標準の
             // `EditingCommands.DecreaseIndentation`コマンドに任せる。
             bool parentOrderedFlg = a_parentList.MarkerStyle == TextMarkerStyle.Decimal;
+            // 後ろに兄弟の項目が無く、項目がもともと子の項目（入れ子のリスト）を持っていた時は、そのリストの番号付き・箇条書きを
+            // そのまま残す（字下げ（IndentListItem）を戻した時に、元の見た目に戻るように）
+            bool hasTrailingSiblingsFlg = !ReferenceEquals(a_parentList.ListItems.LastListItem, a_li);
+            bool hadChildListFlg = 1 < a_li.Blocks.Count && a_li.Blocks.LastBlock is List;
 
             m_runAsProgrammaticChange(() =>
             {
@@ -1009,7 +1090,18 @@ namespace mde.editor
                 // MarkerStyle/Tagを復元する。CaretPositionから辿ることで、a_li自身のオブジェクト
                 // 参照がコマンド実行後も同一であることに依存しないようにする（IndentListItemと
                 // 同じ考え方）。
-                if (m_editor.CaretPosition?.Paragraph is Paragraph fp &&
+                if (m_editor.CaretPosition?.Paragraph is Paragraph keptFp &&
+                    keptFp.Parent is ListItem keptLi &&
+                    keptLi.Blocks.Count > 1 &&
+                    keptLi.Blocks.LastBlock is List keptList &&
+                    !hasTrailingSiblingsFlg && hadChildListFlg)
+                {
+                    // もともとの子の項目のリスト：箇条書きの記号だけを、段に合わせ直す
+                    keptList.Margin = new Thickness(0);
+                    RefreshUnorderedMarkerStyles(keptList);
+                    DebugLogger.Log("OutdentListItem: 字下げ解除成功（子の項目のリストはそのまま）");
+                }
+                else if (m_editor.CaretPosition?.Paragraph is Paragraph fp &&
                     fp.Parent is ListItem li &&
                     li.Blocks.Count > 1 &&
                     li.Blocks.LastBlock is List ownNestedList)

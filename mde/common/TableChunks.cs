@@ -316,6 +316,12 @@ namespace mde.common
             {
                 return;
             }
+            // 箇条書きの項目の中の表（かたまりに分けない）：項目の文字との間を空ける余白にする（BlockStyles.NestedTableMargin）
+            if (1 == a_chunks.Count && a_chunks[0].Parent is ListItem)
+            {
+                SetIfDifferent(a_chunks[0], Block.MarginProperty, BlockStyles.NestedTableMargin);
+                return;
+            }
             for (int i = 0; i < a_chunks.Count - 1; i++)
             {
                 SetIfDifferent(a_chunks[i], Block.MarginProperty, new Thickness(0));
@@ -514,6 +520,11 @@ namespace mde.common
                 }
             }
             Table last = a_chunks[a_chunks.Count - 1];
+            if (1 == a_chunks.Count && last.Parent is ListItem)
+            {
+                // 箇条書きの項目の中の表（ApplyChunkFrame）
+                return last.ReadLocalValue(Block.MarginProperty) is Thickness nestedMargin && BlockStyles.NestedTableMargin == nestedMargin;
+            }
             double? lastBottom = ExpectedLastChunkBottomMargin(a_chunks);
             object lastMargin = last.ReadLocalValue(Block.MarginProperty);
             if (lastBottom.HasValue ? !(lastMargin is Thickness lm && new Thickness(0, 0, 0, lastBottom.Value) == lm)

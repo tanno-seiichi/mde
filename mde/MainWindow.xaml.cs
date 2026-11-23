@@ -2742,6 +2742,14 @@ namespace mde
             // 箇条書きの項目の中にリストだけを貼る：今の項目の後ろに項目として加える（今の項目が空なら置き換える）
             if (m_listEditor.IsInListItem(para, out ListItem li, out List parentList))
             {
+                // 表だけを貼る：項目の中の表として、今の段落の後ろに置く（TableEditor.InsertTableIntoListItem。読み込みで表の
+                // 後ろに置かれる空の段落は除く）
+                List<Block> contentBlocks = blocks.Where(b => !(b is Paragraph p && IsParagraphEmpty(p))).ToList();
+                if (1 == contentBlocks.Count && contentBlocks[0] is Table pastedTable &&
+                    m_tableEditor.InsertTableIntoListItem(para, pastedTable))
+                {
+                    return MarkdownPasteKind.Blocks;
+                }
                 if (1 != blocks.Count || !(blocks[0] is List pastedList) || 0 == pastedList.ListItems.Count)
                 {
                     return MarkdownPasteKind.Fallback;

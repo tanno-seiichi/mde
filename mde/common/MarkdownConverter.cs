@@ -984,11 +984,14 @@ namespace mde.common
                     }
                     else if (b is List nested)
                     {
-                        if (endedWithTableFlg)
+                        // 表の後ろの入れ子のリストは、空行を挟む（入れ子のリストの最初の項目が、前の空行をもともと書き出す
+                        // 時は、重ねない）
+                        string nestedMarkdown = ListToMarkdown(nested, a_level + 1);
+                        if (endedWithTableFlg && !nestedMarkdown.StartsWith("\n"))
                         {
                             lines.Add("");
                         }
-                        lines.Add(ListToMarkdown(nested, a_level + 1));
+                        lines.Add(nestedMarkdown);
                         endedWithTableFlg = EndsWithTable(nested);
                     }
                 }
@@ -2732,7 +2735,7 @@ namespace mde.common
                     double listIndentPx = stack.Sum(entry => BlockStyles.GetListIndent(entry.list));
                     Table nestedTable = BuildTableFromSourceLines(headerLine, separatorLine, bodyLines, listIndentPx);
                     // 項目の文字と表の間を、段落と表の間と同じだけ空ける（下の余白はスタイルの既定と同じ）
-                    nestedTable.Margin = new Thickness(0, BlockStyles.ParagraphBottomSpacing, 0, BlockStyles.ListBottomSpacing);
+                    nestedTable.Margin = BlockStyles.NestedTableMargin;
                     pendingListItem.Blocks.Add(nestedTable);
                     pendingPara = null;
                     pendingTextLines = new List<string>();

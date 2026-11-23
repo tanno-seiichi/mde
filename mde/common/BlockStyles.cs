@@ -171,6 +171,9 @@ namespace mde.common
         /// <summary>番号付きの箇条書きの左の字下げ。EditorDecimalListPadding に設定する。</summary>
         public static double DecimalListIndent => VsCodeStyleFlg ? 30 : 34;
 
+        /// <summary>箇条書きの項目の中の表の余白（上は段落と表の間と同じ、下は表の下の余白と同じ）。</summary>
+        public static Thickness NestedTableMargin => new Thickness(0, ParagraphBottomSpacing, 0, ListBottomSpacing);
+
         /// <summary>箇条書き1段分の左の字下げ（番号付きなら DecimalListIndent、それ以外は ListIndent）。</summary>
         /// <param name="a_list">箇条書き。</param>
         /// <returns>字下げ（px）。</returns>

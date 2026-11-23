@@ -519,6 +519,31 @@ namespace mde.editor
         }
 
         /// <summary>
+        /// 貼り付けた Markdown の表を、箇条書きの項目の中（段落の後ろ）に入れる（MainWindow.TryInsertMarkdownBlocksAtCaret）。
+        /// 列の幅は、箇条書きの字下げの分を除いた幅に合わせ直し、キャレットは表の最後のセルの終わりに置く。
+        /// </summary>
+        /// <param name="a_para">キャレットのある段落。</param>
+        /// <param name="a_table">貼り付ける表（まだ文書に入れていないもの）。</param>
+        /// <returns>項目の中に入れた時は true。箇条書きの項目の中でなければ何もせず false。</returns>
+        public bool InsertTableIntoListItem(Paragraph a_para, Table a_table)
+        {
+            if (!TryInsertTableIntoListItem(a_para, a_table))
+            {
+                return false;
+            }
+            if (m_correctColumnWidthsFlg?.Invoke() ?? true)
+            {
+                BlockStyles.RefreshAutoCalculatedColumnWidths(a_table, GetAvailableTableWidth());
+            }
+            TableRow lastRow = TableChunks.GetRows(a_table).LastOrDefault();
+            if (lastRow?.Cells.LastOrDefault()?.Blocks.LastBlock is Paragraph lastCellPara)
+            {
+                m_editor.CaretPosition = lastCellPara.ContentEnd;
+            }
+            return true;
+        }
+
+        /// <summary>
         /// 段落が箇条書きの項目の中なら、表を項目の中（段落の後ろ）に入れる。段落が項目の続きの行（Shift+Enter で作った、
         /// 2つ目以降の段落）で空なら、その段落を表に置き換える。項目の中の表は、大きくても複数のかたまり（TableChunks）に
         /// 分けない。文書の最後の箇条書きの最後が表になった時は、箇条書きの後ろに空の段落を置く（表の後ろにキャレットを
@@ -537,7 +562,7 @@ namespace mde.editor
             m_runAsProgrammaticChange(() =>
             {
                 // 項目の文字と表の間は、段落と表の間と同じだけ空ける（MarkdownConverter.BuildNestedList と同じ）
-                a_table.Margin = new Thickness(0, BlockStyles.ParagraphBottomSpacing, 0, BlockStyles.ListBottomSpacing);
+                a_table.Margin = BlockStyles.NestedTableMargin;
                 li.Blocks.InsertAfter(a_para, a_table);
                 bool emptyFlg = a_para.Inlines.All(inline => inline is Run run && string.IsNullOrWhiteSpace(run.Text));
                 if (emptyFlg && !ReferenceEquals(li.Blocks.FirstBlock, a_para))
