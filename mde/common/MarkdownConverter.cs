@@ -886,6 +886,12 @@ namespace mde.common
             string bulletMarker = orderedFlg ? null : ((a_list.Tag as string) ?? "*");
             var lines = new List<string>();
             int number = 1;
+            // 直前の項目が表で終わっていたか（次の項目の前に空行を入れる。表の直後の行は、表の続きの行と見なされることがあるため）
+            bool previousEndedWithTableFlg = false;
+            // 項目の間に空行を入れた箇条書きか（2つ目以降の項目のどれかの前に空行があった）。編集で増やした項目（読み込んだ時の
+            // 空行の数を覚えていない項目）の前にも、空行を1つ入れる
+            bool looseListFlg = a_list.ListItems.Skip(1).Any(item => (item.Tag as ListItemSourceInfo)?.BlankLinesBefore > 0);
+            bool firstItemFlg = true;
             foreach (ListItem li in a_list.ListItems)
             {
                 // 項目自身の内容は、Shift+Enterによる段落分割（HeadingCodeBlockEditor.
@@ -893,17 +899,15 @@ namespace mde.common
                 // により、入れ子のサブリストより前に複数のParagraphが並ぶことがある。そのため
                 // サブリストが現れるまでのown-paragraphをすべて集め、念のため各段落内の'\n'
                 // （通常は発生しない）でも分割して、1項目分の継続行一覧を組み立てる。
+                // 入れ子のサブリスト・項目の中の表より後ろは、下で書き出す
                 var parts = new List<string>();
                 foreach (Block b in li.Blocks)
                 {
-                    if (b is List)
+                    if (!(b is Paragraph ownPara))
                     {
-                        break; // 入れ子のサブリストより後ろは対象外
+                        break;
                     }
-                    if (b is Paragraph ownPara)
-                    {
-                        parts.AddRange(ParagraphInlineToMarkdown(ownPara).Split('\n'));
-                    }
+                    parts.AddRange(ParagraphInlineToMarkdown(ownPara).Split('\n'));
                 }
                 if (0 == parts.Count)
                 {
@@ -920,6 +924,21 @@ namespace mde.common
                         lines.Add("");
                     }
                 }
+                else if (lines.Count > 0 || a_level > 0)
+                {
+                    // 読み込んだ時に項目の前にあった空行（2つまで。3つ以上は空の行として上で書き出す）を、そのまま書き出す
+                    int blankLines = (li.Tag as ListItemSourceInfo)?.BlankLinesBefore ?? (looseListFlg && !firstItemFlg ? 1 : 0);
+                    blankLines = Math.Min(blankLines, 2);
+                    if (previousEndedWithTableFlg)
+                    {
+                        blankLines = Math.Max(blankLines, 1);
+                    }
+                    for (int b = 0; b < blankLines; b++)
+                    {
+                        lines.Add("");
+                    }
+                }
+                firstItemFlg = false;
                 lines.Add(indent + prefix + parts[0]);
                 string contIndent = indent + new string(' ', prefix.Length);
                 for (int k = 1; k < parts.Count; k++)
@@ -927,16 +946,72 @@ namespace mde.common
                     lines.Add(contIndent + parts[k]);
                 }
 
+                // 項目の文字の後ろ：項目の中の表（前に空行を入れ、項目の文字の位置まで字下げする）・表の後ろの段落・入れ子の
+                // サブリスト
+                bool endedWithTableFlg = false;
+                bool afterOwnParagraphsFlg = false;
                 foreach (Block b in li.Blocks)
                 {
-                    if (b is List nested)
+                    if (!afterOwnParagraphsFlg)
                     {
+                        if (b is Paragraph)
+                        {
+                            continue; // 項目の文字（上で書き出した）
+                        }
+                        afterOwnParagraphsFlg = true;
+                    }
+                    if (b is Table nestedTable)
+                    {
+                        lines.Add("");
+                        foreach (string tableLine in TableToMarkdown(nestedTable).Split('\n'))
+                        {
+                            lines.Add(contIndent + tableLine);
+                        }
+                        endedWithTableFlg = true;
+                    }
+                    else if (b is Paragraph afterPara)
+                    {
+                        // 表のすぐ後ろの行は、空行を挟む（挟まないと、表の続きの行と見なされることがあるため）
+                        if (endedWithTableFlg)
+                        {
+                            lines.Add("");
+                        }
+                        foreach (string paraLine in ParagraphInlineToMarkdown(afterPara).Split('\n'))
+                        {
+                            lines.Add(0 == paraLine.Length ? "" : contIndent + paraLine);
+                        }
+                        endedWithTableFlg = false;
+                    }
+                    else if (b is List nested)
+                    {
+                        if (endedWithTableFlg)
+                        {
+                            lines.Add("");
+                        }
                         lines.Add(ListToMarkdown(nested, a_level + 1));
+                        endedWithTableFlg = EndsWithTable(nested);
                     }
                 }
+                previousEndedWithTableFlg = endedWithTableFlg;
                 number++;
             }
             return string.Join("\n", lines);
+        }
+
+        /// <summary>ブロックが表で終わっているか（表そのもの、または最後の項目が表で終わっている箇条書き）。</summary>
+        /// <param name="a_block">ブロック。</param>
+        /// <returns>表で終わっていればtrue。</returns>
+        public static bool EndsWithTable(Block a_block)
+        {
+            if (a_block is Table)
+            {
+                return true;
+            }
+            if (a_block is List list && list.ListItems.LastListItem is ListItem lastItem)
+            {
+                return EndsWithTable(lastItem.Blocks.LastBlock);
+            }
+            return false;
         }
 
         /// <summary>表をGitHub-flavored Markdown形式の表構文へ書き出す。</summary>
@@ -1677,9 +1752,11 @@ namespace mde.common
                             i++;
                             continue;
                         }
+                        // 字下げした続きの行は、項目の続きとして取り込む。表の行（|で始まる行）は、項目の文字より深く
+                        // 字下げしてある時だけ（項目の中の表。BuildNestedList が表にする）
                         if (listLines.Count > 0 && !string.IsNullOrWhiteSpace(lines[i]) &&
                             Regex.IsMatch(lines[i], "^\\s+\\S") &&
-                            !lines[i].TrimStart().StartsWith("|") &&
+                            (!lines[i].TrimStart().StartsWith("|") || IsIndentedTableLine(lines[i], rootIndent)) &&
                             !Regex.IsMatch(lines[i], "^\\s*#{1,6}\\s"))
                         {
                             listLines.Add(lines[i]);
@@ -1702,6 +1779,23 @@ namespace mde.common
                                 while (i < j) { listLines.Add(lines[i]); i++; }
                                 continue;
                             }
+                            // 空行の先が、項目の文字より深く字下げした表なら、項目の中の表として同じリストに取り込む
+                            // （項目の中に表を書く時は、表の前に空行を入れるのが普通のため）
+                            if (j + 1 < lines.Length && IsIndentedTableLine(lines[j], rootIndent) && IsTableSeparatorLine(lines[j + 1]))
+                            {
+                                while (i < j) { listLines.Add(lines[i]); i++; }
+                                continue;
+                            }
+                            // 項目の中の表の後ろの、空行を挟んで字下げした行は、表の後ろの項目の続きの行として取り込む
+                            // （ListToMarkdown は、表のすぐ後ろの行の前に空行を入れて書き出す）
+                            string lastListLine = listLines.LastOrDefault(l => !string.IsNullOrWhiteSpace(l));
+                            if (j < lines.Length && null != lastListLine && lastListLine.TrimStart().StartsWith("|") &&
+                                Regex.IsMatch(lines[j], "^\\s+\\S") && rootIndent + LIST_NEST_MIN_INDENT <= ListIndentWidth(Regex.Match(lines[j], "^\\s*").Value) &&
+                                !Regex.IsMatch(lines[j], "^\\s*#{1,6}\\s"))
+                            {
+                                while (i < j) { listLines.Add(lines[i]); i++; }
+                                continue;
+                            }
                         }
                         break;
                     }
@@ -1716,100 +1810,16 @@ namespace mde.common
                 if (line.TrimStart().StartsWith("|") && i + 1 < lines.Length &&
                     Regex.IsMatch(lines[i + 1], "^[\\s|:-]+$") && lines[i + 1].Contains("-"))
                 {
-                    var headerCells = ParseTableRow(line);
-                    // 区切り行（|:---:|---:|...|）のコロンから列ごとの文字揃えを読み取る。
-                    var alignSepCells = ParseTableRow(lines[i + 1]);
-                    var columnAlignments = alignSepCells.Select(ParseColumnAlignment).ToList();
-                    // 同じ区切り行のダッシュの数から、列幅調整・ステップ2で保存した列幅を
-                    // 読み取る（詳細はParseColumnDashCount・BuildTableSeparatorCell参照）。
-                    var columnDashCounts = alignSepCells.Select(ParseColumnDashCount).ToList();
+                    var bodyLines = new List<string>();
+                    string headerLine = line;
+                    string separatorLine = lines[i + 1];
                     i += 2;
-                    var table = new Table();
-                    foreach (var _ in headerCells)
-                    {
-                        table.Columns.Add(new TableColumn());
-                    }
-                    var rg = new TableRowGroup();
-                    table.RowGroups.Add(rg);
-
-                    (TextAlignment alignment, bool explicitLeftFlg) GetColumnAlignment(int a_colIndex) =>
-                        a_colIndex < columnAlignments.Count ? columnAlignments[a_colIndex] : (TextAlignment.Left, false);
-
-                    var headerRow = new TableRow();
-                    int headerColIndex = 0;
-                    foreach (var txt in headerCells)
-                    {
-                        // KeepTogether: ページの余白付近で表の行が跨ると、跨いだ先のセルは
-                        // 罫線（BorderBrush/BorderThickness）が描画されないままテキストだけが
-                        // 続いてしまうというWPFの制約がある。セル内の段落をページ内で分割
-                        // させないようにすることで、間に合わなければ行ごと次のページへ送られる
-                        // ようにし、行の途中で表が壊れて見える問題を避ける。
-                        var (headerAlignment, headerExplicitLeftFlg) = GetColumnAlignment(headerColIndex);
-                        var cell = BuildTableCellFromMarkdown(
-                            txt, headerAlignment, headerExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null, false);
-                        cell.FontWeight = FontWeights.Bold;
-                        cell.Background = BlockStyles.TableHeaderBackground;
-                        // 罫線（BorderBrush/BorderThickness）は、表全体を組み立て終えた後に
-                        // BlockStyles.ApplyTableCellBordersでまとめて設定する（隣接セルとの
-                        // 境界線が二重に重ならないようにするため。詳細は同メソッド参照）。
-                        cell.Padding = BlockStyles.TableCellPadding;
-                        headerRow.Cells.Add(cell);
-                        headerColIndex++;
-                    }
-                    rg.Rows.Add(headerRow);
-
                     while (i < lines.Length && lines[i].TrimStart().StartsWith("|"))
                     {
-                        var cellTexts = ParseTableRow(lines[i]);
-                        var row = new TableRow();
-                        int bodyColIndex = 0;
-                        foreach (var txt in cellTexts)
-                        {
-                            // KeepTogether: 上のヘッダーセルと同じ理由（罫線が崩れる問題への対策）。
-                            var (bodyAlignment, bodyExplicitLeftFlg) = GetColumnAlignment(bodyColIndex);
-                            var cell = BuildTableCellFromMarkdown(
-                                txt, bodyAlignment, bodyExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null, true);
-                            // 罫線は表全体の組み立て後にBlockStyles.ApplyTableCellBordersで
-                            // まとめて設定する（ヘッダーセルと同じ理由）。
-                            cell.Padding = BlockStyles.TableCellPadding;
-                            row.Cells.Add(cell);
-                            bodyColIndex++;
-                        }
-                        rg.Rows.Add(row);
+                        bodyLines.Add(lines[i]);
                         i++;
                     }
-                    // BlockStyles.ApplyContentBasedColumnWidths（列幅を内容に合わせてコンパクトに
-                    // する機能）は無効化中。Pixel指定列が広がりStar指定列が潰れる、意図と逆の
-                    // 現象が確認されたため（原因未特定）。
-                    // BlockStyles.ApplyContentBasedColumnWidths(table);
-                    // 列幅調整ダイアログ（ステップ2）で明示的に幅が調整された表か、あるいは
-                    // メニュー「表示」→「列幅を補正する」がオンの場合に、区切り行のダッシュ数と
-                    // トグルの状態から実際の列幅を決定する（詳細はBlockStyles.
-                    // ApplyEffectiveColumnWidthsのコメント参照）。区切り行の列数と実際の列数が
-                    // 一致しない異常な入力の場合は、これまで通り列幅を一切設定しない
-                    // （Autoのまま。挙動に変化なし）。
-                    if (columnDashCounts.Count == table.Columns.Count)
-                    {
-                        // 区切り行から読み取ったダッシュ数（＝Markdownソースに実際に保存されて
-                        // いる、保存されるべき「本当の値」）を記録しておく。これは表示上の
-                        // 列幅（この直後に適用するApplyEffectiveColumnWidths）とは独立していて、
-                        // 「列幅を補正する」がオフで見た目が均等幅に戻っている間も保持され続け、
-                        // TableToMarkdownでの書き出し時に参照される（詳細はBlockStyles.
-                        // SetSourceDashCountsのコメント参照。オフの間に保存しても調整済みの
-                        // 表の情報が失われないようにするための対策）。
-                        BlockStyles.SetSourceDashCounts(table, columnDashCounts);
-                        bool correctColumnWidthsFlg = m_correctColumnWidthsFlg?.Invoke() ?? true;
-                        // 表示できる幅が分からない呼び出し側（保存専用の一時変換・PDF書き出し用の
-                        // 一時変換など）ではデリゲートを渡していないため、null（＝常にStar比率。
-                        // 詳細はBlockStyles.ApplyAutoCalculatedColumnWidthsのコメント参照）になる。
-                        double? availableTableWidthPx = m_availableTableWidthFunc?.Invoke();
-                        BlockStyles.ApplyEffectiveColumnWidths(table, columnDashCounts, correctColumnWidthsFlg, availableTableWidthPx);
-                    }
-                    // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて
-                    // 設定する（詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
-                    BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
-                    // 閉じ括弧で終わるセルは、mdew・mdee と同じく括弧の半分の幅だけ右の余白にはみ出してよいようにする
-                    BlockStyles.ApplyClosingBracketLineEndAllowance(table);
+                    Table table = BuildTableFromSourceLines(headerLine, separatorLine, bodyLines);
                     RecordBlankLinesBeforeBlock(table);
                     AttachPendingComments(table);
                     // 大きな表は、内部では複数のかたまり（Table）に分ける（TableChunks 参照。表のセルに1文字打つたびに、表全体が
@@ -1970,12 +1980,123 @@ namespace mde.common
             // 抜けていた。表の直後にカーソルを置いて入力できるようにする目的も兼ねて、
             // ここでも同じように空の段落を1つ追加し、表が常に空でない後続の段落を伴う状態を
             // 保つ（ごく普通の空のParagraphであり、IME面での懸念はない）。
-            if (a_doc.Blocks.LastBlock is Table)
+            // 最後の箇条書きの最後の項目が表で終わっている（項目の中の表）場合も同じ
+            if (EndsWithTable(a_doc.Blocks.LastBlock))
             {
                 a_doc.Blocks.Add(new Paragraph());
             }
 
             m_imageManager.ResolveImages(a_doc);
+        }
+
+        /// <summary>
+        /// 表のソース行（見出しの行・区切り行・本体の行）から、表（Table）を組み立てる。文書の直下の表と、箇条書きの項目の中の表
+        /// （BuildNestedList）の両方で使う。行の先頭の字下げは無視する（ParseTableRow）。
+        /// </summary>
+        /// <param name="a_headerLine">見出しの行。</param>
+        /// <param name="a_separatorLine">区切り行（|---|:---:|...|）。</param>
+        /// <param name="a_bodyLines">本体の行。</param>
+        /// <param name="a_listIndentPx">表を囲む箇条書きの字下げ（px。文書の直下の表なら 0）。表を表示できる幅から差し引く。</param>
+        /// <returns>組み立てた表。</returns>
+        private Table BuildTableFromSourceLines(string a_headerLine, string a_separatorLine, List<string> a_bodyLines, double a_listIndentPx = 0)
+        {
+            var headerCells = ParseTableRow(a_headerLine);
+            // 区切り行（|:---:|---:|...|）のコロンから列ごとの文字揃えを読み取る。
+            var alignSepCells = ParseTableRow(a_separatorLine);
+            var columnAlignments = alignSepCells.Select(ParseColumnAlignment).ToList();
+            // 同じ区切り行のダッシュの数から、列幅調整・ステップ2で保存した列幅を
+            // 読み取る（詳細はParseColumnDashCount・BuildTableSeparatorCell参照）。
+            var columnDashCounts = alignSepCells.Select(ParseColumnDashCount).ToList();
+            var table = new Table();
+            foreach (var _ in headerCells)
+            {
+                table.Columns.Add(new TableColumn());
+            }
+            var rg = new TableRowGroup();
+            table.RowGroups.Add(rg);
+
+            (TextAlignment alignment, bool explicitLeftFlg) GetColumnAlignment(int a_colIndex) =>
+                a_colIndex < columnAlignments.Count ? columnAlignments[a_colIndex] : (TextAlignment.Left, false);
+
+            var headerRow = new TableRow();
+            int headerColIndex = 0;
+            foreach (var txt in headerCells)
+            {
+                // KeepTogether: ページの余白付近で表の行が跨ると、跨いだ先のセルは
+                // 罫線（BorderBrush/BorderThickness）が描画されないままテキストだけが
+                // 続いてしまうというWPFの制約がある。セル内の段落をページ内で分割
+                // させないようにすることで、間に合わなければ行ごと次のページへ送られる
+                // ようにし、行の途中で表が壊れて見える問題を避ける。
+                var (headerAlignment, headerExplicitLeftFlg) = GetColumnAlignment(headerColIndex);
+                var cell = BuildTableCellFromMarkdown(
+                    txt, headerAlignment, headerExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null, false);
+                cell.FontWeight = FontWeights.Bold;
+                cell.Background = BlockStyles.TableHeaderBackground;
+                // 罫線（BorderBrush/BorderThickness）は、表全体を組み立て終えた後に
+                // BlockStyles.ApplyTableCellBordersでまとめて設定する（隣接セルとの
+                // 境界線が二重に重ならないようにするため。詳細は同メソッド参照）。
+                cell.Padding = BlockStyles.TableCellPadding;
+                headerRow.Cells.Add(cell);
+                headerColIndex++;
+            }
+            rg.Rows.Add(headerRow);
+
+            foreach (string bodyLine in a_bodyLines)
+            {
+                var cellTexts = ParseTableRow(bodyLine);
+                var row = new TableRow();
+                int bodyColIndex = 0;
+                foreach (var txt in cellTexts)
+                {
+                    // KeepTogether: 上のヘッダーセルと同じ理由（罫線が崩れる問題への対策）。
+                    var (bodyAlignment, bodyExplicitLeftFlg) = GetColumnAlignment(bodyColIndex);
+                    var cell = BuildTableCellFromMarkdown(
+                        txt, bodyAlignment, bodyExplicitLeftFlg ? ALIGN_LEFT_EXPLICIT_TAG : null, true);
+                    // 罫線は表全体の組み立て後にBlockStyles.ApplyTableCellBordersで
+                    // まとめて設定する（ヘッダーセルと同じ理由）。
+                    cell.Padding = BlockStyles.TableCellPadding;
+                    row.Cells.Add(cell);
+                    bodyColIndex++;
+                }
+                rg.Rows.Add(row);
+            }
+            // BlockStyles.ApplyContentBasedColumnWidths（列幅を内容に合わせてコンパクトに
+            // する機能）は無効化中。Pixel指定列が広がりStar指定列が潰れる、意図と逆の
+            // 現象が確認されたため（原因未特定）。
+            // BlockStyles.ApplyContentBasedColumnWidths(table);
+            // 列幅調整ダイアログ（ステップ2）で明示的に幅が調整された表か、あるいは
+            // メニュー「表示」→「列幅を補正する」がオンの場合に、区切り行のダッシュ数と
+            // トグルの状態から実際の列幅を決定する（詳細はBlockStyles.
+            // ApplyEffectiveColumnWidthsのコメント参照）。区切り行の列数と実際の列数が
+            // 一致しない異常な入力の場合は、これまで通り列幅を一切設定しない
+            // （Autoのまま。挙動に変化なし）。
+            if (columnDashCounts.Count == table.Columns.Count)
+            {
+                // 区切り行から読み取ったダッシュ数（＝Markdownソースに実際に保存されて
+                // いる、保存されるべき「本当の値」）を記録しておく。これは表示上の
+                // 列幅（この直後に適用するApplyEffectiveColumnWidths）とは独立していて、
+                // 「列幅を補正する」がオフで見た目が均等幅に戻っている間も保持され続け、
+                // TableToMarkdownでの書き出し時に参照される（詳細はBlockStyles.
+                // SetSourceDashCountsのコメント参照。オフの間に保存しても調整済みの
+                // 表の情報が失われないようにするための対策）。
+                BlockStyles.SetSourceDashCounts(table, columnDashCounts);
+                bool correctColumnWidthsFlg = m_correctColumnWidthsFlg?.Invoke() ?? true;
+                // 表示できる幅が分からない呼び出し側（保存専用の一時変換・PDF書き出し用の
+                // 一時変換など）ではデリゲートを渡していないため、null（＝常にStar比率。
+                // 詳細はBlockStyles.ApplyAutoCalculatedColumnWidthsのコメント参照）になる。
+                double? availableTableWidthPx = m_availableTableWidthFunc?.Invoke();
+                if (availableTableWidthPx.HasValue && 0 < a_listIndentPx)
+                {
+                    availableTableWidthPx = Math.Max(100, availableTableWidthPx.Value - a_listIndentPx);
+                }
+                BlockStyles.ApplyEffectiveColumnWidths(table, columnDashCounts, correctColumnWidthsFlg, availableTableWidthPx);
+            }
+            // 隣接セルの境界線が二重に重ならないよう、表全体に対して罫線をまとめて
+            // 設定する（詳細はBlockStyles.ApplyTableCellBordersのコメント参照）。
+            BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
+            // 閉じ括弧で終わるセルは、mdew・mdee と同じく括弧の半分の幅だけ右の余白にはみ出してよいようにする
+            BlockStyles.ApplyClosingBracketLineEndAllowance(table);
+            return table;
         }
 
         /// <summary>
@@ -2054,7 +2175,8 @@ namespace mde.common
         /// 改行がそのまま見た目の改行になる）。「空行が入るまで改行しない」なら、各行の前後の
         /// 空白を落としたうえで単純な半角スペース1つでつなぐ（結果に"\n"が含まれなくなるため、
         /// 後段でLineBreakは一切生成されず、CommonMark/VSCodeのMarkdownプレビューと同じく、
-        /// 空行が入るまでは改行されずに1つの段落として続けて表示される）。
+        /// 空行が入るまでは改行されずに1つの段落として続けて表示される）。ただし、画像だけの行
+        /// （m_imageOnlyLineRegex）の前後は"\n"でつなぎ、画像をその行だけで表示する。
         /// </summary>
         /// <param name="a_lines">結合対象のソース行一覧。</param>
         /// <returns>結合した文字列。</returns>
@@ -2065,8 +2187,32 @@ namespace mde.common
             {
                 return string.Join("\n", a_lines);
             }
-            return string.Join(" ", a_lines.Select(l => l.Trim()));
+            // 画像だけの行は、前後の行とつなげず、その行だけで表示する（改行したままにする。書き出す時も、画像は元の通り
+            // 別の行になる）
+            var sb = new StringBuilder();
+            bool previousImageOnlyFlg = false;
+            for (int k = 0; k < a_lines.Count; k++)
+            {
+                string trimmed = a_lines[k].Trim();
+                bool imageOnlyFlg = m_imageOnlyLineRegex.IsMatch(trimmed);
+                if (0 < k)
+                {
+                    sb.Append(imageOnlyFlg || previousImageOnlyFlg ? '\n' : ' ');
+                }
+                sb.Append(trimmed);
+                previousImageOnlyFlg = imageOnlyFlg;
+            }
+            return sb.ToString();
         }
+
+        /// <summary>
+        /// 画像だけの行（前後の空白を除いて、画像の記法だけが並んだ行）。画像の記法は、&lt;img ...&gt;・![文字](参照先)・
+        /// それらをリンクにしたもの（[&lt;img ...&gt;](URL)・[![文字](参照先)](URL)）。JoinParagraphSourceLines で使う。
+        /// </summary>
+        private static readonly Regex m_imageOnlyLineRegex = new Regex(
+            "^(?:(?:<img\\b[^>]*>|!\\[[^\\]]*\\]\\((?:[^()]|\\([^()]*\\))+\\)|" +
+            "\\[(?:<img\\b[^>]*>|!\\[[^\\]]*\\]\\((?:[^()]|\\([^()]*\\))+\\))\\]\\((?:[^()]|\\([^()]*\\))+\\))\\s*)+$",
+            RegexOptions.IgnoreCase);
 
         /// <summary>"| a | b | c |" 形式の表の行を、各セルのテキストへ分割する。</summary>
         /// <param name="a_line">対象の行。</param>
@@ -2370,6 +2516,24 @@ namespace mde.common
             return true;
         }
 
+        /// <summary>箇条書きの項目の中の表の行（項目の記号の位置より2文字以上深く字下げした、|で始まる行）かどうか。</summary>
+        /// <param name="a_line">行。</param>
+        /// <param name="a_rootIndent">リストの1段目の項目の字下げの幅。</param>
+        /// <returns>項目の中の表の行ならtrue。</returns>
+        private static bool IsIndentedTableLine(string a_line, int a_rootIndent)
+        {
+            var m = Regex.Match(a_line, "^(\\s*)\\|");
+            return m.Success && a_rootIndent + LIST_NEST_MIN_INDENT <= ListIndentWidth(m.Groups[1].Value);
+        }
+
+        /// <summary>表の区切り行（|---|:---:|...|）かどうか。</summary>
+        /// <param name="a_line">行。</param>
+        /// <returns>区切り行ならtrue。</returns>
+        private static bool IsTableSeparatorLine(string a_line)
+        {
+            return Regex.IsMatch(a_line, "^[\\s|:-]+$") && a_line.Contains("-");
+        }
+
         /// <summary>
         /// 箇条書き項目のソース行の連なりから、（入れ子を含む）Listを組み立てる。
         /// ネストの各段で箇条書き記号か順序付き数字かを判定し、各項目の1行目と継続行を
@@ -2450,8 +2614,9 @@ namespace mde.common
                 }
             }
 
-            foreach (var line in a_listLines)
+            for (int lineIndex = 0; lineIndex < a_listLines.Count; lineIndex++)
             {
+                string line = a_listLines[lineIndex];
                 if (string.IsNullOrWhiteSpace(line))
                 {
                     blankRun++;
@@ -2538,6 +2703,8 @@ namespace mde.common
                     var newLi = new ListItem(para);
                     // 項目の間に空行が3つ以上続いている所は、空の行の分だけ間を空ける
                     BlockStyles.ApplyListItemGap(newLi, GapLineCount(blankLinesBeforeLine));
+                    // 項目の前の空行の数を覚えておく（書き出す時に同じ数の空行を書く。ListToMarkdown）
+                    newLi.Tag = new ListItemSourceInfo { BlankLinesBefore = blankLinesBeforeLine };
                     top.list.ListItems.Add(newLi);
 
                     pendingPara = para;
@@ -2545,8 +2712,42 @@ namespace mde.common
                     pendingTextLines = new List<string> { text };
                     pendingTaskChecked = taskChecked;
                 }
+                else if (null != pendingListItem && line.TrimStart().StartsWith("|") &&
+                         lineIndex + 1 < a_listLines.Count && IsTableSeparatorLine(a_listLines[lineIndex + 1]))
+                {
+                    // 項目の中の表（項目の文字より深く字下げした表）。項目のそれまでの文字を段落にしてから、表を項目の
+                    // 中に入れる。表の後に続く行（空行を挟まない、字下げした行）は、表の後ろの段落にする（下の else）
+                    FlushPendingItem();
+                    string headerLine = line;
+                    string separatorLine = a_listLines[lineIndex + 1];
+                    var bodyLines = new List<string>();
+                    lineIndex += 2;
+                    while (lineIndex < a_listLines.Count && a_listLines[lineIndex].TrimStart().StartsWith("|"))
+                    {
+                        bodyLines.Add(a_listLines[lineIndex]);
+                        lineIndex++;
+                    }
+                    lineIndex--; // for の lineIndex++ で、表の次の行へ進む
+                    // 表を表示できる幅から、表を囲む箇条書きの字下げ（この項目までのすべての段）を差し引く
+                    double listIndentPx = stack.Sum(entry => BlockStyles.GetListIndent(entry.list));
+                    Table nestedTable = BuildTableFromSourceLines(headerLine, separatorLine, bodyLines, listIndentPx);
+                    // 項目の文字と表の間を、段落と表の間と同じだけ空ける（下の余白はスタイルの既定と同じ）
+                    nestedTable.Margin = new Thickness(0, BlockStyles.ParagraphBottomSpacing, 0, BlockStyles.ListBottomSpacing);
+                    pendingListItem.Blocks.Add(nestedTable);
+                    pendingPara = null;
+                    pendingTextLines = new List<string>();
+                    pendingTaskChecked = null;
+                }
                 else
                 {
+                    if (null == pendingPara && null != pendingListItem)
+                    {
+                        // 項目の中の表の後ろに続く行
+                        pendingPara = new Paragraph { Margin = new Thickness(0) };
+                        pendingListItem.Blocks.Add(pendingPara);
+                        pendingTextLines = new List<string>();
+                        pendingTaskChecked = null;
+                    }
                     if (null != pendingPara)
                     {
                         pendingTextLines.Add(line.Trim());

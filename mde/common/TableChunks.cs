@@ -278,13 +278,13 @@ namespace mde.common
             return head;
         }
 
-        /// <summary>表のすべてのかたまりを文書から取り除く。</summary>
+        /// <summary>表のすべてのかたまりを文書から取り除く（箇条書きの項目の中の表は、項目から取り除く）。</summary>
         /// <param name="a_table">表のいずれかのかたまり。</param>
         public static void RemoveAll(Table a_table)
         {
             foreach (Table chunk in GetChunks(a_table))
             {
-                (chunk.Parent as FlowDocument)?.Blocks.Remove(chunk);
+                chunk.SiblingBlocks?.Remove(chunk);
             }
         }
 

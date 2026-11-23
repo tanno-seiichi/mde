@@ -213,6 +213,8 @@ You can choose how the end of a source line (a simple line break without a blank
 "Line Breaks in Paragraphs". The default is "Break Only at Blank Lines": a line break without a blank line is
 treated as a space, and a paragraph wraps only at the width of the screen (the same as the VS Code Markdown
 preview). If you switch to "Break Lines as in the Source", each line break in the source is shown as a line break.
+A line that contains only an image is always shown on its own line, without being joined to the lines before and
+after it.
 
 Pressing **Shift+Enter** in a paragraph always breaks the line there, whatever this setting is (it is saved as
 `<br>` in Markdown).

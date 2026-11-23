@@ -171,6 +171,33 @@ namespace mde.common
         /// <summary>番号付きの箇条書きの左の字下げ。EditorDecimalListPadding に設定する。</summary>
         public static double DecimalListIndent => VsCodeStyleFlg ? 30 : 34;
 
+        /// <summary>箇条書き1段分の左の字下げ（番号付きなら DecimalListIndent、それ以外は ListIndent）。</summary>
+        /// <param name="a_list">箇条書き。</param>
+        /// <returns>字下げ（px）。</returns>
+        public static double GetListIndent(List a_list)
+        {
+            return TextMarkerStyle.Decimal == a_list?.MarkerStyle ? DecimalListIndent : ListIndent;
+        }
+
+        /// <summary>
+        /// 箇条書きの項目の中の表の、左の字下げ（表を囲むすべての段の箇条書きの字下げの合計。文書の直下の表なら 0）。
+        /// 表を表示できる幅から差し引く（RefreshAutoCalculatedColumnWidths）。
+        /// </summary>
+        /// <param name="a_table">表。</param>
+        /// <returns>字下げ（px）。</returns>
+        public static double GetListIndentOfTable(Table a_table)
+        {
+            double indent = 0;
+            for (DependencyObject node = a_table?.Parent; null != node; node = (node as TextElement)?.Parent)
+            {
+                if (node is List list)
+                {
+                    indent += GetListIndent(list);
+                }
+            }
+            return indent;
+        }
+
         /// <summary>太字の太さ（VSCodeスタイルは少し細い太字）。</summary>
         public static FontWeight BoldFontWeight => VsCodeStyleFlg ? FontWeights.SemiBold : FontWeights.Bold;
 
@@ -2200,6 +2227,12 @@ namespace mde.common
         public static void RefreshAutoCalculatedColumnWidths(Table a_table, double a_availableWidthPx)
         {
             a_table = TableChunks.GetHead(a_table); // 分けた表（TableChunks）は、先頭のかたまりで1つの表として扱う
+            // 箇条書きの項目の中の表は、箇条書きの字下げの分だけ狭い
+            double listIndent = GetListIndentOfTable(a_table);
+            if (0 < listIndent)
+            {
+                a_availableWidthPx = Math.Max(100, a_availableWidthPx - listIndent);
+            }
             using (BeginMeasureScope())
             {
                 var sourceDashCounts = GetSourceDashCounts(a_table);

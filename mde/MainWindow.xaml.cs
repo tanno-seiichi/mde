@@ -1581,15 +1581,73 @@ namespace mde
             DependencyObject node = a_para;
             while (node is TextElement element)
             {
-                if (element is Block block && block.Parent is FlowDocument)
+                if (element is Block block)
                 {
-                    return block is Table ||
-                           block.PreviousBlock is Table ||
-                           block.NextBlock is Table;
+                    // 箇条書きの項目の中の表の、前後のブロック
+                    if (block.PreviousBlock is Table || block.NextBlock is Table)
+                    {
+                        return true;
+                    }
+                    if (block.Parent is FlowDocument)
+                    {
+                        // 表を含む箇条書き（項目の中の表）の中・前後も、表の近くとする
+                        return ContainsTable(block) ||
+                               ContainsTable(block.PreviousBlock) ||
+                               ContainsTable(block.NextBlock);
+                    }
                 }
                 node = element.Parent;
             }
             return true;
+        }
+
+        /// <summary>ブロックが表か、表を含む箇条書き（項目の中の表）か。</summary>
+        /// <param name="a_block">ブロック（null なら false）。</param>
+        /// <returns>表か、表を含む箇条書きなら true。</returns>
+        private static bool ContainsTable(Block a_block)
+        {
+            if (a_block is Table)
+            {
+                return true;
+            }
+            if (a_block is List list)
+            {
+                foreach (ListItem li in list.ListItems)
+                {
+                    foreach (Block b in li.Blocks)
+                    {
+                        if (ContainsTable(b))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        /// <summary>文書内のすべての表（大きな表を分けたかたまりはそれぞれ。箇条書きの項目の中の表も）を、文書の順に返す。</summary>
+        /// <param name="a_blocks">文書のブロック。</param>
+        /// <returns>表の並び。</returns>
+        private static IEnumerable<Table> EnumerateAllTables(IEnumerable<Block> a_blocks)
+        {
+            foreach (Block block in a_blocks)
+            {
+                if (block is Table table)
+                {
+                    yield return table;
+                }
+                else if (block is List list)
+                {
+                    foreach (ListItem li in list.ListItems)
+                    {
+                        foreach (Table nested in EnumerateAllTables(li.Blocks))
+                        {
+                            yield return nested;
+                        }
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -1602,7 +1660,8 @@ namespace mde
         /// <returns>位置を含むセルの段落。なければnull。</returns>
         private static Paragraph FindTableCellParagraphAt(TextPointer a_position, FlowDocument a_document)
         {
-            foreach (Table table in a_document.Blocks.OfType<Table>())
+            // 箇条書きの項目の中の表も調べる
+            foreach (Table table in EnumerateAllTables(a_document.Blocks))
             {
                 if (0 > a_position.CompareTo(table.ContentStart) ||
                     0 < a_position.CompareTo(table.ContentEnd))
@@ -1747,7 +1806,8 @@ namespace mde
             Table fallbackTable = null;
             if (null != a_document)
             {
-                foreach (Table table in a_document.Blocks.OfType<Table>())
+                // 箇条書きの項目の中の表も調べる
+                foreach (Table table in EnumerateAllTables(a_document.Blocks))
                 {
                     if (0 <= a_position.CompareTo(table.ContentStart))
                     {
@@ -2579,10 +2639,22 @@ namespace mde
             {
                 return;
             }
+            // 表がまだこの文書の中にあるか（文書の直下の表と、箇条書きの項目の中の表）
+            bool IsInEditorDocument(Table a_table)
+            {
+                for (DependencyObject node = a_table; null != node; node = (node as TextElement)?.Parent)
+                {
+                    if (ReferenceEquals(node, m_editor.Document))
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
             // 選択の変更の通知の中では文書を変えず、後で行う
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (!m_isSourceModeFlg && !m_exportingPdfFlg && ReferenceEquals(left.Parent, m_editor.Document))
+                if (!m_isSourceModeFlg && !m_exportingPdfFlg && IsInEditorDocument(left))
                 {
                     RunWithoutDirtyMarking(() =>
                     {
@@ -2843,6 +2915,60 @@ namespace mde
         }
 
         /// <summary>
+        /// キャレットが、箇条書きの項目の中の表の右下の外（最後の行の、最後のセルより右。セルの外）にある時の Enter を処理する。
+        /// Shift+Enter は、項目の中で改行する（表の後ろに、項目の続きの行を作る）。Enter は、次の項目を作る（項目で Enter を
+        /// 押した時と同じ。ListEditor.HandleListEnter）。
+        /// </summary>
+        /// <returns>処理した時は true。</returns>
+        private bool TryHandleEnterAfterNestedTable()
+        {
+            TextPointer caret = m_editor.CaretPosition;
+            if (null == caret || !m_editor.Selection.IsEmpty)
+            {
+                return false;
+            }
+            // キャレットがセル・段落の中なら対象外。行・行のまとまり・表の直下（セルの外）にある時だけ
+            Table table = null;
+            for (DependencyObject node = caret.Parent; null != node; node = (node as TextElement)?.Parent)
+            {
+                if (node is Paragraph || node is TableCell)
+                {
+                    return false;
+                }
+                if (node is Table found)
+                {
+                    table = found;
+                    break;
+                }
+            }
+            if (null == table || !(table.Parent is ListItem li) || !(li.Parent is List parentList))
+            {
+                return false;
+            }
+            TableRow lastRow = TableChunks.GetRows(table).LastOrDefault();
+            TableCell lastCell = lastRow?.Cells.LastOrDefault();
+            if (null == lastCell || 0 > caret.CompareTo(lastCell.ElementEnd))
+            {
+                return false;
+            }
+            m_originalTextTracker.InvalidateForBlock(table);
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            {
+                RunAsProgrammaticChange(() =>
+                {
+                    var newPara = new Paragraph { Margin = new Thickness(0) };
+                    li.Blocks.InsertAfter(table, newPara);
+                    m_editor.CaretPosition = newPara.ContentStart;
+                });
+                MarkDirty();
+                return true;
+            }
+            m_listEditor.HandleListEnter(li, parentList);
+            MarkDirty();
+            return true;
+        }
+
+        /// <summary>
         /// キー入力の中心的な振り分け役。箇条書き項目・見出し・コードブロック・表セルの
         /// いずれにキャレットがあるかに応じて、Tab/Shift+Tab/Enter/矢印キーの処理を
         /// 対応するクラスへ委譲する。
@@ -2927,6 +3053,13 @@ namespace mde
 
             if (a_args.Key == Key.Enter)
             {
+                // 箇条書きの項目の中の表の右下の外（最後の行の右。セルの外）では、項目の中の改行・次の項目にする
+                // （WPF 標準の処理に任せると、表に罫線の無い行が足されて表が壊れる）
+                if (TryHandleEnterAfterNestedTable())
+                {
+                    a_args.Handled = true;
+                    return;
+                }
                 // Enterの直前に書いたメールアドレスは、mailtoのリンクにする（InlineStyleEditor.TryLinkifyBareEmail）
                 m_inlineStyleEditor.LinkifyBareEmailBeforeCaret();
                 if (m_listEditor.IsInListItem(para, out ListItem li, out List parentList))
@@ -3021,7 +3154,8 @@ namespace mde
                         m_headingCodeBlockEditor.ConvertParagraphToCodeBlock(para, fenceMatch.Groups[1].Value);
                         return;
                     }
-                    if (para.PreviousBlock is Table)
+                    // 前が、最後の項目が表で終わる箇条書き（項目の中の表）の時も同じ
+                    if (para.PreviousBlock is Table || MarkdownConverter.EndsWithTable(para.PreviousBlock))
                     {
                         a_args.Handled = true;
                         // 表の直後の段落でのEnterは、WPF標準の動作に任せると、キャレットが
@@ -4085,7 +4219,8 @@ namespace mde
             {
                 // 大きな表を分けたかたまり（TableChunks）は、すべてのかたまりの幅を覚えておき、列幅の再計算は先頭のかたまりで
                 // 表全体に対して行う（FindAllTables は先頭のかたまりだけを返す）
-                foreach (var table in m_editor.Document.Blocks.OfType<Table>())
+                // 箇条書きの項目の中の表（FindAllTables が返す）も覚えておく
+                foreach (var table in m_editor.Document.Blocks.OfType<Table>().Concat(m_tableEditor.FindAllTables(m_editor.Document)).Distinct())
                 {
                     originalTableColumnWidths[table] = table.Columns.Select(c => c.Width).ToArray();
                 }
@@ -4102,8 +4237,9 @@ namespace mde
             // そろえる（画面用の線のままだと、PDFで一部消えたり、一部だけ太く見えたりするため。
             // 詳細は BlockStyles.ApplyPrintTableBorders）。書き出し後に画面用の線へ戻す。
             var tableBorderRestores = new List<Action>();
-            // 大きな表を分けたかたまり（TableChunks）も、それぞれのかたまりの線を書き出す間だけそろえる
-            foreach (var table in m_editor.Document.Blocks.OfType<Table>())
+            // 大きな表を分けたかたまり（TableChunks）も、それぞれのかたまりの線を書き出す間だけそろえる。箇条書きの項目の中の表
+            // （FindAllTables が返す）も
+            foreach (var table in m_editor.Document.Blocks.OfType<Table>().Concat(m_tableEditor.FindAllTables(m_editor.Document)).Distinct())
             {
                 tableBorderRestores.Add(BlockStyles.ApplyPrintTableBorders(table));
             }

@@ -663,7 +663,8 @@ namespace mde.editor
                 return;
             }
             object parent = a_para.Parent;
-            bool afterTableFlg = parent is FlowDocument && a_para.PreviousBlock is Table;
+            // 表の直後の段落（最後の項目が表で終わる箇条書き（項目の中の表）の直後の段落も）
+            bool afterTableFlg = parent is FlowDocument && MarkdownConverter.EndsWithTable(a_para.PreviousBlock);
             if (!(parent is ListItem) && !(parent is TableCell) && !afterTableFlg)
             {
                 DebugLogger.Log(

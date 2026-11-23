@@ -266,14 +266,27 @@ namespace mde.editor
             Block neighbor = a_dir < 0 ? table.PreviousBlock : table.NextBlock;
             if (null == neighbor)
             {
+                // 箇条書きの項目の中の表で、項目の中に前（後ろ）のブロックが無い時は、項目の外の前（後ろ）の文字
+                // （次の項目・箇条書きの後ろの段落等）へ移す
+                if (!(table.Parent is FlowDocument))
+                {
+                    TextPointer outside = a_dir < 0
+                        ? table.ElementStart.GetNextInsertionPosition(LogicalDirection.Backward)
+                        : table.ElementEnd.GetNextInsertionPosition(LogicalDirection.Forward);
+                    if (null != outside)
+                    {
+                        m_editor.CaretPosition = outside;
+                        return;
+                    }
+                }
                 var newPara = new Paragraph();
                 if (a_dir < 0)
                 {
-                    m_editor.Document.Blocks.InsertBefore(table, newPara);
+                    table.SiblingBlocks.InsertBefore(table, newPara);
                 }
                 else
                 {
-                    m_editor.Document.Blocks.InsertAfter(table, newPara);
+                    table.SiblingBlocks.InsertAfter(table, newPara);
                 }
                 m_editor.CaretPosition = newPara.ContentStart;
                 m_markDirty();
@@ -455,6 +468,19 @@ namespace mde.editor
             // 隣接セルの境界線が二重に重ならないよう、表全体へまとめて罫線を設定する
             // （BlockStyles.ApplyTableCellBorders参照）。
             BlockStyles.ApplyTableCellBorders(table, m_cellBorder);
+
+            // 箇条書きの項目の中では、項目の中に表を入れる
+            if (TryInsertTableIntoListItem(ContextParagraph, table))
+            {
+                if (headerRow.Cells[0].Blocks.FirstBlock is Paragraph nestedHeaderPara)
+                {
+                    m_editor.CaretPosition = nestedHeaderPara.ContentStart;
+                }
+                m_editor.Focus();
+                m_markDirty();
+                return;
+            }
+
             // 大きな表は、内部では複数のかたまりに分ける（TableChunks）
             List<Table> chunks = TableChunks.SplitIfLarge(table);
 
@@ -490,6 +516,49 @@ namespace mde.editor
             }
             m_editor.Focus();
             m_markDirty();
+        }
+
+        /// <summary>
+        /// 段落が箇条書きの項目の中なら、表を項目の中（段落の後ろ）に入れる。段落が項目の続きの行（Shift+Enter で作った、
+        /// 2つ目以降の段落）で空なら、その段落を表に置き換える。項目の中の表は、大きくても複数のかたまり（TableChunks）に
+        /// 分けない。文書の最後の箇条書きの最後が表になった時は、箇条書きの後ろに空の段落を置く（表の後ろにキャレットを
+        /// 置けるように。MarkdownConverter.MarkdownToDocument と同じ）。
+        /// </summary>
+        /// <param name="a_para">表を入れる位置の段落（キャレット・右クリックした所の段落）。</param>
+        /// <param name="a_table">入れる表。</param>
+        /// <returns>項目の中に入れた時は true。箇条書きの項目の中でなければ何もせず false。</returns>
+        private bool TryInsertTableIntoListItem(Paragraph a_para, Table a_table)
+        {
+            if (!(a_para?.Parent is ListItem li))
+            {
+                return false;
+            }
+            m_originalTextTracker.InvalidateForBlock(a_para);
+            m_runAsProgrammaticChange(() =>
+            {
+                // 項目の文字と表の間は、段落と表の間と同じだけ空ける（MarkdownConverter.BuildNestedList と同じ）
+                a_table.Margin = new Thickness(0, BlockStyles.ParagraphBottomSpacing, 0, BlockStyles.ListBottomSpacing);
+                li.Blocks.InsertAfter(a_para, a_table);
+                bool emptyFlg = a_para.Inlines.All(inline => inline is Run run && string.IsNullOrWhiteSpace(run.Text));
+                if (emptyFlg && !ReferenceEquals(li.Blocks.FirstBlock, a_para))
+                {
+                    li.Blocks.Remove(a_para);
+                }
+                Block topBlock = null;
+                for (DependencyObject node = a_table; null != node; node = (node as TextElement)?.Parent)
+                {
+                    if (node is Block block && block.Parent is FlowDocument)
+                    {
+                        topBlock = block;
+                        break;
+                    }
+                }
+                if (null != topBlock && null == topBlock.NextBlock)
+                {
+                    topBlock.SiblingBlocks.InsertAfter(topBlock, new Paragraph());
+                }
+            });
+            return true;
         }
 
         /// <summary>
@@ -738,20 +807,31 @@ namespace mde.editor
             return Math.Max(100, w);
         }
 
-        /// <summary>文書内の表をすべて見つける（表は常に文書の最上位ブロックとして挿入される
-        /// ため、トップレベルのBlocksだけを見れば十分）。大きな表を分けたかたまり（TableChunks）は、先頭のかたまりだけ。</summary>
+        /// <summary>文書内の表をすべて見つける（文書の最上位ブロックの表と、箇条書きの項目の中の表）。大きな表を分けた
+        /// かたまり（TableChunks）は、先頭のかたまりだけ。</summary>
         /// <param name="a_doc">対象の文書。</param>
         public List<Table> FindAllTables(FlowDocument a_doc)
         {
             var tables = new List<Table>();
-            foreach (Block b in a_doc.Blocks)
+            void Collect(IEnumerable<Block> a_blocks)
             {
-                // 大きな表を分けたかたまり（TableChunks）は、先頭のかたまりだけを返す（列の幅等は先頭のかたまりで表全体を扱う）
-                if (b is Table t && !TableChunks.IsContinuation(t))
+                foreach (Block b in a_blocks)
                 {
-                    tables.Add(t);
+                    // 大きな表を分けたかたまり（TableChunks）は、先頭のかたまりだけを返す（列の幅等は先頭のかたまりで表全体を扱う）
+                    if (b is Table t && !TableChunks.IsContinuation(t))
+                    {
+                        tables.Add(t);
+                    }
+                    else if (b is List list)
+                    {
+                        foreach (ListItem li in list.ListItems)
+                        {
+                            Collect(li.Blocks);
+                        }
+                    }
                 }
             }
+            Collect(a_doc.Blocks);
             return tables;
         }
 
@@ -1422,6 +1502,24 @@ namespace mde.editor
             var dashCounts = Enumerable.Repeat(BlockStyles.TABLE_COLUMN_DEFAULT_DASH_COUNT, colCount).ToList();
             BlockStyles.SetSourceDashCounts(table, dashCounts);
             BlockStyles.ApplyEffectiveColumnWidths(table, dashCounts, m_correctColumnWidthsFlg?.Invoke() ?? true, GetAvailableTableWidth());
+
+            // 箇条書きの項目の中では、項目の中に表を入れる（列の幅は、箇条書きの字下げの分を除いた幅に合わせ直す）
+            if (TryInsertTableIntoListItem(m_editor.CaretPosition?.Paragraph, table))
+            {
+                if (m_correctColumnWidthsFlg?.Invoke() ?? true)
+                {
+                    BlockStyles.RefreshAutoCalculatedColumnWidths(table, GetAvailableTableWidth());
+                }
+                if (rg.Rows.Count > 0 && rg.Rows[0].Cells.Count > 0 && rg.Rows[0].Cells[0].Blocks.FirstBlock is Paragraph nestedFirstPara)
+                {
+                    m_editor.CaretPosition = nestedFirstPara.ContentStart;
+                }
+                m_refreshOutline();
+                m_editor.Focus();
+                m_markDirty();
+                return;
+            }
+
             // 大きな表は、内部では複数のかたまりに分ける（TableChunks）
             List<Table> chunks = TableChunks.SplitIfLarge(table);
 

@@ -278,7 +278,7 @@ namespace mde.manager
             {
                 return null;
             }
-            string src = info.OriginalSrc;
+            string src = FileUrlToPath(info.OriginalSrc);
 
             if (Uri.TryCreate(src, UriKind.Absolute, out Uri u) &&
                 ("http" == u.Scheme ||
@@ -491,7 +491,31 @@ namespace mde.manager
             return "";
         }
 
-        /// <summary>画像のsrc（絶対パス・http(s) URL・現在のファイルからの相対パス）を解決して読み込む。</summary>
+        /// <summary>
+        /// 画像の参照先が file:/// の URL（例：file:///C:/Users/a/b.png。他のエディタで画像を貼り付けると、この形で書かれる
+        /// ことがある）なら、ファイルのパス（C:\Users\a\b.png）に直す。それ以外はそのまま返す。Markdown に書き出す参照先
+        /// （ImageInfo.OriginalSrc）は変えず、読み込む・開く時にだけ使う。
+        /// </summary>
+        /// <param name="a_src">画像の参照先。</param>
+        /// <returns>ファイルのパス、またはそのままの参照先。</returns>
+        public static string FileUrlToPath(string a_src)
+        {
+            if (!string.IsNullOrEmpty(a_src) && a_src.StartsWith("file:", StringComparison.OrdinalIgnoreCase) &&
+                Uri.TryCreate(a_src, UriKind.Absolute, out Uri uri) && uri.IsFile)
+            {
+                try
+                {
+                    return uri.LocalPath;
+                }
+                catch
+                {
+                    // パスに直せなければ、そのまま返す
+                }
+            }
+            return a_src;
+        }
+
+        /// <summary>画像のsrc（絶対パス・file:/// の URL・http(s) URL・現在のファイルからの相対パス）を解決して読み込む。</summary>
         /// <param name="a_img">対象の画像要素。</param>
         /// <param name="a_src">Markdownに書かれていたパス/URL。</param>
         public void SetImageSource(Image a_img, string a_src)
@@ -500,6 +524,7 @@ namespace mde.manager
             {
                 return;
             }
+            a_src = FileUrlToPath(a_src);
             try
             {
                 Uri uri;
@@ -1182,9 +1207,9 @@ namespace mde.manager
                 {
                     continue;
                 }
-                if (Path.IsPathRooted(info.OriginalSrc))
+                if (Path.IsPathRooted(FileUrlToPath(info.OriginalSrc)))
                 {
-                    continue; // 絶対パス（一時フォルダ内画像・外部ファイルの直接参照等）は対象外
+                    continue; // 絶対パス（一時フォルダ内画像・外部ファイルの直接参照等。file:/// の URL も）は対象外
                 }
                 if (Uri.TryCreate(info.OriginalSrc, UriKind.Absolute, out Uri absoluteUri) &&
                     ("http" == absoluteUri.Scheme || "https" == absoluteUri.Scheme || "data" == absoluteUri.Scheme))

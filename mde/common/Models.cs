@@ -127,6 +127,17 @@ namespace mde.common
     }
 
     /// <summary>
+    /// 箇条書きの項目（ListItem）の Tag に設定するデータ。読み込んだ Markdown で、その項目の前にあった空行の数を覚えて
+    /// おき、項目を編集して書き出す時に同じ数の空行を書く（項目の間に空行を入れた箇条書きが、保存で詰まらないように。
+    /// MarkdownConverter.BuildNestedList・ListToMarkdown）。
+    /// </summary>
+    public class ListItemSourceInfo
+    {
+        /// <summary>項目の前にあった空行の数。</summary>
+        public int BlankLinesBefore { get; set; }
+    }
+
+    /// <summary>
     /// リンクのRun要素のTagに設定するメタデータ。リンク先URLと、山括弧形式（自動リンク）
     /// で読み込まれたかどうかを覚えておく。
     /// </summary>
