@@ -111,6 +111,8 @@ taskbar (under "Recent") and in File Explorer's recent files.
 
 "File" → "Recent Folders" lists the folders you opened with "Open Folder…" (or the "…" button in the folder
 view), newest first, with their full paths. Click one to open it in the folder view.
+These folders also appear under "Recent Folders" (separately from the files under "Recent") when you right-click the
+mde icon on the taskbar. Choosing one starts mde with that folder open.
 
 The "Recent Files" and "Recent Folders" lists open when you click them or rest the mouse pointer on them for a
 moment (they do not open when the pointer just passes over them, so a long list does not cover the other menu

@@ -444,6 +444,8 @@ namespace mde
             // 内容を反映する）。FileOperationsManagerの構築後に行う必要がある。
             m_fileOperationsManager.RebuildRecentFilesMenu();
             RebuildRecentFoldersMenu();
+            // タスクバーのアイコンの右クリックの一覧に「最近使ったフォルダ」を載せる（最初のウィンドウだけ。TaskbarJumpList 参照）
+            TaskbarJumpList.LoadRecentFolders(m_recentFolders);
 
             this.Title = Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version;
             m_outlineTree.ItemsSource = m_outlineManager.Items;
@@ -6411,6 +6413,7 @@ namespace mde
                 m_recentFolders.RemoveRange(MAX_RECENT_FOLDERS, m_recentFolders.Count - MAX_RECENT_FOLDERS);
             }
             RebuildRecentFoldersMenu();
+            TaskbarJumpList.AddRecentFolder(folder);
         }
 
         /// <summary>「最近使ったフォルダ」サブメニューの中身を、現在のm_recentFoldersの内容から
@@ -6442,6 +6445,7 @@ namespace mde
             {
                 m_recentFolders.Clear();
                 RebuildRecentFoldersMenu();
+                TaskbarJumpList.ClearRecentFolders();
             };
             m_recentFoldersMenu.Items.Add(clearItem);
         }
@@ -6459,6 +6463,7 @@ namespace mde
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 m_recentFolders.Remove(path);
                 RebuildRecentFoldersMenu();
+                TaskbarJumpList.RemoveRecentFolder(path);
                 return;
             }
             if (OpensInNewWindow())
