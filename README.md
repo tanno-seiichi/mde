@@ -340,6 +340,8 @@ have `*`, mde asks whether it is OK to discard the changes.
 Use the "…" button at the top of the folder view, or "File" → "Open Folder…", to open another folder. You can
 also open a folder you opened before from "File" → "Recent Folders". If the folder view was hidden, it is shown
 when you open a folder.
+When you open a folder this way (or by right-clicking an empty area inside a folder in File Explorer and choosing
+"Open with mde"), the window title starts with the folder name (for example, `[Desktop] Sample.md - mde v1.1.6`).
 
 ## Outline view
 

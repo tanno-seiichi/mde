@@ -194,6 +194,9 @@ namespace mde.manager
             this.m_getLastSaveDialogDirectory = a_getLastSaveDialogDirectory;
             this.m_setLastSaveDialogDirectory = a_setLastSaveDialogDirectory;
             this.m_opensInNewWindow = a_opensInNewWindow;
+            // フォルダを読み込んだ時に、タイトルのフォルダ名を表示し直す（ファイルを開いた後にフォルダを読み込む場合や、
+            // ファイルの無いフォルダを開いた場合があるため）
+            this.m_folderTreeManager.FolderLoaded += RefreshWindowTitle;
         }
 
         /// <summary>ファイル保存ダイアログの初期フォルダとして使う既定フォルダを返す。現在の
@@ -259,15 +262,37 @@ namespace mde.manager
         }
 
         /// <summary>ウィンドウタイトルを、現在のファイル名（無ければアプリ名のみ）から
-        /// 組み立てて設定する。</summary>
+        /// 組み立てて設定する。フォルダとして指定して開いたフォルダを表示している時は、先頭にフォルダ名を
+        /// 「[フォルダ名] 」の形で付ける（例：「[Desktop] Sample.md - mde v1.1.6」。FolderTreeManager.OpenedAsFolderFlg）。</summary>
         /// <param name="a_fileNameOrNull">タイトルに含めるファイル名。ファイルが無い場合はnull。</param>
         private void SetWindowTitleForFile(string a_fileNameOrNull)
         {
-            string title = string.IsNullOrEmpty(a_fileNameOrNull)
-                ? Assembly.GetExecutingAssembly().GetName().Name
-                : a_fileNameOrNull + " - " + 
-                  Assembly.GetExecutingAssembly().GetName().Name + " v" + Assembly.GetExecutingAssembly().GetName().Version;
+            string appName = Assembly.GetExecutingAssembly().GetName().Name;
+            string appNameAndVersion = appName + " v" + Assembly.GetExecutingAssembly().GetName().Version;
+            string folderName = m_folderTreeManager.GetOpenedFolderNameForTitle();
+            string title;
+            if (!string.IsNullOrEmpty(a_fileNameOrNull))
+            {
+                title = a_fileNameOrNull + " - " + appNameAndVersion;
+            }
+            else
+            {
+                // ファイルが無くフォルダだけを開いている時（ファイルの無いフォルダ）は、起動した時と同じく版も表示する
+                // （「[フォルダ名] - mde v1.1.6.0」。下でフォルダ名を付ける）
+                title = string.IsNullOrEmpty(folderName) ? appName : "- " + appNameAndVersion;
+            }
+            if (!string.IsNullOrEmpty(folderName))
+            {
+                title = "[" + folderName + "] " + title;
+            }
             m_setWindowTitle(title);
+        }
+
+        /// <summary>ウィンドウタイトルを、今のファイル・フォルダから作り直す（フォルダを読み込んだ時。
+        /// FolderTreeManager.FolderLoaded）。</summary>
+        private void RefreshWindowTitle()
+        {
+            SetWindowTitleForFile(Path.GetFileName(m_getCurrentFilePath()));
         }
 
         /// <summary>メニュー「ファイル」→「新規作成」・Ctrl+N：新しいウィンドウを開く（今のウィンドウの内容には

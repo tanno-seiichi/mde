@@ -41,6 +41,18 @@ namespace mde.manager
         /// <summary>現在読み込んでいるフォルダのルートパス。未読み込みなら null。</summary>
         public string LoadedFolderRootPath { get; private set; }
 
+        /// <summary>
+        /// 今のフォルダを、フォルダとして指定して開いたか（「フォルダを開く…」・フォルダビューの「…」ボタン・
+        /// 「最近使ったフォルダ」・起動時引数のフォルダ（エクスプローラーでフォルダの背景を右クリックして「mdeで開く」・
+        /// タスクバーのアイコンの右クリックの「最近使ったフォルダ」））。ファイルを開いた時に、そのファイルのフォルダを
+        /// 自動で読み込んだ場合は false。true の時は、ウィンドウのタイトルにフォルダ名を表示する
+        /// （FileOperationsManager.SetWindowTitleForFile）。
+        /// </summary>
+        public bool OpenedAsFolderFlg { get; private set; }
+
+        /// <summary>フォルダを読み込んだ後に呼ばれる（ウィンドウのタイトルのフォルダ名を表示し直すため）。</summary>
+        public event Action FolderLoaded;
+
         /// <summary>フォルダツリーペインのルートノード一覧（TreeView.ItemsSourceとして使う）。</summary>
         public ObservableCollection<FileSystemItem> Roots { get; } = new ObservableCollection<FileSystemItem>();
 
@@ -143,9 +155,12 @@ namespace mde.manager
 
         /// <summary>ルートフォルダを指定して、フォルダツリーペインの内容を読み込む。</summary>
         /// <param name="a_folderPath">読み込むフォルダ。</param>
-        public void LoadFolderTree(string a_folderPath)
+        /// <param name="a_openedAsFolderFlg">フォルダとして指定して開いたか（OpenedAsFolderFlg 参照）。開いたファイルの
+        /// フォルダを自動で読み込む時は false。</param>
+        public void LoadFolderTree(string a_folderPath, bool a_openedAsFolderFlg = false)
         {
             LoadedFolderRootPath = a_folderPath;
+            OpenedAsFolderFlg = a_openedAsFolderFlg;
             Roots.Clear();
             try
             {
@@ -160,6 +175,22 @@ namespace mde.manager
             {
                 // フォルダにアクセスできない場合は、ツリーを空のままにしておく
             }
+            FolderLoaded?.Invoke();
+        }
+
+        /// <summary>
+        /// ウィンドウのタイトルに表示するフォルダ名。フォルダとして指定して開いていない時（OpenedAsFolderFlg が false）は null。
+        /// ドライブのルート（「C:\」）は名前がないため、パスをそのまま返す。
+        /// </summary>
+        /// <returns>フォルダ名。表示しない時は null。</returns>
+        public string GetOpenedFolderNameForTitle()
+        {
+            if (!OpenedAsFolderFlg || string.IsNullOrEmpty(LoadedFolderRootPath))
+            {
+                return null;
+            }
+            string name = Path.GetFileName(Path.TrimEndingDirectorySeparator(LoadedFolderRootPath));
+            return string.IsNullOrEmpty(name) ? LoadedFolderRootPath : name;
         }
 
         /// <summary>
@@ -638,7 +669,7 @@ namespace mde.manager
         private void OpenFolderAndFile(string a_folderPath, string a_relativePath)
         {
             m_discardCurrentDocumentSilently();
-            LoadFolderTree(a_folderPath);
+            LoadFolderTree(a_folderPath, true);
             OpenMatchingOrFirstFile(a_folderPath, a_relativePath);
         }
 

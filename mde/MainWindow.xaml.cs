@@ -566,7 +566,7 @@ namespace mde
             else if (!string.IsNullOrEmpty(startupPath) && Directory.Exists(startupPath))
             {
                 m_folderPaneVisibleFlg = true;
-                m_folderTreeManager.LoadFolderTree(startupPath);
+                m_folderTreeManager.LoadFolderTree(startupPath, true);
                 m_folderTreeManager.OpenFirstFileInLoadedFolder();
                 AddToRecentFolders(startupPath);
             }
@@ -1234,7 +1234,8 @@ namespace mde
             newWindow.Show();
             if (inLoadedFolderFlg)
             {
-                newWindow.m_folderTreeManager.LoadFolderTree(folderRoot);
+                // 元のウィンドウでフォルダとして開いていたなら、新しいウィンドウのタイトルにもフォルダ名を表示する
+                newWindow.m_folderTreeManager.LoadFolderTree(folderRoot, m_folderTreeManager.OpenedAsFolderFlg);
             }
             newWindow.LoadFile(a_path);
             if (inLoadedFolderFlg)
@@ -6339,7 +6340,7 @@ namespace mde
         /// <param name="a_folderPath">開くフォルダ。</param>
         private void OpenFolderAsRoot(string a_folderPath)
         {
-            m_folderTreeManager.LoadFolderTree(a_folderPath);
+            m_folderTreeManager.LoadFolderTree(a_folderPath, true);
             m_folderTreeManager.OpenFirstFileInLoadedFolder();
             AddToRecentFolders(a_folderPath);
             ShowFolderPane();
